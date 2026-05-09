@@ -1,16 +1,52 @@
 import crypto from "node:crypto";
 import { submitContextTask } from "../core/context-submission.mjs";
 import { submitActionToolTask } from "../core/action-tool-submission.mjs";
-import { submitConnectorWorkflowTask } from "../connectors/core/workflow-submission.mjs";
+import {
+  resumeConnectorWorkflowTask,
+  submitConnectorWorkflowTask
+} from "../connectors/core/workflow-submission.mjs";
 import { buildSideEffectContract } from "../core/policy/side-effect-contracts.mjs";
 import {
-  createTaskRecord,
   emitTaskEvent,
   ensureRuntimeServices,
   markTaskFailed,
   markTaskSucceeded,
+  submitTaskWithConversation,
   updateTask
 } from "../core/task-runtime.mjs";
+
+export const AUTO_SCHEDULE_PROJECT_ID = "proj_auto_schedules";
+
+function safeConversationIdSegment(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return crypto.randomUUID();
+  return raw
+    .replace(/[^A-Za-z0-9_-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 96) || crypto.randomUUID();
+}
+
+export function buildScheduledConversationScope({
+  sourceId = null,
+  scheduleContext = null,
+  sourceLabel = null
+} = {}) {
+  const scheduleId = sourceId ?? scheduleContext?.schedule_id ?? null;
+  const key = scheduleId ?? scheduleContext?.name ?? sourceLabel ?? "scheduled";
+  const conversationId = `conv_auto_schedule_${safeConversationIdSegment(key)}`;
+  return {
+    conversationId,
+    projectId: AUTO_SCHEDULE_PROJECT_ID,
+    title: String(scheduleContext?.name ?? sourceLabel ?? "定时任务").slice(0, 48),
+    metadata: {
+      autoSource: "schedule",
+      autoKey: `schedule:${key}`,
+      source_id: scheduleId,
+      schedule_id: scheduleContext?.schedule_id ?? scheduleId,
+      schedule_name: scheduleContext?.name ?? null
+    }
+  };
+}
 
 function buildSchedulerContextPacket({
   title,
@@ -118,14 +154,21 @@ async function executeTaskTemplate({
   bypassDedupe = false
 }) {
   ensureRuntimeServices(runtime);
+  const conversationScope = buildScheduledConversationScope({ sourceId, sourceLabel });
 
-  const inspection = runtime.securityBroker.inspectContext(buildSchedulerContextPacket({
+  const schedulerContextPacket = buildSchedulerContextPacket({
     title: sourceLabel,
     sourceId,
     sourceApp,
     captureMode,
-    triggerReason
-  }), {
+    triggerReason,
+    selectionMetadata: {
+      conversation_id: conversationScope.conversationId,
+      project_id: conversationScope.projectId
+    }
+  });
+
+  const inspection = runtime.securityBroker.inspectContext(schedulerContextPacket, {
     trigger: "schedule_dispatch"
   });
 
@@ -135,22 +178,21 @@ async function executeTaskTemplate({
     requires_confirmation: false
   };
 
-  const task = createTaskRecord({
+  const { task } = submitTaskWithConversation({
     route,
-    contextPacket: inspection.allowed ? inspection.contextPacket : buildSchedulerContextPacket({
-      title: sourceLabel,
-      sourceId,
-      sourceApp,
-      captureMode,
-      triggerReason
-    }),
+    contextPacket: inspection.allowed ? inspection.contextPacket : schedulerContextPacket,
     userCommand: sourceLabel,
     executionMode,
     bypassDedupe,
-    executorOverride: "fast"
+    executorOverride: "fast",
+    conversationId: conversationScope.conversationId,
+    conversationTitle: conversationScope.title,
+    conversationMetadata: conversationScope.metadata,
+    projectId: conversationScope.projectId,
+    submissionKind: "scheduled_template",
+    runtime
   });
 
-  runtime.store.insertTask(task);
   runtime.queue.enqueue(task);
   emitTaskEvent({
     runtime,
@@ -308,6 +350,11 @@ async function executeScheduledTask({
   bypassDedupe = false
 }) {
   const userCommand = actionParams.userCommand ?? actionParams.command ?? sourceLabel ?? actionTarget;
+  const conversationScope = buildScheduledConversationScope({
+    sourceId,
+    scheduleContext,
+    sourceLabel: scheduleContext?.name ?? sourceLabel ?? userCommand
+  });
   const storedSideEffectContract = scheduleContext?.metadata?.side_effect_contract
     ?? actionParams.side_effect_contract
     ?? null;
@@ -362,6 +409,17 @@ async function executeScheduledTask({
       executionMode,
       sourceApp,
       captureMode,
+      conversationId: conversationScope.conversationId,
+      conversationTitle: conversationScope.title,
+      conversationMetadata: conversationScope.metadata,
+      projectId: conversationScope.projectId,
+      selectionMetadata: {
+        source_id: sourceId,
+        scheduler_context: true,
+        scheduled_task_fire: true,
+        conversation_id: conversationScope.conversationId,
+        project_id: conversationScope.projectId
+      },
       bypassDedupe,
       runtime,
       fastPathTool: "notify",
@@ -385,12 +443,18 @@ async function executeScheduledTask({
         schedule_name: scheduleContext?.name ?? null,
         schedule_description: scheduleContext?.description ?? null,
         schedule_action_target: scheduleContext?.action_target ?? actionTarget,
+        conversation_id: conversationScope.conversationId,
+        project_id: conversationScope.projectId,
         ...(sideEffectContract ? { side_effect_contract: sideEffectContract } : {}),
         ...(sideEffectAuthorization ? { side_effect_authorization: sideEffectAuthorization } : {})
       }
     }),
     userCommand,
     executionMode,
+    conversationId: conversationScope.conversationId,
+    conversationTitle: conversationScope.title,
+    conversationMetadata: conversationScope.metadata,
+    projectId: conversationScope.projectId,
     bypassDedupe,
     executorOverride: actionParams.executorOverride ?? actionParams.executor ?? null,
     // The plan layer already deferred this task once; skip it so the
@@ -454,6 +518,7 @@ async function executeScheduledTask({
             openWindow: "console",
             allowLongBody: true,
             autoHideMs: 0,
+            forcePopup: true,
             dedupeKey: `scheduled-approval:${taskId}:${approvalId || toolId}`
           }, { runtime, task })
             .catch(() => { /* ignore */ });
@@ -472,6 +537,7 @@ async function executeScheduledTask({
             openWindow: "overlay",
             allowLongBody: true,
             autoHideMs: 14000,
+            forcePopup: true,
             dedupeKey: `scheduled-result:${taskId}`
           }, { runtime, task })
             .catch(() => { /* ignore */ });
@@ -490,6 +556,7 @@ async function executeScheduledTask({
             openWindow: "console",
             allowLongBody: true,
             autoHideMs: 0,
+            forcePopup: true,
             dedupeKey: `scheduled-partial:${taskId}`
           }, { runtime, task })
             .catch(() => { /* ignore */ });
@@ -513,9 +580,23 @@ export async function executeProposedAction({
   sourceApp = "uca.scheduler",
   captureMode = "event",
   triggerReason = "scheduled",
-  bypassDedupe = false
+  bypassDedupe = false,
+  resumeTaskId = null,
+  approvalId = null,
+  actor = null
 }) {
   if (actionType === "connector_workflow") {
+    if (resumeTaskId) {
+      return resumeConnectorWorkflowTask({
+        runtime,
+        taskId: resumeTaskId,
+        workflowId: actionTarget,
+        input: actionParams.input ?? {},
+        state: actionParams.state ?? {},
+        approvalId,
+        actor
+      });
+    }
     return submitConnectorWorkflowTask({
       runtime,
       workflowId: actionTarget,

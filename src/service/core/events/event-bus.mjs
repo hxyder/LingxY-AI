@@ -23,12 +23,20 @@ export const EVENT_TYPES = Object.freeze([
   "unsupported"
 ]);
 
+export const HIGH_FREQUENCY_EVENT_TYPES = new Set([
+  "text_delta",
+  "tool_input_delta",
+  "reasoning_delta"
+]);
+
 export function createEventBusScaffold() {
   const events = [];
   const listeners = new Set();
   return {
     publish(event) {
-      events.push(event);
+      if (!HIGH_FREQUENCY_EVENT_TYPES.has(event?.event_type)) {
+        events.push(event);
+      }
       for (const listener of listeners) {
         listener(event);
       }

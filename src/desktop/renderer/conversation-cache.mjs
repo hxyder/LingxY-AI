@@ -118,6 +118,35 @@ export async function fetchConversations(fetchFn, baseUrl, { limit = 100, archiv
   return Array.isArray(data?.conversations) ? data.conversations : [];
 }
 
+export async function searchConversations(fetchFn, baseUrl, {
+  query = "",
+  limit = 50,
+  archived = false,
+  projectId = null
+} = {}) {
+  if (typeof fetchFn !== "function") return [];
+  const q = String(query ?? "").trim();
+  if (!q) return [];
+  const params = new URLSearchParams();
+  params.set("q", q);
+  params.set("limit", String(Math.max(1, Math.min(Number(limit) || 50, 50))));
+  params.set("archived", archived === true ? "true" : archived === false ? "false" : String(archived));
+  if (projectId) params.set("project_id", String(projectId));
+  const res = await fetchFn(`${baseUrl ?? ""}/conversations/search?${params.toString()}`);
+  if (!res?.ok) throw new Error(`HTTP ${res?.status ?? "unknown"}`);
+  const data = await res.json();
+  const results = Array.isArray(data?.results) ? data.results : [];
+  return results.map((result) => ({
+    ...(result?.conversation ?? {}),
+    conversation_id: result?.conversation_id ?? result?.conversation?.conversation_id ?? "",
+    title: result?.title ?? result?.conversation?.title ?? null,
+    updated_at: result?.updated_at ?? result?.conversation?.updated_at ?? result?.conversation?.created_at ?? null,
+    message_count: result?.message_count ?? result?.conversation?.message_count ?? 0,
+    task_count: result?.task_count ?? result?.conversation?.task_count ?? 0,
+    search_match: result?.match ?? null
+  })).filter((conversation) => conversation.conversation_id);
+}
+
 /**
  * High-level reconcile loop. Pure-ish: calls back into the caller's
  * UI adapter for each classification result. Mutates conv state

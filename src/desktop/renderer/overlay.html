@@ -1064,6 +1064,29 @@
         flex-shrink: 0;
       }
 
+      button.context-chip {
+        cursor: pointer;
+        font: inherit;
+      }
+
+      button.context-chip:hover {
+        border-color: rgba(16, 185, 129, 0.42);
+        background: rgba(16, 185, 129, 0.1);
+      }
+
+      .context-preview {
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(91, 107, 122, 0.16);
+        background: rgba(91, 107, 122, 0.06);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
       /* ── quick action toolbar (sits above the input bar) ──
          UCA-123: flex-wrap so the 语音/定时 chips drop instead of
          clipping past the right edge when content > 520 px. box-sizing
@@ -2418,27 +2441,27 @@
     </div>
 
     <!-- UCA-041: Project + history panel (hidden by default) -->
-    <div id="projectPanel" class="inline-panel" data-open="false">
+    <div id="projectPanel" class="inline-panel" data-open="false" role="dialog" aria-label="对话与历史" aria-modal="false">
       <div class="panel-title">对话与历史</div>
       <div style="display:flex;gap:6px;margin-bottom:8px;">
-        <select id="projectDropdown" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;background:var(--glass-accent-soft);color:var(--glass-ink);border:1px solid var(--glass-line);"></select>
-        <button id="newProjectBtn" type="button" style="font-size:11px;padding:4px 10px;">+ 新项目</button>
+        <select id="projectDropdown" aria-label="选择项目或历史对话" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;background:var(--glass-accent-soft);color:var(--glass-ink);border:1px solid var(--glass-line);"></select>
+        <button id="newProjectBtn" type="button" aria-label="新建项目" style="font-size:11px;padding:4px 10px;">+ 新项目</button>
       </div>
-      <div id="historyList" style="max-height:200px;overflow-y:auto;"></div>
+      <div id="historyList" role="list" aria-label="历史对话列表" style="max-height:200px;overflow-y:auto;"></div>
     </div>
 
     <!-- Inline schedule form (hidden by default) -->
-    <div id="schedulePanel" class="inline-panel" data-open="false">
+    <div id="schedulePanel" class="inline-panel" data-open="false" role="dialog" aria-label="新建定时任务" aria-modal="false">
       <div class="panel-title">新建定时任务</div>
       <div class="panel-grid">
         <label for="scheduleWhen">触发时间</label>
-        <input id="scheduleWhen" type="datetime-local">
+        <input id="scheduleWhen" type="datetime-local" aria-label="触发时间">
         <label for="scheduleName">任务名称</label>
-        <input id="scheduleName" type="text" placeholder="例如：每日翻译播报">
+        <input id="scheduleName" type="text" placeholder="例如：每日翻译播报" aria-label="任务名称">
         <label for="scheduleCommand">任务内容</label>
-        <textarea id="scheduleCommand" rows="2" placeholder="例如：翻译我剪贴板里的内容并通知我"></textarea>
+        <textarea id="scheduleCommand" rows="2" placeholder="例如：翻译我剪贴板里的内容并通知我" aria-label="任务内容"></textarea>
         <label for="scheduleCategory">类别</label>
-        <select id="scheduleCategory">
+        <select id="scheduleCategory" aria-label="任务类别">
           <option value="general">General</option>
           <option value="work">Work</option>
           <option value="email">Email</option>
@@ -2447,7 +2470,7 @@
           <option value="custom">Custom</option>
         </select>
         <label for="scheduleLeadTime">提前通知</label>
-        <select id="scheduleLeadTime">
+        <select id="scheduleLeadTime" aria-label="提前通知">
           <option value="default">默认（按时间尺度）</option>
           <option value="0">不提前</option>
           <option value="900000">15 分钟</option>
@@ -2464,8 +2487,8 @@
     <!-- Apple-style voice card. This surface focuses on recording notes; the
          composer mic button owns lightweight voice-to-text. Legacy voice-input
          controls remain in DOM as a hidden fallback for older state restore. -->
-    <div id="voiceCard" class="voice-card idle" data-mode="note">
-      <button id="voiceMinimizeBtn" class="voice-minimize" type="button" title="最小化">−</button>
+    <div id="voiceCard" class="voice-card idle" data-mode="note" role="dialog" aria-label="录音笔记与语音输入" aria-modal="false">
+      <button id="voiceMinimizeBtn" class="voice-minimize" type="button" title="最小化" aria-label="最小化录音面板">−</button>
       <!-- Tab switcher kept for verifier + legacy fallback; visually hidden
            because the composer mic now owns voice-input. -->
       <div class="note-mode-tabs" hidden>
@@ -2481,7 +2504,7 @@
       <div id="voiceChips" class="voice-chips voice-only" role="list" aria-label="已附加的文件"></div>
 
       <!-- ── VOICE mode elements (legacy fallback, hidden in note mode) ── -->
-      <div class="voice-subtitle voice-only" id="voiceStatus">点击发送旁的麦克风可直接语音输入；本面板用于录音笔记</div>
+      <div class="voice-subtitle voice-only" id="voiceStatus" role="status" aria-live="polite">点击发送旁的麦克风可直接语音输入；本面板用于录音笔记</div>
       <div class="wave-container voice-only" aria-hidden="true">
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
@@ -2493,9 +2516,9 @@
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
       </div>
-      <div id="voiceTranscript" class="voice-transcript voice-only placeholder">实时识别的文字会显示在这里…</div>
+      <div id="voiceTranscript" class="voice-transcript voice-only placeholder" role="status" aria-live="polite" aria-label="实时语音识别文本">实时识别的文字会显示在这里…</div>
       <div class="voice-hint voice-only">回车发送 · Esc 取消 · 自动停止后等待新指令</div>
-      <select id="voiceLang" class="voice-only" style="margin-top:10px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--glass-line);background:var(--glass-surface);color:var(--glass-ink);">
+      <select id="voiceLang" class="voice-only" aria-label="语音输入语言" style="margin-top:10px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--glass-line);background:var(--glass-surface);color:var(--glass-ink);">
         <option value="zh-CN" selected>中文（普通话，保留英文词）</option>
         <option value="auto">自动识别语言 / Mixed</option>
         <option value="en-US">English (US)</option>
@@ -2517,9 +2540,9 @@
         <span class="note-channel-tag" id="noteMicTag"><span class="dot"></span>输入音频（麦克风）</span>
         <span class="note-channel-tag" id="noteSysTag"><span class="dot"></span>输出音频（系统）</span>
       </div>
-      <div class="note-transcript-box note-only" id="noteTranscriptBox"></div>
+      <div class="note-transcript-box note-only" id="noteTranscriptBox" role="log" aria-live="polite" aria-label="录音笔记实时转录"></div>
       <div class="note-hint note-only">输入音频实时转录 · 输出音频录制后统一处理</div>
-      <select id="noteLang" class="note-only" style="margin-top:8px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--glass-line);background:var(--glass-surface);color:var(--glass-ink);">
+      <select id="noteLang" class="note-only" aria-label="录音笔记语言" style="margin-top:8px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--glass-line);background:var(--glass-surface);color:var(--glass-ink);">
         <option value="auto" selected>自动识别语言</option>
         <option value="zh-CN">中文（普通话）</option>
         <option value="en-US">English (US)</option>
@@ -2533,30 +2556,30 @@
     </div>
 
     <!-- Quick action toolbar -->
-    <div class="quick-toolbar">
-      <button id="newSessionBtn" class="quick-btn" type="button" title="开始新会话（清空记忆）">
+    <div class="quick-toolbar" role="toolbar" aria-label="快捷操作">
+      <button id="newSessionBtn" class="quick-btn" type="button" title="开始新会话（清空记忆）" aria-label="开始新会话">
         <span class="quick-glyph">&#10133;</span>新会话
       </button>
-      <button id="projectSelectorBtn" class="quick-btn" type="button" title="切换项目 / 查看历史会话">
+      <button id="projectSelectorBtn" class="quick-btn" type="button" title="切换项目 / 查看历史会话" aria-label="切换项目或查看历史会话">
         <span class="quick-glyph">&#128218;</span>对话
       </button>
-      <button class="quick-btn" data-quick-action="translate" type="button" title="翻译当前上下文">
+      <button class="quick-btn" data-quick-action="translate" type="button" title="翻译当前上下文" aria-label="翻译当前上下文">
         <span class="quick-glyph">&#127760;</span>翻译
       </button>
-      <button class="quick-btn" data-quick-action="summarize" type="button" title="总结当前上下文">
+      <button class="quick-btn" data-quick-action="summarize" type="button" title="总结当前上下文" aria-label="总结当前上下文">
         <span class="quick-glyph">&#128221;</span>总结
       </button>
-      <button class="quick-btn" data-quick-action="explain" type="button" title="解释当前上下文">
+      <button class="quick-btn" data-quick-action="explain" type="button" title="解释当前上下文" aria-label="解释当前上下文">
         <span class="quick-glyph">&#128161;</span>解释
       </button>
-      <button id="scheduleToggleBtn" class="quick-btn" type="button" title="新建定时任务">
+      <button id="scheduleToggleBtn" class="quick-btn" type="button" title="新建定时任务" aria-label="新建定时任务">
         <span class="quick-glyph">&#9200;</span>定时
       </button>
-      <button id="voiceToggleBtn" class="quick-btn" type="button" title="录音笔记 (Ctrl+Shift+N) — 语音输入请用发送旁的麦克风按钮 (Ctrl+Shift+V)">
+      <button id="voiceToggleBtn" class="quick-btn" type="button" title="录音笔记 (Ctrl+Shift+N) — 语音输入请用发送旁的麦克风按钮 (Ctrl+Shift+V)" aria-label="打开录音笔记">
         <span class="quick-glyph">&#127908;</span>录音笔记
       </button>
       <span class="quick-spacer"></span>
-      <button id="settingsBtn" class="quick-btn quick-icon-btn" type="button" title="打开设置">
+      <button id="settingsBtn" class="quick-btn quick-icon-btn" type="button" title="打开设置" aria-label="打开设置">
         <span class="quick-glyph">&#9881;</span>
       </button>
     </div>
@@ -2598,7 +2621,7 @@
       <span aria-hidden="true">📋</span>
       <span id="taskListDockBadge" class="dock-badge" hidden>0</span>
     </button>
-    <div id="taskListPanel" class="task-list-panel" data-open="false" role="dialog" aria-label="任务清单">
+    <div id="taskListPanel" class="task-list-panel" data-open="false" role="dialog" aria-label="任务清单" aria-modal="false">
       <div class="task-list-header">
         <strong style="font-size:12px;">任务清单</strong>
         <button id="taskListCloseBtn" class="aux-btn" type="button" style="width:22px;height:22px;" aria-label="关闭任务清单">×</button>

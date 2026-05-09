@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  filterToolsForAgenticTask,
   isScheduleRegistryTool,
   isScheduledFireTask,
   isSideEffectTool,
@@ -9,6 +10,7 @@ import {
   toolDescriptorForAdapter,
   transcriptHasSuccessfulToolCall
 } from "../../src/service/executors/agentic/tool-surface.mjs";
+import { buildAgenticSystemPrompt as renderAgenticSystemPrompt } from "../../src/service/executors/agentic/prompt-builder.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 
 test("agentic tool surface renders adapter descriptors with safe defaults", () => {
@@ -64,6 +66,61 @@ test("agentic dynamic tool descriptors include capability management tools", () 
   assert.ok(draftDescriptor.input_schema && typeof draftDescriptor.input_schema === "object");
   assert.equal(saveDescriptor.name, "save_capability_draft");
   assert.ok(saveDescriptor.input_schema && typeof saveDescriptor.input_schema === "object");
+});
+
+test("agentic prompt renders xlsx as a structured spreadsheet contract", () => {
+  const prompt = renderAgenticSystemPrompt({
+    tools: [{ id: "generate_document", name: "Generate Document", description: "fixture", parameters: { type: "object" } }],
+    task: {
+      user_command: "给我生成 excel 表的格式",
+      task_spec: {
+        artifact: { required: true, kind: "xlsx" },
+        success_contract: { required_tool_names: ["generate_document"] }
+      }
+    },
+    requestedFormat: { id: "xlsx" },
+    language: "zh-CN"
+  });
+
+  assert.match(prompt, /XLSX artifact/);
+  assert.match(prompt, /headers: \[\.\.\.\], rows: \[\.\.\.\]/);
+  assert.match(prompt, /Never turn narrative prose/);
+  assert.match(prompt, /generic `Content` column/);
+});
+
+test("agentic tool surface hides artifact writers for pure local-file reading", () => {
+  const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
+    user_command: "读取会议纪要，提取 owner、goal、follow-up。",
+    task_spec: {
+      artifact: { required: true, kind: "md" },
+      success_contract: { artifact_created: true }
+    }
+  }).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("write_file"));
+  assert.ok(!visible.includes("generate_document"));
+  assert.ok(!visible.includes("resolve_output_path"));
+});
+
+test("agentic tool surface exposes artifact writers for explicit file output", () => {
+  const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
+    user_command: "读取附件并生成 markdown 报告文件。",
+    task_spec: {}
+  }).map((tool) => tool.id);
+
+  assert.ok(visible.includes("write_file"));
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("resolve_output_path"));
+});
+
+test("agentic tool surface keeps connector-scoped searches out of generic web search", () => {
+  const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
+    user_command: "搜索云盘里文件名包含 audit 的文档，只列出名称。",
+    task_spec: {}
+  }).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("connector_workflow_run"));
 });
 
 test("agentic tool surface only counts successful prior tool calls", () => {

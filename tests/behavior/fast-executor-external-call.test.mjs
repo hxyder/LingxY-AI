@@ -27,6 +27,16 @@ function sseChatResponse(text) {
   });
 }
 
+function ollamaStreamResponse(text) {
+  return new Response([
+    JSON.stringify({ message: { content: text }, done: false }),
+    JSON.stringify({ done: true, prompt_eval_count: 4, eval_count: 2 })
+  ].join("\n"), {
+    status: 200,
+    headers: { "content-type": "application/x-ndjson" }
+  });
+}
+
 async function withFakeProvider(provider, fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-fast-executor-"));
   const configPath = path.join(dir, "runtime.json");
@@ -192,9 +202,7 @@ test("fast executor retries a transient Ollama HTTP failure and still emits succ
         if (calls.length === 1) {
           return new Response("temporary ollama failure", { status: 502 });
         }
-        return Response.json({
-          message: { content: "Recovered local answer" }
-        });
+        return ollamaStreamResponse("Recovered local answer");
       };
 
       const executor = createFastExecutorScaffold();
@@ -207,7 +215,7 @@ test("fast executor retries a transient Ollama HTTP failure and still emits succ
       assert.equal(calls.length, 2);
       assert.equal(calls[0].url, "http://fake-ollama.local/api/chat");
       assert.equal(calls[0].body.model, "llama3.2");
-      assert.equal(calls[0].body.stream, false);
+      assert.equal(calls[0].body.stream, true);
       assert.equal(calls.every((call) => call.hasAbortSignal), true);
 
       assert.deepEqual(

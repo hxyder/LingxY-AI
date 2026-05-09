@@ -1,5 +1,8 @@
 import { appendAuditLog } from "../../security/audit-log.mjs";
 import {
+  buildConversationMessageContextSummary
+} from "../../../shared/conversation-message-context.mjs";
+import {
   deriveConversationTitle,
   ensureConversation,
   isSchedulerSourced
@@ -21,7 +24,14 @@ export function auditSubmissionBoundary(runtime, task) {
 }
 
 export function submitTaskWithConversation(params) {
-  const { runtime, parentMessageId = null, projectId = null, clientMessageId = null } = params;
+  const {
+    runtime,
+    parentMessageId = null,
+    projectId = null,
+    clientMessageId = null,
+    conversationTitle = null,
+    conversationMetadata = null
+  } = params;
   const task = createTaskRecord(params);
   if (!runtime?.store?.runInTransaction) {
     runtime.store.insertTask(task);
@@ -31,7 +41,9 @@ export function submitTaskWithConversation(params) {
   return runtime.store.runInTransaction(() => {
     const conversation = ensureConversation(runtime, {
       conversationId: task.conversation_id,
-      projectId
+      projectId,
+      title: conversationTitle,
+      metadata: conversationMetadata
     });
 
     // Auto-title freshly created conversations from the first user
@@ -53,6 +65,8 @@ export function submitTaskWithConversation(params) {
         source_app: task.context_packet?.source_app,
         execution_mode: task.execution_mode
       };
+      const contextSummary = buildConversationMessageContextSummary(task.context_packet);
+      if (contextSummary) metadata.context_summary = contextSummary;
       if (typeof clientMessageId === "string" && clientMessageId.trim()) {
         metadata.client_message_id = clientMessageId.trim().slice(0, 128);
       }

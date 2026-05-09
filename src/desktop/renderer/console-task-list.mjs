@@ -2,6 +2,9 @@ import {
   escapeHtml,
   formatDateTime
 } from "./shared-ui.mjs";
+import {
+  describeTaskTokens
+} from "./console-task-detail.mjs";
 
 // R-feedback 2026-05-07: voice-recording tasks where transcription
 // failed produced unusable titles — entire raw transcript or fallback
@@ -144,12 +147,14 @@ export function renderTaskListItemHtml({ task = {}, indent = 0, isChild = false,
   const childCountChip = childCount > 0
     ? ` <span class="chip muted" style="font-size:10px;padding:2px 6px;">${escapeHtml(childCount)}</span>`
     : "";
+  const tokenDisplay = describeTaskTokens(task);
+  const tokenMeta = tokenDisplay ? ` · ${tokenDisplay} tokens` : "";
   return `
       <button class="task-item ${selected ? "selected" : ""}" data-task-id="${escapeHtml(task.task_id)}" style="text-align:left;${indent ? "margin-left:18px;" : ""}">
         <div class="row">
           <div>
             <h4>${childPrefix}${escapeHtml(deriveTaskListTitle(task))}${childCountChip}</h4>
-            <p class="muted">${escapeHtml(task.executor ?? "unknown")} · ${escapeHtml(task.source_type ?? "unknown")}</p>
+            <p class="muted">${escapeHtml(task.executor ?? "unknown")} · ${escapeHtml(task.source_type ?? "unknown")}${escapeHtml(tokenMeta)}</p>
           </div>
           <span class="chip ${statusClass}">${escapeHtml(task.status)}</span>
         </div>

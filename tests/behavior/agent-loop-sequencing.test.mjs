@@ -482,14 +482,7 @@ test("phase gate preserves initial artifact contract when current SR patch is in
       makeLookupTool(),
       makeGenerateDocumentTool()
     ]),
-    finalAnswerComposer: async ({ transcript }) => {
-      assert.ok(transcript.some((entry) =>
-        entry.type === "tool_result"
-        && entry.tool === "generate_document"
-        && entry.artifact_paths?.length === 1
-      ));
-      return "document generated";
-    }
+    finalAnswerComposer: async () => "Generated document body from collected evidence."
   });
   const task = {
     task_id: "task_artifact_initial_contract",
@@ -522,41 +515,31 @@ test("phase gate preserves initial artifact contract when current SR patch is in
       if (iteration === 0) {
         return { type: "tool_call", tool: "lookup_fixture", args: { value: "irrelevant" } };
       }
-      const guidance = transcript.find((entry) =>
-        entry.type === "contract_guidance"
-        && entry.groups?.includes("artifact_generation")
-      );
       const generated = transcript.some((entry) =>
         entry.type === "tool_result"
         && entry.tool === "generate_document"
         && entry.artifact_paths?.length === 1
       );
       if (generated) return { type: "final", text: "done" };
-      if (guidance) {
-        return {
-          type: "tool_call",
-          tool: "generate_document",
-          args: {
-            kind: "docx",
-            outline: {
-              title: "Generated Document",
-              sections: [
-                { heading: "Overview", body: "A concise generated document." }
-              ]
-            }
-          }
-        };
-      }
       return { type: "final", text: "Here is prose only." };
     },
     maxIterations: 5
   });
 
   assert.equal(result.status, "success");
-  assert.equal(result.final_text, "document generated");
+  assert.match(result.final_text, /behavior\.docx/);
+  assert.ok(result.transcript.some((entry) =>
+    entry.type === "deterministic_artifact_obligation"
+    && entry.source === "early_step_gate"
+  ));
   assert.ok(events.some((event) =>
     event.eventType === "phase_gate_signal"
     && event.payload?.violation_kinds?.includes("artifact_required_not_created")
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "tool_call_proposed"
+    && event.payload?.tool_id === "generate_document"
+    && event.payload?.source === "deterministic_artifact_obligation"
   ));
 });
 
@@ -1090,4 +1073,75 @@ test("launch ambiguity final answer asks for disambiguation from structured cand
   assert.match(result.final_text, /Alpha Tools/);
   assert.ok(!/cannot operate your computer/i.test(result.final_text));
   assert.ok(!/launch_args/.test(result.final_text));
+});
+
+test("tool_using loop passes cancellation signal to planner and action tools", async () => {
+  const controller = new AbortController();
+  let plannerSignal = null;
+  let toolSignal = null;
+  const signalAwareTool = {
+    id: "lookup_fixture",
+    name: "Lookup Fixture",
+    description: "Returns a deterministic observation for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["value"],
+      properties: { value: { type: "string" } }
+    },
+    async execute(args, context = {}) {
+      toolSignal = context.signal ?? null;
+      return {
+        success: true,
+        observation: `observed:${args.value}`,
+        metadata: { source: "behavior-test" }
+      };
+    }
+  };
+  const { runtime } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([signalAwareTool])
+  });
+  const task = makeTask();
+  const planner = async ({ iteration, signal }) => {
+    plannerSignal = signal ?? null;
+    if (iteration === 0) {
+      return { type: "tool_call", tool: "lookup_fixture", args: { value: "cancel-aware" } };
+    }
+    return { type: "final", text: "done" };
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner,
+    maxIterations: 2,
+    signal: controller.signal
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(plannerSignal, controller.signal);
+  assert.equal(toolSignal, controller.signal);
+});
+
+test("tool_using loop rejects before planner work when already aborted", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const { runtime } = makeRuntime();
+  const task = makeTask();
+  let plannerCalled = false;
+
+  await assert.rejects(
+    () => runToolAgentLoop({
+      task,
+      runtime,
+      signal: controller.signal,
+      planner: async () => {
+        plannerCalled = true;
+        return { type: "final", text: "should not run" };
+      }
+    }),
+    (error) => error?.code === "ABORT_ERR"
+  );
+  assert.equal(plannerCalled, false);
 });

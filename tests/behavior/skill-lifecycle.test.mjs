@@ -1,13 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import {
   createEditableSkill,
+  deleteEditableSkill,
   duplicateEditableSkill,
   listSkillHistory,
+  resolveDeletableSkillEntryPath,
   resolveEditableSkillEntryPath,
   rollbackSkillMarkdown,
   slugifySkillId,
@@ -57,6 +60,24 @@ test("skill lifecycle duplicates a skill without overwriting the source", async 
   assert.notEqual(duplicate.entryPath, created.entryPath);
   assert.match(await readFile(duplicate.entryPath, "utf8"), /# Draft Email Variant/);
   assert.match(await readFile(created.entryPath, "utf8"), /# Draft Email/);
+});
+
+test("skill lifecycle deletes runtime skills recoverably", async () => {
+  const runtime = await makeRuntime();
+  const created = await createEditableSkill(runtime, {
+    id: "temporary-skill",
+    name: "Temporary Skill",
+    description: "Safe to delete."
+  });
+
+  assert.equal(resolveDeletableSkillEntryPath(runtime, created.entryPath), created.entryPath);
+  const deleted = await deleteEditableSkill(runtime, { entryPath: created.entryPath });
+
+  assert.equal(deleted.ok, true);
+  assert.equal(deleted.recoverable, true);
+  assert.equal(existsSync(created.entryPath), false);
+  assert.equal(existsSync(path.join(deleted.deletedPath, "SKILL.md")), true);
+  assert.equal(deleted.deletedPath.includes(`${path.sep}.deleted${path.sep}`), true);
 });
 
 test("skill lifecycle writes backups and restores the latest backup", async () => {
@@ -147,8 +168,13 @@ test("skill lifecycle rejects paths outside editable skill roots", async () => {
   const outside = path.join(os.tmpdir(), "outside-skill", "SKILL.md");
 
   assert.equal(resolveEditableSkillEntryPath(runtime, outside), null);
+  assert.equal(resolveDeletableSkillEntryPath(runtime, outside), null);
   await assert.rejects(
     () => writeSkillMarkdownWithBackup(runtime, { entryPath: outside, markdown: "# Outside\n\ndescription: no\n" }),
+    /skill_path_not_allowed/
+  );
+  await assert.rejects(
+    () => deleteEditableSkill(runtime, { entryPath: outside }),
     /skill_path_not_allowed/
   );
 });

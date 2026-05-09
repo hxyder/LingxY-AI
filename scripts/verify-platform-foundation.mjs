@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import pricing from "../src/service/cost/pricing.json" with { type: "json" };
+import pricing from "../src/service/cost/pricing.mjs";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { loadBuiltinTemplates } from "../src/service/templates/runtime.mjs";
 import { estimateTaskCost, estimateTemplateCost } from "../src/service/cost/estimator.mjs";

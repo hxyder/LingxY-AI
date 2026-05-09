@@ -12,9 +12,9 @@
 //
 // Public surface (unchanged):
 //   window.livePreview.isFileGenTool(name)
-//   window.livePreview.openForTool({ toolName, args })
-//   window.livePreview.appendDelta({ toolName, partialJson })
-//   window.livePreview.commit({ toolName, success, artifactPath, mime, observation })
+//   window.livePreview.openForTool({ toolName, args, taskId })
+//   window.livePreview.appendDelta({ toolName, partialJson, taskId })
+//   window.livePreview.commit({ toolName, taskId, success, artifactPath, mime, observation })
 //   window.livePreview.openForFile({ filePath, mime })
 //   window.livePreview.close()
 //
@@ -34,22 +34,51 @@
     return typeof window !== "undefined" ? window.ucaShell : null;
   }
 
-  function openForTool({ toolName, args } = {}) {
-    if (!PREVIEWABLE_ARTIFACT_TOOLS.has(toolName)) return false;
+  const pendingPreviewDeltas = new Map();
+  let previewDeltaRaf = 0;
+
+  function schedulePreviewDeltaFlush() {
+    if (previewDeltaRaf) return;
+    const schedule = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 16);
+    previewDeltaRaf = schedule(() => {
+      previewDeltaRaf = 0;
+      flushPreviewDeltas();
+    });
+  }
+
+  function flushPreviewDeltas() {
     const shell = ensureShell();
-    if (!shell?.showPreviewWindow) return false;
-    shell.showPreviewWindow({ kind: "tool", toolName, args: args ?? {} });
+    if (!shell?.appendPreviewDelta || pendingPreviewDeltas.size === 0) return false;
+    const batch = [...pendingPreviewDeltas.values()];
+    pendingPreviewDeltas.clear();
+    for (const payload of batch) {
+      shell.appendPreviewDelta(payload);
+    }
     return true;
   }
 
-  function appendDelta({ toolName, partialJson } = {}) {
+  function openForTool({ toolName, args, taskId } = {}) {
+    if (!PREVIEWABLE_ARTIFACT_TOOLS.has(toolName)) return false;
+    const shell = ensureShell();
+    if (!shell?.showPreviewWindow) return false;
+    shell.showPreviewWindow({ kind: "tool", toolName, args: args ?? {}, taskId: taskId ?? null });
+    return true;
+  }
+
+  function appendDelta({ toolName, partialJson, taskId } = {}) {
     const shell = ensureShell();
     if (!shell?.appendPreviewDelta) return false;
-    shell.appendPreviewDelta({ toolName, partialJson: partialJson ?? "" });
+    const payload = { toolName, partialJson: partialJson ?? "", taskId: taskId ?? null };
+    const key = `${payload.taskId ?? "active"}:${toolName ?? ""}`;
+    pendingPreviewDeltas.set(key, payload);
+    schedulePreviewDeltaFlush();
     return true;
   }
 
   function commit(payload = {}) {
+    flushPreviewDeltas();
     const shell = ensureShell();
     if (!shell?.commitPreviewWindow) return false;
     shell.commitPreviewWindow(payload);

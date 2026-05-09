@@ -548,6 +548,37 @@ export function detectUnbackedActionClaims(transcript = [], finalText = "") {
   return violations;
 }
 
+export function detectUnsatisfiedRequiredLinkAnswer(taskSpec = {}, transcript = [], finalText = "") {
+  const text = String(finalText ?? "").trim();
+  if (!text) return null;
+  const command = String(taskSpec?.user_goal_text ?? taskSpec?.user_command ?? "");
+  const requiredGroups = Array.isArray(taskSpec?.success_contract?.required_policy_groups)
+    ? taskSpec.success_contract.required_policy_groups
+    : [];
+  const requiresExternal = requiredGroups.includes("external_web_read")
+    || taskSpec?.tool_policy?.policy_groups?.external_web_read?.mode === "required";
+  if (!requiresExternal) return null;
+  if (!isConcreteLinkDeliveryRequest(command)) return null;
+
+  const answerAdmitsUnsatisfied =
+    /(无法|没能|未能|不能)[^。！？!?\n]{0,40}(抓到|获取|确认|列出|提供|找到)[^。！？!?\n]{0,40}(具体|公司|职位|岗位|薪资|申请)?[^。！？!?\n]{0,24}(链接|岗位|职位|报告|评级)/i.test(text)
+    || /(请自行|你可以自己|建议你(?:可以)?(?:直接)?(?:访问|搜索|查找)|手动过一遍|自行在)/i.test(text)
+    || /\b(?:could not|can't|cannot|unable to)\b[^.?!\n]{0,80}\b(?:specific|concrete|application|source|original)?\s*(?:links?|urls?|jobs?|reports?)\b/i.test(text);
+  const urlCount = (text.match(/https?:\/\/[^\s)\]]+/gi) ?? []).length;
+  if (!answerAdmitsUnsatisfied && urlCount > 0) return null;
+
+  return {
+    kind: "required_link_answer_not_satisfied",
+    message: "The user asked for concrete source/application links, but the final answer admits that it did not provide the requested links. This must be partial_success rather than success."
+  };
+}
+
+function isConcreteLinkDeliveryRequest(text = "") {
+  const raw = String(text ?? "");
+  if (!raw) return false;
+  return /(申请链接|原文链接|资料链接|来源链接|职位链接|岗位链接|报告链接|把.*链接.*列|列出.*链接|给出.*链接|给.*链接|links?\s+(?:for|to|with|listed|only)|application\s+links?|source\s+links?|original\s+links?)/i.test(raw);
+}
+
 /**
  * @typedef {Object} TranscriptEntry
  * @property {string} [type]              - "tool_call" | "tool_result" | ...
@@ -807,15 +838,39 @@ function requiresArtifactCreated(taskSpec) {
     || taskSpec?.contract?.output_contract?.artifact_required === true;
 }
 
+const METADATA_PATH_ARTIFACT_TOOLS = new Set([
+  "generate_document",
+  "write_file",
+  "edit_file",
+  "render_diagram",
+  "render_svg",
+  "register_artifact"
+]);
+
+function artifactToolIdFromEntry(entry = {}) {
+  return String(entry?.tool
+    ?? entry?.metadata?.tool_id
+    ?? entry?.result?.metadata?.tool_id
+    ?? entry?.result?.tool_id
+    ?? "").trim();
+}
+
+function metadataPathCanRepresentArtifact(entry = {}) {
+  if (entry?.type === "artifact_created") return true;
+  return METADATA_PATH_ARTIFACT_TOOLS.has(artifactToolIdFromEntry(entry));
+}
+
 function artifactPathsFromEntry(entry = {}) {
   const paths = [];
   if (Array.isArray(entry.artifact_paths)) paths.push(...entry.artifact_paths);
   if (Array.isArray(entry.artifacts)) paths.push(...entry.artifacts);
   if (Array.isArray(entry.result?.artifact_paths)) paths.push(...entry.result.artifact_paths);
   if (Array.isArray(entry.result?.artifacts)) paths.push(...entry.result.artifacts);
-  if (typeof entry.path === "string" && entry.path.trim()) paths.push(entry.path);
-  if (typeof entry.result?.path === "string" && entry.result.path.trim()) paths.push(entry.result.path);
-  if (typeof entry.metadata?.path === "string" && entry.metadata.path.trim()) paths.push(entry.metadata.path);
+  if (metadataPathCanRepresentArtifact(entry)) {
+    if (typeof entry.path === "string" && entry.path.trim()) paths.push(entry.path);
+    if (typeof entry.result?.path === "string" && entry.result.path.trim()) paths.push(entry.result.path);
+    if (typeof entry.metadata?.path === "string" && entry.metadata.path.trim()) paths.push(entry.metadata.path);
+  }
   return paths.filter((value) => typeof value === "string" && value.trim());
 }
 

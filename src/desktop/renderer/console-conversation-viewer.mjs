@@ -2,6 +2,15 @@ import {
   escapeHtml,
   formatDateTime
 } from "./shared-ui.mjs";
+import {
+  conversationContextChips,
+  conversationContextPreviewText,
+  getConversationContextSummary
+} from "../../shared/conversation-message-context.mjs";
+import {
+  buildConversationTreeRows,
+  conversationBranchMeta
+} from "./conversation-list-ia.mjs";
 
 export function formatConversationTimestamp(ts) {
   return formatDateTime(ts, { locale: null, options: null });
@@ -23,19 +32,28 @@ export function renderConversationsListHtml({ items = [], selectedId = null } = 
   if (conversations.length === 0) {
     return `<p class="muted" style="font-size:12px;">No conversations yet.</p>`;
   }
-  return conversations.map((conversation) => {
+  return buildConversationTreeRows(conversations).map(({ conversation, depth, isBranch }) => {
+    const safeDepth = Math.max(0, Math.min(Number(depth) || 0, 4));
     const conversationId = String(conversation?.conversation_id ?? "");
     const title = conversation.title || conversationId.slice(0, 24);
+    const branch = conversationBranchMeta(conversation);
+    const branchKind = branch?.kind ?? "";
+    const branchSource = branch?.source ?? "";
     return `
-    <div class="history-item-row ${conversationId === selectedId ? "active" : ""}"
-         data-row-conversation-id="${escapeHtml(conversationId)}">
+    <div class="history-item-row ${isBranch ? "history-item-row--branch" : ""} ${conversationId === selectedId ? "active" : ""}"
+         data-row-conversation-id="${escapeHtml(conversationId)}"
+         style="--conversation-indent:${safeDepth * 16}px;">
       <button class="history-item history-item--main"
               data-conversation-id="${escapeHtml(conversationId)}"
               style="text-align:left;">
         <div class="row" style="justify-content:space-between;align-items:center;">
-          <strong style="font-size:13px;">${escapeHtml(title)}</strong>
+          <strong style="font-size:13px;display:flex;align-items:center;gap:6px;min-width:0;">
+            <span style="overflow:hidden;text-overflow:ellipsis;">${escapeHtml(title)}</span>
+            ${branchKind ? `<span class="conversation-branch-chip">${escapeHtml(branchKind)}</span>` : ""}
+          </strong>
           <span class="muted" style="font-size:11px;">${conversation.message_count}m · ${conversation.task_count}t${conversation.archived ? " · archived" : ""}</span>
         </div>
+        ${branchSource ? `<p class="muted conversation-branch-source">from ${escapeHtml(branchSource.slice(0, 24))}</p>` : ""}
         <p class="muted" style="margin-top:4px;font-size:11px;">${escapeHtml(formatConversationTimestamp(conversation.updated_at))}</p>
       </button>
       <button class="history-item-resume" type="button"
@@ -89,6 +107,31 @@ function renderConversationMessage(message, linksByMessage) {
     try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch { /* leave as-is */ }
   }
   if (preview.length > 1200) preview = preview.slice(0, 1200) + "\n…[truncated]";
+  const contextSummary = getConversationContextSummary(message);
+  const chips = conversationContextChips(contextSummary);
+  const contextPreview = conversationContextPreviewText(contextSummary);
+  const conversationId = String(message.conversation_id ?? "");
+  const messageId = String(message.message_id ?? "");
+  const branchActionsHtml = conversationId && messageId ? `
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <button class="btn btn-sm btn-ghost" type="button"
+                    data-conversation-fork-message="${escapeHtml(messageId)}"
+                    data-conversation-id="${escapeHtml(conversationId)}">Fork</button>
+            <button class="btn btn-sm btn-ghost" type="button"
+                    data-conversation-rewind-message="${escapeHtml(messageId)}"
+                    data-conversation-id="${escapeHtml(conversationId)}">Rewind</button>
+            ${message.role !== "tool_summary" ? `<button class="btn btn-sm btn-ghost" type="button"
+                    data-conversation-edit-message="${escapeHtml(messageId)}"
+                    data-conversation-id="${escapeHtml(conversationId)}">Edit</button>` : ""}
+          </div>
+        ` : "";
+  const contextHtml = contextSummary ? `
+        <div style="margin-top:8px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;">
+          <div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:6px;">Context</div>
+          ${chips.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:${contextPreview ? "6px" : "0"};">${chips.map((chip) => `<span class="tag" title="${escapeHtml(chip.title ?? chip.label)}">${escapeHtml(chip.label)}</span>`).join("")}</div>` : ""}
+          ${contextPreview ? `<div style="font-size:12px;color:#4b5563;line-height:1.45;white-space:pre-wrap;">${escapeHtml(contextPreview)}</div>` : ""}
+        </div>
+      ` : "";
   return `
       <div class="surface" style="padding:10px 12px;margin-bottom:10px;">
         <div class="row" style="justify-content:space-between;align-items:center;">
@@ -96,9 +139,13 @@ function renderConversationMessage(message, linksByMessage) {
             ${roleBadge(message.role)}
             <span class="muted" style="font-size:11px;">seq ${message.seq}${statusHtml}</span>
           </div>
-          <span class="muted" style="font-size:11px;">${escapeHtml(formatConversationTimestamp(message.ts))}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+            ${branchActionsHtml}
+            <span class="muted" style="font-size:11px;">${escapeHtml(formatConversationTimestamp(message.ts))}</span>
+          </div>
         </div>
         <pre style="margin-top:8px;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.5;">${escapeHtml(preview)}</pre>
+        ${contextHtml}
         ${linksHtml}
         ${metaHtml}
       </div>

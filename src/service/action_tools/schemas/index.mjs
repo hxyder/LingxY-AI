@@ -84,7 +84,26 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       message: { type: "string" },
       handoff: {},
       navigate: {},
+      forcePopup: {},
+      allowLongBody: {},
+      autoHideMs: {},
+      dedupeKey: {},
+      skipBatch: {},
       notificationDir: { type: "string" }
+    }
+  },
+  preview_skill_from_github: {
+    type: "object",
+    required: ["url"],
+    properties: {
+      url: { type: "string" }
+    }
+  },
+  install_skill_from_github: {
+    type: "object",
+    required: ["state_token"],
+    properties: {
+      state_token: { type: "string" }
     }
   },
   file_op: {
@@ -144,7 +163,11 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
         }
       },
       execution_mode: { type: "string", description: "unattended_safe | confirm | dry_run" },
-      catchup_policy: { type: "string", description: "skip | run_once | run_all" }
+      catchup_policy: { type: "string", description: "skip | run_once | run_all" },
+      user_todo: { type: "boolean", description: "Set true only when the schedule itself is a user-visible reminder/todo and should receive a pre-run reminder card." },
+      lead_time_ms: { type: "number", description: "Optional explicit pre-run reminder lead time in milliseconds. Omit for normal scheduled actions to avoid extra reminders." },
+      category: { type: "string", description: "Optional schedule category such as reminder, work, email, health, or general." },
+      color: { type: "string", description: "Optional display color for the schedule." }
     }
   },
   list_scheduled_tasks: {

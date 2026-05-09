@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +11,22 @@ export function resolveSkillRootPath(templatePath) {
     .replaceAll("%CODEX_HOME%", process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"))
     .replaceAll("%USERPROFILE%", os.homedir())
     .replace(/^~(?=$|[\\/])/, os.homedir());
+}
+
+function slugPart(value = "skills") {
+  return String(value || "skills")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48)
+    || "skills";
+}
+
+export function deriveSkillRegistryId(rootPath, { source = "runtime_config" } = {}) {
+  const resolved = resolveSkillRootPath(rootPath);
+  const seed = `${source}:${resolved ?? ""}`;
+  const hash = createHash("sha256").update(seed).digest("hex").slice(0, 8);
+  return `${slugPart(source)}-${slugPart(path.basename(String(resolved ?? "skills")))}-${hash}`;
 }
 
 export function readSkillDescription(markdown) {

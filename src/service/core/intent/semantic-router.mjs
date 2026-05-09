@@ -341,6 +341,7 @@ const UNSUPPORTED_FOR_SEMANTIC_ROUTER = Object.freeze(new Set(["code_cli", "olla
  * @param {number} [opts.timeoutMs]
  * @param {number} [opts.cacheTtlMs]
  * @param {number} [opts.confidenceThreshold]
+ * @param {boolean} [opts.awaitVerifier]  wait for shadow verifier telemetry (corpus/debug only)
  */
 export function createSemanticRouter(opts = {}) {
   const adapter = opts.adapter ?? null;
@@ -353,6 +354,8 @@ export function createSemanticRouter(opts = {}) {
   // logs unavailable status but never throws. Caller (the default
   // SR runner below) wires this to the router_judge provider.
   const invokeJudge = typeof opts.invokeJudge === "function" ? opts.invokeJudge : null;
+  const awaitVerifier = opts.awaitVerifier === true
+    || process.env.LINGXY_ROUTE_VERIFIER_AWAIT === "1";
   const envTimeoutMs = Number(process.env.SEMANTIC_ROUTER_TIMEOUT_MS ?? "");
   const timeoutMs = Number.isFinite(opts.timeoutMs)
     ? opts.timeoutMs
@@ -466,26 +469,41 @@ export function createSemanticRouter(opts = {}) {
       ?? DEFAULT_VERIFIER_MODE;
     let verifierShadowRaw = null;
     let verifierShadowPost = null;
-    if (verifierMode !== "off") {
+    const runVerifierPair = async () => {
       const effectiveMode = verifierMode === "enforce" ? "shadow" : verifierMode;
+      let raw = null;
+      let post = null;
       try {
-        verifierShadowRaw = await runRouteVerifier({
+        raw = await runRouteVerifier({
           text, decision, signals, invokeJudge, mode: effectiveMode
         });
       } catch (verifierErr) {
-        verifierShadowRaw = { judge_status: "unavailable", reason: `verifier_threw_raw: ${verifierErr?.message ?? verifierErr}`, applied: false };
+        raw = { judge_status: "unavailable", reason: `verifier_threw_raw: ${verifierErr?.message ?? verifierErr}`, applied: false };
       }
       // Only run the post-override audit if the override actually
       // changed something — otherwise both tracks would be identical
       // and we'd burn a second LLM call for nothing.
       if (override.applied) {
         try {
-          verifierShadowPost = await runRouteVerifier({
+          post = await runRouteVerifier({
             text, decision: finalDecision, signals, invokeJudge, mode: effectiveMode
           });
         } catch (verifierErr) {
-          verifierShadowPost = { judge_status: "unavailable", reason: `verifier_threw_post: ${verifierErr?.message ?? verifierErr}`, applied: false };
+          post = { judge_status: "unavailable", reason: `verifier_threw_post: ${verifierErr?.message ?? verifierErr}`, applied: false };
         }
+      }
+      return { raw, post };
+    };
+    if (verifierMode !== "off") {
+      if (awaitVerifier) {
+        const pair = await runVerifierPair();
+        verifierShadowRaw = pair.raw;
+        verifierShadowPost = pair.post;
+      } else {
+        // Shadow verifier is diagnostic, not part of routing. Keep it
+        // off the task-creation hot path unless corpus/debug mode asks
+        // for synchronous telemetry.
+        void runVerifierPair().catch(() => {});
       }
     }
 
@@ -719,6 +737,20 @@ function reject(code, reason) {
   return { kind: "rejection", code, reason: String(reason ?? "") };
 }
 
+function formatCurrentLocalTimeForPrompt(date = new Date()) {
+  const pad = (value, width = 2) => String(value).padStart(width, "0");
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absOffset = Math.abs(offsetMinutes);
+  const offset = `${sign}${pad(Math.floor(absOffset / 60))}:${pad(absOffset % 60)}`;
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  return [
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    `T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}${offset}`,
+    ` (${zone})`
+  ].join("");
+}
+
 function buildMessages({ text, contextPacket, signals }) {
   // System prompt is intentionally short and policy-shaped: tell the LLM
   // exactly what each enum value means so it doesn't drift. The full
@@ -803,7 +835,7 @@ function buildMessages({ text, contextPacket, signals }) {
   const signalSummary = summariseSignals(signals);
 
   const user = [
-    `Current local time: ${new Date().toISOString()}`,
+    `Current local time: ${formatCurrentLocalTimeForPrompt()}`,
     `User text: ${JSON.stringify(text ?? "")}`,
     `Context packet: ${JSON.stringify(ctxSummary)}`,
     `Signal bundle (regex-derived facts/hints/assumptions): ${JSON.stringify(signalSummary)}`

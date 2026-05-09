@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import pricing from "./pricing.json" with { type: "json" };
+import pricing from "./pricing.mjs";
 
 function percent(value, total) {
   if (!total) {

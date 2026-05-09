@@ -12,6 +12,13 @@
     "process_names": [],
     "url_domains": []
   },
+  "privacy_sandbox": {
+    "mode": "standard",
+    "network": "allow",
+    "file_read": "allow",
+    "file_write": "allow",
+    "secrets": "allow"
+  },
   "field_redaction": {
     "enabled_rules": ["email", "phone_cn", "idcard_cn", "bankcard", "jwt", "ipv4"],
     "user_custom_rules": []

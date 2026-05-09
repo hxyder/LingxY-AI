@@ -56,6 +56,76 @@ test("task record factory applies conversation precedence and enriches follow-up
   assert.ok(task.context_packet.prior_messages.some((message) => message.content === "parent answer"));
 });
 
+test("task record factory does not auto-parent standalone document generation requests", () => {
+  const runtime = makeRuntimeWithParent();
+
+  const task = createTaskRecord({
+    route: baseRoute,
+    runtime,
+    contextPacket: {
+      source_type: "text",
+      source_app: "uca.test",
+      text: "",
+      selection_metadata: { conversation_id: "conv_record" }
+    },
+    userCommand: "生成这一周美股走势的excel报表",
+    executionMode: "interactive",
+    conversationId: "conv_record",
+    submissionKind: "context"
+  });
+
+  assert.equal(task.parent_task_id, null);
+  assert.equal(task.is_continuation, false);
+  assert.equal(task.task_spec.goal, "generate_document");
+  assert.equal(task.task_spec.artifact.kind, "xlsx");
+});
+
+test("task record factory exposes recent conversation artifacts and routes format tweaks to edit_file", () => {
+  const store = createInMemoryStoreScaffold();
+  const runtime = { store };
+  store.insertConversation({ conversation_id: "conv_excel" });
+  store.insertTask({
+    task_id: "task_excel",
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z",
+    status: "success",
+    result_summary: "created xlsx",
+    conversation_id: "conv_excel"
+  });
+  store.appendArtifact({
+    artifact_id: "artifact_xlsx",
+    task_id: "task_excel",
+    conversation_id: "conv_excel",
+    path: "E:\\linxiDoc\\task_excel\\result.xlsx",
+    kind: "xlsx",
+    source: "generated",
+    status: "ready",
+    created_at: "2026-01-01T00:00:01.000Z"
+  });
+
+  const task = createTaskRecord({
+    route: baseRoute,
+    runtime,
+    contextPacket: {
+      source_type: "text",
+      source_app: "uca.test",
+      text: "",
+      selection_metadata: { conversation_id: "conv_excel" }
+    },
+    userCommand: "给我生成excel表的格式",
+    executionMode: "interactive",
+    conversationId: "conv_excel",
+    submissionKind: "context"
+  });
+
+  assert.equal(task.parent_task_id, null);
+  assert.equal(task.is_continuation, false);
+  assert.equal(task.context_packet.latest_conversation_artifact.path, "E:\\linxiDoc\\task_excel\\result.xlsx");
+  assert.equal(task.task_spec.goal, "transform_existing_file");
+  assert.equal(task.task_spec.artifact.kind, "xlsx");
+  assert.ok(task.task_spec.success_contract.required_tool_names.includes("edit_file"));
+});
+
 test("task record factory stamps task spec snapshot, dedupe key, and submission boundary", () => {
   const task = createTaskRecord({
     route: baseRoute,

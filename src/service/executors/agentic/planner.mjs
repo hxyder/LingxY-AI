@@ -29,7 +29,7 @@
  * interactive confirmation into the same path.
  */
 
-import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./prompt-builder.mjs";
+import { buildAgenticStableSystemPrompt, buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./prompt-builder.mjs";
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { finalizeAgenticPlannerRun } from "./finalization.mjs";
 import { executeAgenticToolCall } from "./tool-execution.mjs";
@@ -47,6 +47,7 @@ import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 import { transcriptForValidator } from "./validator-transcript.mjs";
 import { processAgenticToolResultForControls } from "./tool-result-controls.mjs";
 import {
+  filterToolsForAgenticTask,
   isScheduleRegistryTool,
   isScheduledFireTask,
   taskNeedsCurrentWebData,
@@ -55,6 +56,9 @@ import {
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { appendAuditLog } from "../../security/audit-log.mjs";
+import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
+import { cacheableSystemMessage } from "../shared/prompt-cache.mjs";
+import { summarizeSkillContext } from "../shared/skill-context.mjs";
 import {
   selectSuccessContractValidationSpec,
   validateStepGate
@@ -75,6 +79,7 @@ import {
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
 import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
+import { spreadsheetOutlineFromText } from "../../core/spreadsheet-outline.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -83,6 +88,15 @@ function artifactContractViolation(stepGate) {
     entry?.kind === "artifact_required_not_created"
     || entry?.kind === "artifact_required_kind_mismatch"
   ) ?? null;
+}
+
+function hasOnlyArtifactContractViolations(stepGate) {
+  const violations = stepGate?.violations ?? [];
+  if (violations.length === 0) return false;
+  return violations.every((entry) =>
+    entry?.kind === "artifact_required_not_created"
+    || entry?.kind === "artifact_required_kind_mismatch"
+  );
 }
 
 function artifactKindFromTaskSpec(taskSpec = {}) {
@@ -98,6 +112,155 @@ function buildAgenticArtifactContractGuidance({ taskSpec, violation } = {}) {
     `A real file artifact is required (${kind}). Call an artifact-producing tool now, such as generate_document with kind="${kind}" and a structured outline, or another visible artifact tool if it better fits the request.`,
     violation?.message ? `Current violation: ${violation.message}` : null
   ].filter(Boolean).join("\n");
+}
+
+function deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText } = {}) {
+  const rawKind = String(artifactKindFromTaskSpec(taskSpec) ?? "").trim().toLowerCase();
+  const kindAliases = { word: "docx", excel: "xlsx", ppt: "pptx", powerpoint: "pptx" };
+  const kind = kindAliases[rawKind] ?? rawKind ?? "docx";
+  const supported = new Set(["docx", "pdf", "xlsx", "pptx", "html"]);
+  if (!supported.has(kind)) return null;
+  const title = String(task?.title ?? task?.user_command ?? "Generated Document").trim().slice(0, 80) || "Generated Document";
+  const body = String(finalText ?? "").trim();
+  if (!body) return null;
+  if (kind === "xlsx") {
+    const outline = spreadsheetOutlineFromText(body, { title });
+    if (!outline) return null;
+    return {
+      kind,
+      outline
+    };
+  }
+  if (kind === "pptx") {
+    return {
+      kind,
+      outline: {
+        title,
+        slides: [
+          { heading: title, body }
+        ]
+      }
+    };
+  }
+  return {
+    kind,
+    outline: {
+      title,
+      sections: [
+        { heading: title, body }
+      ]
+    }
+  };
+}
+
+async function runDeterministicAgenticArtifactObligation({
+  runtime,
+  task,
+  taskSpec,
+  transcript,
+  finalText,
+  iteration,
+  onEvent,
+  signal
+} = {}) {
+  if (signal?.aborted) {
+    throw Object.assign(new Error("Agentic artifact obligation aborted before execution."), { code: "ABORT_ERR" });
+  }
+  const registry = runtime?.actionToolRegistry;
+  if (!registry?.get?.("generate_document")) return { ok: false, reason: "no_generate_document" };
+  const args = deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText });
+  if (!args) return { ok: false, reason: "unsupported_or_empty_artifact" };
+  const call = {
+    id: `deterministic_generate_document_${iteration}`,
+    name: "generate_document",
+    arguments: args
+  };
+  const proposedPayload = {
+    tool_id: "generate_document",
+    args,
+    risk: { level: "low", requires_confirmation: false },
+    source: "agentic_deterministic_artifact_obligation",
+    iteration
+  };
+  onEvent?.({ event_type: "tool_call_proposed", payload: proposedPayload });
+  if (runtime?.store?.appendAuditLog) {
+    appendAuditLog(runtime, "tool.call", proposedPayload, task?.task_id ?? null);
+  }
+  onEvent?.({
+    event_type: "tool_call_started",
+    payload: {
+      tool_id: "generate_document",
+      arguments: args,
+      source: "agentic_deterministic_artifact_obligation"
+    }
+  });
+  transcript.push({
+    role: "assistant",
+    text: "",
+    tool_calls: [call],
+    deterministic_artifact_obligation: true
+  });
+  const result = await executeAgenticToolCall({
+    registry,
+    mcpToolById: null,
+    toolContext: {
+      ...(runtime?.toolContext ?? {}),
+      runtime,
+      task,
+      outputDir: task?.output_dir ?? runtime?.toolContext?.outputDir ?? null
+    },
+    call,
+    runtime,
+    task,
+    transcript,
+    signal
+  });
+  const transcriptEntry = {
+    role: "tool",
+    tool_call_id: call.id,
+    name: "generate_document",
+    success: result.success,
+    observation: result.observation ?? "",
+    metadata: result.metadata ?? {},
+    artifact_paths: result.artifact_paths ?? [],
+    recovery: "agentic_deterministic_artifact_obligation"
+  };
+  transcript.push(transcriptEntry);
+  onEvent?.({
+    event_type: "tool_call_completed",
+    payload: {
+      tool_id: "generate_document",
+      success: result.success,
+      observation: (result.observation ?? "").slice(0, 500),
+      metadata: result.metadata ?? {},
+      sources: normalizeSources(transcriptEntry),
+      ...artifactEventFieldsForToolResult("generate_document", result)
+    }
+  });
+  if (!result.success) {
+    return { ok: false, reason: result.error ?? result.observation ?? "generate_document_failed" };
+  }
+  const artifactFields = artifactEventFieldsForToolResult("generate_document", {
+    ...result,
+    artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
+  });
+  for (const artifactPath of result.artifact_paths ?? []) {
+    if (!artifactPath) continue;
+    onEvent?.({
+      event_type: "artifact_created",
+      payload: {
+        path: artifactPath,
+        mime: result.metadata?.mime_type ?? null,
+        ...(artifactFields.artifact_action ? { artifact_action: artifactFields.artifact_action } : {}),
+        ...(artifactFields.artifact_source ? { artifact_source: artifactFields.artifact_source } : {})
+      }
+    });
+  }
+  return {
+    ok: true,
+    result,
+    artifactPaths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
+  };
 }
 
 /**
@@ -158,11 +321,21 @@ export async function runAgenticPlanner({
 
   // Merge: built-in tools first so they take priority on id collision
   const mcpToolById = new Map(mcpTools.map((t) => [t.id, t]));
-  const effectiveTools = [...builtinTools, ...mcpTools];
+  const effectiveTools = filterToolsForAgenticTask([...builtinTools, ...mcpTools], task);
 
   const effectiveSkills = await runtime?.platform?.skillRegistries?.listSkills?.({
     runtime
   }) ?? [];
+  const effectiveSkillContext = summarizeSkillContext(effectiveSkills, { task, limit: 20 });
+  if (effectiveSkillContext.active_count > 0 || effectiveSkillContext.workflow_hints.length > 0) {
+    onEvent?.({
+      event_type: "skill_context_loaded",
+      payload: {
+        executor: "agentic",
+        ...effectiveSkillContext
+      }
+    });
+  }
 
   const resolvedProvider = provider ?? resolveProviderForTask("chat", process.env, {
     task,
@@ -223,6 +396,7 @@ export async function runAgenticPlanner({
   let contractActionGuidanceCount = 0;
   let localFileReadGuidanceCount = 0;
   const MAX_CONTRACT_ACTION_GUIDANCE = 2;
+  let forcedNextToolChoice = null;
   // Soft saturation nudge for multi_source / deep_research tasks. Same
   // shape as tool_using's hint — fires once per task as a system note in
   // the next message so the model can decide whether to switch angles or
@@ -268,7 +442,8 @@ export async function runAgenticPlanner({
       call: searchCall,
       runtime,
       task,
-      transcript
+      transcript,
+      signal
     });
     const searchTranscriptEntry = {
       type: "tool_result",
@@ -343,8 +518,17 @@ export async function runAgenticPlanner({
     ? loadStructuredHistoryFor({ runtime, task, executor: "agentic", modelContextWindow })
     : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
 
-  const messages = [{ role: "system", content: buildSystemPrompt(transcriptForValidator(transcript)) }];
+  const stableSystemPrompt = buildAgenticStableSystemPrompt();
+  const messages = [
+    cacheableSystemMessage(stableSystemPrompt),
+    { role: "system", content: buildSystemPrompt(transcriptForValidator(transcript)) }
+  ];
+  let promptHistoryMessages = [];
+  let promptCurrentContent = userContent;
+  let promptActionObligationsContent = "";
   if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
+    promptHistoryMessages = historyResult.historyMessages;
+    promptCurrentContent = userContent;
     for (const m of historyResult.historyMessages) messages.push(m);
     messages.push({ role: historyResult.currentMessageRendered.role, content: userContent });
   } else {
@@ -356,9 +540,10 @@ export async function runAgenticPlanner({
     ["pending"]
   );
   if (initialPendingActionObligations.length > 0) {
+    promptActionObligationsContent = `[Action obligations]\n${buildActionObligationGuidance(initialPendingActionObligations)}`;
     messages.push({
       role: "user",
-      content: `[Action obligations]\n${buildActionObligationGuidance(initialPendingActionObligations)}`
+      content: promptActionObligationsContent
     });
   }
 
@@ -380,7 +565,7 @@ export async function runAgenticPlanner({
 
     let response;
     try {
-      messages[0].content = buildSystemPrompt(transcriptForValidator(transcript));
+      messages[1].content = buildSystemPrompt(transcriptForValidator(transcript));
       // Stream planner text live so the user sees output flow in real time.
       // Pre-fix this was disabled to stop providers from leaking control JSON
       // (`{iteration,next_action,…}`) into the bubble; that also killed
@@ -402,6 +587,7 @@ export async function runAgenticPlanner({
       response = await adapter.generate({
         messages,
         tools: toolSchemas,
+        ...(forcedNextToolChoice ? { tool_choice: forcedNextToolChoice } : {}),
         signal,
         fetchImpl,
         onTextDelta,
@@ -413,6 +599,26 @@ export async function runAgenticPlanner({
           : undefined,
         onToolInputDelta
       });
+      emitLlmUsage({
+        runtime,
+        onEvent,
+        task,
+        callSite: "agentic.planner",
+        iteration: iterations,
+        usage: response?.usage,
+        provider: adapter,
+        stream: adapter.supportsStreaming === true,
+        promptSegments: [
+          { name: "cacheable_system", content: stableSystemPrompt },
+          { name: "dynamic_system", content: messages[1]?.content ?? "" },
+          { name: "history", content: promptHistoryMessages },
+          { name: "current", content: promptCurrentContent },
+          { name: "action_obligations", content: promptActionObligationsContent },
+          { name: "tool_transcript", content: messages.slice(2 + promptHistoryMessages.length + 1 + (promptActionObligationsContent ? 1 : 0)) },
+          { name: "tool_schemas", content: toolSchemas }
+        ]
+      });
+      forcedNextToolChoice = null;
     } catch (error) {
       if (error?.code === "ABORT_ERR") throw error;
       onEvent?.({
@@ -489,6 +695,35 @@ export async function runAgenticPlanner({
         maxIterations
       });
       const artifactViolation = artifactContractViolation(finalStepGate);
+      if (
+        artifactViolation
+        && hasOnlyArtifactContractViolations(finalStepGate)
+        && text
+        && text.trim()
+        && effectiveTools.some((tool) => tool?.id === "generate_document")
+      ) {
+        const forcedArtifact = await runDeterministicAgenticArtifactObligation({
+          runtime,
+          task,
+          taskSpec: validationSpec,
+          transcript,
+          finalText: text,
+          iteration: iterations,
+          onEvent,
+          signal
+        });
+        if (forcedArtifact.ok) {
+          for (const artifactPath of forcedArtifact.artifactPaths) {
+            if (artifactPath && !artifactPaths.includes(artifactPath)) {
+              artifactPaths.push(artifactPath);
+            }
+          }
+          finalText = forcedArtifact.artifactPaths.length > 0
+            ? `已生成请求的 ${artifactKindFromTaskSpec(validationSpec)} 文件，已添加到本次任务的文件结果中。`
+            : text;
+          break;
+        }
+      }
       if (artifactViolation && iterations < maxIterations - 1) {
         if (text && text.trim()) {
           messages.push({ role: "assistant", content: text });
@@ -510,6 +745,9 @@ export async function runAgenticPlanner({
           role: "user",
           content: `[Artifact contract]\n${guidance}`
         });
+        if (effectiveTools.some((tool) => tool?.id === "generate_document")) {
+          forcedNextToolChoice = { type: "tool", name: "generate_document" };
+        }
         onEvent?.({
           event_type: "phase_gate_signal",
           payload: {
@@ -576,7 +814,8 @@ export async function runAgenticPlanner({
         call,
         runtime,
         task,
-        transcript
+        transcript,
+        signal
       });
       const transcriptEntry = {
         type: "tool_result",
@@ -787,6 +1026,25 @@ export async function runAgenticPlanner({
         onTextDelta: (adapter.supportsStreaming && onEvent)
           ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
           : undefined
+      });
+      emitLlmUsage({
+        runtime,
+        onEvent,
+        task,
+        callSite: "agentic.synthesis",
+        iteration: iterations,
+        usage: synthesis?.usage,
+        provider: adapter,
+        stream: adapter.supportsStreaming === true,
+        promptSegments: [
+          { name: "cacheable_system", content: stableSystemPrompt },
+          { name: "dynamic_system", content: messages[1]?.content ?? "" },
+          { name: "history", content: promptHistoryMessages },
+          { name: "current", content: promptCurrentContent },
+          { name: "action_obligations", content: promptActionObligationsContent },
+          { name: "tool_transcript", content: messages.slice(2 + promptHistoryMessages.length + 1 + (promptActionObligationsContent ? 1 : 0), -1) },
+          { name: "synthesis_instruction", content: messages[messages.length - 1]?.content ?? "" }
+        ]
       });
       const text = synthesis?.text ?? "";
       if (text && text.trim()) finalText = text;

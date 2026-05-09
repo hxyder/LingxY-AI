@@ -42,7 +42,7 @@ function makeRegistry(tool) {
   };
 }
 
-test("agentic final gate retries prose-only artifact tasks with artifact guidance", async () => {
+test("agentic final gate materializes prose-only artifact tasks before final answer", async () => {
   const calls = [];
   const events = [];
   const auditLog = [];
@@ -73,35 +73,8 @@ test("agentic final gate retries prose-only artifact tasks with artifact guidanc
   };
   const adapter = {
     supportsStreaming: false,
-    async generate({ messages }) {
-      const hasArtifactGuidance = messages.some((message) =>
-        message.role === "user"
-        && String(message.content ?? "").includes("[Artifact contract]")
-      );
-      if (!hasArtifactGuidance) {
-        return { text: "Here is the report content, but no file yet.", tool_calls: [] };
-      }
-      const alreadyGenerated = messages.some((message) =>
-        message.role === "tool"
-        && String(message.content ?? "").includes("artifact_paths")
-      );
-      if (alreadyGenerated) {
-        return { text: "The DOCX report has been generated.", tool_calls: [] };
-      }
-      return {
-        text: "",
-        tool_calls: [{
-          id: "call_doc",
-          name: "generate_document",
-          arguments: {
-            kind: "docx",
-            outline: {
-              title: "Report",
-              sections: [{ heading: "Summary", body: "A concise report." }]
-            }
-          }
-        }]
-      };
+    async generate() {
+      return { text: "Here is the report content, but no file yet.", tool_calls: [] };
     }
   };
 
@@ -128,13 +101,13 @@ test("agentic final gate retries prose-only artifact tasks with artifact guidanc
   assert.equal(calls[0].kind, "docx");
   assert.deepEqual(result.artifactPaths, ["E:/linxiDoc/task_agentic_artifact_final_gate/result.docx"]);
   assert.ok(events.some((event) =>
-    event.event_type === "contract_guidance"
-    && event.payload?.source === "final_gate"
-    && event.payload?.required_policy_groups?.includes("artifact_generation")
+    event.event_type === "tool_call_proposed"
+    && event.payload?.tool_id === "generate_document"
+    && event.payload?.source === "agentic_deterministic_artifact_obligation"
   ));
   assert.ok(auditLog.some((entry) =>
-    entry.event_subtype === "tool_loop.contract_guidance"
-    && entry.payload?.source === "final_gate"
+    entry.event_subtype === "tool.call"
+    && entry.payload?.source === "agentic_deterministic_artifact_obligation"
   ));
 });
 
@@ -163,33 +136,8 @@ test("agentic final gate uses the initial artifact contract when current spec is
   };
   const adapter = {
     supportsStreaming: false,
-    async generate({ messages }) {
-      const hasArtifactGuidance = messages.some((message) =>
-        message.role === "user"
-        && String(message.content ?? "").includes("[Artifact contract]")
-      );
-      if (!hasArtifactGuidance) {
-        return { text: "Plain text report.", tool_calls: [] };
-      }
-      const generated = messages.some((message) =>
-        message.role === "tool"
-        && String(message.content ?? "").includes("artifact_paths")
-      );
-      if (generated) return { text: "Generated.", tool_calls: [] };
-      return {
-        text: "",
-        tool_calls: [{
-          id: "call_doc",
-          name: "generate_document",
-          arguments: {
-            kind: "docx",
-            outline: {
-              title: "Report",
-              sections: [{ heading: "Summary", body: "A concise report." }]
-            }
-          }
-        }]
-      };
+    async generate() {
+      return { text: "Plain text report.", tool_calls: [] };
     }
   };
 
@@ -210,7 +158,8 @@ test("agentic final gate uses the initial artifact contract when current spec is
   assert.equal(result.success, true);
   assert.deepEqual(result.artifactPaths, ["E:/linxiDoc/task_agentic_initial_contract/result.docx"]);
   assert.ok(events.some((event) =>
-    event.event_type === "contract_guidance"
-    && event.payload?.artifact_kind === "docx"
+    event.event_type === "tool_call_proposed"
+    && event.payload?.tool_id === "generate_document"
+    && event.payload?.args?.kind === "docx"
   ));
 });

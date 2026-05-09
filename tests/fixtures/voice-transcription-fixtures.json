@@ -1,0 +1,31 @@
+[
+  {
+    "id": "note_zh_cn_final_chunk",
+    "output_locale": "zh-CN",
+    "expected": "请帮我总结这段会议，并保留 English action items。",
+    "events": [
+      { "type": "segment", "text": "請幫我總結這段會議，" },
+      { "type": "segment", "text": "並保留 English action items。" },
+      { "type": "final", "transcript": "請幫我總結這段會議，並保留 English action items。" }
+    ]
+  },
+  {
+    "id": "voice_en_short_command",
+    "output_locale": "en-US",
+    "expected": "open the latest product notes",
+    "events": [
+      { "type": "segment", "text": "open the latest" },
+      { "type": "final", "transcript": "open the latest product notes" }
+    ]
+  },
+  {
+    "id": "note_mixed_language_web_context",
+    "output_locale": "zh-CN",
+    "expected": "分析这个网页然后生成 Markdown 笔记",
+    "events": [
+      { "type": "segment", "text": "分析這個網頁" },
+      { "type": "segment", "text": "然後生成 Markdown 筆記" },
+      { "type": "done", "text": "分析這個網頁然後生成 Markdown 筆記" }
+    ]
+  }
+]

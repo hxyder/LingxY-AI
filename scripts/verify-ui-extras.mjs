@@ -45,6 +45,7 @@ const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const taskEventStream = read("src/desktop/renderer/task-event-stream.js");
 const livePreview = read("src/desktop/renderer/live-preview.js");
+const previewWindowHtml = read("src/desktop/renderer/preview-window.html");
 const previewWindowJs = read("src/desktop/renderer/preview-window.js");
 const previewStreaming = read("src/desktop/renderer/preview/streaming.js");
 const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
@@ -328,6 +329,8 @@ assert.ok(/id="skillEditValidation"/.test(consoleHtml),
   "skills: edit modal must expose validation feedback");
 assert.ok(/data-skill-reveal/.test(consoleJs) && /data-skill-open/.test(consoleJs),
   "skills: discovered skill cards must expose open and reveal actions");
+assert.ok(/data-skill-delete/.test(consoleJs),
+  "skills: discovered editable skill cards must expose a delete action");
 assert.ok(/renderSkillValidation/.test(consoleJs) && /skill\.errors/.test(consoleJs),
   "skills: console must render descriptor validation errors");
 assert.ok(/window\.ucaShell\.openPath/.test(consoleJs) && /window\.ucaShell\?\.showItemInFolder/.test(consoleJs),
@@ -720,10 +723,14 @@ assert.ok(/saveSkillRegistryViaShell/.test(consoleJs) && /window\.ucaShell\.save
   "skill registry save: console must use desktop shell bridge");
 assert.ok(/deleteSkillRegistryViaShell/.test(consoleJs) && /window\.ucaShell\.deleteSkillRegistry/.test(consoleJs),
   "skill registry delete: console must use desktop shell bridge");
+assert.ok(/updateSkillStateViaShell/.test(consoleJs) && /window\.ucaShell\.updateSkillState/.test(consoleJs),
+  "skill state toggle: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/skills\/registries["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "skill registry save: console must not POST /config/skills/registries directly");
 assert.ok(!/fetchJson\(\s*`\/config\/skills\/registries\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "skill registry delete: console must not DELETE /config/skills/registries/:id directly");
+assert.ok(/data-skill-state-registry/.test(consoleJs) && /Use this/.test(consoleJs) && /Stop/.test(consoleJs),
+  "skill state toggle: discovered skill cards must expose Use this/Stop controls");
 assert.ok(/updateRoutingConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateRoutingConfig/.test(consoleJs),
   "routing config: console must use desktop shell bridge");
 assert.ok(/updateOutputConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateOutputConfig/.test(consoleJs),
@@ -784,6 +791,8 @@ assert.ok(/createSkillViaShell/.test(consoleJs) && /window\.ucaShell\.createSkil
   "skill lifecycle create: console must use desktop shell bridge");
 assert.ok(/duplicateSkillViaShell/.test(consoleJs) && /window\.ucaShell\.duplicateSkill/.test(consoleJs),
   "skill lifecycle duplicate: console must use desktop shell bridge");
+assert.ok(/deleteSkillViaShell/.test(consoleJs) && /window\.ucaShell\.deleteSkill/.test(consoleJs),
+  "skill lifecycle delete: console must use desktop shell bridge");
 assert.ok(/rollbackSkillViaShell/.test(consoleJs) && /window\.ucaShell\.rollbackSkill/.test(consoleJs),
   "skill lifecycle rollback: console must use desktop shell bridge");
 assert.ok(/listSkillHistoryViaShell/.test(consoleJs) && /window\.ucaShell\.listSkillHistory/.test(consoleJs),
@@ -797,11 +806,13 @@ assert.ok(/id="skillCreateBtn"/.test(consoleHtml)
   "skill lifecycle: create, history, rollback, and test controls missing");
 assert.ok(/data-skill-duplicate/.test(consoleJs),
   "skill lifecycle: discovered skill cards must expose duplicate action");
+assert.ok(/data-skill-delete/.test(consoleJs),
+  "skill lifecycle: discovered skill cards must expose delete action");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/write["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "skill editor write: console must not POST /skills/write directly");
 assert.ok(!/fetchJson\(\s*[`'"]\/skills\/read\b/.test(consoleJs),
   "skill editor read: console must not GET /skills/read directly");
-assert.ok(!/fetchJson\(\s*[`'"]\/skills\/(?:create|duplicate|rollback|history|test)\b/.test(consoleJs),
+assert.ok(!/fetchJson\(\s*[`'"]\/skills\/(?:create|duplicate|delete|rollback|history|test)\b/.test(consoleJs),
   "skill lifecycle: console must not call skill lifecycle routes directly");
 assert.ok(/saveAutoSkillViaShell/.test(overlayJs) && /window\.ucaShell\.saveAutoSkill/.test(overlayJs),
   "auto skill save: overlay must use desktop shell bridge");
@@ -833,12 +844,27 @@ assert.ok(/toolName === "render_svg"/.test(previewStreaming)
     && /renderSvgStream/.test(previewStreaming)
     && /extractStringField\(rawJson,\s*"svg"\)/.test(previewStreaming),
   "live preview: render_svg must stream SVG source before final artifact render");
+assert.ok(/function renderDocumentDraft/.test(previewStreaming)
+    && /function renderPagedDocumentDraft/.test(previewStreaming)
+    && /function renderXlsxDraft/.test(previewStreaming)
+    && /function renderPptxDraft/.test(previewStreaming),
+  "live preview: generate_document must render realistic draft previews for document, spreadsheet, and slide artifacts");
+assert.ok(/const initialJson = args && Object\.keys\(args\)\.length > 0/.test(previewWindowJs)
+    && /livePreviewStreaming\.renderDelta/.test(previewWindowJs),
+  "live preview: preview window must render initial tool args before provider deltas arrive");
+assert.ok(/\.lp-document-draft/.test(previewWindowHtml)
+    && /\.lp-sheet-draft/.test(previewWindowHtml)
+    && /\.lp-slide-draft/.test(previewWindowHtml),
+  "live preview: preview window must style realistic document/xlsx/pptx drafts");
 assert.ok(/function artifactPathFromToolPayload/.test(overlayJs)
     && /Array\.isArray\(payload\?\.artifact_paths\)/.test(overlayJs)
     && /artifactPath:\s*artifactPathFromToolPayload\(frame\.data\)/.test(overlayJs),
   "live preview: overlay must commit from canonical artifact_paths arrays, not only legacy metadata.path");
 assert.ok(/if \(!state\.toolName\)[\s\S]{0,260}state\.toolName = toolName[\s\S]{0,260}setStatus\("running"\)/.test(previewWindowJs),
   "live preview: preview window must bootstrap from early tool_input_delta before tool_call_started");
+assert.ok(/runTaskBindingIsolation/.test(previewWindowJs)
+    && /state\.taskId && taskId && state\.taskId !== taskId/.test(previewWindowJs),
+  "live preview: preview window must ignore cross-task deltas/commits once bound to a task");
 assert.ok(/function artifactPathFromConsoleToolPayload/.test(consoleJs)
     && consoleJs.includes("Array.isArray(payload?.artifact_paths)")
     && consoleJs.includes("payload.artifact_paths.find")
@@ -890,11 +916,38 @@ assert.ok(!/fetchJson\(\s*`\/task\/\$\{[^}]+\}\/retry`\s*,\s*\{[\s\S]{0,220}meth
 assert.ok(!/fetchJson\(\s*`\/task\/\$\{[^}]+\}`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]DELETE/.test(consoleJs),
   "task delete: console must not DELETE /task/:id directly");
 
-// ── Recent conversations panel in Tasks empty state ────────────────────
+// ── FW-028 Task/Conversation IA boundary ───────────────────────────────
 assert.ok(/id="taskRecentConversationsPanel"/.test(consoleHtml),
-  "recent convs: panel missing in console.html");
-assert.ok(/function renderTaskRecentConversations/.test(consoleJs),
-  "recent convs: renderTaskRecentConversations() missing");
+  "task/conversation IA: compatibility panel missing in console.html");
+assert.ok(/id="taskRecentConversationsPanel" hidden/.test(consoleHtml),
+  "task/conversation IA: Tasks must not surface conversations as its empty-state primary content");
+assert.ok(/Task runs are execution records/.test(consoleJs),
+  "task/conversation IA: empty task detail must explain that tasks are execution records");
+assert.ok(/setTaskDetailPanelVisible\("taskRecentConversationsPanel", false\)/.test(consoleJs),
+  "task/conversation IA: renderTaskDetail(null) must keep conversation browser hidden");
+assert.ok(/function renderTaskConversationLink/.test(consoleJs) && /data-task-open-conversation/.test(consoleJs),
+  "task/conversation IA: task detail must link to the owning conversation instead of embedding transcript browsing");
+assert.ok(/\.task-conversation-link/.test(sharedCss) && /\.task-empty-detail/.test(sharedCss),
+  "task/conversation IA: missing task/conversation boundary styles");
+assert.ok(!/switchTab\("conversations"\)/.test(consoleJs),
+  "task/conversation IA: UI must not route users into the hidden standalone Conversations tab");
+assert.ok(!/data-tab="conversations"/.test(consoleHtml),
+  "task/conversation IA: standalone Conversations rail item must be removed");
+
+// ── Conversation context attachments ───────────────────────────────────
+assert.ok(/data-chat-context-open/.test(consoleJs) && /data-chat-context-reveal/.test(consoleJs),
+  "conversation context: console message file chips must be openable and revealable");
+assert.ok(/openConversationArtifactPath/.test(consoleJs) && /revealConversationArtifactPath/.test(consoleJs),
+  "conversation context: console file chips must use shell open/reveal bridges");
+assert.ok(!/window\.livePreview\.openForFile\s*=\s*function\s+consoleOpenForFile/.test(consoleJs),
+  "conversation context: console must not override file preview into the cramped inline pane");
+assert.ok(/async function openConversationArtifactPath[\s\S]{0,360}window\.ucaShell\?\.openPath/.test(consoleJs)
+    && !/async function openConversationArtifactPath[\s\S]{0,220}livePreview\?\.openForFile/.test(consoleJs),
+  "conversation context: clicking file chips must open the real OS-associated file instead of fake inline preview");
+assert.ok(/data-context-open-path/.test(overlayJs),
+  "conversation context: overlay message file chips must be openable");
+assert.ok(/contextOpenPath/.test(overlayJs) && /window\.ucaShell\?\.openPath/.test(overlayJs),
+  "conversation context: overlay file chips must use the shell open bridge");
 
 // ── Connector edit (rename) ────────────────────────────────────────────
 assert.ok(/data-connected-edit/.test(consoleJs),

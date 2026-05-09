@@ -15,9 +15,11 @@ export function createTaskEventStream({ store, eventBus, taskId, since = null })
           return;
         }
 
-        const replay = store.getTaskEventsSince(taskId, since);
-        if (since && !replay.some((candidate) => candidate.event_id === event.event_id)) {
-          return;
+        if (since) {
+          const replay = store.getTaskEventsSince(taskId, since);
+          if (!replay.some((candidate) => candidate.event_id === event.event_id)) {
+            return;
+          }
         }
 
         onEvent(event);

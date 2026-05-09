@@ -56,6 +56,15 @@ import {
   resolveOverlayContextSubmission
 } from "../../shared/context-resolver.mjs";
 import {
+  buildConversationMessageContextSummary,
+  conversationContextChips,
+  conversationContextPreviewText,
+  getConversationContextSummary
+} from "../../shared/conversation-message-context.mjs";
+import {
+  collectLlmUsageSummary
+} from "../../shared/llm-usage-summary.mjs";
+import {
   buildOverlayProjectStore,
   ensureDefaultProjectInStore,
   ensureSystemProjectInStore,
@@ -399,6 +408,9 @@ const backgroundTaskStreams = new Map(); // taskId -> dispose function
 let renderedTimelineEventIds = new Set();
 let streamingBubble = null;
 let streamingBubbleRawText = "";
+let pendingOverlayTextDeltaTaskId = null;
+let pendingOverlayTextDeltaText = "";
+let overlayTextDeltaRaf = 0;
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
 let renderedEvidenceSummaryTaskIds = new Set();
 let renderedContentEvidenceTaskIds = new Set();
@@ -838,7 +850,7 @@ function ensureBackendCacheFields(conv) {
   return base;
 }
 
-function markPendingUserMessage(clientMessageId, content) {
+function markPendingUserMessage(clientMessageId, content, context = {}) {
   if (!clientMessageId || typeof content !== "string") return;
   const conv = ensureBackendCacheFields(conversationState);
   if (!conv) return;
@@ -847,10 +859,18 @@ function markPendingUserMessage(clientMessageId, content) {
     content,
     ts: Date.now()
   });
-  appendTurn("user", content, { metadata: { client_message_id: clientMessageId, pending: true } });
+  const metadata = {
+    client_message_id: clientMessageId,
+    pending: true,
+    ...(context.summary ? { context_summary: context.summary } : {})
+  };
+  appendTurn("user", content, { metadata });
   // Optimistic UI bubble — tagged with the client_message_id so the
   // reconcile pass can recognise it and avoid emitting a duplicate.
-  const bubble = typeof addBubble === "function" ? addBubble("user", content) : null;
+  const bubble = typeof addBubble === "function" ? addBubble("user", content, {
+    contextChips: context.contextChips,
+    contextPreview: context.contextPreview
+  }) : null;
   if (bubble && bubble.dataset) {
     bubble.dataset.clientMessageId = clientMessageId;
     bubble.classList.add("pending");
@@ -896,7 +916,10 @@ const overlayMessageAdapter = {
     appendTurn(message.role, message.content);
     if (typeof addBubble === "function") {
       const taskId = message.task_id ?? message.taskId ?? message.metadata?.task_id ?? null;
-      const bubble = addBubble(message.role, message.content, { taskId });
+      const bubble = addBubble(message.role, message.content, {
+        taskId,
+        ...conversationContextOptionsFromMessage(message)
+      });
       if (bubble && bubble.dataset) {
         bubble.dataset.messageId = message.message_id;
         bubble.dataset.seq = String(message.seq);
@@ -909,6 +932,41 @@ const overlayMessageAdapter = {
   },
   onSkip() { /* tool_summary / stale — no-op in chat */ }
 };
+
+function conversationContextOptionsFromMessage(message = {}) {
+  const summary = getConversationContextSummary(message);
+  if (!summary) return {};
+  const chips = conversationContextChips(summary).map((chip) => ({
+    label: chip.label,
+    title: chip.title,
+    kind: chip.kind,
+    path: chip.path,
+    url: chip.url,
+    dismissable: false
+  }));
+  return {
+    contextChips: chips,
+    contextPreview: conversationContextPreviewText(summary)
+  };
+}
+
+function conversationContextFromFilePaths(filePaths = [], {
+  sourceType = "file_group",
+  captureMode = "overlay"
+} = {}) {
+  const paths = Array.isArray(filePaths) ? filePaths.filter(Boolean) : [];
+  if (!paths.length) return {};
+  const summary = buildConversationMessageContextSummary({
+    source_type: sourceType,
+    capture_mode: captureMode,
+    file_paths: paths
+  });
+  if (!summary) return {};
+  return {
+    summary,
+    ...conversationContextOptionsFromMessage({ metadata: { context_summary: summary } })
+  };
+}
 
 function applyBackendMessageToCache(message) {
   const conv = ensureBackendCacheFields(conversationState);
@@ -982,7 +1040,7 @@ async function loadConversationFromBackend(convId) {
   // `conv_auto_*` id wipes the local turns (fullRebuild=true) and then
   // gets nothing back from the 404 — the user clicks the entry and the
   // chat area stays empty. Keep these locally rendered.
-  if (conv.metadata?.autoSource || conv.id?.startsWith("conv_auto_")) {
+  if ((conv.metadata?.autoSource || conv.id?.startsWith("conv_auto_")) && conv.metadata?.backendCanonical !== true) {
     renderConversationState();
     return;
   }
@@ -1006,7 +1064,8 @@ function renderConversationFromState() {
 function startNewConversation({ preservePendingInputContext = false } = {}) {
   const preservedPendingFileSelection = preservePendingInputContext ? pendingFileSelection : null;
   const preservedPendingCapture = preservePendingInputContext ? pendingCapture : null;
-  closeActiveTaskEventStream();
+  demoteActiveStreamToBackground();
+  window.livePreview?.close?.();
   activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
   popupSuccessCardTaskId = null;
   lastArtifactPath = null; autoOpenedArtifactTaskId = null;
@@ -1036,6 +1095,16 @@ function startNewConversation({ preservePendingInputContext = false } = {}) {
   commandInput.value = "";
   autoSizeInput();
   showWelcome();
+  commandInput.focus();
+}
+
+let lastShellHandoffAt = 0;
+
+function beginShortcutCaptureSession(shortcutId = "") {
+  if (Date.now() - lastShellHandoffAt < 800) return;
+  startNewConversation();
+  addSystemBubble(shortcutId === "capture-screenshot" ? "正在截图..." : "正在捕捉当前选择...");
+  void maybeRevealOverlay({ markEngaged: true });
   commandInput.focus();
 }
 
@@ -1215,6 +1284,111 @@ function appendAssistantActions(bubble, content, taskId) {
   bubble.appendChild(row);
 }
 
+function appendOverlayErrorBlock(taskId, payload = {}, { cancelled = false } = {}) {
+  if (!bubbleArea) return null;
+  const key = taskId || payload.task_id || payload.taskId || activeTaskId || "";
+  if (key && bubbleArea.querySelector(`.chat-inline-error[data-task-id="${CSS.escape(key)}"]`)) {
+    return null;
+  }
+  const message = String(payload.message ?? payload.text ?? (cancelled ? "任务已取消。" : "任务执行失败。")).trim();
+  const category = String(payload.category ?? payload.failure_category ?? (cancelled ? "user_interrupted" : "task_failed")).trim();
+  const actions = Array.isArray(payload.user_actions) ? payload.user_actions.filter(Boolean).slice(0, 4) : [];
+  const recoveryHint = String(payload.recovery_hint ?? "").trim();
+  const recoveryPolicy = payload.recovery_policy && typeof payload.recovery_policy === "object" ? payload.recovery_policy : null;
+  const policyBits = recoveryPolicy ? [
+    recoveryPolicy.provider_label,
+    recoveryPolicy.tool_label,
+    recoveryPolicy.issue
+  ].filter(Boolean).map((item) => String(item)) : [];
+  const retryable = !cancelled && payload.retryable !== false;
+
+  const card = document.createElement("div");
+  card.className = `chat-inline-error ${cancelled ? "is-cancelled" : "is-failed"}`;
+  if (key) card.dataset.taskId = key;
+  card.setAttribute("role", "status");
+
+  const head = document.createElement("div");
+  head.className = "cie-head";
+  const icon = document.createElement("span");
+  icon.className = "cie-icon";
+  icon.setAttribute("aria-hidden", "true");
+  icon.textContent = "!";
+  const title = document.createElement("span");
+  title.className = "cie-title";
+  title.textContent = cancelled ? "任务已取消" : "任务失败";
+  head.append(icon, title);
+  if (category) {
+    const categoryEl = document.createElement("span");
+    categoryEl.className = "cie-category";
+    categoryEl.textContent = category;
+    head.appendChild(categoryEl);
+  }
+  card.appendChild(head);
+
+  const body = document.createElement("div");
+  body.className = "cie-body";
+  body.textContent = message;
+  card.appendChild(body);
+
+  if (recoveryHint) {
+    const hint = document.createElement("div");
+    hint.className = "cie-recovery";
+    hint.textContent = recoveryHint;
+    card.appendChild(hint);
+  }
+
+  if (policyBits.length > 0) {
+    const policy = document.createElement("div");
+    policy.className = "cie-policy";
+    for (const item of policyBits) {
+      const chip = document.createElement("span");
+      chip.textContent = item;
+      policy.appendChild(chip);
+    }
+    card.appendChild(policy);
+  }
+
+  if (actions.length > 0) {
+    const list = document.createElement("ul");
+    list.className = "cie-actions";
+    for (const item of actions) {
+      const li = document.createElement("li");
+      li.textContent = item;
+      list.appendChild(li);
+    }
+    card.appendChild(list);
+  }
+
+  if (retryable && key) {
+    const footer = document.createElement("div");
+    footer.className = "cie-footer";
+    const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
+    retryBtn.className = "bubble-note-btn cie-retry";
+    retryBtn.textContent = "重试";
+    retryBtn.addEventListener("click", async () => {
+      const original = retryBtn.textContent;
+      retryBtn.disabled = true;
+      retryBtn.textContent = "重试中…";
+      try {
+        await retryTaskViaShell(key, { mode: "retry_same" });
+        retryBtn.textContent = "已发起";
+      } catch (error) {
+        retryBtn.disabled = false;
+        retryBtn.textContent = "重试失败";
+        addSystemBubble(`重试失败：${error?.message ?? error}`);
+        setTimeout(() => { retryBtn.textContent = original ?? "重试"; }, 1600);
+      }
+    });
+    footer.appendChild(retryBtn);
+    card.appendChild(footer);
+  }
+
+  addBubble("system", card, { taskId: key || null });
+  bubbleAreaPin.maybeScrollToBottom();
+  return card;
+}
+
 function addBubble(role, content, options) {
   bubbleArea.hidden = false;
   hideEmptyState();
@@ -1326,9 +1500,19 @@ function addBubble(role, content, options) {
     const chipRow = document.createElement("div");
     chipRow.style.cssText = "display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;";
     for (const chip of options.contextChips) {
-      const el = document.createElement("span");
+      const el = document.createElement(chip.path || chip.url ? "button" : "span");
       el.className = "context-chip";
+      if (chip.path || chip.url) {
+        el.type = "button";
+        el.classList.add("context-chip-action");
+      }
       el.textContent = chip.label;
+      if (chip.title) el.title = chip.title;
+      if (chip.path) {
+        el.dataset.contextOpenPath = chip.path;
+        el.dataset.contextKind = chip.kind ?? "file";
+      }
+      if (chip.url) el.dataset.contextOpenUrl = chip.url;
       if (chip.dismissable) {
         const x = document.createElement("button");
         x.className = "dismiss";
@@ -1342,6 +1526,13 @@ function addBubble(role, content, options) {
       chipRow.appendChild(el);
     }
     bubble.appendChild(chipRow);
+  }
+
+  if (options?.contextPreview) {
+    const preview = document.createElement("div");
+    preview.className = "context-preview";
+    preview.textContent = options.contextPreview;
+    bubble.appendChild(preview);
   }
 
   // Per-bubble timestamp footer. Only meaningful for user / assistant
@@ -1430,6 +1621,8 @@ function clearBubbles() {
   timelineLabelEl = null;
   timelinePhaseEl = null;
   timelineSpinnerEl = null;
+  timelineUsageEl = null;
+  overlayLlmUsageEventsByTaskId.clear();
   timelineStepCount = 0;
   timelinePhaseRank = 0;
   timelineStartedAt = 0;
@@ -1449,6 +1642,8 @@ let timelineLabelEl = null;
 let timelinePhaseEl = null;
 let timelineSpinnerEl = null;
 let timelineStepCount = 0;
+let timelineUsageEl = null;
+const overlayLlmUsageEventsByTaskId = new Map();
 // Stamp the wall-clock time when the timeline first opens. Used to
 // render "+2.3s" relative timestamps next to each step so the user can
 // spot slow stages at a glance. Reset by clear* paths.
@@ -1592,6 +1787,7 @@ function eventToPhase(eventType) {
     "task_created", "accepted", "started", "provider_resolved",
     "planner_request_started", "sr_patch_applied",
     "background_context_added", "phase_timing",
+    "llm_usage",
     "file_expand_started", "file_expand_finished",
     "file_ingest_started", "file_ingest_progress", "file_ingest_finished"
   ].includes(eventType)) return "PLANNING";
@@ -1650,6 +1846,88 @@ function timelineAddStep(text, kind = "active") {
   // No inner-scroll pin — the timeline body now flows under the outer
   // bubbleArea. bubbleAreaPin.maybeScrollToBottom() handles the only
   // scroll surface that matters.
+  bubbleAreaPin.maybeScrollToBottom();
+}
+
+function fmtOverlayUsageNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toLocaleString("en-US") : "0";
+}
+
+function overlayUsageDisplay(usage = {}) {
+  const total = Number(usage.total_tokens ?? 0);
+  const input = Number(usage.input_tokens ?? 0);
+  const output = Number(usage.output_tokens ?? 0);
+  if (total > 0 && (input > 0 || output > 0)) {
+    return `${fmtOverlayUsageNumber(total)} tokens (${fmtOverlayUsageNumber(input)} in / ${fmtOverlayUsageNumber(output)} out)`;
+  }
+  if (total > 0) return `${fmtOverlayUsageNumber(total)} tokens`;
+  return "tokens n/a";
+}
+
+function overlayCacheDisplay(cache = {}) {
+  const bits = [
+    ["hit", cache.hit_tokens],
+    ["miss", cache.miss_tokens],
+    ["read", cache.read_input_tokens],
+    ["create", cache.creation_input_tokens]
+  ]
+    .filter(([, value]) => Number(value) > 0)
+    .map(([label, value]) => `${label} ${fmtOverlayUsageNumber(value)}`);
+  return bits.join(" · ");
+}
+
+function overlayUsageEventFromFrame(frame) {
+  return {
+    event_id: frame.id ?? null,
+    ts: frame.timestamp ?? null,
+    event_type: "llm_usage",
+    payload: frame.data ?? {}
+  };
+}
+
+function renderOverlayLlmUsageTimeline(frame) {
+  const taskId = frame.taskId ?? frame.task_id ?? activeTaskId ?? "active";
+  const usageEvents = overlayLlmUsageEventsByTaskId.get(taskId) ?? [];
+  usageEvents.push(overlayUsageEventFromFrame(frame));
+  overlayLlmUsageEventsByTaskId.set(taskId, usageEvents);
+  const summary = collectLlmUsageSummary(usageEvents);
+  if (!summary) return;
+
+  timelineEnsure();
+  if (!timelineUsageEl || timelineUsageEl.dataset.taskId !== taskId) {
+    timelineUsageEl?.remove?.();
+    timelineUsageEl = document.createElement("div");
+    timelineUsageEl.className = "tl-llm-usage";
+    timelineUsageEl.dataset.taskId = taskId;
+    timelineUsageEl.setAttribute("role", "status");
+    timelineUsageEl.style.cssText = [
+      "display:flex;align-items:flex-start;gap:6px;",
+      "padding:4px 0;font-size:11px;line-height:1.4;",
+      "color:rgba(72,88,104,0.92);"
+    ].join("");
+    timelineBodyEl.appendChild(timelineUsageEl);
+  }
+
+  const topSegments = (summary.prompt_segments_estimate?.segments ?? [])
+    .slice(0, 2)
+    .map((segment) => `${segment.name} ${fmtOverlayUsageNumber(segment.estimated_tokens)} est`)
+    .join(" · ");
+  const cacheText = overlayCacheDisplay(summary.cache);
+  const meta = [
+    `${summary.call_count} call${summary.call_count === 1 ? "" : "s"}`,
+    cacheText,
+    topSegments
+  ].filter(Boolean).join(" · ");
+  const elapsed = timelineStartedAt ? formatStepDelta(Date.now() - timelineStartedAt) : "";
+  timelineUsageEl.innerHTML = `
+    <span style="flex-shrink:0;width:14px;text-align:center;">Σ</span>
+    <span style="flex:1;min-width:0;word-break:break-word;">
+      <strong>模型用量</strong> · ${escapeHtml(overlayUsageDisplay(summary.totals))}
+      ${meta ? `<span style="display:block;color:rgba(0,0,0,0.48);">${escapeHtml(meta)}</span>` : ""}
+    </span>
+    <span style="flex-shrink:0;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:10px;color:rgba(0,0,0,0.36);letter-spacing:0.02em;">${escapeHtml(elapsed)}</span>
+  `;
   bubbleAreaPin.maybeScrollToBottom();
 }
 
@@ -1965,12 +2243,18 @@ function showWelcome() {
   }
 }
 
+function formatPartialSuccessText(message = "") {
+  const raw = String(message ?? "").trim() || "see task for details";
+  const normalized = raw.replace(/^Task partially succeeded:?\s*/i, "").trim() || "see task for details";
+  return `Task partially succeeded: ${normalized}`;
+}
+
 function showContextReceivedBubble() {
   if (pendingFileSelection?.filePaths?.length) {
     const count = pendingFileSelection.filePaths.length;
     const chips = pendingFileSelection.filePaths.slice(0, 4).map((fp) => {
       const name = fp.split(/[/\\]/).pop();
-      return { label: name, dismissable: false };
+      return { label: name, title: fp, path: fp, kind: "file", dismissable: false };
     });
     if (count > 4) {
       chips.push({ label: `+${count - 4} more`, dismissable: false });
@@ -1984,17 +2268,16 @@ function showContextReceivedBubble() {
 
     // hotkey capture from native app — show rich context
     if (pendingCapture.captureMode === "hotkey_capture") {
-      const parts = [];
-      if (appName) parts.push(`App: ${appName}`);
-      if (filePath) parts.push(`File: ${filePath.split(/[/\\]/).pop()}`);
-      if (selectedText) parts.push(`Selected: ${selectedText.slice(0, 100)}${selectedText.length > 100 ? "..." : ""}`);
+      const detailLines = [];
+      if (filePath) detailLines.push(`File: ${filePath.split(/[/\\]/).pop()}`);
+      if (selectedText) detailLines.push(`Selected: ${selectedText.slice(0, 100)}${selectedText.length > 100 ? "..." : ""}`);
 
       const chips = [];
-      if (filePath) chips.push({ label: filePath.split(/[/\\]/).pop(), dismissable: false });
+      if (filePath) chips.push({ label: filePath.split(/[/\\]/).pop(), title: filePath, path: filePath, kind: "file", dismissable: false });
 
       addBubble("assistant",
-        parts.length > 0
-          ? `Captured from ${appName || "desktop"}:\n${parts.slice(1).join("\n")}\n\nWhat do you want me to do?`
+        detailLines.length > 0
+          ? `Captured from ${appName || "desktop"}:\n${detailLines.join("\n")}\n\nWhat do you want me to do?`
           : "Ready. What do you want me to do?",
         chips.length > 0 ? { contextChips: chips } : undefined
       );
@@ -2314,6 +2597,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     "step_finished",
     "conversation_step",
     "planner_request_started",
+    "llm_usage",
     "final_composer_started",
     "sr_patch_applied",
     "background_context_added",
@@ -2369,6 +2653,10 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     if (label) timelineAddStep(label, "active");
   }
 
+  if (frame.event === "llm_usage") {
+    renderOverlayLlmUsageTimeline(frame);
+  }
+
   if ([
     "task_created", "accepted", "started", "provider_resolved", "phase_timing",
     "status_changed", "planner_request_started", "final_composer_started",
@@ -2404,14 +2692,22 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
       if (!pendingToolStepBubbles[toolId]) pendingToolStepBubbles[toolId] = [];
       pendingToolStepBubbles[toolId].push(stepEl);
       if (window.livePreview?.isFileGenTool?.(toolId)) {
-        window.livePreview.openForTool({ toolName: toolId, args: frame.data?.arguments ?? frame.data?.args ?? {} });
+        window.livePreview.openForTool({
+          toolName: toolId,
+          args: frame.data?.arguments ?? frame.data?.args ?? {},
+          taskId: frameTaskId ?? null
+        });
       }
     }
   }
   if (frame.event === "tool_input_delta") {
     const toolId = frame.data?.tool_id ?? "";
     if (window.livePreview?.isFileGenTool?.(toolId)) {
-      window.livePreview.appendDelta({ toolName: toolId, partialJson: frame.data?.partial_json ?? "" });
+      window.livePreview.appendDelta({
+        toolName: toolId,
+        partialJson: frame.data?.partial_json ?? "",
+        taskId: frame.taskId ?? frame.task_id ?? activeTaskId ?? null
+      });
     }
   }
   // 83.4 — Reasoning tokens from Qwen3 / DeepSeek thinking models. Renders
@@ -2431,6 +2727,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
       if (window.livePreview?.isFileGenTool?.(toolId)) {
         window.livePreview.commit({
           toolName: toolId,
+          taskId: frame.taskId ?? frame.task_id ?? activeTaskId ?? null,
           success: ok,
           artifactPath: artifactPathFromToolPayload(frame.data),
           mime: frame.data?.metadata?.mime_type ?? null,
@@ -2445,6 +2742,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     if (artifactPath) {
       window.livePreview?.commit?.({
         toolName: getToolEventId(frame),
+        taskId: frame.taskId ?? frame.task_id ?? activeTaskId ?? null,
         success: true,
         artifactPath,
         mime: frame.data?.mime ?? frame.data?.mime_type ?? frame.data?.metadata?.mime_type ?? null,
@@ -2798,6 +3096,423 @@ function replayTaskTimelineEvents(events = []) {
   }
 }
 
+function scheduleOverlayTextDeltaFlush() {
+  if (overlayTextDeltaRaf) return;
+  const schedule = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (callback) => setTimeout(callback, 16);
+  overlayTextDeltaRaf = schedule(() => {
+    overlayTextDeltaRaf = 0;
+    flushOverlayTextDelta();
+  });
+}
+
+function queueOverlayTextDelta(taskId, delta) {
+  if (!delta) return;
+  pendingOverlayTextDeltaTaskId = taskId ?? pendingOverlayTextDeltaTaskId ?? activeTaskId ?? null;
+  pendingOverlayTextDeltaText += String(delta);
+  scheduleOverlayTextDeltaFlush();
+}
+
+function flushOverlayTextDelta() {
+  const delta = pendingOverlayTextDeltaText;
+  if (!delta) return;
+  const taskId = pendingOverlayTextDeltaTaskId ?? activeTaskId ?? null;
+  pendingOverlayTextDeltaText = "";
+  pendingOverlayTextDeltaTaskId = null;
+  applyOverlayTextDelta(taskId, delta);
+}
+
+function applyOverlayTextDelta(frameTaskId, delta) {
+  if (!delta) return;
+  const rawNextText = `${streamingBubbleRawText}${delta}`;
+  const visibleNextText = sanitizeAssistantVisibleText(rawNextText);
+  const nextRawText = visibleNextText !== rawNextText ? visibleNextText : rawNextText;
+  if (!nextRawText && visibleNextText !== rawNextText) {
+    streamingBubble?.remove?.();
+    streamingBubble = null;
+    streamingBubbleRawText = "";
+    return;
+  }
+  if (looksLikeInternalAssistantText(nextRawText)) {
+    streamingBubbleRawText = nextRawText;
+    return;
+  }
+  // 83.4 — Keep thinking visible while the answer streams; terminal
+  // events fold it after the run settles.
+  if (!streamingBubble) {
+    streamingBubble = document.createElement("div");
+    streamingBubble.className = "bubble assistant streaming";
+    bubbleArea.hidden = false;
+    bubbleArea.appendChild(streamingBubble);
+    streamingBubbleRawText = "";
+    if (!isEchoTask(frameTaskId)) {
+      void maybeRevealOverlay({ markEngaged: true });
+    }
+  }
+  streamingBubbleRawText = nextRawText;
+  streamingBubble.classList.remove("answer-placeholder");
+  streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
+  bubbleAreaPin.maybeScrollToBottom();
+}
+
+function waitForOverlaySmokeFrame() {
+  return new Promise((resolve) => {
+    const schedule = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 16);
+    schedule(() => resolve());
+  });
+}
+
+function waitForOverlaySmokeCondition(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  return new Promise((resolve) => {
+    const tick = () => {
+      try {
+        if (predicate()) {
+          resolve(true);
+          return;
+        }
+      } catch {
+        // Keep polling until timeout; smoke callers return their own details.
+      }
+      if (Date.now() >= deadline) {
+        resolve(false);
+        return;
+      }
+      setTimeout(tick, 20);
+    };
+    tick();
+  });
+}
+
+function createOverlaySmokeAudioStream() {
+  const tracks = [{
+    kind: "audio",
+    readyState: "live",
+    stop() {
+      this.readyState = "ended";
+      this.stopped = true;
+    },
+    addEventListener() {},
+    removeEventListener() {}
+  }];
+  return {
+    getTracks: () => tracks,
+    getAudioTracks: () => tracks,
+    getVideoTracks: () => [],
+    __tracks: tracks
+  };
+}
+
+function installOverlaySmokeMediaRecorder({ chunks = 2, label = "overlay-smoke" } = {}) {
+  const originalDescriptor = Object.getOwnPropertyDescriptor(window, "MediaRecorder");
+  const hadOwnMediaRecorder = Object.prototype.hasOwnProperty.call(window, "MediaRecorder");
+  const instances = [];
+  const chunkCount = Math.max(1, Math.min(6, Number(chunks) || 2));
+
+  class OverlaySmokeMediaRecorder extends EventTarget {
+    static isTypeSupported(type) {
+      return /^audio\/webm/i.test(String(type || ""));
+    }
+
+    constructor(stream, options = {}) {
+      super();
+      this.stream = stream;
+      this.mimeType = options.mimeType || "audio/webm";
+      this.state = "inactive";
+      this.emittedChunks = 0;
+      this.startTimeslice = null;
+      instances.push(this);
+    }
+
+    start(timeslice) {
+      this.state = "recording";
+      this.startTimeslice = timeslice;
+      for (let i = 0; i < chunkCount; i += 1) {
+        setTimeout(() => this.#emitChunk(), 10 + i * 10);
+      }
+    }
+
+    requestData() {
+      this.#emitChunk();
+    }
+
+    stop() {
+      if (this.state === "inactive") return;
+      this.#emitChunk();
+      this.state = "inactive";
+      setTimeout(() => {
+        this.dispatchEvent(new Event("stop"));
+      }, 0);
+    }
+
+    #emitChunk() {
+      if (this.state !== "recording") return;
+      const blob = new Blob([`${label}-${this.emittedChunks}`], { type: this.mimeType });
+      this.emittedChunks += 1;
+      const event = new Event("dataavailable");
+      Object.defineProperty(event, "data", { value: blob });
+      this.dispatchEvent(event);
+    }
+  }
+
+  Object.defineProperty(window, "MediaRecorder", {
+    configurable: true,
+    writable: true,
+    value: OverlaySmokeMediaRecorder
+  });
+
+  return {
+    instances,
+    restore() {
+      if (originalDescriptor) {
+        Object.defineProperty(window, "MediaRecorder", originalDescriptor);
+      } else if (hadOwnMediaRecorder) {
+        Object.defineProperty(window, "MediaRecorder", {
+          configurable: true,
+          writable: true,
+          value: undefined
+        });
+      } else {
+        try { delete window.MediaRecorder; } catch { /* ignore */ }
+      }
+    }
+  };
+}
+
+const overlayShortcutSmokeEvents = [];
+
+window.__lingxyOverlaySmoke = {
+  getPendingFileSelection() {
+    const chips = [...(bubbleArea?.querySelectorAll?.("[data-context-open-path]") ?? [])]
+      .map((node) => node.getAttribute("data-context-open-path"))
+      .filter(Boolean);
+    return {
+      ok: Boolean(pendingFileSelection?.filePaths?.length),
+      sourceApp: pendingFileSelection?.sourceApp ?? null,
+      captureMode: pendingFileSelection?.captureMode ?? null,
+      filePaths: pendingFileSelection?.filePaths ?? [],
+      openablePaths: chips
+    };
+  },
+  getShortcutReceipts() {
+    return [...overlayShortcutSmokeEvents];
+  },
+  async runVoiceMediaRecorderPath({ chunks = 2 } = {}) {
+    const harness = installOverlaySmokeMediaRecorder({ chunks, label: "voice-mediarecorder-smoke" });
+    const stream = createOverlaySmokeAudioStream();
+    try {
+      resetVoiceState();
+      startVoiceLocalRecorder(stream);
+      const recorder = voiceMediaRecorder;
+      const receivedChunks = await waitForOverlaySmokeCondition(
+        () => voiceAudioChunks.length >= Math.max(1, Number(chunks) || 2),
+        1200
+      );
+      const chunkCount = voiceAudioChunks.length;
+      const recordingState = recorder?.state ?? null;
+      const stopResult = await stopVoiceLocalRecorder({ transcribe: false });
+      const stoppedTracks = stream.__tracks.every((track) => track.readyState === "ended" || track.stopped === true);
+      return {
+        ok: Boolean(recorder) && recordingState === "recording" && receivedChunks && chunkCount > 0 && stopResult?.ok === true && stoppedTracks,
+        chunkCount,
+        emittedChunks: recorder?.emittedChunks ?? 0,
+        mimeType: recorder?.mimeType ?? null,
+        startTimeslice: recorder?.startTimeslice ?? null,
+        stoppedTracks
+      };
+    } finally {
+      harness.restore();
+      resetVoiceState();
+    }
+  },
+  async runNoteMicMediaRecorderPath({ chunks = 2 } = {}) {
+    const harness = installOverlaySmokeMediaRecorder({ chunks, label: "note-mic-mediarecorder-smoke" });
+    const stream = createOverlaySmokeAudioStream();
+    const smokeSessionId = noteSessionId + 1;
+    try {
+      noteActive = true;
+      noteSessionId = smokeSessionId;
+      noteStoppingSessionId = null;
+      noteStartTime = Date.now();
+      noteMicAudioChunks = [];
+      noteTranscripts = [];
+      startNoteMicRecorder(stream, smokeSessionId);
+      const recorder = noteMicMediaRecorder;
+      const receivedChunks = await waitForOverlaySmokeCondition(
+        () => noteMicAudioChunks.length >= Math.max(1, Number(chunks) || 2),
+        1200
+      );
+      const chunkCount = noteMicAudioChunks.length;
+      const recordingState = recorder?.state ?? null;
+      await stopNoteMicRecorder();
+      const stoppedTracks = stream.__tracks.every((track) => track.readyState === "ended" || track.stopped === true);
+      return {
+        ok: Boolean(recorder) && recordingState === "recording" && receivedChunks && chunkCount > 0 && noteMicMediaRecorder === null && stoppedTracks,
+        chunkCount,
+        emittedChunks: recorder?.emittedChunks ?? 0,
+        mimeType: recorder?.mimeType ?? null,
+        startTimeslice: recorder?.startTimeslice ?? null,
+        stoppedTracks
+      };
+    } finally {
+      noteActive = false;
+      noteStoppingSessionId = null;
+      noteMicMediaRecorder = null;
+      noteMicStream = null;
+      noteMicAudioChunks = [];
+      publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
+      harness.restore();
+    }
+  },
+  async runTextDeltaLoad({ chunks = 1000, chunkText = "x", taskId = "gui-smoke-stream" } = {}) {
+    const count = Math.max(1, Math.min(5000, Number(chunks) || 1000));
+    const text = String(chunkText || "x");
+    const started = performance.now();
+    streamingBubble?.remove?.();
+    streamingBubble = null;
+    streamingBubbleRawText = "";
+    pendingOverlayTextDeltaTaskId = null;
+    pendingOverlayTextDeltaText = "";
+    for (let i = 0; i < count; i += 1) {
+      queueOverlayTextDelta(taskId, text);
+    }
+    await waitForOverlaySmokeFrame();
+    await waitForOverlaySmokeFrame();
+    flushOverlayTextDelta();
+    const renderedText = streamingBubble?.textContent ?? "";
+    const durationMs = Math.round(performance.now() - started);
+    return {
+      ok: renderedText.length >= count * text.length,
+      chunks: count,
+      rendered_chars: renderedText.length,
+      expected_chars: count * text.length,
+      duration_ms: durationMs,
+      streaming_bubbles: bubbleArea?.querySelectorAll?.(".bubble.assistant.streaming")?.length ?? 0
+    };
+  },
+  async runStopButtonCancel({ taskId = "gui-smoke-stop-button" } = {}) {
+    activeTaskId = taskId;
+    lastTask = {
+      task_id: taskId,
+      status: "running",
+      sub_status: null
+    };
+    cancellationRequestedTaskId = null;
+    refreshSendBtnMode();
+    const beforeLabel = sendBtn?.getAttribute?.("aria-label") ?? "";
+    sendBtn?.click?.();
+    const deadline = Date.now() + 1500;
+    while (Date.now() < deadline && cancellationRequestedTaskId !== taskId) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const firstCancelRegistered = cancellationRequestedTaskId === taskId;
+    refreshSendBtnMode();
+    const afterLabel = sendBtn?.getAttribute?.("aria-label") ?? "";
+    return {
+      ok: firstCancelRegistered && /取消|强制取消|停止/.test(afterLabel),
+      taskId,
+      beforeLabel,
+      afterLabel,
+      firstCancelRegistered,
+      stopClass: Boolean(sendBtn?.classList?.contains("send-btn--stop")),
+      cancellingClass: Boolean(sendBtn?.classList?.contains("send-btn--cancelling"))
+    };
+  },
+  async runInlineErrorRetry({ taskId = "gui-smoke-overlay-inline-retry" } = {}) {
+    bubbleArea?.querySelectorAll?.(`.chat-inline-error[data-task-id="${CSS.escape(taskId)}"]`)?.forEach((node) => {
+      node.closest?.(".bubble")?.remove?.();
+    });
+    const card = appendOverlayErrorBlock(taskId, {
+      message: "GUI smoke retryable failure",
+      category: "gui_smoke",
+      retryable: true,
+      user_actions: ["Retry from the inline error card."]
+    });
+    const retryBtn = card?.querySelector?.(".cie-retry");
+    const beforeLabel = retryBtn?.textContent?.trim?.() ?? "";
+    retryBtn?.click?.();
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && retryBtn?.textContent?.trim?.() !== "已发起") {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const afterLabel = retryBtn?.textContent?.trim?.() ?? "";
+    return {
+      ok: Boolean(card) && Boolean(retryBtn) && afterLabel === "已发起",
+      taskId,
+      beforeLabel,
+      afterLabel,
+      role: card?.getAttribute?.("role") ?? "",
+      disabled: Boolean(retryBtn?.disabled)
+    };
+  },
+  async runLlmUsageTimeline({ taskId = "gui-smoke-overlay-llm-usage" } = {}) {
+    overlayLlmUsageEventsByTaskId.delete(taskId);
+    timelineUsageEl?.remove?.();
+    timelineUsageEl = null;
+    for (const id of ["gui-smoke-usage-1", "gui-smoke-usage-2"]) {
+      renderedTimelineEventIds.delete(id);
+    }
+    renderTaskTimelineEvent({
+      id: "gui-smoke-usage-1",
+      event: "llm_usage",
+      taskId,
+      timestamp: new Date().toISOString(),
+      data: {
+        call_site: "tool_using.planner",
+        provider_name: "DeepSeek",
+        model: "deepseek-v4-flash",
+        stream: true,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          total_tokens: 120,
+          prompt_cache_hit_tokens: 70,
+          prompt_cache_miss_tokens: 30
+        },
+        prompt_segments_estimate: {
+          segments: [
+            { name: "system", estimated_tokens: 60 },
+            { name: "current", estimated_tokens: 20 },
+            { name: "tool_schemas", estimated_tokens: 15 }
+          ]
+        }
+      }
+    }, { showOverlay: true });
+    renderTaskTimelineEvent({
+      id: "gui-smoke-usage-2",
+      event: "llm_usage",
+      taskId,
+      timestamp: new Date().toISOString(),
+      data: {
+        call_site: "tool_using.final_composer",
+        provider_name: "DeepSeek",
+        model: "deepseek-v4-flash",
+        usage: {
+          input_tokens: 40,
+          output_tokens: 10,
+          cache_read_input_tokens: 25
+        },
+        prompt_segments_estimate: {
+          segments: [
+            { name: "system", estimated_tokens: 12 },
+            { name: "current", estimated_tokens: 18 }
+          ]
+        }
+      }
+    }, { showOverlay: true });
+    await waitForOverlaySmokeFrame();
+    const text = timelineUsageEl?.textContent ?? "";
+    return {
+      ok: /模型用量/.test(text) && /170 tokens/.test(text) && /2 calls/.test(text) && /hit 70/.test(text) && /read 25/.test(text),
+      taskId,
+      text
+    };
+  }
+};
+
 async function handleTaskEventFrame(rawEvent) {
   const frame = toTaskEventFrame(rawEvent);
   if (frame.id && handledTaskEventIds.has(frame.id)) return;
@@ -2838,42 +3553,12 @@ async function handleTaskEventFrame(rawEvent) {
     if (!isForActiveConv) return; // silent streams don't build bubbles
     const delta = frame.data?.delta ?? frame.data?.text ?? "";
     if (!delta) return;
-    const rawNextText = `${streamingBubbleRawText}${delta}`;
-    const visibleNextText = sanitizeAssistantVisibleText(rawNextText);
-    const nextRawText = visibleNextText !== rawNextText ? visibleNextText : rawNextText;
-    if (!nextRawText && visibleNextText !== rawNextText) {
-      streamingBubble?.remove?.();
-      streamingBubble = null;
-      streamingBubbleRawText = "";
-      return;
-    }
-    if (looksLikeInternalAssistantText(nextRawText)) {
-      streamingBubbleRawText = nextRawText;
-      return;
-    }
-    // 83.4 — Previously the thinking card collapsed the moment the first
-    // text_delta landed. That was too eager — the user can no longer
-    // watch the model's reasoning while the answer streams. Keep the
-    // card expanded during execution; it folds on terminal events
-    // (success / failed / cancelled) below.
-    if (!streamingBubble) {
-      streamingBubble = document.createElement("div");
-      streamingBubble.className = "bubble assistant streaming";
-      bubbleArea.hidden = false;
-      bubbleArea.appendChild(streamingBubble);
-      streamingBubbleRawText = "";
-      if (!isEchoTask(frameTaskId)) {
-        void maybeRevealOverlay({ markEngaged: true }); // lock overlay open unless user explicitly closed it
-      }
-    }
-    streamingBubbleRawText = nextRawText;
-    streamingBubble.classList.remove("answer-placeholder");
-    streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
-    bubbleAreaPin.maybeScrollToBottom();
+    queueOverlayTextDelta(frameTaskId, delta);
     return;
   }
 
   if (frame.event === "inline_result") {
+    flushOverlayTextDelta();
     const text = frame.data?.text ?? summary.body ?? "";
     const trimmedText = text.trim();
     const isPlannerPlaceholder = trimmedText === "(no response from agentic planner)";
@@ -2975,6 +3660,7 @@ async function handleTaskEventFrame(rawEvent) {
   }
 
   if (["success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
+    flushOverlayTextDelta();
     if (isForActiveConv) {
       const doneLabel = frame.event === "success" ? "已完成"
         : frame.event === "partial_success" ? "部分完成"
@@ -3016,6 +3702,7 @@ async function handleTaskEventFrame(rawEvent) {
         kind: "success"
       });
     } else if (frame.event === "failed") {
+      if (isForActiveConv) appendOverlayErrorBlock(frameTaskId, frame.data ?? {});
       showEchoResultHudOnce(frameTaskId, {
         title: lastTask?.intent ?? "任务失败",
         text: frame.data?.message ?? frame.data?.text ?? "任务失败，请打开对话查看详情。",
@@ -3023,6 +3710,7 @@ async function handleTaskEventFrame(rawEvent) {
         durationMs: 10000
       });
     } else if (frame.event === "cancelled") {
+      if (isForActiveConv) appendOverlayErrorBlock(frameTaskId, frame.data ?? {}, { cancelled: true });
       showEchoResultHudOnce(frameTaskId, {
         title: "任务已取消",
         text: frame.data?.message ?? "",
@@ -3271,6 +3959,55 @@ function appendAutomaticTurnToConversation({ task, detail, text }) {
   return conv;
 }
 
+function canonicalConversationIdForTask(task = {}, detail = {}) {
+  const detailTask = detail?.task ?? task;
+  return detailTask?.conversation_id
+    ?? detailTask?.context_packet?.selection_metadata?.conversation_id
+    ?? task?.conversation_id
+    ?? task?.context_packet?.selection_metadata?.conversation_id
+    ?? null;
+}
+
+function ensureCanonicalAutomaticConversation({ task, detail }) {
+  const conversationId = canonicalConversationIdForTask(task, detail);
+  if (!conversationId) return null;
+  if (!projectStore) loadProjectStore();
+  const projectInfo = automaticProjectForTask(task);
+  const projectId = task?.project_id
+    ?? detail?.task?.project_id
+    ?? task?.context_packet?.selection_metadata?.project_id
+    ?? detail?.task?.context_packet?.selection_metadata?.project_id
+    ?? projectInfo.projectId;
+  ensureSystemProject(projectId, projectInfo.name, projectInfo.color);
+  let conv = projectStore.conversations.find((item) => item.id === conversationId);
+  if (!conv) {
+    conv = {
+      id: conversationId,
+      projectId,
+      title: titleForAutomaticConversation(task, detail),
+      seedCapture: null,
+      seedCommand: task.user_command ?? task.intent ?? projectInfo.name,
+      turns: [],
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      metadata: {}
+    };
+    projectStore.conversations.push(conv);
+  }
+  conv.projectId = conv.projectId ?? projectId;
+  conv.turns = Array.isArray(conv.turns) ? conv.turns : [];
+  conv.updatedAt = Date.now();
+  conv.metadata = {
+    ...(conv.metadata ?? {}),
+    autoSource: projectInfo.projectId === AUTO_EMAIL_PROJECT_ID ? "email" : "schedule",
+    backendCanonical: true,
+    unread: conv.id !== conversationState?.id,
+    latestTaskId: task.task_id
+  };
+  saveProjectStore();
+  return conv;
+}
+
 async function surfaceAutomaticTaskResults(tasks = []) {
   const surfaced = loadSurfacedAutoTaskIds();
   const now = Date.now();
@@ -3288,6 +4025,11 @@ async function surfaceAutomaticTaskResults(tasks = []) {
     surfaced.add(task.task_id);
     try {
       const detail = await fetchJson(`/task/${encodeURIComponent(task.task_id)}`);
+      if (canonicalConversationIdForTask(task, detail)) {
+        ensureCanonicalAutomaticConversation({ task, detail });
+        renderProjectPanel();
+        continue;
+      }
       const finalText = finalTextFromTaskDetail(detail).trim();
       const artifactLines = (detail?.task?.artifacts ?? task.artifacts ?? [])
         .map((artifact) => artifact?.path)
@@ -3313,6 +4055,18 @@ async function openTaskResultInOverlayConversation(taskId, fallback = {}) {
   try {
     const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
     const task = detail?.task ?? {};
+    if (isAutomaticResultTask(task) && canonicalConversationIdForTask(task, detail)) {
+      const conv = ensureCanonicalAutomaticConversation({ task, detail });
+      if (conv?.id) {
+        switchConversation(conv.id);
+        renderProjectPanel();
+        void maybeRevealOverlay({ markEngaged: true });
+      }
+      const surfaced = loadSurfacedAutoTaskIds();
+      surfaced.add(taskId);
+      saveSurfacedAutoTaskIds(surfaced);
+      return true;
+    }
     const finalText = finalTextFromTaskDetail(detail).trim()
       || String(fallback.inlinePreview ?? "").trim()
       || (Array.isArray(fallback.lines) ? fallback.lines.join("\n").trim() : "");
@@ -3403,8 +4157,18 @@ async function attachLatestActiveTaskToOverlay() {
   // taskConversationMap routing. Without this guard, opening overlay while
   // conversation B has a running task pulls its events into conversation A's
   // bubble area — the exact "两个任务跑完只剩一个结果跑错对话框" bug.
-  const owner = taskOwnerConversationId(taskConversationMap, latest.task_id);
+  const owner = taskOwnerConversationId(taskConversationMap, latest.task_id)
+    ?? latest.conversation_id
+    ?? latest.context_packet?.selection_metadata?.conversation_id
+    ?? null;
+  if (owner) {
+    bindTaskToConversationId(taskConversationMap, latest.task_id, owner);
+  }
   if (owner && conversationState?.id && owner !== conversationState.id) return false;
+  // A task with no conversation owner is a background/system task from the
+  // chat surface's point of view. Keep it in the task dock instead of
+  // hijacking a newly opened conversation with a stale "running" state.
+  if (!owner) return false;
   activeTaskId = latest.task_id;
   lastTask = latest;
   notifiedTaskId = null;
@@ -4062,7 +4826,7 @@ async function refreshActiveTask() {
       const partialMsg = task.failure_user_message
         ?? task.partial_message
         ?? "Task partially succeeded.";
-      const partialText = `Task partially succeeded: ${partialMsg}`;
+      const partialText = formatPartialSuccessText(partialMsg);
       // Codex Round 5 review: success branches finalise streamingBubble in
       // place rather than adding a duplicate; partial_success must do the
       // same so a backend path that ends mid-stream (no inline_result, no
@@ -4080,7 +4844,7 @@ async function refreshActiveTask() {
         conversationState.lastCompletedAt = Date.now();
         conversationState.updatedAt = Date.now();
       }
-      appendTurn("assistant", `部分完成：${partialMsg}`);
+      appendTurn("assistant", `部分完成：${partialText.replace(/^Task partially succeeded:\s*/i, "")}`);
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
         lastEchoTaskConversationId = task.conversation_id
@@ -4198,15 +4962,24 @@ async function submitTask() {
       pendingCapture,
       seedCapture: conversationState?.seedCapture ?? null
     });
+    let optimisticMessageContext = {};
     if (contextDecision.kind === "capture") {
       const capture = { ...contextDecision.capture };
+      const executorOverride = capture.sourceType === "image" ? "multi_modal" : undefined;
       if (contextDecision.reason === "explicit_browser_context") {
         ensureConversation(capture, conversationState?.seedCommand ?? rawCommand ?? commandText);
+      }
+      if (capture.filePath) {
+        optimisticMessageContext = conversationContextFromFilePaths([capture.filePath], {
+          sourceType: capture.sourceType === "image" ? "image_group" : "file_group",
+          captureMode: contextDecision.captureMode ?? capture.captureMode ?? "hotkey_capture"
+        });
       }
       payload = {
         userCommand: commandText,
         executionMode: "interactive",
-        capture
+        capture,
+        executorOverride
       };
     } else if (contextDecision.kind === "missing_explicit_file_context") {
       commandInput.value = rawCommand;
@@ -4215,6 +4988,10 @@ async function submitTask() {
       commandInput.focus();
       return;
     } else if (contextDecision.kind === "image_paths") {
+      optimisticMessageContext = conversationContextFromFilePaths(contextDecision.filePaths, {
+        sourceType: "image_group",
+        captureMode: contextDecision.captureMode ?? "shell_menu"
+      });
       payload = {
         imagePaths: contextDecision.filePaths,
         userCommand: commandText,
@@ -4224,6 +5001,10 @@ async function submitTask() {
         executionMode: "interactive"
       };
     } else if (contextDecision.kind === "file_paths") {
+      optimisticMessageContext = conversationContextFromFilePaths(contextDecision.filePaths, {
+        sourceType: "file_group",
+        captureMode: contextDecision.captureMode ?? "shell_menu"
+      });
       payload = {
         sourceApp: contextDecision.sourceApp ?? "explorer.exe",
         captureMode: contextDecision.captureMode ?? "shell_menu",
@@ -4255,7 +5036,7 @@ async function submitTask() {
       : null;
 
     const clientMessageId = createClientMessageId();
-    markPendingUserMessage(clientMessageId, commandText);
+    markPendingUserMessage(clientMessageId, commandText, optimisticMessageContext);
     timelineAddStep("已收到请求，正在创建任务…", "active");
 
     let result;
@@ -4584,6 +5365,7 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
 }
 
 function applyShellHandoff(payload) {
+  lastShellHandoffAt = Date.now();
   if (payload?.error) {
     addSystemBubble(payload.error);
     commandInput.focus();
@@ -5295,6 +6077,24 @@ commandInput.addEventListener("pointerdown", markUserEngaged);
 bubbleArea?.addEventListener("pointerdown", markUserEngaged);
 bubbleArea?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  const contextPath = target?.closest?.("[data-context-open-path]");
+  if (contextPath && bubbleArea.contains(contextPath)) {
+    event.preventDefault();
+    const filePath = contextPath.getAttribute("data-context-open-path");
+    if (filePath) void window.ucaShell?.openPath?.(filePath);
+    return;
+  }
+  const contextUrl = target?.closest?.("[data-context-open-url]");
+  if (contextUrl && bubbleArea.contains(contextUrl)) {
+    event.preventDefault();
+    const url = contextUrl.getAttribute("data-context-open-url");
+    if (url) {
+      window.ucaShell?.openUrl?.(url, { ask: true, source: "overlay_chat_context" })
+        ?? window.ucaShell?.openExternal?.(url)
+        ?? window.open(url, "_blank");
+    }
+    return;
+  }
   const citeChip = target?.closest?.(".cite-chip[data-source-id]");
   if (!citeChip || !bubbleArea.contains(citeChip)) return;
   event.preventDefault();
@@ -6386,6 +7186,7 @@ let noteActive = false;
 let noteStartTime = null;
 let noteTimerInterval = null;
 let noteSessionId = 0;
+let noteStoppingSessionId = null;
 let noteTranscripts = []; // {time, text}[]
 let noteMicRecognizer = null;
 let noteMicMediaRecorder = null;
@@ -6406,6 +7207,11 @@ let noteAutoStopTriggered = false;
 let noteWarnedNearLimit = false;
 let noteSourceContext = null;
 let noteSourceContextPromise = Promise.resolve(null);
+
+function noteSessionCanAcceptRecorderChunk(sessionId) {
+  if (sessionId === noteSessionId && noteActive) return true;
+  return sessionId === noteStoppingSessionId;
+}
 
 function publishNoteRecordingState(extra = {}) {
   const elapsedMs = noteActive && noteStartTime ? Date.now() - noteStartTime : 0;
@@ -6608,7 +7414,7 @@ function startNoteMicRecorder(stream, sessionId = noteSessionId) {
     noteMicMediaRecorder = new MediaRecorder(stream, { mimeType });
     noteMicMediaRecorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size > 0) {
-        if (!noteActive || sessionId !== noteSessionId) return;
+        if (!noteSessionCanAcceptRecorderChunk(sessionId)) return;
         noteMicAudioChunks.push(event.data);
         publishNoteRecordingState({ hasMicTranscript: noteTranscripts.length > 0 });
       }
@@ -6715,7 +7521,7 @@ async function startNoteSysCapture() {
     noteMediaRecorder = new MediaRecorder(noteSysStream, { mimeType });
     noteMediaRecorder.addEventListener("dataavailable", (e) => {
       if (e.data?.size > 0) {
-        if (!noteActive || sessionId !== noteSessionId) return;
+        if (!noteSessionCanAcceptRecorderChunk(sessionId)) return;
         noteSysAudioChunks.push(e.data);
         publishNoteRecordingState({ hasSystemAudio: true });
       }
@@ -6879,12 +7685,16 @@ function stopNoteCapture({ discardMic = true } = {}) {
 }
 
 function exitNoteMode(options = {}) {
+  const stoppingSessionId = noteSessionId;
   noteActive = false;
-  noteSessionId += 1;
+  noteStoppingSessionId = stoppingSessionId;
   voiceMode = false;
   document.body.classList.remove("voice-mode");
   setVoiceCardMode("voice");
-  const stopped = stopNoteCapture(options);
+  const stopped = stopNoteCapture(options).finally(() => {
+    if (noteStoppingSessionId === stoppingSessionId) noteStoppingSessionId = null;
+    if (noteSessionId === stoppingSessionId) noteSessionId += 1;
+  });
   publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
   return stopped;
 }
@@ -7009,17 +7819,8 @@ async function submitNoteTask({ fullTranscript, duration, sourceContext }) {
   const sourceAssistRequirement = sourceContextText || browserContextText
     ? "- 如果“录音来源”包含网页 URL 或窗口标题，可以用它辅助判断上下文并在笔记中注明来源；不要主动联网检索，除非用户另行要求"
     : "- 不要编造录音中没有的事实";
-  const contextText = [
-    sourceContextText ? `## 录音来源（自动检测）\n${sourceContextText}` : "",
-    browserContextText ? `## 网页/视频上下文（浏览器扩展）\n${browserContextText}` : "",
-    `## 录音时长\n${duration}`,
-    `## 录音转写\n${fullTranscript.trim()}`
-  ].filter(Boolean).join("\n\n");
-
   const userVisibleCommand = "整理这段录音为结构化笔记（Markdown）";
-  const userCommand = `请将 context_packet.text 中的录音转写内容整理成 Markdown 笔记。
-
-格式要求：
+  const noteFormattingRequirement = `## 整理要求
 1. **标题**：用一行概括本次录音的核心主题
 2. **概述**：2-4 句话总结录音主要内容
 3. **要点**：提炼 3-8 个核心观点或信息，用 bullet list，保持原文语言风格
@@ -7032,6 +7833,15 @@ async function submitNoteTask({ fullTranscript, duration, sourceContext }) {
 - 忠实于录音内容，不要添加录音中没有的信息
 - 保持原文语言（说中文就输出中文，说英文就输出英文）
 ${sourceAssistRequirement}`;
+  const contextText = [
+    sourceContextText ? `## 录音来源（自动检测）\n${sourceContextText}` : "",
+    browserContextText ? `## 网页/视频上下文（浏览器扩展）\n${browserContextText}` : "",
+    `## 录音时长\n${duration}`,
+    noteFormattingRequirement,
+    `## 录音转写\n${fullTranscript.trim()}`
+  ].filter(Boolean).join("\n\n");
+
+  const userCommand = userVisibleCommand;
 
   addBubble("user", userVisibleCommand);
   conversationState = null;
@@ -7291,21 +8101,55 @@ taskListDock?.addEventListener("click", async () => {
 });
 
 taskListCloseBtn?.addEventListener("click", () => {
-  if (taskListPanel) taskListPanel.dataset.open = "false";
-  taskListDock?.setAttribute("aria-expanded", "false");
+  closeTaskListPanel();
 });
 
-for (const btn of taskListFilterBtns) {
-  btn.addEventListener("click", () => {
-    taskListFilter = btn.dataset.taskFilter ?? "all";
-    for (const sibling of taskListFilterBtns) {
-      const isActive = sibling === btn;
-      sibling.classList.toggle("active", isActive);
-      sibling.setAttribute("aria-selected", isActive ? "true" : "false");
-    }
-    renderTaskListDock();
-  });
+function closeTaskListPanel() {
+  if (taskListPanel) taskListPanel.dataset.open = "false";
+  taskListDock?.setAttribute("aria-expanded", "false");
+  taskListDock?.focus?.();
 }
+
+function activateTaskListFilter(btn) {
+  taskListFilter = btn.dataset.taskFilter ?? "all";
+  for (const sibling of taskListFilterBtns) {
+    const isActive = sibling === btn;
+    sibling.classList.toggle("active", isActive);
+    sibling.setAttribute("aria-selected", isActive ? "true" : "false");
+    sibling.tabIndex = isActive ? 0 : -1;
+  }
+  renderTaskListDock();
+}
+
+function handleTaskListFilterKeydown(event) {
+  const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+  if (!keys.includes(event.key)) return;
+  event.preventDefault();
+  const buttons = [...taskListFilterBtns];
+  const currentIndex = Math.max(0, buttons.indexOf(event.currentTarget));
+  let nextIndex = currentIndex;
+  if (event.key === "ArrowLeft") nextIndex = (currentIndex + buttons.length - 1) % buttons.length;
+  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % buttons.length;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = buttons.length - 1;
+  const next = buttons[nextIndex];
+  if (!next) return;
+  activateTaskListFilter(next);
+  next.focus();
+}
+
+for (const btn of taskListFilterBtns) {
+  btn.tabIndex = btn.classList.contains("active") ? 0 : -1;
+  btn.addEventListener("click", () => activateTaskListFilter(btn));
+  btn.addEventListener("keydown", handleTaskListFilterKeydown);
+}
+
+taskListPanel?.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    closeTaskListPanel();
+  }
+});
 
 /* ═══════════════════════════════════════════════
    SMART INTENT DETECTION
@@ -7647,6 +8491,12 @@ async function handleUserSend() {
    ═══════════════════════════════════════════════ */
 
 window.ucaShell.onShortcutTriggered((payload) => {
+  overlayShortcutSmokeEvents.push({
+    shortcutId: payload?.shortcutId ?? null,
+    accelerator: payload?.accelerator ?? null,
+    ts: Date.now()
+  });
+  if (overlayShortcutSmokeEvents.length > 20) overlayShortcutSmokeEvents.splice(0, overlayShortcutSmokeEvents.length - 20);
   if (payload.shortcutId === "toggle-overlay") {
     // Hotkey-summoned overlay should always open a fresh conversation so the
     // user never sees stale bubbles / replayed failure events from a prior
@@ -7655,10 +8505,10 @@ window.ucaShell.onShortcutTriggered((payload) => {
     startNewConversation();
   }
   if (payload.shortcutId === "capture-and-ask") {
-    // The actual context payload owns conversation reset (applyShellHandoff
-    // calls startNewConversation for hotkey captures). Keeping this shortcut
-    // handler passive avoids a race where the window opens first and then a
-    // late shortcut event clears the captured selection.
+    beginShortcutCaptureSession(payload.shortcutId);
+  }
+  if (payload.shortcutId === "capture-screenshot") {
+    beginShortcutCaptureSession(payload.shortcutId);
   }
   if (payload.shortcutId === "voice-wake") {
     if (!payload.preserveContext) {

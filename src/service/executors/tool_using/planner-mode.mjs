@@ -111,7 +111,10 @@ export function renderRequiredContractForPlanner(task) {
     const kind = spec.artifact?.kind ?? spec.contract?.output_contract?.kind ?? "artifact";
     lines.push(`- artifact_required: true`);
     lines.push(`- artifact_kind: ${kind}`);
-    lines.push(`- artifact_tools: generate_document, write_file, register_artifact`);
+    const artifactTools = spec.goal === "transform_existing_file"
+      ? "edit_file (update the existing artifact path in place), register_artifact"
+      : "generate_document, write_file, register_artifact";
+    lines.push(`- artifact_tools: ${artifactTools}`);
     lines.push(`- artifact_verify_tool: verify_file_exists (verifier, not a producer)`);
     lines.push(`- must_verify_artifact: ${spec.constraints?.must_verify_artifact === false ? "false" : "true"}`);
   }

@@ -8,6 +8,7 @@ import {
 } from "../../core/policy/obligation-evaluator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { renderEvidenceLedgerFromSummary } from "../shared/evidence-ledger.mjs";
+import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
 import {
   compactTranscriptForComposer,
   localFallbackFinal
@@ -62,10 +63,15 @@ export function formatEvidenceSummaryForComposer(evidence = null) {
   return lines.join("\n");
 }
 
-export async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
+export async function composeFinalAnswer({ task, transcript, runtime, reason = "", signal = null }) {
   runtime?.emitTaskEvent?.("final_composer_started", { reason });
   const started = Date.now();
   try {
+    if (signal?.aborted) {
+      const err = new Error("Final composer aborted.");
+      err.code = "ABORT_ERR";
+      throw err;
+    }
     const taskSpec = task?.task_spec ?? {};
     const evidenceSummary = extractEvidence(transcript);
     const evidenceBlock = formatEvidenceSummaryForComposer(evidenceSummary);
@@ -104,6 +110,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       "Turn tool observations into the final answer the user asked for, in the user's language.",
       "When tool metadata marks `result_kind=record_list` and the expected output is summary, comparison, recommendation, or analysis, produce collection-level synthesis: counts, groups, priorities, implications, or next steps. Do not merely restate each record as a list.",
       "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
+      "If the user said not to open a webpage/browser, interpret that as no visible navigation. It does not prohibit using already executed search/fetch evidence or returning source/application links.",
       "Preserve relevant source, timestamp, location, units, and uncertainty from the transcript when they matter to the answer.",
       "Never output raw internal control/event JSON. If you see fields like iteration, next_action, violation_kinds, or satisfied, treat them as internal diagnostics and omit them.",
       "If a tool failed, say what could be completed and what could not, without exposing stack traces."
@@ -132,6 +139,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       messages,
       tools: [],
       maxTokens: 1024,
+      signal,
       onTextDelta: adapter.supportsStreaming === true
         ? (delta) => {
             if (!delta) return;
@@ -140,10 +148,24 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
           }
         : undefined
     });
+    emitLlmUsage({
+      runtime,
+      task,
+      callSite: "tool_using.final_composer",
+      usage: response?.usage,
+      provider: adapter,
+      stream: adapter.supportsStreaming === true,
+      promptSegments: [
+        { name: "system", content: system },
+        { name: "current", content: messages[1]?.content ?? "" }
+      ],
+      extra: { reason: reason || "normal" }
+    });
     if (!text) text = response?.text ?? "";
     const finalText = String(text ?? "").trim();
     return finalText || localFallbackFinal({ task, transcript, reason });
-  } catch {
+  } catch (error) {
+    if (error?.code === "ABORT_ERR") throw error;
     return localFallbackFinal({ task, transcript, reason });
   } finally {
     runtime?.emitTaskEvent?.("phase_timing", {

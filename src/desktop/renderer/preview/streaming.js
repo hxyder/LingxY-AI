@@ -92,8 +92,13 @@
     pre.scrollTop = pre.scrollHeight;
   }
 
-  // ── generate_document — outline-only (no fake layout) -----------------
+  // ── generate_document — real draft if JSON is complete, outline while partial
   function renderOutline(container, rawJson, toolPath) {
+    const parsed = parseCompleteJson(rawJson);
+    if (parsed?.outline) {
+      renderDocumentDraft(container, parsed, toolPath);
+      return;
+    }
     const title = extractStringField(rawJson, "title");
     const subtitle = extractStringField(rawJson, "subtitle");
     const headings = collectHeadings(rawJson);
@@ -105,6 +110,126 @@
       <div class="lp-outline"></div>`;
     const target = container.querySelector(".lp-outline");
     renderMarkdownInto(target, md);
+  }
+
+  function renderDocumentDraft(container, args, toolPath) {
+    const kind = String(args.kind || inferKindFromPath(toolPath) || "docx").toLowerCase();
+    const outline = args.outline || {};
+    if (kind === "xlsx") {
+      renderXlsxDraft(container, outline);
+      return;
+    }
+    if (kind === "pptx") {
+      renderPptxDraft(container, outline);
+      return;
+    }
+    renderPagedDocumentDraft(container, outline, kind);
+  }
+
+  function renderPagedDocumentDraft(container, outline, kind) {
+    const title = outline.title || "Untitled document";
+    const sections = Array.isArray(outline.sections) ? outline.sections : [];
+    const body = sections.length
+      ? sections.map(renderDocumentSection).join("")
+      : outline.body
+        ? `<p>${escapeHtml(outline.body)}</p>`
+        : `<p class="lp-muted">正在组织正文…</p>`;
+    container.innerHTML = `
+      <div class="lp-banner" style="margin:0 0 10px;padding:8px 12px;background:#e0f2fe;border:1px solid #38bdf8;color:#075985;border-radius:6px;font-size:12px;">
+        ${labelForKind(kind)} 草稿预览 · 生成完成后自动切换为真实文件渲染
+      </div>
+      <article class="lp-document-draft">
+        <h1>${escapeHtml(title)}</h1>
+        ${outline.subtitle ? `<p class="lp-doc-subtitle">${escapeHtml(outline.subtitle)}</p>` : ""}
+        ${body}
+      </article>`;
+  }
+
+  function renderDocumentSection(section = {}) {
+    const bullets = Array.isArray(section.bullets)
+      ? `<ul>${section.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      : "";
+    const table = Array.isArray(section.table)
+      ? renderRowsTable(section.table)
+      : "";
+    return `
+      <section>
+        ${section.heading ? `<h2>${escapeHtml(section.heading)}</h2>` : ""}
+        ${section.body ? `<p>${escapeHtml(section.body).replace(/\n/g, "<br>")}</p>` : ""}
+        ${bullets}
+        ${table}
+      </section>`;
+  }
+
+  function renderXlsxDraft(container, outline) {
+    const rows = Array.isArray(outline.rows)
+      ? outline.rows
+      : Array.isArray(outline.sheets?.[0]?.rows)
+        ? outline.sheets[0].rows
+        : [];
+    container.innerHTML = `
+      <div class="lp-banner" style="margin:0 0 10px;padding:8px 12px;background:#dcfce7;border:1px solid #22c55e;color:#14532d;border-radius:6px;font-size:12px;">
+        Excel 草稿预览 · 生成完成后自动切换为真实工作簿渲染
+      </div>
+      <div class="lp-sheet-draft">
+        ${outline.title ? `<h1>${escapeHtml(outline.title)}</h1>` : ""}
+        ${rows.length ? renderRowsTable(rows) : `<p class="lp-muted">正在组织表格…</p>`}
+      </div>`;
+  }
+
+  function renderPptxDraft(container, outline) {
+    const slides = Array.isArray(outline.slides) ? outline.slides : [];
+    container.innerHTML = `
+      <div class="lp-banner" style="margin:0 0 10px;padding:8px 12px;background:#ffedd5;border:1px solid #fb923c;color:#7c2d12;border-radius:6px;font-size:12px;">
+        PowerPoint 草稿预览 · 生成完成后自动切换为真实幻灯片渲染
+      </div>
+      <div class="lp-slides-draft">
+        ${outline.title ? `<h1 class="lp-deck-title">${escapeHtml(outline.title)}</h1>` : ""}
+        ${slides.length ? slides.map((slide, index) => renderSlideDraft(slide, index)).join("") : renderSlideDraft({ heading: outline.title || "Untitled", body: outline.subtitle || "" }, 0)}
+      </div>`;
+  }
+
+  function renderSlideDraft(slide = {}, index = 0) {
+    const bullets = Array.isArray(slide.bullets)
+      ? `<ul>${slide.bullets.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+      : "";
+    return `
+      <section class="lp-slide-draft">
+        <div class="lp-slide-index">Slide ${index + 1}</div>
+        <h2>${escapeHtml(slide.heading || slide.title || "Untitled slide")}</h2>
+        ${slide.body ? `<p>${escapeHtml(slide.body).replace(/\n/g, "<br>")}</p>` : ""}
+        ${bullets}
+      </section>`;
+  }
+
+  function renderRowsTable(rows) {
+    const safeRows = rows.slice(0, 80).map((row) => Array.isArray(row) ? row : [row]);
+    if (safeRows.length === 0) return "";
+    return `<table class="lp-table-draft">${safeRows.map((row, rowIndex) => {
+      const tag = rowIndex === 0 ? "th" : "td";
+      return `<tr>${row.slice(0, 30).map((cell) => `<${tag}>${escapeHtml(cell)}</${tag}>`).join("")}</tr>`;
+    }).join("")}</table>`;
+  }
+
+  function parseCompleteJson(rawJson) {
+    if (!rawJson) return null;
+    try {
+      const parsed = JSON.parse(rawJson);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function inferKindFromPath(toolPath) {
+    return String(toolPath || "").match(/\.([a-z0-9]{2,5})$/i)?.[1] || "";
+  }
+
+  function labelForKind(kind) {
+    if (kind === "pdf") return "PDF";
+    if (kind === "html") return "HTML";
+    if (kind === "docx") return "Word";
+    return kind.toUpperCase();
   }
 
   function renderDiagramStream(container, rawJson) {

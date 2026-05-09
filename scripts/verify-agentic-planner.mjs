@@ -90,6 +90,7 @@ const repoRoot = path.resolve(__dirname, "..");
   assert.match(prompt, /generate_document/);
   assert.match(prompt, /pptx/);
   assert.match(prompt, /Task contract/);
+  assert.match(prompt, /Skill descriptors are local guidance, not executable tools/);
   // UCA-077 P1-07: tool_policy replaces required_steps. The explicit
   // "今日 AI 新闻" entity must escalate external web reading to required.
   // P4-00 / P4-00.7: prompt renders policy at the group level with the

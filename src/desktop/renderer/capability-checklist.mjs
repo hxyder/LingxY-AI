@@ -104,10 +104,13 @@ function item(fields) {
 export function buildCapabilityChecklist({ workspace = {}, serviceBaseUrl = "" } = {}) {
   const providers = Array.isArray(workspace.providers) ? workspace.providers : [];
   const cliAdapters = Array.isArray(workspace.codeCliAdapters) ? workspace.codeCliAdapters : [];
+  const providerSetup = workspace.providerSetup ?? null;
   const readyProviders = providers.filter(isProviderReady);
   const configuredProviders = providers.filter(isProviderConfigured);
   const readyCliAdapters = cliAdapters.filter((adapter) => adapter.available === true);
   const hasReadyModelRuntime = readyProviders.length > 0 || readyCliAdapters.length > 0;
+  const providerSetupStatus = providerSetup?.status ?? null;
+  const providerSetupIssue = providerSetup?.primaryIssue ?? null;
   const skillCount = (workspace.skills ?? []).length;
   const registryCount = (workspace.skillRegistries ?? []).length;
 
@@ -159,12 +162,18 @@ export function buildCapabilityChecklist({ workspace = {}, serviceBaseUrl = "" }
     item({
       id: "ai-provider",
       title: "AI provider",
-      status: hasReadyModelRuntime ? "ready" : configuredProviders.length > 0 ? "recommended" : "action_needed",
+      status: hasReadyModelRuntime
+        ? "ready"
+        : providerSetupStatus === "recoverable" || configuredProviders.length > 0
+          ? "recommended"
+          : "action_needed",
       priority: hasReadyModelRuntime ? 10 : 1,
       detail: hasReadyModelRuntime
         ? `${readyProviders.length + readyCliAdapters.length} ready model runtime${readyProviders.length + readyCliAdapters.length === 1 ? "" : "s"}`
-        : configuredProviders.length > 0
-          ? "Provider saved, but runtime availability still needs checking."
+        : providerSetupIssue?.detail
+          ? providerSetupIssue.detail
+          : providerSetupStatus === "recoverable" || configuredProviders.length > 0
+            ? "Provider saved, but runtime availability still needs checking."
           : "Add an API provider or Code CLI before expecting model-backed work.",
       action: settingsAction("providerSettingsPanel")
     }),

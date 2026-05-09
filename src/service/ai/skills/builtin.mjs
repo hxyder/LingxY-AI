@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import {
+  deriveSkillRegistryId,
   listSkillDirectories,
   readSkillDescriptor,
   resolveSkillRootPath
@@ -7,7 +8,7 @@ import {
 
 export function createConfiguredSkillRegistry(config = {}) {
   const rootPath = resolveSkillRootPath(config.rootPath ?? config.path);
-  const id = config.id;
+  const id = config.id ?? deriveSkillRegistryId(rootPath, { source: config.source ?? "runtime_config" });
 
   return {
     id,

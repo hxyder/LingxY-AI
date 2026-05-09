@@ -1,4 +1,4 @@
-import pricing from "./pricing.json" with { type: "json" };
+import pricing from "./pricing.mjs";
 
 export function estimateTaskCost({
   executorId,

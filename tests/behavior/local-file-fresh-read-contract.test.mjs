@@ -221,6 +221,16 @@ test("TaskSpec requires fresh local read when the user references an attached do
   assert.equal(spec.suggested_executor, "tool_using");
 });
 
+test("TaskSpec treats reading existing meeting notes as local read, not note artifact creation", () => {
+  const spec = createTaskSpec("读取会议纪要，提取 owner、goal、follow-up。", {
+    file_paths: ["E:/linxi/audit-meeting-notes.md"]
+  });
+
+  assert.equal(spec.artifact.required, false);
+  assert.equal(spec.success_contract.artifact_created, false);
+  assert.equal(spec.goal, "qa");
+});
+
 test("TaskSpec combines fresh local read and external web read for hybrid evidence routes", () => {
   const spec = createTaskSpec("结合这份材料搜索外部机会", {
     file_paths: ["E:/linxi/resume.pdf"],
@@ -345,6 +355,27 @@ test("artifact contract requires the requested file kind", () => {
   ]);
 
   assert.equal(rightKind.satisfied, true);
+});
+
+test("resolve_output_path does not satisfy artifact creation", () => {
+  const out = validateSuccessContract({
+    artifact: { required: true, kind: "pdf" },
+    success_contract: { artifact_created: true }
+  }, [
+    toolResult({
+      tool: "resolve_output_path",
+      metadata: {
+        tool_id: "resolve_output_path",
+        path: "E:/linxiDoc/report.pdf"
+      },
+      observation: "Resolved output path: E:/linxiDoc/report.pdf"
+    })
+  ]);
+
+  assert.equal(out.satisfied, false);
+  assert.ok(out.violations.some((violation) =>
+    violation.kind === "artifact_required_not_created"
+  ));
 });
 
 test("real folder extraction satisfies the deep fresh-read contract", async () => {

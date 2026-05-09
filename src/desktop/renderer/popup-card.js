@@ -224,6 +224,23 @@ function renderActions(buttons = []) {
   }
 }
 
+function customActionsFromPayload(payload = {}) {
+  const specs = Array.isArray(payload?.buttons) ? payload.buttons : [];
+  return specs
+    .map((spec) => {
+      const label = String(spec?.label ?? "").trim();
+      if (!label) return null;
+      const action = String(spec?.actionKey ?? spec?.id ?? spec?.action ?? label).trim();
+      return {
+        actionKey: action || label,
+        label,
+        variant: spec?.variant ?? (spec?.primary ? "primary" : "ghost"),
+        onClick: () => resolveCard(action || label, spec?.meta ?? {})
+      };
+    })
+    .filter(Boolean);
+}
+
 function taskMetaFromPayload(payload = {}, fallbackTaskId = null) {
   return {
     taskId: payload?.taskId ?? fallbackTaskId ?? null,
@@ -432,7 +449,7 @@ function applyInit(payload) {
     ]);
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
   } else {
-    const buttons = [];
+    const buttons = customActionsFromPayload(payload);
     const shouldOpenOverlay = payload?.openWindow === "overlay" || payload?.handoff;
     if (payload?.artifactPath) {
       buttons.push({ actionKey: "preview_artifact", label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });

@@ -823,17 +823,6 @@
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
           <span class="rail-item-label">Projects<span class="zh">项目</span></span>
         </button>
-        <!-- UCA-IA Phase 1: standalone Conversations rail item hidden.
-             The Projects tab already lists conversations bucketed by
-             project (the canonical browser); this read-only viewer
-             duplicated it. Kept in DOM (hidden attribute) so deep links
-             / switchTab("conversations") still resolve, and verify
-             scripts that assert the rail's expected views still pass.
-             To restore: remove the `hidden` attribute below. -->
-        <button class="rail-item" data-tab="conversations" role="tab" aria-selected="false" title="Conversations" hidden>
-          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-          <span class="rail-item-label">Conversations<span class="zh">对话</span></span>
-        </button>
       </div>
 
       <div class="rail-group">
@@ -873,7 +862,7 @@
       <header class="page-head">
         <div>
           <h1>Tasks<span class="zh">任务</span></h1>
-          <div class="sub">All agent runs — active, queued, and recently completed.<span class="zh">代理的所有运行、队列与历史。</span></div>
+          <div class="sub">Execution runs, logs, artifacts, recovery, retry, and cancel controls.<span class="zh">执行运行、日志、产物、恢复、重试与取消。</span></div>
         </div>
         <div class="page-head-actions">
           <button id="tasksRefreshBtn" class="btn btn-sm" type="button" title="Refresh tasks">
@@ -908,7 +897,7 @@
       <div class="tasks-toolbar">
         <label class="search-input tasks-toolbar-search">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input id="taskSearchInput" type="text" placeholder="Search tasks, IDs, outputs…  搜索任务" aria-label="Search tasks" />
+          <input id="taskSearchInput" type="text" placeholder="Search execution runs, IDs, outputs…  搜索执行记录" aria-label="Search task runs" />
         </label>
         <div class="filter-chips" id="taskFilterChips" role="group" aria-label="Task status filter">
           <button type="button" class="filter-chip" data-filter="all" aria-pressed="true">All<span class="filter-chip-count" data-count-for="all">0</span></button>
@@ -960,11 +949,12 @@
                one giant .detail-section. Each panel has a clear head so
                sections can be visually scoped and collapse when empty. -->
           <div id="taskDetailSummary" class="stack muted">Select a task to view details.</div>
-          <!-- Recent conversations — fills the right pane when no task is
-               selected so the area isn't a blank "select something" sea.
-               Hidden once the user picks a task. Click any row → loads
-               that conversation into the Chat tab. -->
-          <section class="panel task-detail-panel" id="taskRecentConversationsPanel">
+          <!-- FW-028 IA: Conversations no longer fill the Tasks empty
+               state. Tasks owns execution records; Chat sidebar and
+               Projects own conversation browsing. This compatibility
+               panel stays hidden so older scripts/deep links do not
+               break while the UI migrates away from it. -->
+          <section class="panel task-detail-panel" id="taskRecentConversationsPanel" hidden>
             <header class="panel-head">
               <div class="panel-head-main">
                 <h3 class="panel-title">
@@ -2273,6 +2263,28 @@
           </div>
           <span id="onboardingState" class="chip warning" style="margin-bottom:10px;">Checking...</span>
           <div id="wizardList" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <!-- User memory -->
+        <div id="userMemoryPanel" class="settings-group" data-foldable="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">User Memory</h3>
+            <span id="userMemoryState" class="muted" style="font-size:12px;"></span>
+          </div>
+          <label class="switch-row">
+            <div class="switch-copy">
+              <strong>Editable profile memory</strong>
+              <span class="muted">Injects your saved preferences as background context. Current instructions always win.</span>
+            </div>
+            <input id="userMemoryEnabled" class="switch-control" type="checkbox">
+          </label>
+          <label for="userMemoryPreferences" style="margin-top:10px;">Global preferences</label>
+          <textarea id="userMemoryPreferences" rows="5" placeholder="One preference per line"></textarea>
+          <label for="userMemoryProjectNotes" style="margin-top:10px;">Project memory</label>
+          <textarea id="userMemoryProjectNotes" rows="5" placeholder="project_id | note"></textarea>
+          <div class="toolbar" style="margin-top:10px;">
+            <button id="userMemorySaveBtn" class="btn" type="button">Save memory</button>
+          </div>
         </div>
 
         <!-- Integrations -->

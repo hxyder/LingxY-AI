@@ -1,8 +1,4 @@
-import academicSummary from "./academic_summary.json" with { type: "json" };
-import competitorScan from "./competitor_scan.json" with { type: "json" };
-import dataBriefing from "./data_briefing.json" with { type: "json" };
-import emailDraft from "./email_draft.json" with { type: "json" };
-import legalContractReview from "./legal_contract_review.json" with { type: "json" };
+import { loadBuiltinJson } from "./load-json.mjs";
 import { normalizeTemplateDocument } from "../parser.mjs";
 import { validateTemplateDocument } from "../schema.mjs";
 
@@ -16,9 +12,9 @@ function prepareTemplate(template) {
 }
 
 export const BUILTIN_TEMPLATES = Object.freeze([
-  legalContractReview,
-  academicSummary,
-  dataBriefing,
-  emailDraft,
-  competitorScan
+  loadBuiltinJson("legal_contract_review.json"),
+  loadBuiltinJson("academic_summary.json"),
+  loadBuiltinJson("data_briefing.json"),
+  loadBuiltinJson("email_draft.json"),
+  loadBuiltinJson("competitor_scan.json")
 ].map(prepareTemplate));

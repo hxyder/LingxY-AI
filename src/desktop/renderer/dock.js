@@ -1,3 +1,14 @@
+import {
+  DEFAULT_WAKE_DISPLAY_NAME,
+  DEFAULT_WAKE_PROFILE,
+  NOTE_PHRASES,
+  buildWakeProfile,
+  enrollmentTargetPhrases,
+  matchesAny,
+  matchesWake,
+  normalizeForMatch
+} from "../../shared/echo-wake-match.mjs";
+
 const dockButton = document.querySelector("#dockButton");
 const clipBadge = document.querySelector("#clipBadge");
 const taskBadge = document.querySelector("#taskBadge");
@@ -113,55 +124,6 @@ setInterval(() => {
 // Matches wake-word "linxi" / "林夕" in live transcripts and hands off to
 // the overlay's existing voice/note pipeline via uca:echo-wake IPC.
 
-// Wake-word matching accepts common STT variants of "linxi", but standby Echo
-// must stay quiet and must not wake from a generic command like "开始录音".
-// Keep this list close to plausible "linxi / lingxi" transcriptions.
-const WAKE_PHRASES = [
-  "linxi", "lin xi", "lin-xi", "lingxi", "ling xi", "lynx",
-  "linsee", "lin see", "linsey", "lindsay", "linsy",
-  "林夕", "林西", "林氏", "林熙", "林希", "林喜", "林溪", "林犀",
-  "林席", "林系", "林细", "林戏", "林昔", "林洗", "林奇", "林起",
-  "林其", "林期", "林琪", "林琦", "林齐", "林七", "林息", "林惜",
-  "林师", "林施", "林诗", "林医师", "林醫師", "林医生", "林醫生",
-  "林戲", "林齊", "林錫", "林襲",
-  "琳西", "琳熙", "琳溪", "琳希", "琳奇", "琳琪",
-  "灵犀", "灵溪", "灵熙", "灵希", "邻西", "邻熙", "凌溪", "凌西", "凌希",
-  "靈犀", "靈溪", "靈熙", "靈希", "鄰西", "鄰熙", "淩溪", "淩西", "淩希",
-  "临溪", "临西", "淋溪", "淋西", "零西", "零息", "令西", "令希",
-  "臨溪", "臨西"
-];
-const WAKE_FIRST_CHARS = "林琳凌淩灵靈邻鄰临臨淋零令陵麟";
-const WAKE_SECOND_CHARS = "夕西氏熙希喜溪犀席系细細戏戲昔洗袭襲奇起其期琪琦齐齊七息惜稀锡錫晰熹";
-const WAKE_REGEX_CN = new RegExp(`[${WAKE_FIRST_CHARS}]\\s*[${WAKE_SECOND_CHARS}]`);
-const WAKE_REGEX_LATIN = /\b(?:lin|ling|lyn)[\s-]*(?:xi|see|sey|sy|x)\b|\b(?:lindsay|linsey|linsee|lynx)\b/i;
-const DEFAULT_WAKE_DISPLAY_NAME = "linxi";
-const DEFAULT_WAKE_PROFILE = Object.freeze({
-  displayName: DEFAULT_WAKE_DISPLAY_NAME,
-  phrases: WAKE_PHRASES,
-  includeDefault: true
-});
-const NOTE_PHRASES = [
-  "开始录音", "開始錄音", "start recording", "开始录制", "開始錄製",
-  "开始记录", "開始記錄", "录音笔记", "錄音筆記", "会议记录", "會議記錄",
-  "会议纪要", "會議紀要", "meeting notes", "voice note"
-];
-const WAKE_TRADITIONAL_NORMALIZATION = Object.freeze({
-  靈: "灵",
-  鄰: "邻",
-  臨: "临",
-  淩: "凌",
-  戲: "戏",
-  細: "细",
-  襲: "袭",
-  齊: "齐",
-  錫: "锡",
-  領: "领",
-  醫: "医",
-  師: "师",
-  詩: "诗",
-  悟: "悟"
-});
-
 let echoEnabled = false;
 let echoRecognizer = null;
 let echoFallbackRecorder = null;
@@ -244,57 +206,6 @@ const ECHO_NOISE_SAMPLE_CAP = 300;
 const ECHO_NEAR_MISS_HINT_AFTER = 3;
 const ECHO_NEAR_MISS_HINT_COOLDOWN_MS = 15_000;
 
-function normalizeForMatch(text) {
-  // Lowercase, collapse whitespace, and strip punctuation so phrases like
-  // "Linxi," or "linxi。" still match. Keeps Chinese / Latin letters +
-  // digits only — everything else becomes a space.
-  return String(text ?? "")
-    .toLowerCase()
-    .replace(/[靈鄰臨淩戲細襲齊錫領悟]/g, (ch) => WAKE_TRADITIONAL_NORMALIZATION[ch] ?? ch)
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function matchesAny(text, phrases) {
-  const norm = normalizeForMatch(text);
-  return phrases.some((p) => norm.includes(normalizeForMatch(p)));
-}
-
-function normalizeWakePhrases(value, { max = 12 } = {}) {
-  if (!Array.isArray(value)) return [];
-  const seen = new Set();
-  const phrases = [];
-  for (const item of value) {
-    const phrase = String(item ?? "").trim();
-    if (!phrase) continue;
-    const key = normalizeForMatch(phrase);
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    phrases.push(phrase);
-  }
-  return Number.isFinite(max) ? phrases.slice(0, max) : phrases;
-}
-
-function buildWakeProfile(settings = {}) {
-  const source = settings?.echoWake && typeof settings.echoWake === "object"
-    ? settings.echoWake
-    : {};
-  const customPhrases = normalizeWakePhrases(source.phrases, { max: 12 });
-  const includeDefault = source.includeDefault !== false;
-  const displayName = String(source.displayName || customPhrases[0] || DEFAULT_WAKE_DISPLAY_NAME).trim()
-    || DEFAULT_WAKE_DISPLAY_NAME;
-  const phrases = [
-    ...(includeDefault ? DEFAULT_WAKE_PROFILE.phrases : []),
-    ...customPhrases
-  ];
-  return {
-    displayName,
-    phrases: normalizeWakePhrases(phrases, { max: Infinity }),
-    includeDefault
-  };
-}
-
 function applyEchoSettings(settings = {}) {
   echoWakeProfile = buildWakeProfile(settings);
   applyEchoState(Boolean(settings?.echoMode));
@@ -315,35 +226,6 @@ function getWakeDisplayName() {
 // the displayName itself is non-default — the default name and its
 // fuzzy variants belong to the runtime listener, not the enrollment
 // gate.
-function enrollmentTargetPhrases(profile = echoWakeProfile) {
-  const phrases = Array.isArray(profile?.phrases) ? profile.phrases : [];
-  const isCustomDisplayName = (profile?.displayName ?? DEFAULT_WAKE_DISPLAY_NAME)
-    !== DEFAULT_WAKE_DISPLAY_NAME;
-  if (!isCustomDisplayName) return phrases;
-  // Filter out the canonical default phrases. Compare via normalizeForMatch
-  // so subtle whitespace / punctuation differences in user-supplied custom
-  // phrases that overlap a default form (rare but possible) are caught.
-  const defaultKeys = new Set(DEFAULT_WAKE_PROFILE.phrases.map(normalizeForMatch));
-  const filtered = phrases.filter((p) => !defaultKeys.has(normalizeForMatch(p)));
-  // Always include the configured displayName itself, even if it overlaps
-  // a default form, so the user's intended target is on the list.
-  if (profile.displayName && !filtered.some((p) => normalizeForMatch(p) === normalizeForMatch(profile.displayName))) {
-    filtered.unshift(profile.displayName);
-  }
-  return filtered;
-}
-
-function matchesWake(text) {
-  if (matchesAny(text, echoWakeProfile.phrases)) return true;
-  if (echoWakeProfile.includeDefault) {
-    // Fuzzy Chinese remains bounded to two-character "lin/ling + xi-like"
-    // forms; generic command words never pass this gate.
-    if (WAKE_REGEX_CN.test(normalizeForMatch(text))) return true;
-    if (WAKE_REGEX_LATIN.test(text)) return true;
-  }
-  return false;
-}
-
 async function onWakeDetected(kind, transcript = "", options = {}) {
   // Rate-limit to one wake every 1.5 seconds (prevents the same utterance
   // from firing twice across interim+final results or across rolling-window
@@ -453,7 +335,7 @@ function handleEchoTranscript(text, { interim = false } = {}) {
   echoLastSeenText = text;
   echoLastSeenTime = now;
 
-  const wakeMatched = matchesWake(text);
+  const wakeMatched = matchesWake(text, echoWakeProfile);
   if (!isRecentDuplicate && wakeMatched) {
     void onWakeDetected(matchesAny(text, NOTE_PHRASES) ? "note" : "voice", text);
     return;
@@ -553,7 +435,7 @@ function startEchoWebSpeechRecognizer() {
         let wakeHit = null;
         for (let a = 0; a < r.length; a += 1) {
           const altText = r[a]?.transcript ?? "";
-          if (!matchesWake(altText)) continue;
+          if (!matchesWake(altText, echoWakeProfile)) continue;
           wakeHit = {
             kind: matchesAny(altText, NOTE_PHRASES) ? "note" : "voice",
             text: altText

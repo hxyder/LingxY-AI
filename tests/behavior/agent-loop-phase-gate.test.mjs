@@ -667,3 +667,178 @@ test("invalid tool call on artifact-required task injects artifact guidance befo
     && entry.payload?.source === "invalid_tool_call_gate"
   ));
 });
+
+test("artifact-required prose trap runs deterministic artifact obligation after guidance", async () => {
+  const calls = [];
+  const events = [];
+  const auditLog = [];
+  const tools = [
+    {
+      id: "generate_document",
+      name: "Generate Document Fixture",
+      description: "fixture",
+      risk_level: "low",
+      requires_confirmation: false,
+      parameters: { type: "object", properties: {} },
+      async execute(args) {
+        calls.push({ tool: "generate_document", args });
+        return {
+          success: true,
+          observation: "DOCX artifact created.",
+          artifact_paths: ["E:/linxiDoc/task_fixture/prose.docx"],
+          metadata: {
+            path: "E:/linxiDoc/task_fixture/prose.docx",
+            artifact_paths: ["E:/linxiDoc/task_fixture/prose.docx"],
+            mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          }
+        };
+      }
+    }
+  ];
+  const runtime = {
+    actionToolRegistry: createActionToolRegistry(tools),
+    toolContext: {},
+    toolOutputDir: null,
+    securityBroker: {
+      authorizeToolCall() {
+        return { allowed: true, reason: null };
+      }
+    },
+    store: {
+      appendAuditLog(entry) {
+        auditLog.push(entry);
+      }
+    },
+    emitTaskEvent(eventType, payload) {
+      events.push({ eventType, payload });
+    },
+    finalAnswerComposer: async () => "Composed document body."
+  };
+
+  const task = makeTask({
+    user_command: "Create a docx report.",
+    task_spec: {
+      goal: "create_file",
+      synthesis: { expected_output: "document", user_goal: "create a docx report" },
+      artifact: { required: true, kind: "docx" },
+      success_contract: {
+        artifact_created: true,
+        required_policy_groups: [],
+        required_tool_names: []
+      },
+      execution_constraints: {
+        error_budget: { max_tool_failures: 5 }
+      }
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async () => ({ type: "final", text: "Here is the report content in prose only." }),
+    maxIterations: 4
+  });
+
+  assert.equal(result.status, "success");
+  assert.deepEqual(calls.map((call) => call.tool), ["generate_document"]);
+  assert.match(result.final_text, /prose\.docx/);
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_guidance"
+    && event.payload?.source === "prose_trap"
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "deterministic_artifact_obligation"
+    && event.payload?.source === "prose_trap"
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "artifact_created"
+    && event.payload?.path === "E:/linxiDoc/task_fixture/prose.docx"
+  ));
+  assert.ok(auditLog.some((entry) =>
+    entry.event_subtype === "tool_loop.deterministic_artifact_obligation"
+    && entry.payload?.source === "prose_trap"
+  ));
+});
+
+test("artifact-required xlsx prose trap does not synthesize a generic Content spreadsheet", async () => {
+  const calls = [];
+  const events = [];
+  const tools = [
+    {
+      id: "generate_document",
+      name: "Generate Document Fixture",
+      description: "fixture",
+      risk_level: "low",
+      requires_confirmation: false,
+      parameters: { type: "object", properties: {} },
+      async execute(args) {
+        calls.push({ tool: "generate_document", args });
+        return {
+          success: true,
+          observation: "XLSX artifact created.",
+          artifact_paths: ["E:/linxiDoc/task_fixture/prose.xlsx"],
+          metadata: {
+            path: "E:/linxiDoc/task_fixture/prose.xlsx",
+            artifact_paths: ["E:/linxiDoc/task_fixture/prose.xlsx"],
+            mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          }
+        };
+      }
+    }
+  ];
+  const runtime = {
+    actionToolRegistry: createActionToolRegistry(tools),
+    toolContext: {},
+    toolOutputDir: null,
+    securityBroker: {
+      authorizeToolCall() {
+        return { allowed: true, reason: null };
+      }
+    },
+    store: {
+      appendAuditLog() {}
+    },
+    emitTaskEvent(eventType, payload) {
+      events.push({ eventType, payload });
+    },
+    finalAnswerComposer: async () => "Only prose was available, no spreadsheet table."
+  };
+
+  const task = makeTask({
+    user_command: "生成 Excel 报表",
+    task_spec: {
+      goal: "generate_document",
+      synthesis: { expected_output: "artifact", user_goal: "generate xlsx report" },
+      artifact: { required: true, kind: "xlsx" },
+      success_contract: {
+        artifact_created: true,
+        required_policy_groups: [],
+        required_tool_names: []
+      },
+      execution_constraints: {
+        error_budget: { max_tool_failures: 5 }
+      }
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async () => ({
+      type: "final",
+      text: "好的，我可以给你一个 Excel 文件下载链接，但这里没有结构化表格。"
+    }),
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "partial_success");
+  assert.deepEqual(calls, []);
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_finalization_blocked"
+    && event.payload?.violation_kinds?.includes("artifact_required_not_created")
+  ));
+  assert.ok(!events.some((event) =>
+    event.eventType === "deterministic_artifact_obligation"
+    && event.payload?.recovered === true
+  ));
+});

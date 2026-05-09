@@ -345,6 +345,29 @@ try {
   const skillsPayload = await fetch(`${listening.baseUrl}/ai/skills`).then((response) => response.json());
   assert.ok(skillsPayload.registries.some((registry) => registry.id === "scratch-skills" && registry.available));
   assert.ok(skillsPayload.skills.some((skill) => skill.id === "scratch-skill"));
+  assert.ok(
+    skillsPayload.skills.some((skill) => skill.id === "scratch-skill" && skill.active === false && skill.inactiveReason === "duplicate_skill_id"),
+    "duplicate same-id skills should remain visible but inactive"
+  );
+
+  const unauthorizedSkillToggle = await patchJsonResponse(listening.baseUrl, "/config/skills/skills/state", {
+    registry: "scratch-skills",
+    id: "scratch-skill",
+    enabled: true
+  });
+  assert.equal(unauthorizedSkillToggle.response.status, 403, "skill state changes must require desktop actor");
+
+  await patchJson(listening.baseUrl, "/config/skills/skills/state", {
+    registry: "scratch-skills",
+    id: "scratch-skill",
+    enabled: true
+  }, desktopActorHeaders);
+  const toggledSkillsPayload = await fetch(`${listening.baseUrl}/ai/skills`).then((response) => response.json());
+  const manualScratch = toggledSkillsPayload.skills.find((skill) => skill.registry === "scratch-skills" && skill.id === "scratch-skill");
+  const runtimeScratch = toggledSkillsPayload.skills.find((skill) => skill.registry === "user-runtime-skills" && skill.id === "scratch-skill");
+  assert.equal(manualScratch?.active, true, "enabling a duplicate skill should activate the selected registry");
+  assert.equal(runtimeScratch?.active, false, "enabling one duplicate should stop the same-id alternative");
+  assert.equal(runtimeScratch?.inactiveReason, "disabled_by_user");
 
   const codeCliPayload = await fetch(`${listening.baseUrl}/ai/code-cli`).then((response) => response.json());
   assert.ok(codeCliPayload.adapters.some((adapter) => adapter.id === "mock-code-cli" && adapter.available));

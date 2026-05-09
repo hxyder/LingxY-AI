@@ -66,9 +66,21 @@ const approved = await runtime.pendingApprovals.approve(firstRun.pendingApproval
 });
 assert.equal(approved.approval.status, "approved");
 assert.equal(approved.executionResult.task.status, "success");
+assert.equal(approved.executionResult.task.task_id, firstRun.task.task_id,
+  "approval resume should continue the original connector workflow task");
+assert.equal(approved.executionResult.resumed_same_task, true,
+  "connector workflow approval should use same-task resume");
+assert.equal(approved.approval.resulting_task_id, firstRun.task.task_id,
+  "approval record should point back to the resumed task, not a bridge task");
+assert.equal(approved.approval.metadata.approval_resume.resulting_task_id, firstRun.task.task_id,
+  "approval resume metadata should resolve to the resumed task id");
 assert.equal(sendCalls.length, 1, "send step should run after approval");
 assert.equal(sendCalls[0].provider, "google");
 assert.deepEqual(sendCalls[0].to, input.to);
+assert.ok(runtime.store.getTaskEvents(firstRun.task.task_id).some((event) =>
+  event.event_type === "approval_resume_started"
+  && event.payload?.approval_id === firstRun.pendingApproval.approval_id),
+"same-task resume should leave an approval_resume_started event on the original task");
 
 const invalid = await CONNECTOR_WORKFLOW_RUN_TOOL.execute({
   workflowId: "google.gmail.draft_confirm_send",

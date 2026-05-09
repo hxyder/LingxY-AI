@@ -6,6 +6,8 @@
  *
  *   - `next_run_at` is in the future
  *   - `reminder_sent_at` is null (haven't reminded yet for this cycle)
+ *   - the schedule explicitly opted into reminders via `user_todo` or
+ *     `lead_time_ms`
  *   - `now >= next_run_at - lead_time_ms` (within the lead-time window)
  *   - status is not already completed / cancelled / in_progress
  *
@@ -35,6 +37,8 @@ function shouldRemind(schedule, nowMs) {
   if (!schedule.next_run_at) return false;
   if (schedule.reminder_sent_at) return false;
   if (schedule.completed_at) return false;
+  const hasExplicitReminder = schedule.user_todo === true || schedule.lead_time_ms != null;
+  if (!hasExplicitReminder) return false;
 
   // Don't remind for schedules that already ran or are running
   const status = schedule.last_run_status;
@@ -76,8 +80,7 @@ export function createReminderWatcher({ runtime, tickMs = DEFAULT_TICK_MS } = {}
     }
   }
 
-  async function tick() {
-    const nowMs = Date.now();
+  async function tick({ nowMs = Date.now() } = {}) {
     const schedules = runtime.store.listSchedules();
 
     for (const schedule of schedules) {

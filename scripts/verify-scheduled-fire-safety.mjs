@@ -220,6 +220,12 @@ const { runtime } = service;
     /if \(!popupShown\)/.test(fireNoticeSource),
     "schedule Run Now completion notify path must be gated behind popup fallback"
   );
+  assert.ok(
+    /artifactPath:\s*copy\.artifactPath/.test(fireNoticeSource)
+      && /mime:\s*copy\.mime/.test(fireNoticeSource)
+      && /inlinePreview:\s*copy\.inlinePreview/.test(fireNoticeSource),
+    "schedule Run Now artifact completions must forward artifact metadata to popup/notify actions"
+  );
 }
 
 // ── Bug A (UCA-098): dispatch locks the schedule in-flight ──

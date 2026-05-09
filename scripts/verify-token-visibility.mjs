@@ -29,6 +29,9 @@ import {
   renderTaskKvGrid,
   describeTaskTokens
 } from "../src/desktop/renderer/console-task-detail.mjs";
+import {
+  renderTaskListItemHtml
+} from "../src/desktop/renderer/console-task-list.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -161,6 +164,27 @@ function check(label, condition) {
   });
   check("priority: usage_summary wins over tokens_used + total_tokens",
     display === "150 (100 in / 50 out)");
+}
+
+// ---------------------------------------------------------------------
+// 8b. Task list: token usage is visible before opening task detail.
+// ---------------------------------------------------------------------
+{
+  const html = renderTaskListItemHtml({
+    task: {
+      task_id: "task_tokens_visible",
+      user_command: "Summarize token usage",
+      executor: "tool_using",
+      source_type: "chat",
+      status: "success",
+      created_at: "2026-05-08T12:00:00.000Z",
+      usage_summary: { tokens_in: 1200, tokens_out: 300 }
+    }
+  });
+  check("task list: token usage appears in item meta",
+    html.includes("1,500 (1,200 in / 300 out) tokens"));
+  check("task list: no cost wording in item meta",
+    !/cost|usd|\$/i.test(html));
 }
 
 // ---------------------------------------------------------------------

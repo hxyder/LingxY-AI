@@ -17,7 +17,8 @@ import {
   applyMessageBatch as cacheApplyBatch,
   fetchMessagesSince as cacheFetchSince,
   fetchConversations as cacheFetchConversations,
-  fetchConversationDetail as cacheFetchConversationDetail
+  fetchConversationDetail as cacheFetchConversationDetail,
+  searchConversations as cacheSearchConversations
 } from "./conversation-cache.mjs";
 import {
   artifactExtension,
@@ -81,6 +82,12 @@ import {
   normalizeAttachmentSubmission
 } from "../../shared/context-resolver.mjs";
 import {
+  buildConversationMessageContextSummary,
+  conversationContextChips,
+  conversationContextPreviewText,
+  getConversationContextSummary
+} from "../../shared/conversation-message-context.mjs";
+import {
   extractTaskProviderInfo,
   renderDowngradedWarning,
   renderTimelineEntry
@@ -117,7 +124,10 @@ import {
 } from "./capability-tool-view.mjs";
 import {
   renderTaskKvGrid,
-  describeTaskTokens
+  describeTaskTokens,
+  renderLlmUsagePanel,
+  renderTaskTracePanel,
+  renderFileReversibilityPanel
 } from "./console-task-detail.mjs";
 import {
   createConsoleTaskEventController
@@ -175,6 +185,11 @@ const openOverlayButton = document.querySelector("#openOverlayButton");
 const locationButton = document.querySelector("#locationButton");
 const onboardingState = document.querySelector("#onboardingState");
 const wizardList = document.querySelector("#wizardList");
+const userMemoryEnabled = document.querySelector("#userMemoryEnabled");
+const userMemoryPreferences = document.querySelector("#userMemoryPreferences");
+const userMemoryProjectNotes = document.querySelector("#userMemoryProjectNotes");
+const userMemorySaveBtn = document.querySelector("#userMemorySaveBtn");
+const userMemoryState = document.querySelector("#userMemoryState");
 const taskComposer = document.querySelector("#taskComposer");
 const commandInput = document.querySelector("#commandInput");
 const submitState = document.querySelector("#submitState");
@@ -798,6 +813,8 @@ const state = {
     skillRegistries: [],
     skills: [],
     onboarding: { pendingSuggestions: [], archivedSuggestions: [] },
+    providerSetup: null,
+    userMemory: null,
     emailAccounts: [],
     emailDigestSettings: {},
     history: [],
@@ -828,6 +845,9 @@ const state = {
 };
 
 let consoleChatEventStream = null;
+const consoleChatTaskStreams = new Map();
+const consoleChatTaskConversationIds = new Map();
+const consoleChatActiveTaskByConversationId = new Map();
 let consoleChatResultTaskIds = new Set();
 const consoleChatContentEvidenceTaskIds = new Set();
 const fileContentIndexPanel = createFileContentIndexPanel({
@@ -849,6 +869,89 @@ const fileContentIndexPanel = createFileContentIndexPanel({
 let consoleChatActiveTaskId = null;
 let consoleChatCancellationRequestedTaskId = null;
 const consoleChatSendBtn = document.querySelector("#consoleChatSendBtn");
+
+function currentConsoleConversationId() {
+  return consoleActiveConversation?.conversation_id ?? null;
+}
+
+function rememberConsoleChatTaskOwner(taskId, conversationId = currentConsoleConversationId()) {
+  if (!taskId || !conversationId) return;
+  consoleChatTaskConversationIds.set(taskId, conversationId);
+  consoleChatActiveTaskByConversationId.set(conversationId, taskId);
+}
+
+function consoleTaskOwnerConversationId(taskId) {
+  if (!taskId) return null;
+  if (consoleChatTaskConversationIds.has(taskId)) {
+    return consoleChatTaskConversationIds.get(taskId);
+  }
+  const task = state.workspace?.tasks?.find?.((item) => item?.task_id === taskId);
+  const owner = task?.conversation_id ?? task?.context_packet?.selection_metadata?.conversation_id ?? null;
+  if (owner) consoleChatTaskConversationIds.set(taskId, owner);
+  return owner;
+}
+
+function consoleChatTaskBelongsToActiveConversation(taskId) {
+  const owner = consoleTaskOwnerConversationId(taskId);
+  const active = currentConsoleConversationId();
+  return Boolean(active && owner && owner === active);
+}
+
+function closeConsoleChatTaskStream(taskId) {
+  if (!taskId) return;
+  const stream = consoleChatTaskStreams.get(taskId);
+  try { stream?.close?.(); } catch { /* ignore */ }
+  try { stream?.dispose?.(); } catch { /* ignore */ }
+  if (typeof stream === "function") {
+    try { stream(); } catch { /* ignore */ }
+  }
+  consoleChatTaskStreams.delete(taskId);
+  if (consoleChatActiveTaskId === taskId) consoleChatEventStream = null;
+}
+
+function markConsoleChatTaskTerminal(taskId) {
+  const owner = consoleTaskOwnerConversationId(taskId);
+  if (owner && consoleChatActiveTaskByConversationId.get(owner) === taskId) {
+    consoleChatActiveTaskByConversationId.delete(owner);
+  }
+  if (consoleChatActiveTaskId === taskId) {
+    consoleChatActiveTaskId = null;
+    consoleChatCancellationRequestedTaskId = null;
+    consoleChatEventStream = null;
+    refreshConsoleChatSendBtnMode();
+  }
+  closeConsoleChatTaskStream(taskId);
+}
+
+function findActiveConsoleChatTaskForConversation(conversationId) {
+  if (!conversationId) return null;
+  const remembered = consoleChatActiveTaskByConversationId.get(conversationId);
+  if (remembered) return remembered;
+  const tasks = Array.isArray(state.workspace?.tasks) ? state.workspace.tasks : [];
+  const activeStatuses = new Set(["queued", "running", "starting", "cancelling"]);
+  const found = [...tasks]
+    .filter((task) => task?.task_id && activeStatuses.has(task.status))
+    .filter((task) => (task.conversation_id ?? task.context_packet?.selection_metadata?.conversation_id ?? null) === conversationId)
+    .sort((left, right) => `${right.updated_at ?? right.created_at ?? ""}`.localeCompare(`${left.updated_at ?? left.created_at ?? ""}`))[0];
+  if (found?.task_id) {
+    rememberConsoleChatTaskOwner(found.task_id, conversationId);
+    return found.task_id;
+  }
+  return null;
+}
+
+function syncConsoleChatActiveTaskForConversation(conversationId = currentConsoleConversationId()) {
+  const taskId = findActiveConsoleChatTaskForConversation(conversationId);
+  consoleChatActiveTaskId = taskId ?? null;
+  consoleChatCancellationRequestedTaskId = null;
+  if (taskId) {
+    subscribeConsoleChatTask(taskId, { conversationId });
+    if (consoleChatState) consoleChatState.textContent = `Running ${taskId}`;
+  } else if (consoleChatState) {
+    consoleChatState.textContent = "";
+  }
+  refreshConsoleChatSendBtnMode();
+}
 
 function refreshConsoleChatSendBtnMode() {
   if (!consoleChatSendBtn) return;
@@ -932,6 +1035,72 @@ function renderConsoleChatBubbleContent(bubble, text = "") {
   renderChatMessageBlocks(bubble, source);
 }
 
+function renderConversationContextChipHtml(chip = {}) {
+  const label = escapeHtml(chip.label ?? "");
+  const title = escapeHtml(chip.title ?? chip.label ?? "");
+  if (chip.path) {
+    const filePath = escapeHtml(chip.path);
+    const kind = escapeHtml(chip.kind ?? "file");
+    return `
+      <span class="chat-context-chip-wrap" title="${title}">
+        <button class="context-chip context-chip--action" type="button" data-chat-context-open="${filePath}" data-chat-context-kind="${kind}">${label}</button>
+        <button class="context-chip-reveal" type="button" data-chat-context-reveal="${filePath}" title="Show in folder">↗</button>
+      </span>`;
+  }
+  if (chip.url) {
+    const url = escapeHtml(chip.url);
+    return `<button class="context-chip context-chip--action" type="button" data-chat-context-url="${url}" title="${title}">${label}</button>`;
+  }
+  return `<span class="context-chip" title="${title}">${label}</span>`;
+}
+
+function appendConsoleMessageContext(wrapper, message = {}) {
+  if (!wrapper) return;
+  const summary = getConversationContextSummary(message);
+  if (!summary) return;
+  const chips = conversationContextChips(summary);
+  const preview = conversationContextPreviewText(summary);
+  if (chips.length === 0 && !preview) return;
+  const box = document.createElement("div");
+  box.className = "chat-context-summary";
+  const chipsHtml = chips.length
+    ? `<div class="chat-context-chips">${chips.map(renderConversationContextChipHtml).join("")}</div>`
+    : "";
+  box.innerHTML = `
+    ${chipsHtml}
+    ${preview ? `<div class="chat-context-preview">${escapeHtml(preview)}</div>` : ""}
+  `;
+  const target = wrapper.querySelector?.(".chat-msg-body, .console-chat-message-body") ?? wrapper;
+  target.appendChild(box);
+}
+
+function appendConsoleChatBranchActions(wrapper, message = {}) {
+  if (!wrapper || !message?.conversation_id || !message?.message_id) return;
+  if (wrapper.querySelector?.(".chat-msg-branch-actions")) return;
+  if (message.role === "tool_summary") return;
+  wrapper.dataset.conversationId = message.conversation_id;
+  wrapper.dataset.messageId = message.message_id;
+  if (message.seq !== undefined) wrapper.dataset.seq = String(message.seq);
+  const body = wrapper.querySelector?.(".chat-msg-body, .console-chat-message-body") ?? wrapper;
+  const actions = document.createElement("div");
+  actions.className = "chat-msg-branch-actions";
+  actions.innerHTML = `
+    <button type="button" class="chat-msg-action" data-chat-branch-action="fork"
+            data-conversation-id="${escapeHtml(message.conversation_id)}"
+            data-message-id="${escapeHtml(message.message_id)}"
+            title="Create a new branch through this message">Fork</button>
+    <button type="button" class="chat-msg-action" data-chat-branch-action="rewind"
+            data-conversation-id="${escapeHtml(message.conversation_id)}"
+            data-message-id="${escapeHtml(message.message_id)}"
+            title="Create a new branch ending at this message">Rewind</button>
+    <button type="button" class="chat-msg-action" data-chat-branch-action="edit"
+            data-conversation-id="${escapeHtml(message.conversation_id)}"
+            data-message-id="${escapeHtml(message.message_id)}"
+            title="Edit this message in a new branch">Edit</button>
+  `;
+  body.appendChild(actions);
+}
+
 async function openConsoleChatExternalLink(anchor) {
   const href = normalizeExternalUrl(anchor?.getAttribute?.("href") ?? anchor?.href ?? "");
   if (!href) return false;
@@ -954,6 +1123,31 @@ async function openConsoleChatExternalLink(anchor) {
 
 consoleChatMessages?.addEventListener("click", (ev) => {
   const target = ev.target instanceof Element ? ev.target : null;
+  const contextOpen = target?.closest?.("[data-chat-context-open]");
+  if (contextOpen && consoleChatMessages.contains(contextOpen)) {
+    ev.preventDefault();
+    void openConversationArtifactPath(contextOpen.getAttribute("data-chat-context-open"));
+    return;
+  }
+  const contextReveal = target?.closest?.("[data-chat-context-reveal]");
+  if (contextReveal && consoleChatMessages.contains(contextReveal)) {
+    ev.preventDefault();
+    void revealConversationArtifactPath(contextReveal.getAttribute("data-chat-context-reveal"));
+    return;
+  }
+  const contextUrl = target?.closest?.("[data-chat-context-url]");
+  if (contextUrl && consoleChatMessages.contains(contextUrl)) {
+    ev.preventDefault();
+    const url = contextUrl.getAttribute("data-chat-context-url");
+    if (url) void openConsoleChatExternalLink({ href: url, getAttribute: () => url });
+    return;
+  }
+  const branchAction = target?.closest?.("[data-chat-branch-action]");
+  if (branchAction && consoleChatMessages.contains(branchAction)) {
+    ev.preventDefault();
+    void handleConsoleChatBranchAction(branchAction);
+    return;
+  }
   const citeChip = target?.closest?.(".cite-chip[data-source-id]");
   if (citeChip && consoleChatMessages.contains(citeChip)) {
     ev.preventDefault();
@@ -1347,6 +1541,62 @@ function appendConsoleChatMessage(role, text, options = {}) {
   return wrapper;
 }
 
+function appendConsoleChatErrorBlock(taskId, payload = {}, { cancelled = false } = {}) {
+  if (!consoleChatMessages) return null;
+  const key = taskId || payload.task_id || payload.taskId || "";
+  if (key && consoleChatMessages.querySelector(`.chat-inline-error[data-task-id="${CSS.escape(key)}"]`)) {
+    return null;
+  }
+  consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+  const message = String(payload.message ?? payload.text ?? (cancelled ? "任务已取消。" : "任务执行失败。")).trim();
+  const category = String(payload.category ?? payload.failure_category ?? (cancelled ? "user_interrupted" : "task_failed")).trim();
+  const actions = Array.isArray(payload.user_actions) ? payload.user_actions.filter(Boolean).slice(0, 4) : [];
+  const recoveryHint = String(payload.recovery_hint ?? "").trim();
+  const recoveryPolicy = payload.recovery_policy && typeof payload.recovery_policy === "object" ? payload.recovery_policy : null;
+  const policyBits = recoveryPolicy ? [
+    recoveryPolicy.provider_label,
+    recoveryPolicy.tool_label,
+    recoveryPolicy.issue
+  ].filter(Boolean).map((item) => String(item)) : [];
+  const retryable = !cancelled && payload.retryable !== false;
+
+  const card = document.createElement("div");
+  card.className = `chat-inline-error ${cancelled ? "is-cancelled" : "is-failed"}`;
+  if (key) card.dataset.taskId = key;
+  card.setAttribute("role", "status");
+  card.innerHTML = `
+    <div class="cie-head">
+      <span class="cie-icon" aria-hidden="true">${cancelled ? "!" : "!"}</span>
+      <span class="cie-title">${cancelled ? "任务已取消" : "任务失败"}</span>
+      ${category ? `<span class="cie-category">${escapeHtml(category)}</span>` : ""}
+    </div>
+    <div class="cie-body">${escapeHtml(message)}</div>
+    ${recoveryHint ? `<div class="cie-recovery">${escapeHtml(recoveryHint)}</div>` : ""}
+    ${policyBits.length > 0 ? `<div class="cie-policy">${policyBits.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+    ${actions.length > 0 ? `<ul class="cie-actions">${actions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+    ${retryable && key ? `<div class="cie-footer"><button type="button" class="chat-msg-action cie-retry">重试</button></div>` : ""}
+  `;
+  const retryBtn = card.querySelector(".cie-retry");
+  retryBtn?.addEventListener("click", async () => {
+    const original = retryBtn.textContent;
+    retryBtn.disabled = true;
+    retryBtn.textContent = "重试中…";
+    try {
+      await retryTaskViaShell(key, { mode: "retry_same" });
+      retryBtn.textContent = "已发起";
+      await refreshWorkspace?.();
+    } catch (error) {
+      retryBtn.disabled = false;
+      retryBtn.textContent = "重试失败";
+      showConsoleToast(`重试失败：${error?.message ?? error}`, { kind: "err" });
+      setTimeout(() => { retryBtn.textContent = original ?? "重试"; }, 1600);
+    }
+  });
+  appendConsoleChatTimelineNode(card);
+  consoleChatPin.maybeScrollToBottom();
+  return card;
+}
+
 // Jump between user-sent messages in a long thread. Click ↑ on a user
 // bubble to scroll the previous user prompt into view; ↓ for the next.
 // Wraps gracefully when at either end (no-op).
@@ -1391,8 +1641,48 @@ async function regenerateConsoleChatTask(taskId, btn) {
   }
 }
 
+const pendingConsoleChatTextDeltas = new Map();
+let consoleChatTextDeltaRaf = 0;
+
+function scheduleConsoleChatTextDeltaFlush() {
+  if (consoleChatTextDeltaRaf) return;
+  const schedule = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (callback) => setTimeout(callback, 16);
+  consoleChatTextDeltaRaf = schedule(() => {
+    consoleChatTextDeltaRaf = 0;
+    flushConsoleChatTextDeltas();
+  });
+}
+
+function queueConsoleChatTextDelta(taskId, delta) {
+  if (!taskId || !delta) return;
+  pendingConsoleChatTextDeltas.set(
+    taskId,
+    `${pendingConsoleChatTextDeltas.get(taskId) ?? ""}${String(delta)}`
+  );
+  scheduleConsoleChatTextDeltaFlush();
+}
+
+function flushConsoleChatTextDeltas(taskId = null) {
+  if (taskId) {
+    const delta = pendingConsoleChatTextDeltas.get(taskId);
+    if (!delta) return;
+    pendingConsoleChatTextDeltas.delete(taskId);
+    appendConsoleChatTextDelta(taskId, delta);
+    return;
+  }
+  const batch = [...pendingConsoleChatTextDeltas.entries()];
+  pendingConsoleChatTextDeltas.clear();
+  for (const [queuedTaskId, delta] of batch) {
+    appendConsoleChatTextDelta(queuedTaskId, delta);
+  }
+}
+
 function appendConsoleChatTextDelta(taskId, delta) {
   if (!taskId || !delta || !consoleChatMessages) return;
+  const owner = consoleTaskOwnerConversationId(taskId);
+  if (owner && owner !== currentConsoleConversationId()) return;
   closeConsoleChatThinkingCard();
   const baseText = consoleChatSuppressedTextByTaskId.get(taskId) ?? consoleChatStreamingAnswer?.text ?? "";
   const rawNextText = `${baseText}${String(delta)}`;
@@ -1434,6 +1724,232 @@ function appendConsoleChatTextDelta(taskId, delta) {
   }
   consoleChatPin.maybeScrollToBottom();
 }
+
+function waitForConsoleSmokeFrame() {
+  return new Promise((resolve) => {
+    const schedule = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 16);
+    schedule(() => resolve());
+  });
+}
+
+window.__lingxyConsoleSmoke = {
+  async runTextDeltaLoad({ chunks = 1000, chunkText = "x", taskId = "gui-smoke-console-stream" } = {}) {
+    const count = Math.max(1, Math.min(5000, Number(chunks) || 1000));
+    const text = String(chunkText || "x");
+    const started = performance.now();
+    consoleChatMessages?.querySelectorAll?.(".chat-msg-bubble.streaming")?.forEach((node) => {
+      node.closest(".chat-msg")?.remove?.();
+    });
+    consoleChatStreamingAnswer = null;
+    consoleChatSuppressedTextByTaskId.delete(taskId);
+    pendingConsoleChatTextDeltas.delete(taskId);
+    for (let i = 0; i < count; i += 1) {
+      queueConsoleChatTextDelta(taskId, text);
+    }
+    await waitForConsoleSmokeFrame();
+    await waitForConsoleSmokeFrame();
+    flushConsoleChatTextDeltas(taskId);
+    const bubble = consoleChatStreamingAnswer?.bubble ?? consoleChatMessages?.querySelector?.(".chat-msg-bubble.streaming");
+    const renderedText = bubble?.textContent ?? "";
+    const durationMs = Math.round(performance.now() - started);
+    return {
+      ok: renderedText.length >= count * text.length,
+      chunks: count,
+      rendered_chars: renderedText.length,
+      expected_chars: count * text.length,
+      duration_ms: durationMs,
+      streaming_bubbles: consoleChatMessages?.querySelectorAll?.(".chat-msg-bubble.streaming")?.length ?? 0
+    };
+  },
+  async runStopButtonCancel({ taskId = "gui-smoke-console-stop-button" } = {}) {
+    consoleChatActiveTaskId = taskId;
+    consoleChatCancellationRequestedTaskId = null;
+    refreshConsoleChatSendBtnMode();
+    const beforeLabel = consoleChatSendBtn?.textContent ?? "";
+    consoleChatSendBtn?.click?.();
+    const deadline = Date.now() + 1500;
+    while (Date.now() < deadline && consoleChatCancellationRequestedTaskId !== taskId) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const firstCancelRegistered = consoleChatCancellationRequestedTaskId === taskId;
+    refreshConsoleChatSendBtnMode();
+    const afterLabel = consoleChatSendBtn?.textContent ?? "";
+    return {
+      ok: firstCancelRegistered && /取消|强制|停止|Stop/i.test(afterLabel),
+      taskId,
+      beforeLabel,
+      afterLabel,
+      firstCancelRegistered,
+      stopClass: Boolean(consoleChatSendBtn?.classList?.contains("btn-stop")),
+      cancellingClass: Boolean(consoleChatSendBtn?.classList?.contains("btn-cancelling"))
+    };
+  },
+  async runConversationIsolation({
+    conversationId = "gui-smoke-conv-a",
+    taskId = "gui-smoke-console-isolated-task",
+    leakedText = "GUI_SMOKE_SHOULD_NOT_LEAK"
+  } = {}) {
+    consoleActiveConversation = cacheEnsureBackendFields({
+      conversation_id: conversationId,
+      title: "GUI smoke isolated conversation"
+    });
+    rememberConsoleChatTaskOwner(taskId, conversationId);
+    consoleChatActiveTaskId = taskId;
+    refreshConsoleChatSendBtnMode();
+    startNewConsoleChat();
+    appendConsoleChatTextDelta(taskId, leakedText);
+    await waitForConsoleSmokeFrame();
+    flushConsoleChatTextDeltas(taskId);
+    const bodyText = consoleChatMessages?.textContent ?? "";
+    const leaked = bodyText.includes(leakedText);
+    return {
+      ok: !leaked && !consoleChatActiveTaskId && !consoleChatSendBtn?.classList?.contains("btn-stop"),
+      taskId,
+      conversationId,
+      leaked,
+      activeTaskId: consoleChatActiveTaskId,
+      sendButtonText: consoleChatSendBtn?.textContent ?? ""
+    };
+  },
+  async runTaskDetailCancel({ taskId = "gui-smoke-console-detail-cancel" } = {}) {
+    state.selectedTaskId = taskId;
+    renderTaskDetail({
+      task: {
+        task_id: taskId,
+        status: "running",
+        user_command: "GUI smoke running task",
+        executor: "tool_using",
+        source_app: "gui_smoke",
+        created_at: new Date().toISOString()
+      },
+      events: [],
+      artifacts: [],
+      children: []
+    });
+    const cancelBtn = taskDetailSummary?.querySelector?.('[data-task-act="cancel"]');
+    const beforeDisabled = Boolean(cancelBtn?.disabled);
+    cancelBtn?.click?.();
+    const deadline = Date.now() + 1500;
+    while (Date.now() < deadline && consoleTaskCancellationRequestedId !== taskId) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const cancelRegistered = consoleTaskCancellationRequestedId === taskId;
+    return {
+      ok: Boolean(cancelBtn) && !beforeDisabled && cancelRegistered,
+      taskId,
+      beforeDisabled,
+      cancelRegistered,
+      label: cancelBtn?.textContent?.trim?.() ?? ""
+    };
+  },
+  async runInlineErrorRetry({ taskId = "gui-smoke-console-inline-retry" } = {}) {
+    consoleChatMessages?.querySelectorAll?.(`.chat-inline-error[data-task-id="${CSS.escape(taskId)}"]`)?.forEach((node) => node.remove());
+    const card = appendConsoleChatErrorBlock(taskId, {
+      message: "GUI smoke retryable failure",
+      category: "gui_smoke",
+      retryable: true,
+      user_actions: ["Retry from the inline error card."]
+    });
+    const retryBtn = card?.querySelector?.(".cie-retry");
+    const beforeLabel = retryBtn?.textContent?.trim?.() ?? "";
+    retryBtn?.click?.();
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline && retryBtn?.textContent?.trim?.() !== "已发起") {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const afterLabel = retryBtn?.textContent?.trim?.() ?? "";
+    return {
+      ok: Boolean(card) && Boolean(retryBtn) && afterLabel === "已发起",
+      taskId,
+      beforeLabel,
+      afterLabel,
+      role: card?.getAttribute?.("role") ?? "",
+      disabled: Boolean(retryBtn?.disabled)
+    };
+  },
+  async runConversationBranchControls({
+    conversationId = "gui-smoke-conv",
+    mode = "fork",
+    editContent = "GUI smoke edited branch message"
+  } = {}) {
+    await loadConsoleConversationFromBackend(conversationId);
+    await waitForConsoleSmokeFrame();
+    await waitForConsoleSmokeFrame();
+    const branchMode = ["fork", "rewind", "edit"].includes(mode) ? mode : "fork";
+    const beforeConversationId = consoleActiveConversation?.conversation_id ?? null;
+    const beforeActionCount = consoleChatMessages?.querySelectorAll?.("[data-chat-branch-action]")?.length ?? 0;
+    const branchBtn = consoleChatMessages?.querySelector?.(`[data-chat-branch-action="${CSS.escape(branchMode)}"]`);
+    if (!branchBtn) {
+      return {
+        ok: false,
+        reason: `${branchMode}_button_missing`,
+        beforeConversationId,
+        beforeActionCount
+      };
+    }
+    const originalPrompt = window.prompt;
+    if (branchMode === "edit") {
+      window.prompt = () => editContent;
+    }
+    try {
+      branchBtn.click();
+    } finally {
+      if (branchMode === "edit") {
+        window.prompt = originalPrompt;
+      }
+    }
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && consoleActiveConversation?.conversation_id === beforeConversationId) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await waitForConsoleSmokeFrame();
+    const afterConversationId = consoleActiveConversation?.conversation_id ?? null;
+    const afterActionCount = consoleChatMessages?.querySelectorAll?.("[data-chat-branch-action]")?.length ?? 0;
+    const editedVisible = branchMode !== "edit" || (consoleChatMessages?.textContent ?? "").includes(editContent);
+    return {
+      ok: Boolean(afterConversationId) && afterConversationId !== beforeConversationId && afterActionCount > 0 && editedVisible,
+      beforeConversationId,
+      afterConversationId,
+      mode: branchMode,
+      beforeActionCount,
+      afterActionCount,
+      editedVisible,
+      messages: consoleChatMessages?.querySelectorAll?.(".chat-msg")?.length ?? 0
+    };
+  },
+  async runScheduleCompletionNotice({
+    taskId = "gui-smoke-scheduled-artifact",
+    artifactPath = "E:\\linxi\\gui-smoke-scheduled-report.pdf",
+    status = "success",
+    summary = "GUI Smoke Scheduled Artifact",
+    artifacts = null
+  } = {}) {
+    completedScheduleRunTaskIds.delete(taskId);
+    const artifactList = Array.isArray(artifacts)
+      ? artifacts
+      : artifactPath
+        ? [
+            {
+              path: artifactPath,
+              mime: "application/pdf",
+              preview: summary
+            }
+          ]
+        : [];
+    fireScheduleRunCompletionNotice({
+      task_id: taskId,
+      status,
+      user_command: "GUI smoke scheduled artifact task",
+      result_summary: summary,
+      artifacts: artifactList
+    });
+    await waitForConsoleSmokeFrame();
+    await waitForConsoleSmokeFrame();
+    return { ok: true, taskId, artifactPath, status, artifactCount: artifactList.length };
+  }
+};
 
 function ensureConsoleChatAnswerPlaceholder(taskId, label = "正在整理答案…") {
   if (!taskId || !consoleChatMessages) return;
@@ -1915,6 +2431,8 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
 
 async function appendConsoleChatFinalResult(taskId, payload = {}) {
   if (!taskId || consoleChatResultTaskIds.has(taskId)) return;
+  const owner = consoleTaskOwnerConversationId(taskId);
+  if (owner && owner !== currentConsoleConversationId()) return;
   const directText = String(
     payload.text
     ?? payload.summary
@@ -1938,6 +2456,8 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
   }
   try {
     const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const latestOwner = consoleTaskOwnerConversationId(taskId);
+    if (latestOwner && latestOwner !== currentConsoleConversationId()) return;
     const task = detail?.task ?? detail ?? null;
     const settledText = String(
       task?.result_summary
@@ -1967,21 +2487,42 @@ function artifactPathFromConsoleToolPayload(payload = {}) {
   return payload?.metadata?.path ?? payload?.artifact_path ?? payload?.path ?? "";
 }
 
-function subscribeConsoleChatTask(taskId) {
-  consoleChatEventStream?.close?.();
-  consoleChatToolCards = new Map();
-  consoleChatStreamingAnswer = null;
-  consoleChatProgressEventIds = new Set();
-  consoleChatSuppressedTextByTaskId.delete(taskId);
-  consoleChatEvidenceByTaskId.delete(taskId);
-  consoleChatContentEvidenceTaskIds.delete(taskId);
-  closeConsoleChatThinkingCard();
-  consoleChatActiveTaskId = taskId;
-  refreshConsoleChatSendBtnMode();
-  consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
+function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConversationId() } = {}) {
+  if (!taskId) return;
+  rememberConsoleChatTaskOwner(taskId, conversationId);
+  const shouldRenderNow = () => consoleChatTaskBelongsToActiveConversation(taskId);
+  if (shouldRenderNow()) {
+    consoleChatToolCards = new Map();
+    consoleChatStreamingAnswer = null;
+    consoleChatProgressEventIds = new Set();
+    consoleChatSuppressedTextByTaskId.delete(taskId);
+    pendingConsoleChatTextDeltas.delete(taskId);
+    consoleChatEvidenceByTaskId.delete(taskId);
+    consoleChatContentEvidenceTaskIds.delete(taskId);
+    closeConsoleChatThinkingCard();
+    consoleChatActiveTaskId = taskId;
+    refreshConsoleChatSendBtnMode();
+  }
+  if (consoleChatTaskStreams.has(taskId)) {
+    if (shouldRenderNow()) consoleChatEventStream = consoleChatTaskStreams.get(taskId);
+    return;
+  }
+  const stream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
       const frame = toTaskEventFrame(rawEvent);
       const payload = frame.data ?? {};
+      const terminal = ["failed", "cancelled", "success", "partial_success"].includes(frame.event);
+      if (!shouldRenderNow()) {
+        if (frame.event === "pending_approval_created") {
+          void surfaceApprovalPopup(payload, { taskId });
+        }
+        if (terminal) {
+          markConsoleChatTaskTerminal(taskId);
+          void refreshWorkspace();
+          void refreshChatSidebar({ force: true });
+        }
+        return;
+      }
       if (frame.event === "reasoning_delta") {
         appendConsoleChatThinkingDelta(payload.delta ?? "");
       } else if (frame.event === "pending_approval_created") {
@@ -1989,7 +2530,7 @@ function subscribeConsoleChatTask(taskId) {
         appendConsoleChatProgress(frame);
         void refreshWorkspace();
       } else if (frame.event === "text_delta") {
-        appendConsoleChatTextDelta(taskId, payload.delta ?? payload.text ?? "");
+        queueConsoleChatTextDelta(taskId, payload.delta ?? payload.text ?? "");
         consoleChatState.textContent = "Answering...";
       } else if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
@@ -2067,6 +2608,7 @@ function subscribeConsoleChatTask(taskId) {
       ].includes(frame.event)) {
         appendConsoleChatProgress(frame);
       } else if (frame.event === "inline_result") {
+        flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
         appendConsoleChatFinalText(taskId, payload.text ?? payload.message ?? "", {
           evidence: payload.evidence_summary ?? null
@@ -2075,38 +2617,41 @@ function subscribeConsoleChatTask(taskId) {
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
+        flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
         consoleChatSuppressedTextByTaskId.delete(taskId);
         consoleChatStreamingAnswer = null;
-        appendConsoleChatMessage("system", payload.message ?? "Task failed.");
+        appendConsoleChatErrorBlock(taskId, payload);
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Failed.";
-        if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
-        refreshConsoleChatSendBtnMode();
+        markConsoleChatTaskTerminal(taskId);
       } else if (frame.event === "cancelled") {
+        flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
         consoleChatSuppressedTextByTaskId.delete(taskId);
         consoleChatStreamingAnswer = null;
-        appendConsoleChatMessage("system", payload.message ?? "任务已取消。");
+        appendConsoleChatErrorBlock(taskId, payload, { cancelled: true });
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Cancelled.";
-        if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
-        refreshConsoleChatSendBtnMode();
+        markConsoleChatTaskTerminal(taskId);
       } else if (frame.event === "success" || frame.event === "partial_success") {
+        flushConsoleChatTextDeltas(taskId);
         void appendConsoleChatFinalResult(taskId, payload);
         appendConsoleChatEvidenceSources(taskId, payload.evidence_summary ?? null);
         consoleChatSuppressedTextByTaskId.delete(taskId);
         consoleChatState.textContent = frame.event === "partial_success" ? "Partially done." : "Done.";
-        if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
-        refreshConsoleChatSendBtnMode();
+        markConsoleChatTaskTerminal(taskId);
       } else if (frame.event === "evidence_summary") {
         appendConsoleChatEvidenceSources(taskId, payload);
       }
     },
     onError(error) {
-      consoleChatState.textContent = `Stream failed: ${error.message}`;
+      if (shouldRenderNow()) consoleChatState.textContent = `Stream failed: ${error.message}`;
+      consoleChatTaskStreams.delete(taskId);
     }
   });
+  consoleChatTaskStreams.set(taskId, stream);
+  if (shouldRenderNow()) consoleChatEventStream = stream;
 }
 
 function closeScheduleRunTaskWatcher(taskId) {
@@ -2225,6 +2770,7 @@ function buildScheduleRunCompletionCopy(task = {}) {
   }
 
   if (artifacts.length > 0) {
+    const primaryArtifactInfo = artifacts[0] ?? {};
     const suffix = artifacts.length > 1 ? `，共 ${artifacts.length} 个文件` : "";
     const body = primaryLabel
       ? `已生成 ${primaryLabel}${suffix}`
@@ -2233,7 +2779,10 @@ function buildScheduleRunCompletionCopy(task = {}) {
       kind: "success",
       title: status === "partial_success" ? "定时任务部分完成" : "定时任务已完成",
       body,
-      lines: [body, summary].filter(Boolean)
+      lines: [body, summary].filter(Boolean),
+      artifactPath: primaryArtifact,
+      mime: primaryArtifactInfo.mime ?? primaryArtifactInfo.content_type ?? null,
+      inlinePreview: primaryArtifactInfo.preview ?? primaryArtifactInfo.inlinePreview ?? null
     };
   }
 
@@ -2258,6 +2807,9 @@ function fireScheduleRunCompletionNotice(task = {}) {
       taskId,
       title: copy.title,
       lines: copy.lines,
+      artifactPath: copy.artifactPath ?? null,
+      mime: copy.mime ?? null,
+      inlinePreview: copy.inlinePreview ?? null,
       autoHideMs: copy.kind === "error" ? 12000 : 9000,
       dedupeKey: `schedule-run:${taskId}`
     });
@@ -2271,6 +2823,9 @@ function fireScheduleRunCompletionNotice(task = {}) {
         taskId,
         title: copy.title,
         body: copy.body,
+        artifactPath: copy.artifactPath ?? null,
+        mime: copy.mime ?? null,
+        inlinePreview: copy.inlinePreview ?? null,
         openWindow: "console",
         autoHideMs: copy.kind === "error" ? 12000 : 9000,
         dedupeKey: `schedule-run:${taskId}`
@@ -2465,9 +3020,6 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
 
 async function openConversationArtifactPath(filePath) {
   if (!filePath) return;
-  try {
-    if (window.livePreview?.openForFile?.({ filePath })) return;
-  } catch { /* fall through to native open */ }
   if (typeof window.ucaShell?.openPath !== "function") {
     showConsoleToast("Open path bridge unavailable.", { kind: "err" });
     return;
@@ -2516,7 +3068,7 @@ async function submitConsoleChat() {
   if (conv) {
     conv.pendingByClientId.set(clientMessageId, { role: "user", content: text, ts: Date.now() });
   }
-  appendConsoleChatUserMessage(text, clientMessageId);
+  appendConsoleChatUserMessage(text, clientMessageId, { filePaths: attachedFilePaths });
   consoleChatInput.value = "";
   consoleChatState.textContent = "Submitting...";
   appendConsoleChatMessage("system", "已收到请求，正在创建任务…");
@@ -2539,20 +3091,19 @@ async function submitConsoleChat() {
       })
     });
     const taskId = result.task?.task_id;
-    consoleChatState.textContent = taskId ? `Running ${taskId}` : "Running...";
-    if (taskId) {
-      consoleChatResultTaskIds.delete(taskId);
-      subscribeConsoleChatTask(taskId);
-      appendConsoleChatMessage("system", "任务已创建，正在执行…");
-    }
-    // If the backend created a fresh conversation for this submit
-    // (no conversation_id was sent), pick it up so subsequent submits
-    // thread into the same conversation.
     const replyConvId = result.task?.conversation_id;
+    const taskConversationId = replyConvId || conversationId;
     if (replyConvId && replyConvId !== consoleActiveConversation?.conversation_id) {
       consoleActiveConversation = cacheEnsureBackendFields({ conversation_id: replyConvId });
       renderConsoleChatHeader();
       renderConsoleChatArtifacts([]);
+    }
+    consoleChatState.textContent = taskId ? `Running ${taskId}` : "Running...";
+    if (taskId) {
+      consoleChatResultTaskIds.delete(taskId);
+      rememberConsoleChatTaskOwner(taskId, taskConversationId);
+      subscribeConsoleChatTask(taskId, { conversationId: taskConversationId });
+      appendConsoleChatMessage("system", "任务已创建，正在执行…");
     }
     // Phase 2: surface the new conversation in the sidebar
     // immediately. ensureConversationsCache() refetches from backend
@@ -2568,7 +3119,7 @@ async function submitConsoleChat() {
   }
 }
 
-function appendConsoleChatUserMessage(content, clientMessageId) {
+function appendConsoleChatUserMessage(content, clientMessageId, { filePaths = [] } = {}) {
   if (!consoleChatMessages) return;
   consoleChatMessages.querySelector(".console-chat-empty")?.remove();
   const wrapper = document.createElement("div");
@@ -2578,6 +3129,12 @@ function appendConsoleChatUserMessage(content, clientMessageId) {
   body.className = "console-chat-message-body";
   renderConsoleChatBubbleContent(body, content);
   wrapper.appendChild(body);
+  const contextSummary = buildConversationMessageContextSummary({
+    source_type: "file_group",
+    capture_mode: "desktop_console_chat",
+    file_paths: filePaths
+  });
+  if (contextSummary) appendConsoleMessageContext(wrapper, { metadata: { context_summary: contextSummary } });
   consoleChatMessages.appendChild(wrapper);
   consoleChatPin.maybeScrollToBottom();
 }
@@ -2623,6 +3180,8 @@ const consoleChatMessageAdapter = {
       node.dataset.messageId = message.message_id;
       node.dataset.seq = String(message.seq);
       node.classList.remove("pending");
+      appendConsoleMessageContext(node, message);
+      appendConsoleChatBranchActions(node, message);
     }
   },
   onAppend(message) {
@@ -2635,6 +3194,8 @@ const consoleChatMessageAdapter = {
       body.className = "console-chat-message-body";
       renderConsoleChatBubbleContent(body, message.content);
       wrapper.appendChild(body);
+      appendConsoleMessageContext(wrapper, message);
+      appendConsoleChatBranchActions(wrapper, message);
       consoleChatMessages.appendChild(wrapper);
     } else if (message.role === "assistant" || message.role === "system") {
       // Reuse the existing renderer for assistant/system bubbles.
@@ -2647,6 +3208,8 @@ const consoleChatMessageAdapter = {
       if (wrapper && wrapper.dataset) {
         wrapper.dataset.messageId = message.message_id;
         wrapper.dataset.seq = String(message.seq);
+        appendConsoleMessageContext(wrapper, message);
+        appendConsoleChatBranchActions(wrapper, message);
         const evidence = extractEvidenceSummaryFromMessage(message);
         if (evidence) {
           appendConsoleChatEvidenceSourcesToBody(wrapper.querySelector(".chat-msg-body"), evidence);
@@ -2685,6 +3248,12 @@ async function loadConsoleConversationFromBackend(conversationId) {
   renderConsoleChatHeader();
   void refreshConsoleChatArtifacts();
   switchTab("chat");
+  syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);
+  void refreshWorkspace().then(() => {
+    if (consoleActiveConversation?.conversation_id === detail.conversation.conversation_id) {
+      syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);
+    }
+  }).catch(() => {});
   // Update the sidebar's active highlight to track the just-loaded
   // conversation.
   renderChatSidebar();
@@ -2718,6 +3287,7 @@ let chatSidebarProjectId = (() => {
 let chatSidebarItems = [];
 let chatSidebarCacheKey = "";
 let chatSidebarCacheLoaded = false;
+let chatSidebarShowingServerSearch = false;
 
 function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = null } = {}) {
   return JSON.stringify({ limit, archived, projectId: projectId ?? null });
@@ -2725,6 +3295,20 @@ function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = nu
 
 async function fetchConversationsList({ limit = 100, archived = "false", projectId = null } = {}) {
   return cacheFetchConversations(fetch.bind(globalThis), state.serviceBaseUrl, { limit, archived, projectId });
+}
+
+async function searchConversationsList({
+  query = "",
+  limit = 50,
+  archived = "false",
+  projectId = null
+} = {}) {
+  return cacheSearchConversations(fetch.bind(globalThis), state.serviceBaseUrl, {
+    query,
+    limit,
+    archived,
+    projectId
+  });
 }
 
 function renderChatSidebarProjectFilter() {
@@ -2755,7 +3339,31 @@ function renderChatSidebarProjectFilter() {
   }
 }
 
-async function ensureConversationsCache({ force = false, limit = 100, archived = "false", projectId = chatSidebarProjectId } = {}) {
+async function ensureConversationsCache({
+  force = false,
+  limit = 100,
+  archived = "false",
+  projectId = chatSidebarProjectId,
+  query = ""
+} = {}) {
+  const searchQuery = String(query ?? "").trim();
+  if (searchQuery) {
+    try {
+      const items = await searchConversationsList({
+        query: searchQuery,
+        limit: Math.min(Math.max(Number(limit) || 50, 1), 50),
+        archived,
+        projectId
+      });
+      chatSidebarItems = items;
+      chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId }) + `:search:${searchQuery}`;
+      chatSidebarCacheLoaded = true;
+      chatSidebarShowingServerSearch = true;
+      return items;
+    } catch {
+      return chatSidebarItems;
+    }
+  }
   const key = chatSidebarRequestKey({ limit, archived, projectId });
   if (!force && chatSidebarCacheLoaded && chatSidebarCacheKey === key) {
     return chatSidebarItems;
@@ -2765,12 +3373,14 @@ async function ensureConversationsCache({ force = false, limit = 100, archived =
     chatSidebarItems = items;
     chatSidebarCacheKey = key;
     chatSidebarCacheLoaded = true;
+    chatSidebarShowingServerSearch = false;
     return items;
   } catch {
     if (chatSidebarCacheKey !== key) {
       chatSidebarItems = [];
       chatSidebarCacheKey = key;
       chatSidebarCacheLoaded = true;
+      chatSidebarShowingServerSearch = false;
     }
   }
   return chatSidebarItems;
@@ -2786,7 +3396,8 @@ function renderChatSidebar() {
     items,
     searchTerm: chatSidebarSearchTerm,
     activeConversationId: activeId,
-    projectId: chatSidebarProjectId
+    projectId: chatSidebarProjectId,
+    searchAlreadyApplied: chatSidebarShowingServerSearch
   });
   for (const btn of listEl.querySelectorAll("[data-chat-sidebar-id]")) {
     btn.addEventListener("click", () => {
@@ -2799,7 +3410,7 @@ function renderChatSidebar() {
 
 async function refreshChatSidebar({ force = false } = {}) {
   renderChatSidebarProjectFilter();
-  const items = await ensureConversationsCache({ force });
+  const items = await ensureConversationsCache({ force, query: chatSidebarSearchTerm });
   const activeId = consoleActiveConversation?.conversation_id ?? null;
   if (shouldRenderWorkspaceSlice("chat.sidebar", {
     items,
@@ -3186,6 +3797,82 @@ function renderIntegrations() {
   `).join("");
 }
 
+function memoryItemsToLines(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => item?.text ?? item)
+    .filter(Boolean)
+    .join("\n");
+}
+
+function projectMemoryItemsToLines(items = []) {
+  return (Array.isArray(items) ? items : [])
+    .map((item) => {
+      const text = String(item?.text ?? "").trim();
+      if (!text) return "";
+      return item?.projectId ? `${item.projectId} | ${text}` : text;
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+function parseMemoryLines(text = "") {
+  return String(text ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => ({ id: `pref_${index + 1}`, text: line, scope: "global" }));
+}
+
+function parseProjectMemoryLines(text = "") {
+  return String(text ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const [projectId, ...rest] = line.includes("|") ? line.split("|") : ["", line];
+      return {
+        id: `project_${index + 1}`,
+        projectId: projectId.trim() || undefined,
+        text: rest.join("|").trim(),
+        scope: "project"
+      };
+    })
+    .filter((item) => item.text);
+}
+
+function renderUserMemorySettings() {
+  const profile = state.workspace.userMemory ?? {};
+  if (userMemoryEnabled) userMemoryEnabled.checked = profile.enabled !== false;
+  if (userMemoryPreferences) userMemoryPreferences.value = memoryItemsToLines(profile.preferences);
+  if (userMemoryProjectNotes) userMemoryProjectNotes.value = projectMemoryItemsToLines(profile.projectMemories);
+  if (userMemoryState) {
+    const prefCount = Array.isArray(profile.preferences) ? profile.preferences.length : 0;
+    const projectCount = Array.isArray(profile.projectMemories) ? profile.projectMemories.length : 0;
+    userMemoryState.textContent = `${prefCount} preference${prefCount === 1 ? "" : "s"} · ${projectCount} project note${projectCount === 1 ? "" : "s"}`;
+  }
+}
+
+async function saveUserMemorySettings() {
+  if (!userMemoryState) return;
+  userMemoryState.textContent = "Saving...";
+  try {
+    const payload = {
+      enabled: userMemoryEnabled?.checked !== false,
+      preferences: parseMemoryLines(userMemoryPreferences?.value ?? ""),
+      projectMemories: parseProjectMemoryLines(userMemoryProjectNotes?.value ?? "")
+    };
+    const result = await fetchJson("/config/user-memory", desktopJsonOptions("POST", payload));
+    state.workspace.userMemory = result.userMemory ?? payload;
+    renderUserMemorySettings();
+    userMemoryState.textContent = "Saved.";
+    setTimeout(() => {
+      if (userMemoryState.textContent === "Saved.") renderUserMemorySettings();
+    }, 1600);
+  } catch (error) {
+    userMemoryState.textContent = `Failed: ${error.message}`;
+  }
+}
+
 function renderEmailAccounts() {
   const accounts = state.workspace.emailAccounts ?? [];
   emailAccountCount.textContent = `${accounts.length}`;
@@ -3279,8 +3966,11 @@ function renderMcpServers() {
 function renderSkillRegistries() {
   const registries = state.workspace.skillRegistries ?? [];
   const skills = state.workspace.skills ?? [];
+  const activeSkillCount = skills.filter((skill) => skill.active !== false).length;
   const knownSkillCount = skills.length || registries.reduce((total, registry) => total + Number(registry.skillCount ?? 0), 0);
-  skillRegistryCount.textContent = `${knownSkillCount}`;
+  skillRegistryCount.textContent = skills.length && activeSkillCount !== skills.length
+    ? `${activeSkillCount}/${skills.length}`
+    : `${knownSkillCount}`;
   if (registries.length === 0 && skills.length === 0) {
     renderEmpty(skillRegistryList, "No skill registries or skills discovered.");
     return;
@@ -3300,11 +3990,22 @@ function renderSkillRegistries() {
   const skillCards = skills.map((skill) => {
     const entryPath = skill.entryPath ?? skill.filePath ?? skill.path ?? "";
     const errors = Array.isArray(skill.errors) ? skill.errors : [];
+    const active = skill.active !== false;
+    const inactiveLabel = skill.inactiveReason === "duplicate_skill_id"
+      ? "duplicate stopped"
+      : skill.inactiveReason === "disabled_by_user"
+        ? "stopped"
+        : "inactive";
     const validity = skill.valid === false || errors.length > 0
       ? { chip: "danger", label: `${errors.length || 1} issue${errors.length === 1 ? "" : "s"}` }
+      : !active
+        ? { chip: "muted", label: inactiveLabel }
       : skill.valid === true
         ? { chip: "ready", label: "valid" }
         : { chip: "muted", label: "skill" };
+    const toggleEnabled = !active;
+    const skillRegistry = skill.registry ?? skill.registryId ?? skill.tags?.[0] ?? "";
+    const skillId = skill.id ?? "";
     return `
     <div class="surface" style="padding:10px 12px;">
       <div class="row">
@@ -3314,6 +4015,9 @@ function renderSkillRegistries() {
       <p class="muted" style="margin-top:4px;font-size:12px;">
         ${escapeHtml(skill.tags?.[0] ?? skill.registryId ?? "local")} · ${escapeHtml(entryPath || "n/a")}
       </p>
+      ${!active && skill.duplicateOf ? `
+        <p class="muted" style="margin-top:4px;font-size:11.5px;">Stopped because ${escapeHtml(skill.duplicateOf.displayName ?? skill.duplicateOf.id ?? "another skill")} is active for the same id.</p>
+      ` : ""}
       ${skill.description ? `<p style="margin-top:6px;font-size:12px;">${escapeHtml(skill.description)}</p>` : ""}
       ${errors.length ? `
         <div class="muted" style="font-size:11.5px;margin-top:6px;color:#b45309;">
@@ -3326,6 +4030,8 @@ function renderSkillRegistries() {
           <button class="btn btn-ghost" data-skill-duplicate="${escapeHtml(entryPath)}" type="button">Duplicate</button>
           <button class="btn btn-ghost" data-skill-open="${escapeHtml(entryPath)}" type="button">Open</button>
           <button class="btn btn-ghost" data-skill-reveal="${escapeHtml(entryPath)}" type="button">Reveal</button>
+          ${skillRegistry && skillId ? `<button class="btn btn-ghost" data-skill-state-registry="${escapeHtml(skillRegistry)}" data-skill-state-id="${escapeHtml(skillId)}" data-skill-state-enabled="${toggleEnabled ? "true" : "false"}" type="button">${toggleEnabled ? "Use this" : "Stop"}</button>` : ""}
+          <button class="btn btn-danger" data-skill-delete="${escapeHtml(entryPath)}" type="button">Delete</button>
         </div>` : ""}
     </div>
   `;
@@ -3378,6 +4084,42 @@ function renderSkillRegistries() {
   }
   for (const btn of skillRegistryList.querySelectorAll("[data-skill-reveal]")) {
     btn.addEventListener("click", () => void revealSkillPath(btn.dataset.skillReveal));
+  }
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-delete]")) {
+    btn.addEventListener("click", async () => {
+      const entryPath = btn.dataset.skillDelete;
+      if (!entryPath) return;
+      const ok = confirm("Delete this skill? It will be moved to the local .deleted folder so it can be recovered manually.");
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await deleteSkillViaShell(entryPath);
+        skillRegistryState.textContent = "Skill deleted.";
+        await refreshWorkspace({ mode: "background" });
+      } catch (error) {
+        skillRegistryState.textContent = `Failed: ${error.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-state-registry]")) {
+    btn.addEventListener("click", async () => {
+      const registry = btn.dataset.skillStateRegistry;
+      const id = btn.dataset.skillStateId;
+      const enabled = btn.dataset.skillStateEnabled === "true";
+      if (!registry || !id) return;
+      btn.disabled = true;
+      try {
+        await updateSkillStateViaShell({ registry, id, enabled, exclusive: true });
+        skillRegistryState.textContent = enabled ? "Skill enabled; same-id alternatives stopped." : "Skill stopped.";
+        await refreshWorkspace({ mode: "background" });
+      } catch (error) {
+        skillRegistryState.textContent = `Failed: ${error.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
   }
 }
 
@@ -5089,11 +5831,11 @@ filesCopyPathBtn?.addEventListener("click", async () => {
 // Each subtasks/artifacts/timeline section is its own .panel card now,
 // so empty sections just stay hidden instead of rendering a stacked
 // "No X yet." placeholder.
-// Render the "Recent conversations" panel that fills the Tasks tab's
-// right pane when no task is selected. Reuses the conversations cache
-// (loadConversationsTab populates it); fetches lazily if empty so the
-// list shows up on first visit without forcing a Conversations tab
-// click. Click any row → loads that conversation into Chat tab.
+// Compatibility renderer for the retired "Recent conversations in Tasks"
+// panel. FW-028 moves conversation browsing to Chat/Projects so Tasks can
+// remain an execution-run surface. If a legacy caller still renders this,
+// all clicks load the canonical Chat conversation instead of switching to
+// the hidden Conversations tab.
 async function renderTaskRecentConversations() {
   const listEl = document.querySelector("#taskRecentConversationsList");
   const countEl = document.querySelector("#taskRecentConversationsCount");
@@ -5139,12 +5881,8 @@ async function renderTaskRecentConversations() {
     btn.addEventListener("click", () => {
       const convId = btn.dataset.recentConversationId;
       if (!convId) return;
-      // Switch to the Conversations tab and select this conversation.
-      // Used to be a no-op on the standalone Conversations tab (now
-      // hidden) — the panel HTML is still in DOM so this still resolves.
-      conversationsState.selectedId = convId;
-      void loadConversationDetail(convId);
-      switchTab("conversations");
+      void loadConsoleConversationFromBackend(convId);
+      showConsoleToast("已加载对话，可继续输入", { kind: "ok" });
     });
   }
   for (const btn of listEl.querySelectorAll("[data-recent-resume-id]")) {
@@ -5173,21 +5911,48 @@ function renderTaskContentEvidence(detail) {
   return renderContentEvidenceHtml(extractContentEvidenceFromTaskDetail(detail));
 }
 
+function renderTaskConversationLink(task = {}) {
+  const conversationId = task.conversation_id ?? task.context_packet?.selection_metadata?.conversation_id ?? null;
+  if (!conversationId) return "";
+  const projectId = task.project_id ?? task.context_packet?.selection_metadata?.project_id ?? null;
+  return `
+    <section class="task-conversation-link" aria-label="Linked conversation">
+      <div>
+        <div class="task-conversation-title">Conversation<span class="zh">所属对话</span></div>
+        <div class="muted">${escapeHtml(conversationId)}${projectId ? ` · ${escapeHtml(projectId)}` : ""}</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-ghost" data-task-open-conversation="${escapeHtml(conversationId)}">
+        Open in Chat
+      </button>
+    </section>
+  `;
+}
+
 function renderTaskDetail(detail) {
   if (!detail) {
     selectedTaskEventController.close();
     state.selectedTaskDetail = null;
-    // Hide the placeholder text — we now fill the empty pane with the
-    // Recent Conversations panel below.
-    taskDetailSummary.innerHTML = "";
+    taskDetailSummary.innerHTML = `
+      <div class="task-empty-detail" role="status">
+        <h2>Task runs are execution records<span class="zh">任务是执行记录</span></h2>
+        <p class="muted">Chats and conversation history live in the Chat sidebar and Projects. Pick a task here only when you need logs, artifacts, recovery, retry, or cancel controls.</p>
+        <div class="btn-group" style="margin-top:12px;">
+          <button type="button" class="btn btn-sm btn-primary" data-task-empty-action="chat">Open Chat</button>
+          <button type="button" class="btn btn-sm" data-task-empty-action="new-task">New task</button>
+        </div>
+      </div>
+    `;
+    taskDetailSummary.querySelector('[data-task-empty-action="chat"]')?.addEventListener("click", () => switchTab("chat"));
+    taskDetailSummary.querySelector('[data-task-empty-action="new-task"]')?.addEventListener("click", () => {
+      document.querySelector("#tasksNewBtn")?.click();
+    });
     taskTimeline.innerHTML = "";
     setTaskDetailPanelVisible("taskSubtasksPanel", false);
     setTaskDetailPanelVisible("taskArtifactsPanel", false);
     setTaskDetailPanelVisible("taskTimelinePanel", false);
-    setTaskDetailPanelVisible("taskRecentConversationsPanel", true);
+    setTaskDetailPanelVisible("taskRecentConversationsPanel", false);
     renderTaskArtifacts(null);
     renderTaskChildren(null);
-    void renderTaskRecentConversations();
     retryTaskButton.disabled = true;
     cancelTaskButton.disabled = true;
     if (deleteTaskButton) deleteTaskButton.disabled = true;
@@ -5236,6 +6001,10 @@ function renderTaskDetail(detail) {
   ` : "";
   const contentEvidenceBlock = renderTaskContentEvidence(detail);
   const evidenceSummaryBlock = renderTaskEvidenceSummary(detail);
+  const llmUsageBlock = renderLlmUsagePanel(detail.events ?? []);
+  const traceBlock = renderTaskTracePanel(detail.events ?? []);
+  const reversibilityBlock = renderFileReversibilityPanel(detail.events ?? []);
+  const conversationLinkBlock = renderTaskConversationLink(task);
   // UCA-122: v3 detail-hero + KV grid. Hero shows title + status pill +
   // task ID tag + subtitle meta. KV grid spreads the metadata that
   // previously cramped into a single line into 8 labeled cells.
@@ -5287,9 +6056,13 @@ function renderTaskDetail(detail) {
       <div class="detail-hero-meta">
         <span>Started ${escapeHtml(formatDateTime(task.created_at))}</span>
         ${task.retry_count ? `<span>Retry ${escapeHtml(task.retry_count)}</span>` : ""}
-        ${parentLink}
+      ${parentLink}
       </div>
       ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, tokens: tokensDisplay, duration, transport })}
+      ${conversationLinkBlock}
+      ${llmUsageBlock}
+      ${traceBlock}
+      ${reversibilityBlock}
       ${heroActions}
     </div>
     ${renderDowngradedWarning(downgraded)}
@@ -5314,6 +6087,83 @@ function renderTaskDetail(detail) {
           : btn.dataset.taskAct === "delete" ? deleteTaskButton
             : null;
       if (target && !target.disabled) target.click();
+    });
+  }
+  for (const btn of taskDetailSummary.querySelectorAll("[data-task-open-conversation]")) {
+    btn.addEventListener("click", () => {
+      const conversationId = btn.dataset.taskOpenConversation;
+      if (!conversationId) return;
+      void loadConsoleConversationFromBackend(conversationId);
+    });
+  }
+  for (const btn of taskDetailSummary.querySelectorAll("[data-task-trace-copy]")) {
+    btn.addEventListener("click", async () => {
+      const traceJson = btn.dataset.traceJson ?? "";
+      if (!traceJson) return;
+      const previous = btn.textContent;
+      btn.disabled = true;
+      try {
+        if (typeof window.ucaShell?.writeClipboardText === "function") {
+          await window.ucaShell.writeClipboardText(traceJson);
+        } else {
+          await navigator.clipboard?.writeText?.(traceJson);
+        }
+        btn.textContent = "Copied";
+      } catch {
+        btn.textContent = "Copy failed";
+      } finally {
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = previous;
+        }, 1200);
+      }
+    });
+  }
+  for (const btn of taskDetailSummary.querySelectorAll("[data-file-reversibility-copy]")) {
+    btn.addEventListener("click", async () => {
+      const reversibilityJson = btn.dataset.reversibilityJson ?? "";
+      if (!reversibilityJson) return;
+      const previous = btn.textContent;
+      btn.disabled = true;
+      try {
+        if (typeof window.ucaShell?.writeClipboardText === "function") {
+          await window.ucaShell.writeClipboardText(reversibilityJson);
+        } else {
+          await navigator.clipboard?.writeText?.(reversibilityJson);
+        }
+        btn.textContent = "Copied";
+      } catch {
+        btn.textContent = "Copy failed";
+      } finally {
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = previous;
+        }, 1200);
+      }
+    });
+  }
+  for (const btn of taskDetailSummary.querySelectorAll("[data-file-reversibility-restore]")) {
+    btn.addEventListener("click", async () => {
+      const checkpointId = btn.dataset.fileReversibilityRestore ?? "";
+      const taskId = state.selectedTaskId;
+      if (!checkpointId || !taskId) return;
+      const previous = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Restoring...";
+      try {
+        await restoreFileCheckpointViaShell(taskId, checkpointId);
+        btn.textContent = "Restored";
+        showConsoleToast("文件已恢复", { kind: "ok" });
+        await refreshTaskDetail({ showLoading: true });
+      } catch (error) {
+        btn.textContent = "Restore failed";
+        showConsoleToast(`恢复失败：${error.message}`, { kind: "err" });
+      } finally {
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = previous;
+        }, 1400);
+      }
     });
   }
   wireEvidenceSourceActions(taskDetailSummary, window.ucaShell);
@@ -6812,6 +7662,7 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
 
   if (isActive("settings")) {
     renderIfChanged("settings.providerOnboarding", state.workspace.onboarding, renderProviderOnboardingSuggestions);
+    renderIfChanged("settings.userMemory", state.workspace.userMemory, renderUserMemorySettings);
     renderIfChanged("settings.templates", state.workspace.templates, renderTemplates);
     renderIfChanged("settings.dag", state.workspace.dagExecutions, renderDagExecutions);
     renderIfChanged("settings.budget", state.workspace.budget, renderBudget);
@@ -6897,6 +7748,8 @@ async function refreshWorkspace(options = {}) {
         skillRegistries: skillsP.registries ?? [],
         skills: skillsP.skills ?? [],
         onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
+        providerSetup: integrationsP.providerSetup ?? null,
+        userMemory: integrationsP.userMemory ?? previous.userMemory ?? null,
         emailAccounts: emailP.accounts ?? [],
         emailDigestSettings: emailSettingsP.settings ?? {},
         history: [], // UCA-121: retired
@@ -7704,12 +8557,17 @@ document.querySelector("#projectNewBtn")?.addEventListener("click", () => {
 // reference so the next submit creates a fresh conversation_id rather
 // than continuing to thread into the previously-resumed one.
 function startNewConsoleChat() {
-  consoleChatEventStream?.close?.();
+  const outgoingConversationId = currentConsoleConversationId();
+  if (consoleChatActiveTaskId && outgoingConversationId) {
+    rememberConsoleChatTaskOwner(consoleChatActiveTaskId, outgoingConversationId);
+  }
   consoleChatEventStream = null;
   consoleChatToolCards = new Map();
   consoleChatStreamingAnswer = null;
   closeConsoleChatThinkingCard();
   consoleChatResultTaskIds = new Set();
+  consoleChatActiveTaskId = null;
+  consoleChatCancellationRequestedTaskId = null;
   clearConsoleActiveConversation();
   if (consoleChatMessages) {
     renderConsoleChatEmptyState();
@@ -7717,6 +8575,7 @@ function startNewConsoleChat() {
   const input = document.querySelector("#consoleChatInput");
   if (input) { input.value = ""; input.focus(); }
   if (consoleChatState) consoleChatState.textContent = "";
+  refreshConsoleChatSendBtnMode();
   renderChatSidebar();
 }
 
@@ -7759,7 +8618,7 @@ document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) 
   if (chatSidebarSearchDebounce) clearTimeout(chatSidebarSearchDebounce);
   chatSidebarSearchDebounce = setTimeout(() => {
     chatSidebarSearchDebounce = null;
-    renderChatSidebar();
+    void refreshChatSidebar({ force: true });
   }, 120);
 });
 
@@ -8187,6 +9046,16 @@ async function deleteSkillRegistryViaShell(registryId) {
   );
 }
 
+async function updateSkillStateViaShell(payload) {
+  if (typeof window.ucaShell?.updateSkillState !== "function") {
+    throw new Error("Desktop skill state bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateSkillState(payload),
+    "Could not update skill state."
+  );
+}
+
 async function writeSkillMarkdownViaShell(entryPath, markdown) {
   if (typeof window.ucaShell?.writeSkillMarkdown !== "function") {
     throw new Error("Desktop skill editor bridge unavailable.");
@@ -8224,6 +9093,16 @@ async function duplicateSkillViaShell(entryPath) {
   return assertShellResult(
     await window.ucaShell.duplicateSkill({ entryPath }),
     "Could not duplicate skill."
+  );
+}
+
+async function deleteSkillViaShell(entryPath) {
+  if (typeof window.ucaShell?.deleteSkill !== "function") {
+    throw new Error("Desktop skill lifecycle bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteSkill({ entryPath }),
+    "Could not delete skill."
   );
 }
 
@@ -8572,6 +9451,16 @@ async function restoreTaskViaShell(taskId) {
   return assertShellResult(
     await window.ucaShell.restoreTask(taskId),
     "Could not restore task."
+  );
+}
+
+async function restoreFileCheckpointViaShell(taskId, checkpointId) {
+  if (typeof window.ucaShell?.restoreFileCheckpoint !== "function") {
+    throw new Error("Desktop file recovery bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.restoreFileCheckpoint(taskId, checkpointId),
+    "Could not restore file checkpoint."
   );
 }
 
@@ -9055,6 +9944,8 @@ emailDigestSaveBtn?.addEventListener("click", async () => {
   }
 });
 
+userMemorySaveBtn?.addEventListener("click", () => void saveUserMemorySettings());
+
 // DAG editor retired from the UI (UCA-126); wiring stays null-safe so the
 // backend APIs (/dag/preview, /dag/execute/:id/resume) remain reachable
 // from scripts or future surfaces without crashing when the DOM is absent.
@@ -9184,18 +10075,14 @@ function refreshChatTimestamps() {
 setInterval(refreshChatTimestamps, 30_000);
 
 /* ═══════════════════════════════════════════════
-   INLINE PREVIEW (Console-only, split-pane in chat tab)
+   FILE PREVIEW COMPATIBILITY (Console)
    ═══════════════════════════════════════════════ */
 
-/* Console clicks on artifacts / file chips open the preview *inside* the
-   chat tab as a third grid column (split view). Overlay clicks still go
-   through the dedicated preview BrowserWindow — see live-preview.js.
-
-   Why override at this layer instead of changing live-preview.js to be
-   context-aware: live-preview.js is loaded by both console.html and
-   overlay.html, and overlay's behavior must not change. By overriding
-   `window.livePreview.openForFile` only inside console.js, the overlay's
-   existing IPC path remains untouched. */
+/* Console file chips now open via the OS association (`openPath`) so Office
+   documents and generated spreadsheets land in the real app the user can
+   edit. The legacy inline split-pane is kept only for compatibility with
+   older smoke helpers; livePreview.openForFile is no longer overridden here,
+   so explicit preview actions use the dedicated Preview BrowserWindow. */
 
 const consolePreviewLayout = document.querySelector(".chat-layout");
 const consolePreviewPane = document.querySelector("#consolePreviewPane");
@@ -9279,15 +10166,8 @@ consolePreviewOpenExternalBtn?.addEventListener("click", async () => {
 // commit — used for live tool output) stay unchanged: tool output still
 // streams to the dedicated preview window because that flow needs SSE
 // support which the inline pane doesn't replicate.
-if (window.livePreview) {
-  const originalOpenForFile = window.livePreview.openForFile;
-  window.livePreview.openForFile = function consoleOpenForFile(opts = {}) {
-    void openInlinePreviewInChat(opts);
-    return true;
-  };
-  // Keep a handle in case anyone needs the original (e.g. an "open in
-  // dedicated window" affordance later).
-  window.livePreview._originalOpenForFile = originalOpenForFile;
+if (window.livePreview && !window.livePreview._originalOpenForFile) {
+  window.livePreview._originalOpenForFile = window.livePreview.openForFile;
 }
 
 /* ═══════════════════════════════════════════════
@@ -9599,6 +10479,7 @@ function renderConversationDetail() {
   if (metaEl) metaEl.textContent = view.meta;
   bodyEl.innerHTML = view.bodyHtml;
   bindConversationsContinueButton();
+  bindConversationBranchButtons();
 }
 
 function bindConversationsContinueButton() {
@@ -9609,6 +10490,142 @@ function bindConversationsContinueButton() {
     if (!convId) return;
     void loadConsoleConversationFromBackend(convId);
   });
+}
+
+async function createConversationBranchFromDetail({
+  conversationId,
+  messageId,
+  mode,
+  content = null
+} = {}) {
+  if (!conversationId || !messageId || !mode) return;
+  const result = await createConversationBranchRequest({
+    conversationId,
+    messageId,
+    mode,
+    content
+  });
+  const nextId = result?.conversation?.conversation_id;
+  if (!nextId) return;
+  conversationsState.selectedId = nextId;
+  conversationsState.detail = null;
+  conversationsState.items = [
+    result.conversation,
+    ...conversationsState.items.filter((conversation) => conversation.conversation_id !== nextId)
+  ];
+  renderConversationsList();
+  await loadConversationDetail(nextId);
+  chatSidebarCacheLoaded = false;
+  void refreshChatSidebar({ force: true });
+  showConsoleToast(mode === "edit" ? "已创建编辑分支" : mode === "rewind" ? "已创建回退分支" : "已创建分支", { kind: "ok" });
+}
+
+async function createConversationBranchRequest({
+  conversationId,
+  messageId,
+  mode,
+  content = null
+} = {}) {
+  if (!conversationId || !messageId || !mode) return null;
+  const endpoint = mode === "edit"
+    ? `/conversation/${encodeURIComponent(conversationId)}/messages/${encodeURIComponent(messageId)}/edit`
+    : `/conversation/${encodeURIComponent(conversationId)}/${mode}`;
+  const payload = mode === "edit"
+    ? { content }
+    : { through_message_id: messageId };
+  return fetchJson(endpoint, desktopJsonOptions("POST", payload));
+}
+
+async function createConversationBranchFromChat({
+  conversationId,
+  messageId,
+  mode,
+  content = null
+} = {}) {
+  const result = await createConversationBranchRequest({
+    conversationId,
+    messageId,
+    mode,
+    content
+  });
+  const nextId = result?.conversation?.conversation_id;
+  if (!nextId) return;
+  conversationsState.items = [
+    result.conversation,
+    ...conversationsState.items.filter((conversation) => conversation.conversation_id !== nextId)
+  ];
+  conversationsState.selectedId = nextId;
+  conversationsState.detail = null;
+  renderConversationsList();
+  chatSidebarCacheLoaded = false;
+  await loadConsoleConversationFromBackend(nextId);
+  void refreshChatSidebar({ force: true });
+  showConsoleToast(mode === "edit" ? "已创建编辑分支" : mode === "rewind" ? "已创建回退分支" : "已创建分支", { kind: "ok" });
+}
+
+async function handleConsoleChatBranchAction(button) {
+  const mode = button?.dataset?.chatBranchAction ?? "";
+  const conversationId = button?.dataset?.conversationId ?? "";
+  const messageId = button?.dataset?.messageId ?? "";
+  if (!conversationId || !messageId || !["fork", "rewind", "edit"].includes(mode)) return;
+  let content = null;
+  if (mode === "edit") {
+    const wrapper = button.closest(".chat-msg, .console-chat-message");
+    const bubble = wrapper?.querySelector?.(".chat-msg-bubble, .console-chat-message-body");
+    const current = bubble?.dataset?.rawText || bubble?.textContent || "";
+    content = window.prompt("Edit message", current);
+    if (content == null || !content.trim()) return;
+  }
+  button.disabled = true;
+  try {
+    await createConversationBranchFromChat({
+      conversationId,
+      messageId,
+      mode,
+      content
+    });
+  } catch (error) {
+    showConsoleToast(error?.message ?? "Could not branch conversation.", { kind: "error" });
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function bindConversationBranchButtons() {
+  const bodyEl = document.querySelector("#conversationsDetailBody");
+  if (!bodyEl) return;
+  for (const btn of bodyEl.querySelectorAll("[data-conversation-fork-message]")) {
+    btn.addEventListener("click", () => {
+      void createConversationBranchFromDetail({
+        conversationId: btn.dataset.conversationId,
+        messageId: btn.dataset.conversationForkMessage,
+        mode: "fork"
+      }).catch((error) => showConsoleToast(error?.message ?? "Could not fork conversation.", { kind: "error" }));
+    });
+  }
+  for (const btn of bodyEl.querySelectorAll("[data-conversation-rewind-message]")) {
+    btn.addEventListener("click", () => {
+      void createConversationBranchFromDetail({
+        conversationId: btn.dataset.conversationId,
+        messageId: btn.dataset.conversationRewindMessage,
+        mode: "rewind"
+      }).catch((error) => showConsoleToast(error?.message ?? "Could not rewind conversation.", { kind: "error" }));
+    });
+  }
+  for (const btn of bodyEl.querySelectorAll("[data-conversation-edit-message]")) {
+    btn.addEventListener("click", () => {
+      const messageId = btn.dataset.conversationEditMessage;
+      const current = conversationsState.detail?.messages?.find((message) => message.message_id === messageId)?.content ?? "";
+      const content = window.prompt("Edit message", current);
+      if (content == null || !content.trim()) return;
+      void createConversationBranchFromDetail({
+        conversationId: btn.dataset.conversationId,
+        messageId,
+        mode: "edit",
+        content
+      }).catch((error) => showConsoleToast(error?.message ?? "Could not edit conversation.", { kind: "error" }));
+    });
+  }
 }
 
 async function loadConversationDetail(conversationId) {

@@ -1,4 +1,4 @@
-import pricing from "../../service/cost/pricing.json" with { type: "json" };
+import pricing from "../../service/cost/pricing.mjs";
 import { createConsoleViewModel } from "./view-model.mjs";
 import { buildPendingApprovalsViewModel } from "./pending-approvals/view-model.mjs";
 import { buildSchedulesViewModel } from "./schedules/view-model.mjs";

@@ -3,7 +3,10 @@ import { existsSync, readdirSync, readFileSync, statSync, lstatSync, realpathSyn
 import { mkdir, rm, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { validateSkillDescriptorMarkdown } from "./discovery.mjs";
+import {
+  deriveSkillRegistryId,
+  validateSkillDescriptorMarkdown
+} from "./discovery.mjs";
 
 // Codex review (2026-05-03): Skill GitHub install is not "execute code" —
 // SKILL.md is markdown — but it IS prompt-injection surface, so we cap
@@ -368,7 +371,7 @@ export function deriveFinalDirName(owner, repo, subPath = null) {
   return `${base}--${trimmedLeaf}-${hash}`;
 }
 
-function appendRegistryEntry(runtime, rootPath) {
+function appendRegistryEntry(runtime, rootPath, { displayName = null } = {}) {
   const store = runtime?.configStore;
   if (!store?.load || !store?.save) return null;
   const config = store.load();
@@ -382,7 +385,12 @@ function appendRegistryEntry(runtime, rootPath) {
     return candidate ? path.resolve(candidate) === normalised : false;
   });
   if (!exists) {
-    registries.push({ rootPath: normalised, source: "github_install" });
+    registries.push({
+      id: deriveSkillRegistryId(normalised, { source: "github_install" }),
+      displayName: displayName ?? path.basename(normalised),
+      rootPath: normalised,
+      source: "github_install"
+    });
   }
   skills.registries = registries;
   ai.skills = skills;
@@ -573,7 +581,7 @@ export async function stageSkillFromGitHub({
   // subPath + the SKILL.md bytes the user is implicitly approving by
   // clicking Confirm.
   const contentHash = createHash("sha256")
-    .update([urlValidation.owner, urlValidation.repo, effectiveBranch ?? "", effectiveSubPath ?? "", guarded.markdown].join(" "))
+    .update([urlValidation.owner, urlValidation.repo, effectiveBranch ?? "", effectiveSubPath ?? "", guarded.markdown].join("\0"))
     .digest("hex")
     .slice(0, 16);
 
@@ -682,7 +690,9 @@ export async function finalizeStagedInstall(stagingInfo, {
     ? finalDir
     : path.join(finalDir, path.relative(stagingDir, skillDir));
 
-  const registries = appendRegistryEntry(runtime, skillRoot);
+  const registries = appendRegistryEntry(runtime, skillRoot, {
+    displayName: descriptor?.heading ?? null
+  });
 
   return {
     ok: true,

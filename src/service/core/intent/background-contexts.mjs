@@ -12,7 +12,8 @@
  * Each entry shape:
  *   {
  *     kind: "memory_recall" | "recent_artifact" | "parent_task"
- *           | "rag_background" | "browser_metadata",
+ *           | "rag_background" | "browser_metadata"
+ *           | "user_profile" | "project_memory",
  *     priority: "background" | "weak" | "load_bearing",
  *     origin: "pre_task_seed" | "post_task_patch",
  *     content: string,         // rendered text block, ready to show LLM
@@ -37,7 +38,9 @@ const VALID_KINDS = Object.freeze(new Set([
   "recent_artifact",
   "parent_task",
   "rag_background",
-  "browser_metadata"
+  "browser_metadata",
+  "user_profile",
+  "project_memory"
 ]));
 
 const VALID_PRIORITIES = Object.freeze(new Set(["background", "weak", "load_bearing"]));
@@ -131,5 +134,7 @@ export const BG_CONTEXT_KINDS = Object.freeze({
   RECENT_ARTIFACT: "recent_artifact",
   PARENT_TASK: "parent_task",
   RAG_BACKGROUND: "rag_background",
-  BROWSER_METADATA: "browser_metadata"
+  BROWSER_METADATA: "browser_metadata",
+  USER_PROFILE: "user_profile",
+  PROJECT_MEMORY: "project_memory"
 });

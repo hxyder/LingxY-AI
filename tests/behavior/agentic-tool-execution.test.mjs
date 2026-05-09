@@ -55,6 +55,61 @@ test("agentic tool execution normalizes successful tool results", async () => {
   assert.equal(result.metadata.ok, true);
 });
 
+test("agentic tool execution passes cancellation signal into tool context", async () => {
+  const controller = new AbortController();
+  let seenSignal = null;
+  const tool = {
+    id: "read_only_lookup",
+    name: "Lookup",
+    risk_level: "low",
+    requires_confirmation: false,
+    async execute(_args, context = {}) {
+      seenSignal = context.signal ?? null;
+      return {
+        success: true,
+        observation: "looked up",
+        metadata: { ok: true }
+      };
+    }
+  };
+
+  const result = await executeAgenticToolCall({
+    registry: registryFor(tool),
+    call: { id: "call1", name: tool.id, arguments: { query: "x" } },
+    toolContext: {},
+    signal: controller.signal
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(seenSignal, controller.signal);
+});
+
+test("agentic tool execution aborts before running a tool", async () => {
+  const controller = new AbortController();
+  controller.abort();
+  let executed = false;
+  const tool = {
+    id: "read_only_lookup",
+    name: "Lookup",
+    risk_level: "low",
+    requires_confirmation: false,
+    async execute() {
+      executed = true;
+      return { success: true, observation: "should not run" };
+    }
+  };
+
+  await assert.rejects(
+    () => executeAgenticToolCall({
+      registry: registryFor(tool),
+      call: { id: "call1", name: tool.id, arguments: {} },
+      signal: controller.signal
+    }),
+    (error) => error?.code === "ABORT_ERR"
+  );
+  assert.equal(executed, false);
+});
+
 test("agentic tool execution rejects thin artifact outlines before execution", async () => {
   let executed = false;
   const tool = {

@@ -1,4 +1,9 @@
+import { collectLlmUsageSummary } from "../../../shared/llm-usage-summary.mjs";
+import { buildTaskTraceSummary } from "../../../shared/task-trace-summary.mjs";
+
 export function buildTaskDetailViewModel(task, events = [], artifacts = []) {
+  const llmUsage = collectLlmUsageSummary(events);
+  const trace = buildTaskTraceSummary(events);
   return {
     taskId: task.task_id,
     status: task.status,
@@ -20,6 +25,8 @@ export function buildTaskDetailViewModel(task, events = [], artifacts = []) {
       tokensIn: task.usage_summary?.tokens_in ?? 0,
       tokensOut: task.usage_summary?.tokens_out ?? 0
     },
+    llmUsage,
+    trace,
     failure: task.failure_category
       ? {
           category: task.failure_category,

@@ -123,6 +123,119 @@ test("generate_document validation asks the planner to enrich thin research arti
   assert.match(result.error, /outline_quality_failed/);
 });
 
+test("generate_document validation rejects fake download text for non-xlsx artifacts", () => {
+  const result = validateToolCall(generateDocumentTool, {
+    kind: "docx",
+    outline: {
+      title: "Report",
+      sections: [{
+        heading: "Download",
+        body: "我已经为你生成了 Word 文件，你可以通过 sandbox:/mnt/data/result.docx 下载。"
+      }]
+    }
+  }, {
+    task: {
+      user_command: "生成 Word 报告",
+      task_spec: {
+        artifact: { required: true, kind: "docx" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /fake download|fake_artifact_text|sandbox/i);
+});
+
+test("generate_document validation rejects long single-slide pptx prose dumps", () => {
+  const result = validateToolCall(generateDocumentTool, {
+    kind: "pptx",
+    outline: {
+      title: "Status Deck",
+      slides: [{
+        heading: "Everything",
+        body: "这不是一页真正的演示文稿，而是一整段没有拆分的长文本。".repeat(40)
+      }]
+    }
+  }, {
+    task: {
+      user_command: "生成 PPT",
+      task_spec: {
+        artifact: { required: true, kind: "pptx" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /presentation prose|multiple slides|presentation_prose_dump/i);
+});
+
+test("generate_document validation rejects prose dumped into a generic xlsx Content column", () => {
+  const result = validateToolCall(generateDocumentTool, {
+    kind: "xlsx",
+    outline: {
+      headers: ["Content"],
+      rows: [[
+        "好的，我已经为你生成了一个 Excel 文件。你可以通过 sandbox:/mnt/data/result.xlsx 下载。这里还有一段很长的说明文字，而不是实际表格单元格。"
+      ]]
+    }
+  }, {
+    task: {
+      user_command: "生成 Excel 报表",
+      task_spec: {
+        artifact: { required: true, kind: "xlsx" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /generic_content_dump|markdown\/download prose|real spreadsheet cells/i);
+});
+
+test("generate_document validation rejects long generic single-column xlsx prose", () => {
+  const result = validateToolCall(generateDocumentTool, {
+    kind: "xlsx",
+    outline: {
+      headers: ["Content"],
+      rows: [[
+        "这不是一个电子表格，而是一段很长的叙述性回答。它解释了应该如何创建 Excel、应该有哪些列、应该如何下载或查看文件，但没有提供任何可计算、可筛选、可编辑的真实单元格结构。这样的内容如果被写进单列工作表，会让用户打开 Excel 后只看到一大段文字。"
+      ]]
+    }
+  }, {
+    task: {
+      user_command: "生成 Excel 报表",
+      task_spec: {
+        artifact: { required: true, kind: "xlsx" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /generic Content column|generic_content_dump|real spreadsheet cells/i);
+});
+
+test("generate_document validation accepts structured xlsx outlines", () => {
+  const result = validateToolCall(generateDocumentTool, {
+    kind: "xlsx",
+    outline: {
+      title: "Market report",
+      headers: ["Date", "Index", "Close", "Change"],
+      rows: [
+        ["2026-05-04", "S&P 500", 5260.3, "0.4%"],
+        ["2026-05-05", "Nasdaq", 16720.1, "-0.2%"]
+      ]
+    }
+  }, {
+    task: {
+      user_command: "生成 Excel 报表",
+      task_spec: {
+        artifact: { required: true, kind: "xlsx" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, true);
+});
+
 test("edit_file validation applies artifact quality to existing document updates", () => {
   const result = validateToolCall(editFileTool, {
     path: "E:/linxiDoc/task/report.html",

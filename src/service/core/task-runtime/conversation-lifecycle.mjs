@@ -30,7 +30,7 @@ export function resolveParentFromConversation(conversationId, runtime) {
 
 const SHORT_FOLLOWUP_REPLY = /^(好|好的?|可以|继续|需要|要|对|是|是的|嗯|ok|okay|yes|sure|please)\s*[!.！。]?$/i;
 const REFERENTIAL_FOLLOWUP = /(^|\s)(上个|上一|刚才|之前|前面|那个|这个|这些|那些|它|它们|里面的|文件夹里的|图片里的|表格里的|文档里的|这张|那张|第一张|第二张|同样|一样|照这个|继续|再来|改一下|补充|加上|打开它|打开这个|打开那个)(\s|$|[，。！？,.!?])/i;
-const SHORT_SLOT_REPLY_BLOCKER = /(打开|启动|运行|删除|移动|复制|保存|导出|发送|发邮件|搜索|查一下|查询|查找|新闻|天气|气温|股价|股票|汇率|价格|多少钱|文件|文件夹|图片|上传|下载|日历|提醒|定时|为什么|怎么办|怎么|如何|\?|？|\bopen\b|\blaunch\b|\brun\b|\bdelete\b|\bmove\b|\bcopy\b|\bsave\b|\bexport\b|\bsend\b|\bemail\b|\bsearch\b|\bnews\b|\bweather\b|\bstock\b|\bprice\b|\bfile\b|\bfolder\b|\bimage\b|\bcalendar\b|\bremind\b|\bschedule\b|\bwhy\b|\bhow\b|\bwhat\b)/i;
+const SHORT_SLOT_REPLY_BLOCKER = /(打开|启动|运行|删除|移动|复制|保存|导出|发送|发邮件|搜索|查一下|查询|查找|新闻|天气|气温|股价|股票|美股|A股|汇率|价格|多少钱|文件|文件夹|图片|上传|下载|日历|提醒|定时|为什么|怎么办|怎么|如何|生成|创建|制作|做成|做一个|报表|表格|格式|文档|幻灯片|电子表格|走势|\?|？|\bopen\b|\blaunch\b|\brun\b|\bdelete\b|\bmove\b|\bcopy\b|\bsave\b|\bexport\b|\bsend\b|\bemail\b|\bsearch\b|\bnews\b|\bweather\b|\bstock\b|\bprice\b|\bfile\b|\bfolder\b|\bimage\b|\bcalendar\b|\bremind\b|\bschedule\b|\bcreate\b|\bgenerate\b|\bmake\b|\breport\b|\bformat\b|\bexcel\b|\bxlsx\b|\bpptx?\b|\bdocx?\b|\bpdf\b|\bwhy\b|\bhow\b|\bwhat\b)/i;
 
 function looksLikeShortSlotReply(text = "") {
   const value = String(text ?? "").trim();
@@ -92,13 +92,58 @@ export function attachPriorBackendMessages(contextPacket, conversationId, runtim
   }
 }
 
+const RECENT_ARTIFACT_CONTEXT_LIMIT = 8;
+
+function isPrimaryArtifactPath(artifactPath = "") {
+  const normalized = String(artifactPath ?? "");
+  return Boolean(
+    normalized
+    && !normalized.endsWith("-preview.html")
+    && !normalized.endsWith("-preview.txt")
+  );
+}
+
+export function attachRecentConversationArtifacts(
+  contextPacket,
+  conversationId,
+  runtime,
+  { limit = RECENT_ARTIFACT_CONTEXT_LIMIT } = {}
+) {
+  if (!conversationId || typeof runtime?.store?.getArtifactsForConversation !== "function") {
+    return contextPacket;
+  }
+  try {
+    const artifacts = (runtime.store.getArtifactsForConversation(conversationId, { limit }) ?? [])
+      .filter((artifact) => isPrimaryArtifactPath(artifact?.path))
+      .slice(0, Math.max(1, Math.min(limit, RECENT_ARTIFACT_CONTEXT_LIMIT)))
+      .map((artifact) => ({
+        artifact_id: artifact.artifact_id ?? null,
+        task_id: artifact.task_id ?? null,
+        path: artifact.path,
+        kind: artifact.kind ?? null,
+        mime_type: artifact.mime_type ?? null,
+        source: artifact.source ?? null,
+        status: artifact.status ?? null,
+        created_at: artifact.created_at ?? null
+      }));
+    if (artifacts.length === 0) return contextPacket;
+    return {
+      ...(contextPacket ?? {}),
+      recent_conversation_artifacts: artifacts,
+      latest_conversation_artifact: artifacts[0]
+    };
+  } catch {
+    return contextPacket;
+  }
+}
+
 export function isSchedulerSourced(contextPacket) {
   return contextPacket?.selection_metadata?.scheduled_task_fire === true
     || contextPacket?.source_app === "uca.scheduler"
     || contextPacket?.capture_mode === "event";
 }
 
-export function ensureConversation(runtime, { conversationId, projectId = null, title = null }) {
+export function ensureConversation(runtime, { conversationId, projectId = null, title = null, metadata = {} }) {
   if (!runtime?.store?.getConversation || !runtime.store.insertConversation) return null;
   if (typeof conversationId !== "string" || conversationId.length === 0) return null;
   const existing = runtime.store.getConversation(conversationId);
@@ -107,7 +152,7 @@ export function ensureConversation(runtime, { conversationId, projectId = null, 
     conversation_id: conversationId,
     project_id: projectId ?? null,
     title: title ?? null,
-    metadata: {}
+    metadata: metadata && typeof metadata === "object" ? metadata : {}
   });
 }
 
@@ -117,6 +162,12 @@ export function deriveConversationTitle(command) {
   if (!cleaned) return null;
   const MAX = 36;
   return cleaned.length > MAX ? `${cleaned.slice(0, MAX)}…` : cleaned;
+}
+
+function formatPartialSuccessContent(message = "") {
+  const raw = String(message ?? "").trim() || "see task for details";
+  const normalized = raw.replace(/^Task partially succeeded:?\s*/i, "").trim() || "see task for details";
+  return `Task partially succeeded: ${normalized}`;
 }
 
 export function backfillConversationTitles(runtime) {
@@ -174,7 +225,7 @@ export function appendTaskOutcomeMessage(runtime, task) {
       content = finalText;
     } else {
       role = "system";
-      content = `Task partially succeeded: ${task.failure_user_message ?? "see task for details"}`;
+      content = formatPartialSuccessContent(task.failure_user_message);
     }
   } else if (status === "failed") {
     role = "system";

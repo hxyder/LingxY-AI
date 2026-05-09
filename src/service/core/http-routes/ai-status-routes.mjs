@@ -261,7 +261,8 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
       }),
       skills: await runtime.platform.skillRegistries.listSkills({
         runtime,
-        config
+        config,
+        includeInactive: true
       })
     });
     return true;

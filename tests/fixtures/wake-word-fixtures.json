@@ -1,0 +1,62 @@
+[
+  {
+    "id": "default_latin_exact",
+    "transcript": "linxi",
+    "expected_match": true,
+    "expected_kind": "voice"
+  },
+  {
+    "id": "default_latin_stt_variant",
+    "transcript": "ling xi",
+    "expected_match": true,
+    "expected_kind": "voice"
+  },
+  {
+    "id": "default_zh_cn_variant",
+    "transcript": "灵犀",
+    "expected_match": true,
+    "expected_kind": "voice"
+  },
+  {
+    "id": "default_note_intent",
+    "transcript": "灵犀 开始录音",
+    "expected_match": true,
+    "expected_kind": "note"
+  },
+  {
+    "id": "near_miss_generic_recording_command",
+    "transcript": "开始录音",
+    "expected_match": false
+  },
+  {
+    "id": "near_miss_browser_command",
+    "transcript": "打开浏览器然后搜索产品文档",
+    "expected_match": false
+  },
+  {
+    "id": "near_miss_temporary_meeting",
+    "transcript": "临时会议纪要已经准备好了",
+    "expected_match": false
+  },
+  {
+    "id": "custom_profile_exact",
+    "profile": {
+      "displayName": "小灵",
+      "phrases": ["小灵"],
+      "includeDefault": false
+    },
+    "transcript": "小灵 帮我打开日历",
+    "expected_match": true,
+    "expected_kind": "voice"
+  },
+  {
+    "id": "custom_profile_excludes_default",
+    "profile": {
+      "displayName": "小灵",
+      "phrases": ["小灵"],
+      "includeDefault": false
+    },
+    "transcript": "linxi",
+    "expected_match": false
+  }
+]

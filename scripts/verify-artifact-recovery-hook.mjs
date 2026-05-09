@@ -454,12 +454,10 @@ function makeSuccessResult(finalText, transcript = []) {
 }
 
 // ----------------------------------------------------------------------
-// 8b. Recovery does NOT fire when LLM already tried generate_document
-//     and failed (validation error OR wrong kind). This is the
-//     2026-05-08 regression fix — recovery is for D-class
-//     missing_artifact (LLM never called the tool), NOT for hide-
-//     LLM-mistakes cases. agent-loop-sequencing.test asserts the
-//     partial_success path stays visible to the user.
+// 8b. Malformed generate_document proposals are still recoverable.
+//     No artifact-producing tool actually ran, so deterministic recovery
+//     may safely materialise final_text via the artifact_generation group.
+//     A real generate_document tool_result remains non-recoverable below.
 // ----------------------------------------------------------------------
 {
   const runtime = createStubRuntime();
@@ -472,10 +470,10 @@ function makeSuccessResult(finalText, transcript = []) {
   const result = makeSuccessResult("Doc body in plaintext.", transcript);
   const out = await finaliseWithArtifactContract(result, { runtime, task });
   check(
-    "LLM already tried (validation_error in transcript): recovery skipped",
-    out.status === "partial_success"
-      && out.artifact_recovery?.applied === false
-      && out.artifact_recovery?.reason === "llm_already_attempted_artifact"
+    "LLM malformed generate_document validation_error: deterministic recovery applies",
+    out.status === "success"
+      && out.artifact_recovery?.applied === true
+      && out.artifact_recovery?.kind === "docx"
   );
 }
 
@@ -504,8 +502,36 @@ function makeSuccessResult(finalText, transcript = []) {
 }
 
 // ----------------------------------------------------------------------
-// 9. Status != success → finaliser passes through unchanged (don't
-//    spawn recovery on failed runs).
+// 9. partial_success still recovers artifact_required. Phase/error gates can
+//    downgrade before the artifact finalizer runs; the outer submission
+//    boundary must still receive artifact_paths instead of hard-failing.
+// ----------------------------------------------------------------------
+{
+  const runtime = createStubRuntime();
+  const task = makeArtifactRequiredTask({ kind: "docx" });
+  const result = { ...makeSuccessResult("Partial but usable body."), status: "partial_success" };
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
+  check(
+    "partial_success recovery: status stays partial_success",
+    out.status === "partial_success"
+  );
+  check(
+    "partial_success recovery: artifact_recovery.applied = true",
+    out.artifact_recovery?.applied === true
+  );
+  check(
+    "partial_success recovery: transcript carries artifact_paths",
+    out.transcript.some((entry) =>
+      entry?.tool === "generate_document"
+      && Array.isArray(entry.artifact_paths)
+      && entry.artifact_paths.length > 0
+    )
+  );
+}
+
+// ----------------------------------------------------------------------
+// 10. failed status → finaliser passes through unchanged (don't spawn
+//     recovery on already-failed runs).
 // ----------------------------------------------------------------------
 {
   const runtime = createStubRuntime();
@@ -513,17 +539,17 @@ function makeSuccessResult(finalText, transcript = []) {
   const result = { status: "failed", final_text: "x", transcript: [] };
   const out = await finaliseWithArtifactContract(result, { runtime, task });
   check(
-    "non-success status: finaliser is a no-op",
+    "failed status: finaliser is a no-op",
     out === result
   );
   check(
-    "non-success status: no recovery events emitted",
+    "failed status: no recovery events emitted",
     runtime.events.length === 0
   );
 }
 
 // ----------------------------------------------------------------------
-// 10. No artifact_required: finaliser is a no-op (don't recover when
+// 11. No artifact_required: finaliser is a no-op (don't recover when
 //     contract didn't ask for an artifact).
 // ----------------------------------------------------------------------
 {

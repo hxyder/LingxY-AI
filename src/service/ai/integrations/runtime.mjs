@@ -12,6 +12,7 @@ import { createConfiguredMCPServer } from "../mcp/configured.mjs";
 import { describeMcpEnvRequirements, resolveMcpEnv } from "../mcp/env-resolver.mjs";
 import { createSkillRegistry } from "../skills/registry.mjs";
 import { BUILTIN_SKILL_REGISTRIES, createConfiguredSkillRegistry } from "../skills/builtin.mjs";
+import { deriveSkillRegistryId, resolveSkillRootPath } from "../skills/discovery.mjs";
 
 function asArray(value) {
   if (!value) {
@@ -55,6 +56,25 @@ function uniqueById(entries) {
   return [...indexed.values()];
 }
 
+function normalizeSkillRegistryEntry(entry = {}) {
+  if (!entry || typeof entry !== "object") return null;
+  const rootPath = resolveSkillRootPath(entry.rootPath ?? entry.path);
+  if (!rootPath) return null;
+  const source = entry.source ?? "runtime_config";
+  return {
+    ...entry,
+    id: typeof entry.id === "string" && entry.id.trim()
+      ? entry.id.trim()
+      : deriveSkillRegistryId(rootPath, { source }),
+    rootPath,
+    source
+  };
+}
+
+function normalizeSkillRegistryEntries(entries = []) {
+  return entries.map(normalizeSkillRegistryEntry).filter(Boolean);
+}
+
 function customProviderEntries(config) {
   return validEntries([
     ...(config.ai?.customProviders ?? []),
@@ -93,8 +113,8 @@ function skillRegistryEntries(config, paths) {
 
   return uniqueById([
     ...runtimeSkillRegistry,
-    ...(config.ai?.skills?.registries ?? []),
-    ...readJsonDeclarations(paths?.skillsDir, "registries")
+    ...normalizeSkillRegistryEntries(config.ai?.skills?.registries ?? []),
+    ...normalizeSkillRegistryEntries(readJsonDeclarations(paths?.skillsDir, "registries"))
   ]);
 }
 

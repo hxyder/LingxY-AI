@@ -12,6 +12,7 @@ const tools = [
   { id: "vision_analyze" },
   { id: "generate_document" },
   { id: "write_file" },
+  { id: "resolve_output_path" },
   { id: "register_artifact" },
   { id: "verify_file_exists" },
   { id: "open_file" },
@@ -149,6 +150,103 @@ test("agent tool surface preserves artifact tools when artifact is required", ()
   // ARTIFACT_TOOL_IDS comment.
   assert.ok(visible.includes("verify_file_exists"));
   assert.ok(!visible.includes("launch_app"));
+});
+
+test("agent tool surface hides artifact writers for pure local-file reading", () => {
+  const task = {
+    user_command: "读取会议纪要，提取 owner、goal、follow-up。",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: []
+      }
+    },
+    task_spec: {
+      artifact: { required: true, kind: "md" },
+      success_contract: { artifact_created: true }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("write_file"));
+  assert.ok(!visible.includes("generate_document"));
+  assert.ok(!visible.includes("resolve_output_path"));
+});
+
+test("agent tool surface exposes artifact writers for explicit file output", () => {
+  const task = {
+    user_command: "读取附件并生成 markdown 报告文件。",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: []
+      }
+    },
+    task_spec: {}
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("write_file"));
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("resolve_output_path"));
+});
+
+test("agent tool surface keeps connector-scoped searches out of generic web search", () => {
+  const task = {
+    user_command: "搜索云盘里文件名包含 audit 的文档，只列出名称。",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: []
+      }
+    },
+    task_spec: {}
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("connector_workflow_run"));
+});
+
+test("agent tool surface keeps web research available for scheduled research email tasks", () => {
+  const task = {
+    user_command: "收集美股市场最新汇总信息（包括主要股指表现、涨跌板块、重要新闻等），整理后发送邮件到 a@example.com",
+    context_packet: {
+      selection_metadata: {
+        scheduled_task_fire: true,
+        side_effect_authorization: {
+          kind: "scheduled_fire",
+          decision: "preauthorized",
+          groups: ["email_send"]
+        }
+      },
+      semantic_router_rejection: {
+        kind: "rejection",
+        code: "timeout"
+      }
+    },
+    task_spec: {
+      goal: "search_and_answer",
+      connector_domain: true,
+      tool_policy: {
+        policy_groups: {
+          external_web_read: { mode: "optional" }
+        },
+        web_search_fetch: { mode: "optional" },
+        fetch_url_content: { mode: "optional" }
+      },
+      success_contract: {
+        required_policy_groups: ["email_send"]
+      }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("account_send_email"));
+  assert.ok(visible.includes("connector_workflow_run"));
+  assert.ok(!visible.includes("create_scheduled_task"));
 });
 
 test("capability_management still hides direct file open tools when not required", () => {

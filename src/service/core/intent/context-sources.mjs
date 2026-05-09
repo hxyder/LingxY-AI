@@ -199,6 +199,8 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
       switch (entry.kind) {
         case "memory_recall":
         case "rag_background":
+        case "user_profile":
+        case "project_memory":
           sources.rag_background = true;
           break;
         case "parent_task":

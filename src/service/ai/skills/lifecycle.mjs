@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -35,6 +35,20 @@ export function resolveEditableSkillEntryPath(runtime = {}, entryPath = "") {
   if (!entryPath || path.basename(entryPath) !== "SKILL.md") return null;
   const resolved = path.resolve(entryPath);
   return configuredSkillRoots(runtime).some((root) => isPathInside(resolved, root)) ? resolved : null;
+}
+
+export function resolveDeletableSkillEntryPath(runtime = {}, entryPath = "") {
+  if (!entryPath || path.basename(entryPath) !== "SKILL.md") return null;
+  const rootPath = runtime.paths?.skillsDir;
+  if (!rootPath) return null;
+  const resolved = path.resolve(entryPath);
+  const root = path.resolve(rootPath);
+  const skillDir = path.dirname(resolved);
+  const deletedRoot = path.join(root, ".deleted");
+  if (!isPathInside(resolved, root)) return null;
+  if (sameResolvedPath(skillDir, root)) return null;
+  if (isPathInside(skillDir, deletedRoot)) return null;
+  return resolved;
 }
 
 export function slugifySkillId(value = "") {
@@ -152,6 +166,27 @@ export async function duplicateEditableSkill(runtime = {}, {
     markdown,
     validation: validateSkillDescriptorMarkdown(markdown),
     sourceEntryPath
+  };
+}
+
+export async function deleteEditableSkill(runtime = {}, {
+  entryPath = ""
+} = {}) {
+  const resolved = resolveDeletableSkillEntryPath(runtime, entryPath);
+  if (!resolved) throw new Error("skill_path_not_allowed");
+  if (!existsSync(resolved)) throw new Error("skill_not_found");
+  const rootPath = path.resolve(runtime.paths.skillsDir);
+  const skillDir = path.dirname(resolved);
+  const deletedRoot = path.join(rootPath, ".deleted");
+  await mkdir(deletedRoot, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const deletedDir = path.join(deletedRoot, `${path.basename(skillDir)}-${stamp}-${crypto.randomUUID().slice(0, 8)}`);
+  await rename(skillDir, deletedDir);
+  return {
+    ok: true,
+    entryPath: resolved,
+    deletedPath: deletedDir,
+    recoverable: true
   };
 }
 

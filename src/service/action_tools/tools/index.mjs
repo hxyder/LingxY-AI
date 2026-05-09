@@ -31,6 +31,7 @@ import {
   PREVIEW_SKILL_FROM_GITHUB_TOOL,
   INSTALL_SKILL_FROM_GITHUB_TOOL
 } from "./skill-install-tools.mjs";
+import { prepareFileReversibilityCheckpoint } from "../file-reversibility.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
@@ -40,6 +41,7 @@ import {
   extractReadableFileText
 } from "../../core/local-file-collection.mjs";
 import { EMBEDDING_NAMESPACES } from "../../embeddings/store.mjs";
+import { spreadsheetOutlineFromText } from "../../core/spreadsheet-outline.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -745,7 +747,8 @@ export const NOTIFY_TOOL = {
       allowLongBody: args.allowLongBody ?? undefined,
       autoHideMs: args.autoHideMs ?? undefined,
       dedupeKey: args.dedupeKey ?? undefined,
-      skipBatch: args.skipBatch ?? undefined
+      skipBatch: args.skipBatch ?? undefined,
+      forcePopup: args.forcePopup ?? undefined
     };
     await writeFile(notificationPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     return createActionResult({
@@ -1161,6 +1164,10 @@ export const CREATE_SCHEDULED_TASK_TOOL = {
       action: args.action,
       executionMode: args.execution_mode ?? "unattended_safe",
       catchupPolicy: args.catchup_policy ?? "skip",
+      category: args.category,
+      color: args.color,
+      leadTimeMs: args.lead_time_ms,
+      userTodo: args.user_todo === true,
       metadata: sideEffectContract ? { side_effect_contract: sideEffectContract } : {}
     }, {
       createdBy: ctx.task ? "agent" : "user"
@@ -1274,7 +1281,17 @@ async function ensureOutputDir(outputDir) {
 
 // Reject paths with `..`, absolute paths outside the workspace, or symlinks
 // that resolve above the workspace. Returns the canonicalised target path.
-async function resolveSandboxedTarget(outputDir, relativePath) {
+function configuredWritableArtifactRoots(ctx = {}) {
+  return [
+    ctx?.runtime?.paths?.outputsDir,
+    ctx?.runtime?.configStore?.load?.()?.output?.defaultDir,
+    path.join(os.homedir(), "Desktop", "UCA")
+  ]
+    .filter((candidate) => typeof candidate === "string" && candidate.trim())
+    .map((candidate) => path.resolve(candidate));
+}
+
+async function resolveSandboxedTarget(outputDir, relativePath, { allowedRoots = [] } = {}) {
   if (!relativePath || typeof relativePath !== "string") {
     throw new Error("path is required");
   }
@@ -1291,15 +1308,22 @@ async function resolveSandboxedTarget(outputDir, relativePath) {
   const absTarget = path.isAbsolute(relativePath)
     ? path.resolve(relativePath)
     : path.resolve(resolvedOutputDir, relativePath);
-  const withinWorkspace = absTarget === resolvedOutputDir
-    || absTarget.startsWith(resolvedOutputDir + path.sep);
-  if (!withinWorkspace) {
+  const roots = [
+    resolvedOutputDir,
+    ...allowedRoots
+      .filter((candidate) => typeof candidate === "string" && candidate.trim())
+      .map((candidate) => path.resolve(candidate))
+  ];
+  const containingRoot = roots.find((root) =>
+    absTarget === root || absTarget.startsWith(root + path.sep)
+  );
+  if (!containingRoot) {
     throw new Error(`path escapes task workspace: ${relativePath}`);
   }
   // Reject any existing symlink components in the *parent* chain between the
   // workspace and the target. realpath() would silently follow them.
   let probe = path.dirname(absTarget);
-  while (probe && probe.length >= resolvedOutputDir.length) {
+  while (probe && probe.length >= containingRoot.length) {
     try {
       const info = await lstat(probe);
       if (info.isSymbolicLink()) {
@@ -1379,7 +1403,9 @@ export const WRITE_FILE_TOOL = {
     const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
     const targetArg = args.path ?? args.filename ?? "";
     try {
-      const absTarget = await resolveSandboxedTarget(outputDir, targetArg);
+      const absTarget = await resolveSandboxedTarget(outputDir, targetArg, {
+        allowedRoots: configuredWritableArtifactRoots(ctx)
+      });
       if (!args.overwrite) {
         try {
           await access(absTarget, fsConstants.F_OK);
@@ -1394,6 +1420,11 @@ export const WRITE_FILE_TOOL = {
       }
       await mkdir(path.dirname(absTarget), { recursive: true });
       const buffer = decodeWriteFileContent(args);
+      const reversibility = await prepareFileReversibilityCheckpoint(ctx, {
+        toolId: "write_file",
+        targetPath: absTarget,
+        operation: args.overwrite ? "overwrite_file" : "create_file"
+      });
       await writeFile(absTarget, buffer);
       return createActionResult({
         success: true,
@@ -1401,7 +1432,8 @@ export const WRITE_FILE_TOOL = {
         metadata: {
           tool_id: "write_file",
           path: absTarget,
-          bytes: buffer.length
+          bytes: buffer.length,
+          reversibility
         },
         artifactPaths: [absTarget]
       });
@@ -1731,12 +1763,14 @@ function heuristicSectionOutlineFromText(text) {
 }
 
 function heuristicXlsxOutlineFromText(text) {
+  const structured = spreadsheetOutlineFromText(text);
+  if (structured) return structured;
   const rows = stripCodeFences(text)
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean)
     .map((line) => line.split(/\t|,|\|/).map((cell) => cell.trim()).filter(Boolean));
-  return { rows };
+  return rows.some((row) => row.length >= 2) ? { rows } : {};
 }
 
 function normalizeDocumentOutline(kind, outline) {
@@ -1772,6 +1806,14 @@ async function writeDocumentPreviewSidecar({ kind, targetPath, outline }) {
   const html = await buildDocumentPreviewHtml(kind, outline, targetPath);
   await writeFile(previewPath, html, "utf8");
   return previewPath;
+}
+
+async function prepareGeneratedDocumentCheckpoint(ctx, targetPath, operation) {
+  return prepareFileReversibilityCheckpoint(ctx, {
+    toolId: "generate_document",
+    targetPath,
+    operation
+  });
 }
 
 async function invokeDocumentRenderer({ kind, targetPath, outline }) {
@@ -1846,6 +1888,11 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
           : `result${KIND_EXTENSIONS[kind]}`);
       const absTarget = await resolveSandboxedTarget(outputDir, targetArg);
       const outline   = normalizeDocumentOutline(kind, args.outline ?? {});
+      const primaryReversibility = await prepareGeneratedDocumentCheckpoint(
+        ctx,
+        absTarget,
+        `generate_document_${kind}`
+      );
 
       if (kind === "html") {
         const htmlContent = buildPdfHtml(outline);
@@ -1858,7 +1905,8 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
             kind,
             path: absTarget,
             mime_type: KIND_MIMES[kind],
-            preview_html_path: absTarget
+            preview_html_path: absTarget,
+            reversibility: primaryReversibility
           },
           artifactPaths: [absTarget]
         });
@@ -1867,9 +1915,20 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
       if (kind === "pdf") {
         const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
         const htmlContent = buildPdfHtml(outline);
+        const htmlSourceReversibility = await prepareGeneratedDocumentCheckpoint(
+          ctx,
+          htmlPath,
+          "generate_document_pdf_html_source"
+        );
         await writeFile(htmlPath, htmlContent, "utf8");
         try {
           await writePdfFromHtmlArtifact(htmlPath, absTarget);
+          const previewTarget = previewSidecarPathForArtifact(absTarget);
+          const previewReversibility = await prepareGeneratedDocumentCheckpoint(
+            ctx,
+            previewTarget,
+            "generate_document_preview_sidecar"
+          );
           const previewPath = await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
           return createActionResult({
             success: true,
@@ -1878,7 +1937,9 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
               tool_id: "generate_document", kind,
               path: absTarget, mime_type: KIND_MIMES[kind],
               html_source_path: htmlPath,
-              preview_html_path: previewPath
+              preview_html_path: previewPath,
+              reversibility: primaryReversibility,
+              reversibility_sidecars: [htmlSourceReversibility, previewReversibility]
             },
             artifactPaths: [absTarget]
           });
@@ -1889,7 +1950,9 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
             metadata: {
               tool_id: "generate_document", kind,
               path: htmlPath, mime_type: "text/html",
-              needs_pdf_conversion: true, pdf_conversion_error: error.message
+              preview_html_path: htmlPath,
+              needs_pdf_conversion: true, pdf_conversion_error: error.message,
+              reversibility: htmlSourceReversibility
             },
             artifactPaths: [htmlPath]
           });
@@ -1897,6 +1960,12 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
       }
 
       await invokeDocumentRenderer({ kind, targetPath: absTarget, outline });
+      const previewTarget = previewSidecarPathForArtifact(absTarget);
+      const previewReversibility = await prepareGeneratedDocumentCheckpoint(
+        ctx,
+        previewTarget,
+        "generate_document_preview_sidecar"
+      );
       const previewPath = await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
       return createActionResult({
         success: true,
@@ -1906,7 +1975,9 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
           kind,
           path: absTarget,
           mime_type: KIND_MIMES[kind],
-          preview_html_path: previewPath
+          preview_html_path: previewPath,
+          reversibility: primaryReversibility,
+          reversibility_sidecars: [previewReversibility]
         },
         artifactPaths: [absTarget]
       });
@@ -1941,6 +2012,11 @@ export const EDIT_FILE_TOOL = {
       const absTarget = await resolveEditableTargetForEdit(ctx, targetArg);
       const ext = path.extname(absTarget).toLowerCase();
       const kind = String(args.kind ?? artifactKindFromTarget(absTarget) ?? "").toLowerCase().trim();
+      const reversibility = await prepareFileReversibilityCheckpoint(ctx, {
+        toolId: "edit_file",
+        targetPath: absTarget,
+        operation: "edit_file"
+      });
       if (OUTLINE_KINDS.has(kind)) {
         const outline = normalizeDocumentOutline(kind, args.outline ?? args.content ?? args.text ?? {});
         if (!outline || (typeof outline === "object" && Object.keys(outline).length === 0)) {
@@ -1972,7 +2048,8 @@ export const EDIT_FILE_TOOL = {
             path: absTarget,
             kind,
             mime_type: KIND_MIMES[kind] ?? null,
-            preview_html_path: previewPath
+            preview_html_path: previewPath,
+            reversibility
           },
           artifactPaths: [absTarget]
         });
@@ -2000,7 +2077,8 @@ export const EDIT_FILE_TOOL = {
           tool_id: "edit_file",
           path: absTarget,
           bytes: buffer.length,
-          kind: kind || artifactKindFromTarget(absTarget) || "text"
+          kind: kind || artifactKindFromTarget(absTarget) || "text",
+          reversibility
         },
         artifactPaths: [absTarget]
       });

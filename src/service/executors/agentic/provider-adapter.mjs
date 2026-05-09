@@ -54,18 +54,73 @@ async function readResponseBody(response) {
   }
 }
 
-function splitSystemAndUser(messages) {
-  const systemParts = [];
+function promptCacheEnabled(resolved = {}) {
+  if (resolved.promptCache === false || resolved.prompt_cache === false) return false;
+  return process.env.LINGXY_PROMPT_CACHE !== "0";
+}
+
+function cacheControlFrom(value) {
+  if (value === true) return { type: "ephemeral" };
+  if (value && typeof value === "object") return value;
+  return null;
+}
+
+function plainTextFromContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (part?.type === "text" && typeof part.text === "string") return part.text;
+      return "";
+    }).filter(Boolean).join("\n\n");
+  }
+  if (content?.type === "text" && typeof content.text === "string") return content.text;
+  return content == null ? "" : String(content);
+}
+
+function systemBlocksFromMessage(msg) {
+  const messageCache = cacheControlFrom(msg?.cache_control ?? msg?.cacheControl);
+  const content = msg?.content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") {
+        return { type: "text", text: part, ...(messageCache ? { cache_control: messageCache } : {}) };
+      }
+      if (part?.type === "text" && typeof part.text === "string") {
+        const partCache = cacheControlFrom(part.cache_control ?? part.cacheControl) ?? messageCache;
+        return { type: "text", text: part.text, ...(partCache ? { cache_control: partCache } : {}) };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+  const text = plainTextFromContent(content);
+  if (!text) return [];
+  return [{ type: "text", text, ...(messageCache ? { cache_control: messageCache } : {}) }];
+}
+
+function splitSystemAndUser(messages, { enableCache = false } = {}) {
+  const systemBlocks = [];
   const rest = [];
   for (const msg of messages) {
     if (!msg) continue;
     if (msg.role === "system") {
-      if (typeof msg.content === "string") systemParts.push(msg.content);
+      systemBlocks.push(...systemBlocksFromMessage(msg));
       continue;
     }
     rest.push(msg);
   }
-  return { system: systemParts.join("\n\n"), rest };
+  if (enableCache && systemBlocks.length > 0 && !systemBlocks.some((block) => block.cache_control)) {
+    const last = systemBlocks[systemBlocks.length - 1];
+    systemBlocks[systemBlocks.length - 1] = {
+      ...last,
+      cache_control: { type: "ephemeral" }
+    };
+  }
+  return {
+    system: systemBlocks.map((block) => block.text).join("\n\n"),
+    systemBlocks,
+    rest
+  };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -81,8 +136,8 @@ function buildAnthropicTools(tools) {
   }));
 }
 
-function convertMessagesForAnthropic(messages) {
-  const { system, rest } = splitSystemAndUser(messages);
+function convertMessagesForAnthropic(messages, { enableCache = false } = {}) {
+  const { system, systemBlocks, rest } = splitSystemAndUser(messages, { enableCache });
   const converted = rest.map((msg) => {
     if (msg.role === "tool") {
       // OpenAI-style tool results -> Anthropic tool_result block
@@ -117,7 +172,11 @@ function convertMessagesForAnthropic(messages) {
     }
     return { role: msg.role, content: msg.content ?? "" };
   });
-  return { system, messages: converted };
+  const hasStructuredSystem = systemBlocks.some((block) => block.cache_control);
+  return {
+    system: hasStructuredSystem ? systemBlocks : system,
+    messages: converted
+  };
 }
 
 function safeJsonParse(value) {
@@ -150,9 +209,24 @@ function parseAnthropicResponse(data) {
     tool_calls: toolCalls,
     usage: {
       input_tokens: data?.usage?.input_tokens ?? null,
-      output_tokens: data?.usage?.output_tokens ?? null
+      output_tokens: data?.usage?.output_tokens ?? null,
+      cache_creation_input_tokens: data?.usage?.cache_creation_input_tokens ?? null,
+      cache_read_input_tokens: data?.usage?.cache_read_input_tokens ?? null
     }
   };
+}
+
+function mergeAnthropicUsage(target = {}, usage = {}) {
+  if (!usage || typeof usage !== "object") return target;
+  for (const key of [
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens"
+  ]) {
+    if (usage[key] != null) target[key] = usage[key];
+  }
+  return target;
 }
 
 async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
@@ -160,7 +234,9 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
   if (!fetchFn) throw new Error("No fetch implementation available for Anthropic adapter.");
 
   const baseUrl = resolved.baseUrl || "https://api.anthropic.com";
-  const { system, messages: anthMessages } = convertMessagesForAnthropic(messages);
+  const { system, messages: anthMessages } = convertMessagesForAnthropic(messages, {
+    enableCache: promptCacheEnabled(resolved)
+  });
 
   const streaming = typeof onTextDelta === "function";
   const payload = {
@@ -211,6 +287,17 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
     const bodyText = await readResponseBody(response);
     requireOk(response, "Anthropic", bodyText);
   }
+  const contentType = response.headers?.get?.("content-type") ?? "";
+  if (contentType && !/text\/event-stream/i.test(contentType)) {
+    const bodyText = await readResponseBody(response);
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch {
+      throw new Error(`Anthropic returned non-SSE non-JSON response: ${bodyText.slice(0, 200)}`);
+    }
+    return parseAnthropicResponse(data);
+  }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -219,6 +306,7 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
   const toolInputBuffers = {};
   const toolUseBlocks = {};
   const toolCalls = [];
+  const usage = {};
 
   try {
     while (true) {
@@ -237,6 +325,12 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
         if (!jsonStr || jsonStr === "[DONE]") continue;
         let ev;
         try { ev = JSON.parse(jsonStr); } catch { continue; }
+        if (ev.type === "message_start") {
+          mergeAnthropicUsage(usage, ev.message?.usage);
+        }
+        if (ev.type === "message_delta") {
+          mergeAnthropicUsage(usage, ev.usage);
+        }
         if (ev.type === "content_block_start" && ev.content_block?.type === "tool_use") {
           toolUseBlocks[ev.index] = { id: ev.content_block.id, name: ev.content_block.name };
           toolInputBuffers[ev.index] = "";
@@ -270,7 +364,7 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
     reader.releaseLock?.();
   }
 
-  return { text: fullText, tool_calls: toolCalls, usage: {} };
+  return { text: fullText, tool_calls: toolCalls, usage };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -297,7 +391,7 @@ function convertMessagesForOpenAI(messages) {
       converted.push({
         role: "tool",
         tool_call_id: msg.tool_call_id ?? msg.tool_use_id ?? "",
-        content: typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+        content: plainTextFromContent(msg.content)
       });
       continue;
     }
@@ -308,7 +402,7 @@ function convertMessagesForOpenAI(messages) {
       // replayed tool_calls.
       const assistantFrame = {
         role: "assistant",
-        content: typeof msg.content === "string" ? msg.content : "",
+        content: plainTextFromContent(msg.content),
         tool_calls: msg.tool_calls.map((call) => ({
           id: call.id ?? "",
           type: "function",
@@ -330,12 +424,12 @@ function convertMessagesForOpenAI(messages) {
     if (msg.role === "assistant" && typeof msg.reasoning_content === "string" && msg.reasoning_content) {
       converted.push({
         role: "assistant",
-        content: msg.content ?? "",
+        content: plainTextFromContent(msg.content),
         reasoning_content: msg.reasoning_content
       });
       continue;
     }
-    converted.push({ role: msg.role, content: msg.content ?? "" });
+    converted.push({ role: msg.role, content: plainTextFromContent(msg.content) });
   }
   return converted;
 }
@@ -359,6 +453,7 @@ function parseOpenAIResponse(data) {
   // to the API."). We capture it here and the planner attaches it
   // to the assistant message it pushes onto the transcript; the
   // outgoing-message converter downstream forwards it verbatim.
+  const normalizedUsage = normalizeOpenAIUsage(data?.usage);
   return {
     text: message.content ?? "",
     reasoning_content: typeof message.reasoning_content === "string"
@@ -366,9 +461,24 @@ function parseOpenAIResponse(data) {
       : null,
     tool_calls: toolCalls,
     usage: {
-      input_tokens: data?.usage?.prompt_tokens ?? null,
-      output_tokens: data?.usage?.completion_tokens ?? null
+      ...normalizedUsage
     }
+  };
+}
+
+function normalizeOpenAIUsage(usage = {}) {
+  const raw = usage && typeof usage === "object" ? usage : {};
+  const promptDetails = raw.prompt_tokens_details ?? {};
+  const cacheHit = raw.prompt_cache_hit_tokens ?? promptDetails.cached_tokens ?? null;
+  const cacheMiss = raw.prompt_cache_miss_tokens ?? null;
+  return {
+    input_tokens: raw.prompt_tokens ?? raw.input_tokens ?? null,
+    output_tokens: raw.completion_tokens ?? raw.output_tokens ?? null,
+    total_tokens: raw.total_tokens ?? null,
+    cache_hit_tokens: cacheHit,
+    cache_miss_tokens: cacheMiss,
+    prompt_cache_hit_tokens: cacheHit,
+    prompt_cache_miss_tokens: cacheMiss
   };
 }
 
@@ -385,6 +495,9 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
     maxTokens: maxTokens ?? 2048,
     stream: streaming
   });
+  if (streaming) {
+    body.stream_options = { include_usage: true };
+  }
   const oaTools = buildOpenAITools(tools);
   if (oaTools) body.tools = oaTools;
   // P4-03 follow-up: forward tool_choice. OpenAI uses a slightly
@@ -404,7 +517,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
 
   applyReasoningSelectionToBody(body, resolved, resolved.model, resolved.reasoningEffort);
 
-  const response = await fetchFn(`${baseUrl}/chat/completions`, {
+  const buildRequestInit = () => ({
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -413,6 +526,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
     body: JSON.stringify(body),
     signal
   });
+  let response = await fetchFn(`${baseUrl}/chat/completions`, buildRequestInit());
 
   if (!streaming) {
     const bodyText = await readResponseBody(response);
@@ -429,7 +543,18 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
   // Streaming path — parse OpenAI SSE
   if (!response.ok) {
     const bodyText = await readResponseBody(response);
-    requireOk(response, `OpenAI-compat (${resolved.providerName ?? resolved.baseUrl})`, bodyText);
+    if (streaming && body.stream_options && /stream_options|include_usage/i.test(bodyText)) {
+      delete body.stream_options;
+      response = await fetchFn(`${baseUrl}/chat/completions`, buildRequestInit());
+      if (response.ok) {
+        // Continue into the stream parser below.
+      } else {
+        const retryBodyText = await readResponseBody(response);
+        requireOk(response, `OpenAI-compat (${resolved.providerName ?? resolved.baseUrl})`, retryBodyText);
+      }
+    } else {
+      requireOk(response, `OpenAI-compat (${resolved.providerName ?? resolved.baseUrl})`, bodyText);
+    }
   }
 
   const reader = response.body.getReader();
@@ -442,6 +567,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
   // next turn's assistant message (see parseOpenAIResponse comment).
   let fullReasoning = "";
   const toolCallBuilders = {};
+  let usage = {};
 
   try {
     while (true) {
@@ -460,6 +586,9 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
         if (!jsonStr || jsonStr === "[DONE]") continue;
         let chunk;
         try { chunk = JSON.parse(jsonStr); } catch { continue; }
+        if (chunk?.usage && typeof chunk.usage === "object") {
+          usage = normalizeOpenAIUsage(chunk.usage);
+        }
         const delta = chunk?.choices?.[0]?.delta;
         if (!delta) continue;
         if (typeof delta.content === "string" && delta.content) {
@@ -504,7 +633,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
     text: fullText,
     reasoning_content: fullReasoning || null,
     tool_calls: toolCalls,
-    usage: {}
+    usage
   };
 }
 
@@ -512,16 +641,20 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
 /* Ollama                                                                    */
 /* ------------------------------------------------------------------------ */
 
-function parseOllamaResponse(data) {
-  const message = data?.message ?? {};
-  const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-  const toolCalls = rawToolCalls.map((call) => ({
+function normalizeOllamaToolCall(call = {}) {
+  return {
     id: call.id ?? null,
     name: call.function?.name ?? call.name ?? "",
     arguments: typeof call.function?.arguments === "string"
       ? safeJsonParse(call.function.arguments)
       : (call.function?.arguments ?? call.arguments ?? {})
-  }));
+  };
+}
+
+function parseOllamaResponse(data) {
+  const message = data?.message ?? {};
+  const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+  const toolCalls = rawToolCalls.map((call) => normalizeOllamaToolCall(call));
   return {
     text: message.content ?? "",
     tool_calls: toolCalls,
@@ -532,15 +665,22 @@ function parseOllamaResponse(data) {
   };
 }
 
-async function generateOllama(resolved, { messages, tools, signal, fetchImpl }) {
+function mergeOllamaUsage(target = {}, data = {}) {
+  if (data?.prompt_eval_count != null) target.input_tokens = data.prompt_eval_count;
+  if (data?.eval_count != null) target.output_tokens = data.eval_count;
+  return target;
+}
+
+async function generateOllama(resolved, { messages, tools, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
   const fetchFn = fetchImpl ?? globalThis.fetch;
   if (!fetchFn) throw new Error("No fetch implementation available for Ollama adapter.");
 
   const baseUrl = resolved.baseUrl || "http://127.0.0.1:11434";
+  const streaming = typeof onTextDelta === "function";
   const body = {
     model: resolved.model,
     messages: convertMessagesForOpenAI(messages),
-    stream: false
+    stream: streaming
   };
   const oaTools = buildOpenAITools(tools);
   if (oaTools) body.tools = oaTools;
@@ -552,15 +692,80 @@ async function generateOllama(resolved, { messages, tools, signal, fetchImpl }) 
     signal
   });
 
-  const bodyText = await readResponseBody(response);
-  requireOk(response, "Ollama", bodyText);
-  let data;
-  try {
-    data = JSON.parse(bodyText);
-  } catch {
-    throw new Error(`Ollama returned non-JSON response: ${bodyText.slice(0, 200)}`);
+  if (!streaming) {
+    const bodyText = await readResponseBody(response);
+    requireOk(response, "Ollama", bodyText);
+    let data;
+    try {
+      data = JSON.parse(bodyText);
+    } catch {
+      throw new Error(`Ollama returned non-JSON response: ${bodyText.slice(0, 200)}`);
+    }
+    return parseOllamaResponse(data);
   }
-  return parseOllamaResponse(data);
+
+  if (!response.ok) {
+    const bodyText = await readResponseBody(response);
+    requireOk(response, "Ollama", bodyText);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let lineBuffer = "";
+  let fullText = "";
+  const toolCallsByKey = new Map();
+  const usage = {};
+
+  const consumeLine = (line) => {
+    const raw = String(line ?? "").trim();
+    if (!raw) return;
+    let chunk;
+    try {
+      chunk = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    mergeOllamaUsage(usage, chunk);
+    const message = chunk?.message ?? {};
+    if (typeof message.content === "string" && message.content) {
+      fullText += message.content;
+      onTextDelta(message.content);
+    }
+    const rawToolCalls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
+    for (let index = 0; index < rawToolCalls.length; index += 1) {
+      const normalized = normalizeOllamaToolCall(rawToolCalls[index]);
+      const key = normalized.id ?? `${normalized.name}:${index}`;
+      toolCallsByKey.set(key, normalized);
+      if (typeof onToolInputDelta === "function") {
+        onToolInputDelta(normalized.name, JSON.stringify(normalized.arguments ?? {}));
+      }
+    }
+  };
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (signal?.aborted) {
+        reader.cancel();
+        throw Object.assign(new Error("Ollama stream aborted."), { code: "ABORT_ERR" });
+      }
+      lineBuffer += decoder.decode(value, { stream: true });
+      const lines = lineBuffer.split(/\r?\n/);
+      lineBuffer = lines.pop() ?? "";
+      for (const line of lines) consumeLine(line);
+    }
+    const tail = lineBuffer + decoder.decode();
+    consumeLine(tail);
+  } finally {
+    reader.releaseLock?.();
+  }
+
+  return {
+    text: fullText,
+    tool_calls: Array.from(toolCallsByKey.values()),
+    usage
+  };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -635,7 +840,7 @@ export function createProviderAdapter(resolved) {
       }
       return generate(options);
     },
-    supportsStreaming: kind === "anthropic" || kind === "openai"
+    supportsStreaming: kind === "anthropic" || kind === "openai" || kind === "ollama"
   };
 }
 

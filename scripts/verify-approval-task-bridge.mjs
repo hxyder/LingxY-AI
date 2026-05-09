@@ -309,5 +309,55 @@ function check(label, condition) {
   check("missing-task: no terminal event for the phantom task", runtime.store.listEvents().length === 0);
 }
 
+// ---------------------------------------------------------------------
+// 7. Rejected approval → originating task leaves waiting_external_decision.
+// ---------------------------------------------------------------------
+{
+  const runtime = makeRuntime();
+  const originatingTaskId = "task_orig_007";
+  runtime.store.insertTask({
+    task_id: originatingTaskId,
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    progress: 0.5
+  });
+
+  const service = createPendingApprovalService({ runtime });
+  const approval = service.create({
+    sourceType: "agent_tool_call",
+    sourceId: originatingTaskId,
+    proposedAction: "action_tool",
+    proposedTarget: "account_send_email",
+    proposedParams: { to: ["audit@example.com"] },
+    metadata: { task_id: originatingTaskId, tool_id: "account_send_email" }
+  });
+
+  service.reject(approval.approval_id, { actor: "test", reason: "audit reject path" });
+
+  const orig = runtime.store.getTask(originatingTaskId);
+  check("reject: original task no longer waits for external decision",
+    orig.sub_status === "approval_rejected");
+  check("reject: original task remains terminal partial_success",
+    orig.status === "partial_success");
+  check("reject: result summary explains the rejection",
+    /audit reject path/.test(orig.result_summary));
+  const events = runtime.store.listEvents();
+  check("reject: tool_call_completed mirrored as success:false",
+    events.some((e) =>
+      e.event_type === "tool_call_completed"
+      && e.task_id === originatingTaskId
+      && e.payload?.success === false
+      && e.payload?.approval_rejected === true));
+  check("reject: partial_success terminal event appended",
+    events.some((e) =>
+      e.event_type === "partial_success"
+      && e.task_id === originatingTaskId
+      && e.payload?.approval_rejected === true));
+  check("reject: terminal event published to bus",
+    runtime.eventBus.listPublished().some((e) =>
+      e.event_type === "partial_success"
+      && e.payload?.approval_rejected === true));
+}
+
 console.log(`\n${pass} pass / ${fail} fail`);
 if (fail > 0) process.exit(1);

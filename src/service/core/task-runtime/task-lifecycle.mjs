@@ -202,7 +202,15 @@ export function applyExecutorEvent(runtime, task, event) {
     }
     const failure = classifyFailure({
       message: event.message ?? event.text ?? event.error ?? "Executor failed.",
-      category: event.category
+      category: event.category,
+      code: event.code,
+      provider_id: event.provider_id,
+      provider_kind: event.provider_kind,
+      provider: event.provider,
+      model: event.model ?? event.model_id,
+      tool_id: event.tool_id,
+      tool: event.tool,
+      observation: event.observation
     });
     updateTask(runtime, task, {
       status: "failed",
@@ -234,7 +242,10 @@ export function markTaskFailed(runtime, task, errorLike) {
       category: failure.category,
       message: failure.userMessage,
       user_actions: failure.userActions,
-      internal_excerpt: failure.internalExcerpt
+      internal_excerpt: failure.internalExcerpt,
+      recovery_hint: failure.recoveryHint,
+      recovery_policy: failure.recoveryPolicy,
+      retryable: failure.retryable
     }
   });
 

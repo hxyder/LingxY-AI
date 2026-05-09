@@ -175,7 +175,12 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
         actionParams,
         executionMode: "interactive",
         sourceLabel: approval.preview_text || `Approved ${approval.proposed_target}`,
-        sourceId: approval.source_id
+        sourceId: approval.source_id,
+        resumeTaskId: approval.proposed_action === "connector_workflow"
+          ? approval.metadata?.task_id ?? null
+          : null,
+        approvalId: approval.approval_id,
+        actor: approval.decided_by ?? null
       });
     }
   });

@@ -13,6 +13,7 @@ import {
   validateBranchName,
   SKILL_INSTALL_ERROR
 } from "../../src/service/ai/skills/github-install.mjs";
+import { deriveSkillRegistryId } from "../../src/service/ai/skills/discovery.mjs";
 
 // ─── URL / branch validation ───────────────────────────────────────────────
 
@@ -158,6 +159,8 @@ test("happy path: clones, validates SKILL.md, swaps into final, registers rootPa
     assert.ok(!existsSync(path.join(finalDir, ".git")), ".git was removed");
     const registries = getConfig().ai.skills.registries;
     assert.equal(registries.length, 1);
+    assert.equal(registries[0].id, deriveSkillRegistryId(finalDir, { source: "github_install" }));
+    assert.equal(registries[0].displayName, "My Skill");
     assert.equal(registries[0].rootPath, finalDir);
     assert.equal(registries[0].source, "github_install");
   });

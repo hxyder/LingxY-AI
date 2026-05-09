@@ -15,6 +15,7 @@ import { formatResourceContext } from "../shared/resource-context.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { renderSideEffectContractPrompt } from "../../core/policy/side-effect-contracts.mjs";
+import { renderSkillForPrompt } from "../shared/skill-context.mjs";
 
 const DEFAULT_EXAMPLES = {
   web_search_fetch: { query: "latest AI trends 2026", recency: "month" },
@@ -80,16 +81,6 @@ function renderToolBlock(tool) {
   ].join("\n");
 }
 
-function renderSkillBlock(skill) {
-  return [
-    `<skill id="${skill.id}">`,
-    `  name: ${skill.displayName ?? skill.id}`,
-    `  description: ${(skill.description ?? "").slice(0, 500)}`,
-    `  entry: ${skill.entryPath ?? ""}`,
-    `</skill>`
-  ].join("\n");
-}
-
 function renderTaskContract(task) {
   const spec = task?.task_spec;
   if (!spec) return "(none)";
@@ -145,6 +136,15 @@ export function isAudioNoteSingleMarkdownTask(task = null) {
   return sourceType === "audio_note" || sourceApp === "uca.note";
 }
 
+export function buildAgenticStableSystemPrompt() {
+  return [
+    "LingxY stable agentic-planner contract v1.",
+    "You are running inside a desktop task runtime that can execute the tools listed in later system context.",
+    "Call tools for real actions, read observations before claiming completion, and keep final replies user-facing.",
+    "Task-specific resources, policies, tools, skills, and evidence arrive after this stable prefix and override generic examples here."
+  ].join("\n");
+}
+
 /**
  * Render a system prompt that tells the LLM:
  *   1. Its role and constraints
@@ -169,13 +169,15 @@ export function buildAgenticSystemPrompt({
   evidenceLedger = ""
 } = {}) {
   const toolBlocks = tools.map((tool) => renderToolBlock(tool)).join("\n\n");
-  const skillBlocks = skills.slice(0, 20).map((skill) => renderSkillBlock(skill)).join("\n\n");
+  const skillBlocks = skills.slice(0, 20).map((skill) => renderSkillForPrompt(skill)).join("\n\n");
   const isAudioNoteTask = isAudioNoteSingleMarkdownTask(task);
 
   const outputFormatLine = isAudioNoteTask
     ? "This is an audio note task. Create exactly one Markdown artifact named \"录音转录结构化笔记.md\" using `write_file`. Do not call `generate_document`; do not create docx, pdf, html, or a second file."
     : requestedFormat?.id === "markdown"
       ? "The user asked for a Markdown artifact. Use `write_file` to create exactly one .md file. Do not call `generate_document` for Markdown."
+      : requestedFormat?.id === "xlsx"
+        ? "The user asked for an XLSX artifact. Create a real spreadsheet: use `generate_document` only with a native structured outline such as `{ headers: [...], rows: [...] }` or `{ sheets: [...] }`; for formulas, formatting, reading, or revising an existing workbook, use `run_script` with pandas/openpyxl or `edit_file` on the existing absolute path. Never turn narrative prose, markdown download text, or sandbox links into a single-column Excel file."
       : requestedFormat && requestedFormat.id && requestedFormat.id !== "conversational"
         ? `The user asked for a ${requestedFormat.id} artifact. Use generate_document (kind=${requestedFormat.id}) to create a new file, or edit_file to update an existing artifact in place. Pass outline as a native JSON object, not a stringified JSON blob. Do not refuse by claiming you cannot save files — you can.`
         : "If the user does not explicitly ask for a file, reply conversationally.";
@@ -231,6 +233,8 @@ export function buildAgenticSystemPrompt({
     "",
     "## Available skills",
     "",
+    "Skill descriptors are local guidance, not executable tools. Choose at most one overlapping skill for the task; when several skills describe the same file type or domain, prefer the most specific valid skill and ignore the rest unless the user explicitly asks to combine workflows.",
+    "",
     skillBlocks || "(none)",
     "",
     ...(evidenceLedger ? [
@@ -266,7 +270,7 @@ export function buildAgenticSystemPrompt({
     // above. The fallback URLs are kept as a separate hint because they
     // are still useful when web_search_fetch IS being called and fails.
     "2. If `tool_policy.web_search_fetch` is `required` and `web_search_fetch` returns no results, fails, or a source blocks scraping, recover with another `external_web_read` path instead of apologizing immediately. Try a broader or alternate query, then call `fetch_url_content` on a specific authoritative URL or public data endpoint when one is known — examples: weather.gov or wttr.in for weather, en.wikipedia.org for stable facts, official company/regulator/exchange pages, finance.yahoo.com quote pages, Yahoo Finance chart/RSS endpoints. For detailed pages, pass a larger `max_chars` to `fetch_url_content` when needed. Do not fall back to training data for time-sensitive information. **Crucially: tool failures at the network layer (timeouts, HTTP 5xx, bot-detection) are NOT policy denials. Never tell the user the system 'forbids' or 'denies' web access just because a tool returned an error — only `tool_policy` mode `forbidden` is a real permission block, and you can read that field directly.**",
-    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf / html), call `generate_document` with the appropriate `kind`. If they ask to revise an already-generated file, locate the existing artifact path and call `edit_file` with the SAME absolute path so the file is updated in place instead of creating a new sibling. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf/html → `{ title, sections: [{ heading, body, bullets?, table?, diagram?, svg? }] }`; xlsx → `{ rows: [[col1, col2, ...]] }`. For ad-hoc text files, use `write_file`.",
+    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf / html), call `generate_document` with the appropriate `kind`. If they ask to revise an already-generated file, locate the existing artifact path and call `edit_file` with the SAME absolute path so the file is updated in place instead of creating a new sibling. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf/html → `{ title, sections: [{ heading, body, bullets?, table?, diagram?, svg? }] }`; xlsx → `{ headers: [string], rows: [[cell, ...]] }` or `{ sheets: [{ name, headers, rows }] }`. XLSX must contain real tabular cells; never dump final prose, markdown tables as text, download instructions, or sandbox links into a generic `Content` column. For ad-hoc text files, use `write_file`.",
     "4. When the user asks you to run code, use `run_script` with `language` strictly in `powershell | node | python`. Do not invent other languages.",
     "5. You may call multiple tools in sequence. Each tool returns an observation you should read before deciding the next step.",
     "6. Only say something was \"done\", \"saved\", \"launched\", or \"created\" when the corresponding tool returned `success: true` in the conversation transcript. If every attempt failed, tell the user what failed and suggest next steps — do not pretend.",

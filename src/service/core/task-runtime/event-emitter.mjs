@@ -48,6 +48,7 @@ const TOOL_STEP_LABELS = {
   resolve_output_path: "确定输出路径",
   notify: "发送通知",
   copy_to_clipboard: "复制到剪贴板",
+  create_scheduled_task: "创建定时任务",
   generate_document: "生成文档",
   take_screenshot: "截图",
   translate_text: "翻译内容",
@@ -121,6 +122,10 @@ export function buildConversationStepLabel(eventType, payload) {
     if (payload?.kind === "recent_artifact") return "✓ 已补充最近产物上下文";
     return "✓ 已补充背景上下文";
   }
+  if (eventType === "skill_context_loaded") {
+    const count = Number(payload?.active_count ?? payload?.count ?? 0);
+    return count > 0 ? `✓ 已加载技能上下文（${count} 个）` : "✓ 已加载技能上下文";
+  }
   if (eventType === "failed") {
     const msg = payload?.message ?? payload?.category ?? "未知错误";
     return `✗ 任务失败：${String(msg).slice(0, 60)}`;
@@ -155,6 +160,7 @@ const EXECUTOR_PROGRESS_EVENT_TYPES = new Set([
   "tool_call_proposed",
   "tool_call_completed",
   "tool_call_denied",
+  "skill_context_loaded",
   "log",
   "final_composer_started"
 ]);

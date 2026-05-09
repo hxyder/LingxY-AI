@@ -22,8 +22,8 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   // task_f90251bc, 2026-05-06). open_url remains exposed as a
   // browser_control capability for explicit "打开 URL" commands.
   external_web_read: (tool) =>
-    tool.policy_group === "external_web_read"
-    || ["web_search", "web_search_fetch", "fetch_url_content"].includes(tool.id),
+    tool.id === "web_search_fetch"
+    || tool.id === "fetch_url_content",
   file_read: (tool) =>
     /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|index_file_content|verify_file_exists|file_op)$/.test(tool.id),
   // The capability matcher surfaces every tool the LLM may need
@@ -79,6 +79,12 @@ const DIRECT_FILE_OPEN_TOOL_IDS = new Set(["open_file", "reveal_in_explorer"]);
 // unmet. Hide open_url by default; only expose when the user
 // explicitly asked the runtime to *navigate* somewhere.
 const OPEN_URL_TOOL_ID = "open_url";
+const WEB_SEARCH_PAGE_TOOL_ID = "web_search";
+const EXTERNAL_WEB_READ_TOOL_IDS = new Set([
+  "web_search",
+  "web_search_fetch",
+  "fetch_url_content"
+]);
 
 const OPEN_URL_VERB_RE = /(打开|访问|进入|跳转|浏览|前往|登录到|登录上)|\bopen\b|\bvisit\b|\bnavigate\b|\bgo\s+to\b|\bload\s+(this\s+page|that\s+page|the\s+url)\b/iu;
 
@@ -152,6 +158,59 @@ export function shouldExposeOpenUrl(task) {
 function filterOpenUrl(list = [], task) {
   if (shouldExposeOpenUrl(task)) return list;
   return list.filter((tool) => tool?.id !== OPEN_URL_TOOL_ID);
+}
+
+function userExplicitlyAskedToOpenSearchPage(task) {
+  for (const text of liveUserIntentSources(task)) {
+    if (/(打开|访问|浏览|前往|open|visit|navigate|go\s+to).{0,16}(搜索页|搜索结果|google|bing|search\s+(?:page|results))/iu.test(text)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function filterWebSearchPage(list = [], task) {
+  if (userExplicitlyAskedToOpenSearchPage(task)) return list;
+  return list.filter((tool) => tool?.id !== WEB_SEARCH_PAGE_TOOL_ID);
+}
+
+const CONNECTOR_SCOPE_RE = /(云盘|网盘|邮箱|邮件|日历|收件箱|google\s*drive|gmail|calendar|onedrive|outlook)/iu;
+const INTERNET_SCOPE_RE = /(互联网|联网|网页|网站|站点|浏览器|web|internet|online|browser)/iu;
+const EXTERNAL_RESEARCH_ACTION_RE = /(收集|整理|汇总|查询|查一下|搜索|研究|调研|总结|分析|compare|research|collect|summari[sz]e|search|look\s+up)/iu;
+const EXTERNAL_RESEARCH_TOPIC_RE = /(最新|今日|今天|实时|当前|current|latest|news|新闻|资讯|市场|行情|股市|股票|美股|港股|A股|指数|板块|涨跌|财报|价格|price|quote|market|stock|index|earnings)/iu;
+
+function userCommandIsConnectorScoped(task) {
+  return liveUserIntentSources(task).some((text) =>
+    CONNECTOR_SCOPE_RE.test(text) && !INTERNET_SCOPE_RE.test(text)
+  );
+}
+
+function taskNeedsExternalWebReadSurface(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  const decision = semanticDecisionOf(task);
+  const capabilities = neededCapabilitiesOf(task);
+  if (capabilities.includes("external_web_read")) return true;
+  if (decision?.source_scope === "external_world" || decision?.web_policy === "required") return true;
+  if (spec?.needs_current_web_data === true || spec?.research_signals_present === true) return true;
+
+  const policyGroups = spec?.tool_policy?.policy_groups ?? {};
+  const webGroupMode = policyGroups?.external_web_read?.mode;
+  const webToolMode = spec?.tool_policy?.web_search_fetch?.mode ?? spec?.tool_policy?.fetch_url_content?.mode;
+  if (webGroupMode === "required" || webToolMode === "required") return true;
+
+  // Connector-scoped commands can still require external research:
+  // "collect today's market news and email it" contains "email", but the
+  // research source is the outside world, not the mailbox. Keep this lexical
+  // fallback narrow so "search my Drive/mailbox" continues to hide web search.
+  return liveUserIntentSources(task).some((text) =>
+    EXTERNAL_RESEARCH_ACTION_RE.test(text) && EXTERNAL_RESEARCH_TOPIC_RE.test(text)
+  );
+}
+
+function filterConnectorScopedWebTools(list = [], task) {
+  if (!userCommandIsConnectorScoped(task)) return list;
+  if (taskNeedsExternalWebReadSurface(task)) return list;
+  return list.filter((tool) => !EXTERNAL_WEB_READ_TOOL_IDS.has(tool?.id));
 }
 
 // C18 #2b: skill-install action tools are HIGH risk (third-party
@@ -276,16 +335,39 @@ function taskRequiresArtifactTools(task) {
   );
 }
 
+const ARTIFACT_REQUEST_RE = /(生成|创建|保存|导出|写入|修改|编辑|更新|制作|做一个|整理成|转成|转换成).{0,20}(文件|文档|报告|表格|幻灯片|图片|图表|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|\bmd\b)|\b(create|generate|save|export|write|edit|update|make|turn\s+.*\s+into|convert)\b.{0,32}\b(file|document|report|spreadsheet|slide|deck|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|md)\b/iu;
+
+function taskTextExplicitlyAsksForArtifact(task) {
+  return liveUserIntentSources(task).some((text) => ARTIFACT_REQUEST_RE.test(text));
+}
+
+function taskAllowsArtifactTools(task) {
+  if (taskTextExplicitlyAsksForArtifact(task)) return true;
+  if (liveUserIntentSources(task).length > 0) return false;
+  if (taskRequiresArtifactTools(task)) return true;
+  const requiredGroups = requiredPolicyGroupsOf(task);
+  if (requiredGroups.includes("artifact_generation")) return true;
+  return false;
+}
+
 function artifactToolsFrom(tools = []) {
   return tools.filter((tool) => ARTIFACT_TOOL_IDS.has(tool.id));
+}
+
+function filterUnrequestedArtifactTools(list = [], task) {
+  if (taskAllowsArtifactTools(task)) return list;
+  return list.filter((tool) => !ARTIFACT_TOOL_IDS.has(tool?.id));
 }
 
 export function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
   const stripTaskScopedTools = (list) => {
-    const withoutDirectOpen = filterDirectFileOpenTools(list, task);
+    const withoutArtifacts = filterUnrequestedArtifactTools(list, task);
+    const withoutDirectOpen = filterDirectFileOpenTools(withoutArtifacts, task);
     const withoutOpenUrl = filterOpenUrl(withoutDirectOpen, task);
-    const withoutSkillInstall = filterSkillInstall(withoutOpenUrl, task);
+    const withoutConnectorScopedWeb = filterConnectorScopedWebTools(withoutOpenUrl, task);
+    const withoutWebSearchPage = filterWebSearchPage(withoutConnectorScopedWeb, task);
+    const withoutSkillInstall = filterSkillInstall(withoutWebSearchPage, task);
     return insideScheduledFire
       ? withoutSkillInstall.filter((tool) => !isScheduleRegistryTool(tool))
       : withoutSkillInstall;

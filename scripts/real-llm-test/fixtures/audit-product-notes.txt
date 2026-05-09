@@ -1,0 +1,6 @@
+LingxY Audit Product Notes
+
+Release train: Finch-14
+Focus areas: overlay context handoff, artifact preview isolation, approval resume state, and scheduled notification visibility.
+Known risk: a generated document must not reuse a previous task preview.
+Decision: prioritize framework contracts over one-off prompt fixes.

@@ -1,4 +1,8 @@
 import { appendAuditLog } from "../security/audit-log.mjs";
+import {
+  attachApprovalResumeMetadata,
+  resolveApprovalResumeMetadata
+} from "./approval-resume-state.mjs";
 import { createPendingApprovalRecord } from "./store.mjs";
 
 function defaultNow() {
@@ -126,13 +130,80 @@ function bridgeApprovalToOriginatingTask({ runtime, approval, executionResult, d
         text: finalText,
         approval_id: approval.approval_id,
         resulting_task_id: newTask?.task_id ?? null,
-        bridged_from_approval: true
+        bridged_from_approval: true,
+        approval_resume: approval.metadata?.approval_resume ?? null
       }
     };
     runtime.store?.appendEvent?.(eventRecord);
     runtime.eventBus?.publish?.(eventRecord);
   } catch (err) {
     appendAuditLog(runtime, "pending_approval.bridge_failed", {
+      approval_id: approval?.approval_id,
+      error: err?.message ?? String(err)
+    });
+  }
+}
+
+function bridgeRejectedApprovalToOriginatingTask({ runtime, approval, actor, reason, decidedAt }) {
+  try {
+    const originalTaskId = approval?.metadata?.task_id;
+    if (!originalTaskId) return;
+    const originalTask = runtime.store?.getTask?.(originalTaskId);
+    if (!originalTask || originalTask.sub_status !== "waiting_external_decision") return;
+
+    const toolId = approval.metadata?.tool_id ?? approval.proposed_target ?? null;
+    const finalText = reason
+      ? `已拒绝审批，未执行 ${approval.proposed_target ?? "该操作"}：${reason}`
+      : `已拒绝审批，未执行 ${approval.proposed_target ?? "该操作"}。`;
+
+    Object.assign(originalTask, {
+      status: "partial_success",
+      sub_status: "approval_rejected",
+      progress: originalTask.progress ?? 0.95,
+      result_summary: finalText,
+      updated_at: decidedAt
+    });
+    runtime.store.updateTask?.(originalTaskId, originalTask);
+
+    if (toolId) {
+      const toolCallCompletedEvent = {
+        event_id: `evt_approval_reject_tool_${approval.approval_id}`,
+        task_id: originalTaskId,
+        ts: decidedAt,
+        event_type: "tool_call_completed",
+        payload: {
+          tool_id: toolId,
+          success: false,
+          observation: finalText,
+          args: approval.proposed_params?.input ?? approval.proposed_params ?? {},
+          bridged_from_approval: true,
+          approval_id: approval.approval_id,
+          approval_rejected: true,
+          decided_by: actor
+        }
+      };
+      runtime.store?.appendEvent?.(toolCallCompletedEvent);
+      runtime.eventBus?.publish?.(toolCallCompletedEvent);
+    }
+
+    const eventRecord = {
+      event_id: `evt_approval_reject_${approval.approval_id}`,
+      task_id: originalTaskId,
+      ts: decidedAt,
+      event_type: "partial_success",
+      payload: {
+        text: finalText,
+        approval_id: approval.approval_id,
+        bridged_from_approval: true,
+        approval_rejected: true,
+        decided_by: actor,
+        approval_resume: approval.metadata?.approval_resume ?? null
+      }
+    };
+    runtime.store?.appendEvent?.(eventRecord);
+    runtime.eventBus?.publish?.(eventRecord);
+  } catch (err) {
+    appendAuditLog(runtime, "pending_approval.reject_bridge_failed", {
       approval_id: approval?.approval_id,
       error: err?.message ?? String(err)
     });
@@ -186,6 +257,10 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
         metadata,
         createdAt
       });
+      approval.metadata = attachApprovalResumeMetadata(approval.metadata, {
+        approvalId: approval.approval_id,
+        createdAt
+      });
 
       runtime.store.appendPendingApproval(approval);
       appendAuditLog(runtime, "pending_approval.created", {
@@ -207,7 +282,7 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
       return runtime.store.getPendingApproval(approvalId);
     },
     reject(approvalId, { actor = "user", reason = null, decidedAt = defaultNow() } = {}) {
-      const approval = runtime.store.updatePendingApproval(approvalId, {
+      let approval = runtime.store.updatePendingApproval(approvalId, {
         status: "rejected",
         decided_at: decidedAt,
         decided_by: actor
@@ -227,6 +302,20 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
           status: "rejected"
         });
       }
+      approval = runtime.store.updatePendingApproval(approvalId, {
+        metadata: resolveApprovalResumeMetadata(approval.metadata, {
+          decision: "rejected",
+          decidedAt,
+          actor
+        })
+      }) ?? approval;
+      bridgeRejectedApprovalToOriginatingTask({
+        runtime,
+        approval,
+        actor,
+        reason,
+        decidedAt
+      });
       return approval;
     },
     async approve(approvalId, { actor = "user", decidedAt = defaultNow(), overrides = null } = {}) {
@@ -235,7 +324,7 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
         return null;
       }
 
-      const approval = runtime.store.updatePendingApproval(approvalId, {
+      let approval = runtime.store.updatePendingApproval(approvalId, {
         status: "approved",
         decided_at: decidedAt,
         decided_by: actor
@@ -257,6 +346,14 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
           task_id: executionResult?.task?.task_id ?? null
         });
       }
+      approval = runtime.store.updatePendingApproval(approvalId, {
+        metadata: resolveApprovalResumeMetadata(approval.metadata, {
+          decision: "approved",
+          decidedAt,
+          actor,
+          resultingTaskId: executionResult?.task?.task_id ?? null
+        })
+      }) ?? approval;
 
       // UCA-181 follow-up: bridge the new task's outcome back to the
       // ORIGINATING task. Without this, a task that suspended on

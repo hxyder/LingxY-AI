@@ -164,6 +164,20 @@ export function formatResourceContext(task) {
   if (contextualAbsolutePaths.length > 0) {
     lines.push(`- Absolute local file paths already mentioned in the request/history (safe to pass directly to attachmentPaths / localPath / file args without re-discovering them): ${JSON.stringify(contextualAbsolutePaths)}`);
   }
+  const recentArtifacts = Array.isArray(ctx.recent_conversation_artifacts)
+    ? ctx.recent_conversation_artifacts
+      .filter((artifact) => artifact?.path)
+      .slice(0, 8)
+      .map((artifact) => ({
+        path: artifact.path,
+        kind: artifact.kind ?? null,
+        task_id: artifact.task_id ?? null,
+        created_at: artifact.created_at ?? null
+      }))
+    : [];
+  if (recentArtifacts.length > 0) {
+    lines.push(`- Recent conversation artifacts (latest first; when the user asks to revise/refine one, pass the same path to edit_file instead of generating a new sibling): ${JSON.stringify(recentArtifacts)}`);
+  }
 
   try {
     const accounts = runtime?.store?.listConnectedAccounts?.()

@@ -37,6 +37,7 @@
   const pinBtn = document.getElementById("pvPinBtn");
 
   const state = {
+    taskId: null,
     toolName: "",
     toolPath: "",
     toolKind: "text",
@@ -74,8 +75,9 @@
 
   // --- Init (tool start OR open-file shortcut) -----------------------
   function applyInit(payload = {}) {
-    const { kind = "tool", toolName, args, filePath, mime } = payload;
+    const { kind = "tool", toolName, args, filePath, mime, taskId = null } = payload;
     if (kind === "open-file") {
+      state.taskId = null;
       state.toolName = "__open__";
       state.toolPath = filePath || "";
       state.toolKind = inferKind(filePath || "", "__open__");
@@ -89,6 +91,7 @@
       return;
     }
     // Tool start
+    state.taskId = taskId ?? null;
     state.toolName = toolName || "";
     state.toolPath = (args && (args.path || args.filename)) || "";
     state.toolKind = inferKind(state.toolPath, state.toolName);
@@ -96,14 +99,29 @@
     setStatus("running");
     setTitle(state.toolPath || `${toolName} 生成中…`);
     setSub(toolName || "");
-    setMeta("0B · streaming");
-    body.innerHTML = `<div class="pv-loading">正在生成…</div>`;
+    const initialJson = args && Object.keys(args).length > 0
+      ? JSON.stringify(args)
+      : "";
+    state.rawJson = initialJson;
+    setMeta(`${formatBytes(initialJson.length)} · streaming`);
+    if (initialJson && window.livePreviewStreaming?.renderDelta) {
+      window.livePreviewStreaming.renderDelta(body, {
+        toolName: state.toolName,
+        rawJson: initialJson,
+        toolKind: state.toolKind,
+        toolPath: state.toolPath
+      });
+    } else {
+      body.innerHTML = `<div class="pv-loading">正在生成…</div>`;
+    }
   }
 
   function applyDelta(payload = {}) {
-    const { toolName, partialJson } = payload;
+    const { toolName, partialJson, taskId = null } = payload;
     if (!toolName) return;
+    if (state.taskId && taskId && state.taskId !== taskId) return;
     if (!state.toolName) {
+      state.taskId = taskId ?? null;
       state.toolName = toolName;
       state.toolPath = "";
       state.toolKind = inferKind("", toolName);
@@ -134,10 +152,12 @@
   }
 
   function applyCommit(payload = {}) {
-    const { toolName, success, artifactPath, mime, observation } = payload;
+    const { toolName, taskId = null, success, artifactPath, mime, observation } = payload;
     const committedToolName = toolName || state.toolName || "__artifact__";
+    if (state.taskId && taskId && state.taskId !== taskId) return;
     if (state.toolName && toolName && state.toolName !== toolName) return;
     if (!state.toolName) {
+      state.taskId = taskId ?? null;
       state.toolName = committedToolName;
       state.toolPath = artifactPath || "";
       state.toolKind = inferKind(artifactPath || "", committedToolName);
@@ -159,6 +179,212 @@
     }
     body.innerHTML = `<div class="pv-empty">生成已完成，但没有收到可预览的文件路径。</div>`;
   }
+
+  function waitForSmokeRender(ms = 220) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  window.__lingxyPreviewSmoke = {
+    async runToolInputDeltaLoad({ chunks = 1000, chunkText = "x", taskId = "gui-smoke-preview-stream" } = {}) {
+      const count = Math.max(1, Math.min(5000, Number(chunks) || 1000));
+      const text = String(chunkText || "x");
+      const started = performance.now();
+      applyInit({
+        toolName: "write_file",
+        args: { path: "gui-smoke-preview.txt" },
+        taskId
+      });
+      let content = "";
+      for (let i = 0; i < count; i += 1) {
+        content += text;
+        applyDelta({
+          toolName: "write_file",
+          taskId,
+          partialJson: JSON.stringify({
+            path: "gui-smoke-preview.txt",
+            content
+          })
+        });
+      }
+      await waitForSmokeRender();
+      const renderedText = body?.textContent ?? "";
+      const durationMs = Math.round(performance.now() - started);
+      return {
+        ok: renderedText.includes(content),
+        chunks: count,
+        rendered_chars: renderedText.length,
+        expected_chars: content.length,
+        duration_ms: durationMs,
+        status: status?.dataset?.state ?? "",
+        title: title?.textContent ?? ""
+      };
+    },
+    async runGenerateDocumentInitialDraftPreview({ taskId = "gui-smoke-doc-draft" } = {}) {
+      applyInit({
+        toolName: "generate_document",
+        taskId,
+        args: {
+          kind: "pptx",
+          outline: {
+            title: "Quarterly Plan",
+            slides: [
+              { heading: "Goals", bullets: ["Grow usage", "Improve reliability"] },
+              { heading: "Risks", body: "Keep file generation visible while running." }
+            ]
+          }
+        }
+      });
+      await waitForSmokeRender();
+      const renderedText = body?.textContent ?? "";
+      return {
+        ok: renderedText.includes("PowerPoint 草稿预览")
+          && renderedText.includes("Quarterly Plan")
+          && renderedText.includes("Slide 1")
+          && !renderedText.includes('"outline"'),
+        status: status?.dataset?.state ?? "",
+        title: title?.textContent ?? "",
+        rendered_text: renderedText.slice(0, 500)
+      };
+    },
+    async runGenerateDocumentDraftFamilyMatrix({ taskId = "gui-smoke-doc-family" } = {}) {
+      const cases = [
+        {
+          kind: "docx",
+          marker: "Word 草稿预览",
+          body: "Word body marker",
+          outline: {
+            title: "Word Plan",
+            sections: [{ heading: "Scope", body: "Word body marker", bullets: ["Readable", "Structured"] }]
+          }
+        },
+        {
+          kind: "pdf",
+          marker: "PDF 草稿预览",
+          body: "PDF body marker",
+          outline: {
+            title: "PDF Brief",
+            sections: [{ heading: "Summary", body: "PDF body marker" }]
+          }
+        },
+        {
+          kind: "html",
+          marker: "HTML 草稿预览",
+          body: "HTML body marker",
+          outline: {
+            title: "HTML Report",
+            sections: [{ heading: "Page", body: "HTML body marker" }]
+          }
+        },
+        {
+          kind: "xlsx",
+          marker: "Excel 草稿预览",
+          body: "Revenue",
+          outline: {
+            title: "Sheet Preview",
+            rows: [
+              ["Metric", "Value"],
+              ["Revenue", "128"],
+              ["Risk", "Low"]
+            ]
+          }
+        },
+        {
+          kind: "pptx",
+          marker: "PowerPoint 草稿预览",
+          body: "Grow usage",
+          outline: {
+            title: "Quarterly Plan",
+            slides: [
+              { heading: "Goals", bullets: ["Grow usage", "Improve reliability"] },
+              { heading: "Risks", body: "Keep file generation visible while running." }
+            ]
+          }
+        }
+      ];
+      const results = [];
+      for (const item of cases) {
+        applyInit({
+          toolName: "generate_document",
+          taskId: `${taskId}-${item.kind}`,
+          args: {
+            kind: item.kind,
+            outline: item.outline
+          }
+        });
+        await waitForSmokeRender();
+        const renderedText = body?.textContent ?? "";
+        results.push({
+          kind: item.kind,
+          ok: renderedText.includes(item.marker)
+            && renderedText.includes(item.body)
+            && !renderedText.includes('"outline"')
+            && !renderedText.includes("sandbox:/"),
+          marker: renderedText.includes(item.marker),
+          body: renderedText.includes(item.body),
+          raw_json_hidden: !renderedText.includes('"outline"'),
+          no_fake_path: !renderedText.includes("sandbox:/"),
+          status: status?.dataset?.state ?? "",
+          title: title?.textContent ?? ""
+        });
+      }
+      return {
+        ok: results.every((result) => result.ok),
+        results
+      };
+    },
+    async runTaskBindingIsolation({
+      taskId = "gui-smoke-session-a",
+      otherTaskId = "gui-smoke-session-b"
+    } = {}) {
+      const trustedText = "SESSION_A_VISIBLE_CONTENT";
+      const foreignText = "CROSS_TASK_SHOULD_NOT_RENDER";
+      applyInit({
+        toolName: "write_file",
+        taskId,
+        args: { path: "gui-smoke-session-a.txt" }
+      });
+      applyDelta({
+        toolName: "write_file",
+        taskId: otherTaskId,
+        partialJson: JSON.stringify({
+          path: "gui-smoke-session-b.txt",
+          content: foreignText
+        })
+      });
+      await waitForSmokeRender(80);
+      const afterForeignDelta = body?.textContent ?? "";
+      applyDelta({
+        toolName: "write_file",
+        taskId,
+        partialJson: JSON.stringify({
+          path: "gui-smoke-session-a.txt",
+          content: trustedText
+        })
+      });
+      await waitForSmokeRender(80);
+      const afterTrustedDelta = body?.textContent ?? "";
+      applyCommit({
+        toolName: "write_file",
+        taskId: otherTaskId,
+        success: false,
+        observation: "CROSS_COMMIT_SHOULD_NOT_RENDER"
+      });
+      await waitForSmokeRender(80);
+      const afterForeignCommit = body?.textContent ?? "";
+      return {
+        ok: !afterForeignDelta.includes(foreignText)
+          && afterTrustedDelta.includes(trustedText)
+          && !afterForeignCommit.includes("CROSS_COMMIT_SHOULD_NOT_RENDER")
+          && state.taskId === taskId,
+        taskId: state.taskId,
+        foreign_delta_ignored: !afterForeignDelta.includes(foreignText),
+        trusted_delta_rendered: afterTrustedDelta.includes(trustedText),
+        foreign_commit_ignored: !afterForeignCommit.includes("CROSS_COMMIT_SHOULD_NOT_RENDER"),
+        status: status?.dataset?.state ?? "",
+        title: title?.textContent ?? ""
+      };
+    }
+  };
 
   async function renderFinal(filePath, mime) {
     if (!filePath || !window.livePreviewClient?.render) {

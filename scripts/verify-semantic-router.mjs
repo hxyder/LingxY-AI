@@ -99,8 +99,8 @@ function decisionAdapter(decision = validDecision) {
   };
 }
 
-function makeRouter({ adapter, isEnabled, now, cache, timeoutMs, cacheTtlMs, confidenceThreshold } = {}) {
-  return createSemanticRouter({ adapter, isEnabled, now, cache, timeoutMs, cacheTtlMs, confidenceThreshold });
+function makeRouter({ adapter, isEnabled, now, cache, timeoutMs, cacheTtlMs, confidenceThreshold, invokeJudge, awaitVerifier } = {}) {
+  return createSemanticRouter({ adapter, isEnabled, now, cache, timeoutMs, cacheTtlMs, confidenceThreshold, invokeJudge, awaitVerifier });
 }
 
 async function run() {
@@ -124,6 +124,55 @@ async function run() {
     assert.equal(a.source, "provider");
     assert.equal(b.source, "cache");
     assert.equal(adapter.callCount, 1, "adapter called only on first invocation");
+  });
+
+  await it("route verifier shadow mode is fire-and-forget by default", async () => {
+    const adapter = decisionAdapter();
+    let judgeCalls = 0;
+    const router = makeRouter({
+      adapter,
+      invokeJudge: async () => {
+        judgeCalls += 1;
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return {
+          verdict: "accept",
+          confidence: 0.9,
+          reason: "ok",
+          evidence_basis: ["fixture"]
+        };
+      }
+    });
+    const started = Date.now();
+    const out = await router.resolveSemanticDecision({ text: "route verifier async fixture", contextPacket: {} });
+    const elapsed = Date.now() - started;
+    assert.equal(out.kind, "decision");
+    assert.ok(elapsed < 60, `shadow verifier should not block hot path; elapsed=${elapsed}ms`);
+    assert.equal(out.verifier_shadow, null);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(judgeCalls, 1, "shadow verifier still runs in the background");
+  });
+
+  await it("route verifier can be awaited for corpus/debug telemetry", async () => {
+    const adapter = decisionAdapter();
+    const router = makeRouter({
+      adapter,
+      awaitVerifier: true,
+      invokeJudge: async () => {
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        return {
+          verdict: "accept",
+          confidence: 0.9,
+          reason: "ok",
+          evidence_basis: ["fixture"]
+        };
+      }
+    });
+    const started = Date.now();
+    const out = await router.resolveSemanticDecision({ text: "route verifier awaited telemetry fixture", contextPacket: {} });
+    const elapsed = Date.now() - started;
+    assert.equal(out.kind, "decision");
+    assert.ok(elapsed >= 25, `awaitVerifier should wait for telemetry; elapsed=${elapsed}ms`);
+    assert.equal(out.verifier_shadow?.raw?.judge_status, "ok");
   });
 
   // ── 3. cache key differentiates by input shape ─────────────────────────
@@ -547,6 +596,95 @@ async function run() {
     assert.deepEqual(captured.body.tool_choice, { type: "tool", name: "route_task" });
     assert.ok(Array.isArray(captured.body.tools));
   });
+  await it("prompt cache: anthropic adapter marks system prefix cacheable by default", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            content: [{ type: "text", text: "ok" }],
+            usage: { input_tokens: 12, output_tokens: 2, cache_creation_input_tokens: 9, cache_read_input_tokens: 0 }
+          });
+        }
+      };
+    };
+    const adapter = createProviderAdapter({ kind: "anthropic", model: "claude-x", baseUrl: "https://x", apiKey: "k" });
+    const out = await adapter.generate({
+      messages: [
+        { role: "system", content: "stable framework contract" },
+        { role: "user", content: "x" }
+      ],
+      fetchImpl: stubFetch,
+      maxTokens: 64
+    });
+    assert.ok(Array.isArray(captured.body.system), "cacheable Anthropic system prompt must use structured blocks");
+    assert.deepEqual(captured.body.system.at(-1).cache_control, { type: "ephemeral" });
+    assert.equal(out.usage.cache_creation_input_tokens, 9);
+  });
+  await it("prompt cache: anthropic adapter can disable automatic cache_control", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({ content: [{ type: "text", text: "ok" }], usage: {} });
+        }
+      };
+    };
+    const original = process.env.LINGXY_PROMPT_CACHE;
+    process.env.LINGXY_PROMPT_CACHE = "0";
+    try {
+      const adapter = createProviderAdapter({ kind: "anthropic", model: "claude-x", baseUrl: "https://x", apiKey: "k" });
+      await adapter.generate({
+        messages: [
+          { role: "system", content: "stable framework contract" },
+          { role: "user", content: "x" }
+        ],
+        fetchImpl: stubFetch
+      });
+    } finally {
+      if (original === undefined) delete process.env.LINGXY_PROMPT_CACHE;
+      else process.env.LINGXY_PROMPT_CACHE = original;
+    }
+    assert.equal(captured.body.system, "stable framework contract");
+  });
+  await it("prompt cache: anthropic adapter preserves explicit cache_control blocks", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({ content: [{ type: "text", text: "ok" }], usage: {} });
+        }
+      };
+    };
+    const adapter = createProviderAdapter({ kind: "anthropic", model: "claude-x", baseUrl: "https://x", apiKey: "k" });
+    await adapter.generate({
+      messages: [
+        {
+          role: "system",
+          content: [
+            { type: "text", text: "stable policy", cache_control: { type: "ephemeral" } },
+            { type: "text", text: "dynamic task note" }
+          ]
+        },
+        { role: "user", content: [{ type: "text", text: "x" }] }
+      ],
+      fetchImpl: stubFetch
+    });
+    assert.equal(captured.body.system.length, 2);
+    assert.deepEqual(captured.body.system[0].cache_control, { type: "ephemeral" });
+    assert.equal(captured.body.system[1].cache_control, undefined);
+    assert.equal(captured.body.messages[0].content[0].text, "x");
+    assert.equal(captured.body.messages[0].content[0].cache_control, undefined);
+  });
   await it("tool_choice: openai adapter translates to {type:function, function:{name}}", async () => {
     const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
     const captured = {};
@@ -574,6 +712,40 @@ async function run() {
       maxTokens: 64
     });
     assert.deepEqual(captured.body.tool_choice, { type: "function", function: { name: "route_task" } });
+  });
+  await it("prompt cache: openai adapter exposes compatible cache usage fields", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            choices: [{ message: { content: "ok", tool_calls: [] } }],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 10,
+              prompt_cache_hit_tokens: 80,
+              prompt_cache_miss_tokens: 20
+            }
+          });
+        }
+      };
+    };
+    const adapter = createProviderAdapter({ kind: "openai", model: "x", baseUrl: "https://x", apiKey: "k" });
+    const out = await adapter.generate({
+      messages: [
+        { role: "system", content: [{ type: "text", text: "stable framework contract" }] },
+        { role: "user", content: [{ type: "text", text: "x" }] }
+      ],
+      fetchImpl: stubFetch
+    });
+    assert.equal(captured.body.messages[0].content, "stable framework contract");
+    assert.equal(captured.body.messages[1].content, "x");
+    assert.equal(out.usage.input_tokens, 100);
+    assert.equal(out.usage.cache_hit_tokens, 80);
+    assert.equal(out.usage.cache_miss_tokens, 20);
   });
   await it("tool_choice: omitted when caller didn't pass one (back-compat)", async () => {
     const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");

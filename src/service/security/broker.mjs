@@ -6,6 +6,7 @@ import { redactText, unredactText } from "./rules/pii_redaction.mjs";
 import { createKillSwitchController } from "./kill-switch.mjs";
 import { createScreenShareMonitor } from "./screen-share-monitor.mjs";
 import { appendAuditLog } from "./audit-log.mjs";
+import { evaluatePrivacySandboxToolPolicy } from "./privacy-sandbox-policy.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -164,11 +165,12 @@ export function createSecurityBroker({ runtime, config = {} }) {
         };
       }
 
-      if (this.getConfig().offline_mode && tool.required_capabilities?.includes("network")) {
-        return {
-          allowed: false,
-          reason: "offline_mode_blocks_network_tool"
-        };
+      const privacyDecision = evaluatePrivacySandboxToolPolicy({
+        config: this.getConfig(),
+        tool
+      });
+      if (!privacyDecision.allowed) {
+        return privacyDecision;
       }
 
       return {

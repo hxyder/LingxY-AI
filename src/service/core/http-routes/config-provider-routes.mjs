@@ -20,8 +20,10 @@ import {
   buildCapabilityGapSuggestions,
   mergeCapabilityGapSuggestions
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
+import { buildProviderSetupStatus } from "../../ai/onboarding/provider-setup-status.mjs";
 import {
   createEditableSkill,
+  deleteEditableSkill,
   duplicateEditableSkill,
   listSkillHistory,
   resolveEditableSkillEntryPath,
@@ -30,6 +32,7 @@ import {
   writeSkillMarkdownWithBackup
 } from "../../ai/skills/lifecycle.mjs";
 import { installSkillFromGitHub } from "../../ai/skills/github-install.mjs";
+import { skillStateKey } from "../../ai/skills/registry.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
@@ -44,6 +47,11 @@ import { isFeatureEnabled } from "../feature-flags.mjs";
 import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 import { saveAutoSkill } from "../skill-pattern-tracker.mjs";
+import {
+  readUserMemoryProfileFromConfig,
+  sanitizeUserMemoryProfile
+} from "../../memory/user-profile.mjs";
+import { buildModelRoleRoutingSummary } from "../../ai/model-role-routing.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -529,6 +537,8 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       config.ai?.onboarding ?? {},
       capabilitySuggestions
     );
+    const providerSetup = buildProviderSetupStatus({ config });
+    const modelRoles = buildModelRoleRoutingSummary({ config });
     sendJson(response, 200, {
       paths: integrationPaths ?? {},
       mcp: config.ai?.mcp ?? { servers: [] },
@@ -541,7 +551,35 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
         ...onboarding,
         suggestions: onboarding.pendingSuggestions
       },
+      providerSetup,
+      modelRoles,
+      userMemory: readUserMemoryProfileFromConfig(config),
       email: config.email ?? { accounts: [] }
+    });
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/config/user-memory") {
+    const config = runtime.configStore?.load?.() ?? {};
+    sendJson(response, 200, {
+      ok: true,
+      userMemory: readUserMemoryProfileFromConfig(config)
+    });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/config/user-memory") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    const userMemory = sanitizeUserMemoryProfile(body?.userMemory ?? body ?? {});
+    runtime.configStore?.patch?.({
+      ai: {
+        userMemory
+      }
+    });
+    sendJson(response, 200, {
+      ok: true,
+      userMemory
     });
     return true;
   }
@@ -746,6 +784,19 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const body = await readJsonBody(request);
     try {
       const result = await duplicateEditableSkill(runtime, body ?? {});
+      sendJson(response, 200, result);
+    } catch (error) {
+      const status = error.message === "skill_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
+    }
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/skills/delete") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    try {
+      const result = await deleteEditableSkill(runtime, body ?? {});
       sendJson(response, 200, result);
     } catch (error) {
       const status = error.message === "skill_path_not_allowed" ? 403 : 400;
@@ -987,6 +1038,62 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       }
     }));
     sendJson(response, 200, { ok: true, deleted: id });
+    return true;
+  }
+
+  if (method === "PATCH" && url.pathname === "/config/skills/skills/state") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    const registry = typeof body.registry === "string" ? body.registry.trim() : "";
+    const id = typeof (body.id ?? body.skillId) === "string" ? (body.id ?? body.skillId).trim() : "";
+    const enabled = body.enabled !== false;
+    const key = skillStateKey(registry, id);
+    if (!key) {
+      sendJson(response, 400, { error: "skill_state_target_required", message: "registry and id are required" });
+      return true;
+    }
+
+    const currentConfig = runtime.configStore?.load?.() ?? {};
+    const disabled = new Set((currentConfig.ai?.skills?.disabledSkillKeys ?? [])
+      .map((value) => String(value ?? "").trim())
+      .filter(Boolean));
+
+    if (enabled) {
+      disabled.delete(key);
+      if (body.exclusive !== false) {
+        const discovered = await runtime.platform?.skillRegistries?.listSkills?.({
+          runtime,
+          config: currentConfig,
+          includeInactive: true
+        }) ?? [];
+        for (const skill of discovered) {
+          const otherKey = skillStateKey(skill.registry, skill.id);
+          if (!otherKey || otherKey === key) continue;
+          if (String(skill.id ?? "").trim().toLowerCase() === id.toLowerCase()) {
+            disabled.add(otherKey);
+          }
+        }
+      }
+    } else {
+      disabled.add(key);
+    }
+
+    const nextDisabled = [...disabled].sort();
+    runtime.configStore?.save?.({
+      ...currentConfig,
+      ai: {
+        ...(currentConfig.ai ?? {}),
+        skills: {
+          ...(currentConfig.ai?.skills ?? {}),
+          disabledSkillKeys: nextDisabled
+        }
+      }
+    });
+    sendJson(response, 200, {
+      ok: true,
+      skill: { registry, id, enabled },
+      disabledSkillKeys: nextDisabled
+    });
     return true;
   }
 

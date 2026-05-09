@@ -337,6 +337,52 @@
 .detail-hero-meta { display: flex; gap: 10px; align-items: center; font-size: var(--fs-xs); color: var(--muted); flex-wrap: wrap; }
 .detail-hero-actions { margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap; }
 
+.task-empty-detail {
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.task-empty-detail h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: 0;
+}
+.task-empty-detail h2 .zh {
+  margin-left: 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+.task-empty-detail p {
+  max-width: 680px;
+  line-height: 1.55;
+}
+
+.task-conversation-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+}
+.task-conversation-title {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--ink);
+}
+.task-conversation-title .zh {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
 /* KV grid */
 .kv-grid {
   display: grid;
@@ -459,6 +505,285 @@
 .task-detail-panel .panel-body { padding: 12px 16px; }
 .task-detail-panel .panel-head { padding: 10px 16px; }
 .task-detail-panel .panel-title { font-size: var(--fs-sm); }
+
+.llm-usage-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.llm-usage-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.llm-usage-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.llm-usage-title .zh {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.llm-usage-total {
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.llm-segment-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.llm-segment-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.8fr) minmax(90px, 2fr) minmax(70px, max-content);
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+
+.llm-segment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.llm-segment-bar {
+  display: block;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  overflow: hidden;
+}
+
+.llm-segment-bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.llm-segment-value {
+  text-align: right;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.llm-call-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.llm-call-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: var(--panel-2);
+}
+
+.llm-call-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  color: var(--text);
+}
+
+.llm-call-item summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-call-meta {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.task-trace-panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.task-trace-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.task-trace-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.task-trace-title .zh {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.trace-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.trace-metric {
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.trace-metric-k {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.trace-metric-v {
+  margin-top: 2px;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.trace-attention-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.trace-attention-pill {
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid rgba(220, 38, 38, 0.22);
+  border-radius: 999px;
+  background: rgba(254, 226, 226, 0.55);
+  color: #991b1b;
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+.trace-phase-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.trace-phase-row {
+  min-width: 0;
+}
+
+.trace-phase-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+
+.trace-phase-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.trace-phase-time {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.trace-phase-track {
+  position: relative;
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.trace-phase-track span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.trace-phase-row[data-phase-status="attention"] .trace-phase-track span {
+  background: #dc2626;
+}
+
+.trace-phase-detail {
+  margin-top: 3px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.trace-slowest-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.trace-slowest-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+}
+
+.trace-slowest-kind {
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.trace-slowest-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.trace-slowest-duration {
+  color: var(--muted);
+  white-space: nowrap;
+}
 
 /* UCA-125 Phase 2b: hero action bar — Retry + Cancel on the left,
    Delete pushed to the right via flex spacer so the destructive action

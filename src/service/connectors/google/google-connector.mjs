@@ -523,6 +523,27 @@ export async function uploadGoogleFile(runtime, account, input = {}, { fetchImpl
   return { status: "success", provider: "google", accountId: account.id, data: { file: { id: payload.id, name: payload.name, url: payload.webViewLink } } };
 }
 
+function normalizeGoogleCalendarDateTime(value, fallbackTimeZone) {
+  if (value && typeof value === "object") {
+    if (value.date) return { date: value.date };
+    const dateTime = value.dateTime ?? value.datetime ?? value.time ?? value.startTime ?? value.endTime;
+    const timeZone = value.timeZone ?? value.timezone ?? fallbackTimeZone;
+    if (dateTime) return { dateTime, timeZone };
+  }
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return { date: value.trim() };
+  }
+  return { dateTime: value, timeZone: fallbackTimeZone };
+}
+
+function normalizeAttendees(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    return value.split(/[;,]/).map((email) => email.trim()).filter(Boolean);
+  }
+  return [];
+}
+
 export async function createGoogleEvent(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
@@ -533,14 +554,16 @@ export async function createGoogleEvent(runtime, account, input = {}, { fetchImp
   // Resolution: default to the host system tz (matches what users
   // expect when they say "create an event tomorrow at 3pm") and let
   // explicit input.timeZone override.
-  const tz = input.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const tz = input.timeZone || input.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+  const startInput = input.start ?? input.startTime ?? input.start_time;
+  const endInput = input.end ?? input.endTime ?? input.end_time;
   const body = {
-    summary: input.title,
+    summary: input.title ?? input.summary ?? "Untitled event",
     description: input.description ?? "",
     location: input.location ?? "",
-    start: { dateTime: input.startTime, timeZone: tz },
-    end: { dateTime: input.endTime, timeZone: tz },
-    attendees: (input.attendees ?? []).map((email) => ({ email }))
+    start: normalizeGoogleCalendarDateTime(startInput, tz),
+    end: normalizeGoogleCalendarDateTime(endInput, tz),
+    attendees: normalizeAttendees(input.attendees).map((email) => ({ email }))
   };
   const response = await fetchImpl("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
     method: "POST",

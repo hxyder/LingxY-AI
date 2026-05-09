@@ -351,6 +351,16 @@ function normalizeSkillRegistryId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeSkillStatePayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    registry: typeof source.registry === "string" ? source.registry.trim() : "",
+    id: typeof (source.id ?? source.skillId) === "string" ? (source.id ?? source.skillId).trim() : "",
+    enabled: source.enabled !== false,
+    exclusive: source.exclusive !== false
+  };
+}
+
 function normalizeAutoSkillPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
 }
@@ -364,6 +374,13 @@ function normalizeSkillMarkdownWritePayload(payload = {}) {
 }
 
 function normalizeSkillMarkdownReadPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : ""
+  };
+}
+
+function normalizeSkillDeletePayload(payload = {}) {
   const source = normalizePlainObject(payload) ?? {};
   return {
     entryPath: typeof source.entryPath === "string" ? source.entryPath : ""
@@ -545,6 +562,14 @@ function normalizeTaskRetryPayload(payload = {}) {
     mode: `${source.mode ?? "retry_same"}`.trim() || "retry_same",
     overrides: normalizePlainObject(source.overrides) ?? {},
     background: source.background === true || source.returnImmediately === true
+  };
+}
+
+function normalizeTaskFileRecoveryPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    taskId: normalizeTaskId(source.taskId ?? source.task_id ?? source.id),
+    checkpointId: `${source.checkpointId ?? source.checkpoint_id ?? ""}`.trim()
   };
 }
 
@@ -822,6 +847,9 @@ export function createElectronShellRuntime({
   let previewWindow = null;
   let previewWindowPinned = false;
   const linkBrowserWindows = new Set();
+  let openLinkBrowserForSmoke = null;
+  let openPreviewWindowForSmoke = null;
+  const registeredShortcutHandlers = new Map();
 
   function desktopActorForSender(sender) {
     return resolveDesktopActorForSender(sender, windows);
@@ -1273,14 +1301,15 @@ export function createElectronShellRuntime({
       artifactPath: payload.artifactPath ?? null,
       mime: payload.mime ?? null,
       inlinePreview: payload.inlinePreview ?? null,
-      openWindow: payload.openWindow ?? null,
-      handoff: payload.handoff ?? null,
-      allowLongBody: payload.allowLongBody ?? null,
-      allowContinue: payload.allowContinue ?? null,
-      forcePopup: payload.forcePopup ?? null,
-      addedAt: Date.now()
-    };
-  }
+            openWindow: payload.openWindow ?? null,
+            handoff: payload.handoff ?? null,
+            allowLongBody: payload.allowLongBody ?? null,
+            allowContinue: payload.allowContinue ?? null,
+            forcePopup: payload.forcePopup ?? null,
+            buttons: Array.isArray(payload.buttons) ? payload.buttons : null,
+            addedAt: Date.now()
+          };
+        }
 
   function flushBatch(taskId) {
     const batch = notificationBatches.get(taskId);
@@ -1374,6 +1403,7 @@ export function createElectronShellRuntime({
             openWindow: payload.openWindow ?? null,
             handoff: payload.handoff ?? null,
             allowContinue: payload.allowContinue ?? null,
+            buttons: Array.isArray(payload.buttons) ? payload.buttons : null,
             dedupeKey: payload.dedupeKey
               ?? (payload.taskId ? `notify:${payload.taskId}` : undefined)
           });
@@ -1397,6 +1427,52 @@ export function createElectronShellRuntime({
     });
     notification.show();
     return { shown: true, delivery: "native_notification" };
+  }
+
+  async function safeNotify(payload = {}) {
+    return showDesktopNotification({
+      kind: payload.kind ?? "info",
+      ...payload
+    });
+  }
+
+  async function notifyAutoUpdater({ kind, payload } = {}) {
+    if (kind === "update-available") {
+      await safeNotify({
+        title: "更新可用",
+        body: `LingxY ${payload?.info?.version ?? ""} 可下载${payload?.autoDownload ? "（正在自动下载…）" : "。打开设置查看。"}`,
+        taskId: `updater:available:${payload?.info?.version ?? "unknown"}`,
+        dedupeKey: `updater:available:${payload?.info?.version ?? "unknown"}`,
+        allowContinue: false,
+        openWindow: "console",
+        skipBatch: true,
+        buttons: [
+          { id: "settings", actionKey: "updater:settings", label: "打开设置", primary: true },
+          { id: "dismiss", actionKey: "dismiss", label: "关闭" }
+        ]
+      });
+      return;
+    }
+    if (kind === "update-ready") {
+      await safeNotify({
+        title: "新版本已下载",
+        body: `LingxY ${payload?.info?.version ?? ""} 已就绪。重启即可生效。`,
+        taskId: `updater:ready:${payload?.info?.version ?? "unknown"}`,
+        dedupeKey: `updater:ready:${payload?.info?.version ?? "unknown"}`,
+        allowContinue: false,
+        openWindow: "console",
+        skipBatch: true,
+        buttons: [
+          { id: "apply", actionKey: "updater:apply", label: "重启更新", primary: true },
+          { id: "settings", actionKey: "updater:settings", label: "打开设置" },
+          { id: "dismiss", actionKey: "dismiss", label: "稍后" }
+        ]
+      });
+      return;
+    }
+    if (kind === "update-error") {
+      void appendDesktopDiagnosticError("auto_updater_user_facing", new Error(payload?.message ?? "unknown"), { phase: payload?.phase });
+    }
   }
 
   function getArgValue(argv, flagName) {
@@ -1920,7 +1996,7 @@ export function createElectronShellRuntime({
 
   function registerShortcuts() {
     for (const shortcut of DESKTOP_SHELL_MANIFEST.shortcuts) {
-      const registered = globalShortcut.register(shortcut.accelerator, () => {
+      const shortcutHandler = () => {
         const payload = {
           shortcutId: shortcut.id,
           accelerator: shortcut.accelerator
@@ -1994,18 +2070,10 @@ export function createElectronShellRuntime({
           // UCA-050: guard against rapid double-press racing two concurrent
           // captureActiveWindowContext() promises that could each try to
           // enqueue a different context payload to the overlay.
-          const revealOverlayForCapture = () => {
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-          };
           if (captureInFlight) {
-            revealOverlayForCapture();
             return;
           }
           captureInFlight = true;
-          revealOverlayForCapture();
           // Snapshot clipboard synchronously right now — before any async work
           // that might shift focus or delay the SimulateCopy execution. This
           // lets us detect whether SimulateCopy completed late (Add-Type JIT
@@ -2033,6 +2101,11 @@ export function createElectronShellRuntime({
             const hasText = Boolean(ctx.selectedText);
             const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
 
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+
             if (hasFiles || hasText || hasActiveWindow) {
               const shellPayload = buildShellContextPayload({
                 context: ctx,
@@ -2042,8 +2115,10 @@ export function createElectronShellRuntime({
               enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
             }
           }).catch(() => {
-            // Overlay is already visible; a failed capture simply leaves the
-            // user with a fresh composer instead of delaying the UI.
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
           }).finally(() => {
             captureInFlight = false;
           });
@@ -2137,7 +2212,9 @@ export function createElectronShellRuntime({
         for (const browserWindow of windows.values()) {
           browserWindow.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
-      });
+      };
+      registeredShortcutHandlers.set(shortcut.id, shortcutHandler);
+      const registered = globalShortcut.register(shortcut.accelerator, shortcutHandler);
       if (!registered) {
         safeError(`[LingxY] Failed to register shortcut ${shortcut.id} (${shortcut.accelerator}). It may be used by another app.`);
       }
@@ -2195,6 +2272,751 @@ export function createElectronShellRuntime({
     } catch { /* service not ready */ }
   }
 
+  function writeDesktopGuiSmokeResult(result) {
+    try {
+      process.stdout?.write?.(`LINGXY_GUI_SMOKE_RESULT ${JSON.stringify(result)}\n`);
+    } catch { /* ignore broken pipes */ }
+  }
+
+  async function waitForDesktopGuiSmoke(predicate, timeoutMs = 5000, intervalMs = 80) {
+    const deadline = Date.now() + timeoutMs;
+    let lastError = null;
+    while (Date.now() < deadline) {
+      try {
+        if (await predicate()) return true;
+      } catch (error) {
+        lastError = error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+    if (lastError) throw lastError;
+    return false;
+  }
+
+  async function runDesktopGuiSmoke() {
+    const checks = [];
+    const pass = (name, extra = {}) => checks.push({ name, ok: true, ...extra });
+    try {
+      showWindow("overlay");
+      const overlayWindow = windows.get("overlay");
+      if (!overlayWindow || overlayWindow.isDestroyed?.()) {
+        throw new Error("overlay_window_missing");
+      }
+      const overlayVisible = await waitForDesktopGuiSmoke(() => overlayWindow.isVisible?.() === true, 5000);
+      if (!overlayVisible) throw new Error("overlay_window_not_visible");
+      pass("overlay_visible");
+
+      const overlaySmokeHookReady = await waitForDesktopGuiSmoke(async () => {
+        if (overlayWindow.isDestroyed?.()) return false;
+        return overlayWindow.webContents.executeJavaScript(
+          'typeof window.__lingxyOverlaySmoke?.getShortcutReceipts === "function"',
+          true
+        );
+      }, 5000);
+      if (!overlaySmokeHookReady) throw new Error("overlay_smoke_hook_not_ready");
+
+      const shortcutIds = DESKTOP_SHELL_MANIFEST.shortcuts.map((shortcut) => shortcut.id);
+      const missingShortcutHandlers = shortcutIds.filter((id) => typeof registeredShortcutHandlers.get(id) !== "function");
+      if (missingShortcutHandlers.length > 0) {
+        throw new Error(`global_shortcut_handlers_missing:${missingShortcutHandlers.join(",")}`);
+      }
+      pass("global_shortcut_handlers_installed", { count: shortcutIds.length });
+
+      const registeredAccelerators = DESKTOP_SHELL_MANIFEST.shortcuts
+        .filter((shortcut) => globalShortcut.isRegistered?.(shortcut.accelerator))
+        .map((shortcut) => shortcut.id);
+      pass("global_shortcuts_registration_observed", {
+        registered: registeredAccelerators.length,
+        total: shortcutIds.length
+      });
+
+      registeredShortcutHandlers.get("toggle-overlay")?.();
+      const toggleOverlayReceipt = await waitForDesktopGuiSmoke(async () => {
+        const receipts = await overlayWindow.webContents.executeJavaScript(
+          'window.__lingxyOverlaySmoke?.getShortcutReceipts?.() ?? []',
+          true
+        );
+        return Array.isArray(receipts) && receipts.some((entry) => entry.shortcutId === "toggle-overlay");
+      }, 5000);
+      if (!toggleOverlayReceipt) throw new Error("global_shortcut_toggle_overlay_not_received");
+      pass("global_shortcut_toggle_overlay");
+
+      const explorerSmokePath = path.join(os.tmpdir(), `lingxy-gui-smoke-explorer-${process.pid}.txt`);
+      const explorerHandoffPath = path.join(handoffDir, `prompt-handoff-gui-smoke-${Date.now()}.json`);
+      await mkdir(handoffDir, { recursive: true });
+      await writeFile(explorerHandoffPath, JSON.stringify({
+        source_app: "explorer.exe",
+        capture_mode: "shell_menu",
+        file_paths: [explorerSmokePath]
+      }), "utf8");
+      let explorerHandoffState = null;
+      const explorerHandoffVisible = await waitForDesktopGuiSmoke(async () => {
+        explorerHandoffState = await overlayWindow.webContents.executeJavaScript(
+          'window.__lingxyOverlaySmoke?.getPendingFileSelection?.() ?? null',
+          true
+        );
+        return Array.isArray(explorerHandoffState?.filePaths)
+          && explorerHandoffState.filePaths.includes(explorerSmokePath)
+          && Array.isArray(explorerHandoffState?.openablePaths)
+          && explorerHandoffState.openablePaths.includes(explorerSmokePath);
+      }, 7000);
+      if (!explorerHandoffVisible) throw new Error("explorer_handoff_file_context_missing");
+      pass("explorer_handoff_file_context", {
+        captureMode: explorerHandoffState?.captureMode,
+        fileCount: explorerHandoffState?.filePaths?.length ?? 0
+      });
+      pass("explorer_handoff_file_openable");
+
+      const voiceMediaRecorderPath = await overlayWindow.webContents.executeJavaScript(
+        'window.__lingxyOverlaySmoke?.runVoiceMediaRecorderPath?.({ chunks: 2 })',
+        true
+      );
+      if (!voiceMediaRecorderPath?.ok) {
+        throw new Error("overlay_voice_mediarecorder_path_failed");
+      }
+      pass("overlay_voice_mediarecorder_path", {
+        chunks: voiceMediaRecorderPath.chunkCount,
+        mimeType: voiceMediaRecorderPath.mimeType,
+        timeslice: voiceMediaRecorderPath.startTimeslice
+      });
+
+      const noteMicMediaRecorderPath = await overlayWindow.webContents.executeJavaScript(
+        'window.__lingxyOverlaySmoke?.runNoteMicMediaRecorderPath?.({ chunks: 2 })',
+        true
+      );
+      if (!noteMicMediaRecorderPath?.ok) {
+        throw new Error("overlay_note_mic_mediarecorder_path_failed");
+      }
+      pass("overlay_note_mic_mediarecorder_path", {
+        chunks: noteMicMediaRecorderPath.chunkCount,
+        mimeType: noteMicMediaRecorderPath.mimeType,
+        timeslice: noteMicMediaRecorderPath.startTimeslice
+      });
+
+      const cancelBridgeReady = await waitForDesktopGuiSmoke(async () => {
+        if (overlayWindow.isDestroyed?.()) return false;
+        return overlayWindow.webContents.executeJavaScript(
+          'typeof window.ucaShell?.cancelTask === "function"',
+          true
+        );
+      }, 5000);
+      if (!cancelBridgeReady) throw new Error("task_cancel_bridge_missing");
+      const cancelResult = await overlayWindow.webContents.executeJavaScript(
+        'window.ucaShell.cancelTask("gui-smoke-cancel", { force: true })',
+        true
+      );
+      if (cancelResult?.task?.status !== "cancelled" || cancelResult?.task?.force !== true) {
+        throw new Error("task_cancel_ipc_bridge_failed");
+      }
+      pass("task_cancel_ipc_bridge", {
+        status: cancelResult.task.status,
+        force: cancelResult.task.force
+      });
+
+      const stopButtonCancel = await overlayWindow.webContents.executeJavaScript(
+        'window.__lingxyOverlaySmoke?.runStopButtonCancel?.({ taskId: "gui-smoke-stop-button" })',
+        true
+      );
+      if (!stopButtonCancel?.ok) {
+        throw new Error("overlay_stop_button_cancel_failed");
+      }
+      pass("overlay_stop_button_cancel", {
+        beforeLabel: stopButtonCancel.beforeLabel,
+        afterLabel: stopButtonCancel.afterLabel
+      });
+
+      const overlayInlineRetry = await overlayWindow.webContents.executeJavaScript(
+        'window.__lingxyOverlaySmoke?.runInlineErrorRetry?.({ taskId: "gui-smoke-overlay-inline-retry" })',
+        true
+      );
+      if (!overlayInlineRetry?.ok) {
+        throw new Error("overlay_inline_error_retry_failed");
+      }
+      pass("overlay_inline_error_retry", {
+        beforeLabel: overlayInlineRetry.beforeLabel,
+        afterLabel: overlayInlineRetry.afterLabel
+      });
+
+      const overlayLlmUsageTimeline = await overlayWindow.webContents.executeJavaScript(
+        'window.__lingxyOverlaySmoke?.runLlmUsageTimeline?.({ taskId: "gui-smoke-overlay-llm-usage" })',
+        true
+      );
+      if (!overlayLlmUsageTimeline?.ok) {
+        throw new Error("overlay_llm_usage_timeline_failed");
+      }
+      pass("overlay_llm_usage_timeline");
+
+      const streamLoad = await overlayWindow.webContents.executeJavaScript(
+        'window.__lingxyOverlaySmoke?.runTextDeltaLoad?.({ chunks: 1200, chunkText: "x", taskId: "gui-smoke-stream" })',
+        true
+      );
+      if (!streamLoad?.ok) {
+        throw new Error("overlay_stream_delta_load_failed");
+      }
+      if (Number(streamLoad.duration_ms) > 3000) {
+        throw new Error(`overlay_stream_delta_load_slow:${streamLoad.duration_ms}`);
+      }
+      if (Number(streamLoad.streaming_bubbles) !== 1) {
+        throw new Error(`overlay_stream_delta_load_uncoalesced:${streamLoad.streaming_bubbles}`);
+      }
+      pass("overlay_stream_delta_load", {
+        chunks: streamLoad.chunks,
+        rendered_chars: streamLoad.rendered_chars,
+        duration_ms: streamLoad.duration_ms
+      });
+
+      registeredShortcutHandlers.get("open-console")?.();
+      const consoleWindow = windows.get("console");
+      if (!consoleWindow || consoleWindow.isDestroyed?.()) {
+        throw new Error("console_window_missing");
+      }
+      const consoleVisible = await waitForDesktopGuiSmoke(() => consoleWindow.isVisible?.() === true, 5000);
+      if (!consoleVisible) throw new Error("console_window_not_visible");
+      pass("global_shortcut_open_console");
+      const consoleStreamLoad = await waitForDesktopGuiSmoke(async () => {
+        if (consoleWindow.isDestroyed?.()) return false;
+        const result = await consoleWindow.webContents.executeJavaScript(
+          'window.__lingxyConsoleSmoke?.runTextDeltaLoad?.({ chunks: 1200, chunkText: "x", taskId: "gui-smoke-console-stream" })',
+          true
+        );
+        if (!result?.ok) return false;
+        if (Number(result.duration_ms) > 3000) {
+          throw new Error(`console_stream_delta_load_slow:${result.duration_ms}`);
+        }
+        if (Number(result.streaming_bubbles) !== 1) {
+          throw new Error(`console_stream_delta_load_uncoalesced:${result.streaming_bubbles}`);
+        }
+        pass("console_stream_delta_load", {
+          chunks: result.chunks,
+          rendered_chars: result.rendered_chars,
+          duration_ms: result.duration_ms
+        });
+        return true;
+      }, 5000);
+      if (!consoleStreamLoad) throw new Error("console_stream_delta_load_failed");
+
+      const consoleStopButtonCancel = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runStopButtonCancel?.({ taskId: "gui-smoke-console-stop-button" })',
+        true
+      );
+      if (!consoleStopButtonCancel?.ok) {
+        throw new Error("console_stop_button_cancel_failed");
+      }
+      pass("console_stop_button_cancel", {
+        beforeLabel: consoleStopButtonCancel.beforeLabel,
+        afterLabel: consoleStopButtonCancel.afterLabel
+      });
+
+      const consoleConversationIsolation = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runConversationIsolation?.({ taskId: "gui-smoke-console-isolated-task" })',
+        true
+      );
+      if (!consoleConversationIsolation?.ok) {
+        throw new Error("console_conversation_isolation_failed");
+      }
+      pass("console_conversation_isolation", {
+        taskId: consoleConversationIsolation.taskId,
+        leaked: consoleConversationIsolation.leaked,
+        sendButtonText: consoleConversationIsolation.sendButtonText
+      });
+
+      const consoleTaskDetailCancel = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runTaskDetailCancel?.({ taskId: "gui-smoke-console-detail-cancel" })',
+        true
+      );
+      if (!consoleTaskDetailCancel?.ok) {
+        throw new Error("console_task_detail_cancel_failed");
+      }
+      pass("console_task_detail_cancel", {
+        label: consoleTaskDetailCancel.label
+      });
+
+      const consoleInlineRetry = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runInlineErrorRetry?.({ taskId: "gui-smoke-console-inline-retry" })',
+        true
+      );
+      if (!consoleInlineRetry?.ok) {
+        throw new Error("console_inline_error_retry_failed");
+      }
+      pass("console_inline_error_retry", {
+        beforeLabel: consoleInlineRetry.beforeLabel,
+        afterLabel: consoleInlineRetry.afterLabel
+      });
+
+      const consoleChatBranchFork = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runConversationBranchControls?.({ conversationId: "gui-smoke-conv" })',
+        true
+      );
+      if (!consoleChatBranchFork?.ok) {
+        throw new Error(`console_chat_branch_fork_failed:${consoleChatBranchFork?.reason ?? "unknown"}`);
+      }
+      pass("console_chat_branch_fork", {
+        beforeConversationId: consoleChatBranchFork.beforeConversationId,
+        afterConversationId: consoleChatBranchFork.afterConversationId,
+        branchActions: consoleChatBranchFork.afterActionCount
+      });
+
+      const consoleChatBranchRewind = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runConversationBranchControls?.({ conversationId: "gui-smoke-conv", mode: "rewind" })',
+        true
+      );
+      if (!consoleChatBranchRewind?.ok) {
+        throw new Error(`console_chat_branch_rewind_failed:${consoleChatBranchRewind?.reason ?? "unknown"}`);
+      }
+      pass("console_chat_branch_rewind", {
+        beforeConversationId: consoleChatBranchRewind.beforeConversationId,
+        afterConversationId: consoleChatBranchRewind.afterConversationId,
+        branchActions: consoleChatBranchRewind.afterActionCount
+      });
+
+      const consoleChatBranchEdit = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runConversationBranchControls?.({ conversationId: "gui-smoke-conv", mode: "edit", editContent: "GUI smoke edited branch message" })',
+        true
+      );
+      if (!consoleChatBranchEdit?.ok) {
+        throw new Error(`console_chat_branch_edit_failed:${consoleChatBranchEdit?.reason ?? "unknown"}`);
+      }
+      pass("console_chat_branch_edit", {
+        beforeConversationId: consoleChatBranchEdit.beforeConversationId,
+        afterConversationId: consoleChatBranchEdit.afterConversationId,
+        branchActions: consoleChatBranchEdit.afterActionCount,
+        editedVisible: consoleChatBranchEdit.editedVisible
+      });
+
+      if (typeof openPreviewWindowForSmoke !== "function") {
+        throw new Error("preview_window_smoke_hook_missing");
+      }
+      const previewWin = openPreviewWindowForSmoke({
+        toolName: "write_file",
+        args: { path: "gui-smoke-preview.txt" },
+        taskId: "gui-smoke-preview-stream"
+      });
+      const previewVisible = await waitForDesktopGuiSmoke(() =>
+        previewWin && !previewWin.isDestroyed?.() && previewWin.isVisible?.() === true,
+      5000);
+      if (!previewVisible) throw new Error("preview_window_not_visible");
+      const previewStreamLoad = await waitForDesktopGuiSmoke(async () => {
+        if (previewWin.isDestroyed?.()) return false;
+        const result = await previewWin.webContents.executeJavaScript(
+          'window.__lingxyPreviewSmoke?.runToolInputDeltaLoad?.({ chunks: 1200, chunkText: "x", taskId: "gui-smoke-preview-stream" })',
+          true
+        );
+        if (!result?.ok) return false;
+        if (Number(result.duration_ms) > 5000) {
+          throw new Error(`preview_tool_input_delta_load_slow:${result.duration_ms}`);
+        }
+        pass("preview_tool_input_delta_load", {
+          chunks: result.chunks,
+          rendered_chars: result.rendered_chars,
+          duration_ms: result.duration_ms
+        });
+        return true;
+      }, 7000);
+      if (!previewStreamLoad) throw new Error("preview_tool_input_delta_load_failed");
+      const previewInitialDraft = await waitForDesktopGuiSmoke(async () => {
+        if (previewWin.isDestroyed?.()) return false;
+        const result = await previewWin.webContents.executeJavaScript(
+          'window.__lingxyPreviewSmoke?.runGenerateDocumentInitialDraftPreview?.({ taskId: "gui-smoke-doc-draft" })',
+          true
+        );
+        if (!result?.ok) return false;
+        pass("preview_generate_document_initial_draft", {
+          status: result.status,
+          title: result.title
+        });
+        return true;
+      }, 5000);
+      if (!previewInitialDraft) throw new Error("preview_generate_document_initial_draft_failed");
+      const previewDraftFamilyMatrix = await waitForDesktopGuiSmoke(async () => {
+        if (previewWin.isDestroyed?.()) return false;
+        const result = await previewWin.webContents.executeJavaScript(
+          'window.__lingxyPreviewSmoke?.runGenerateDocumentDraftFamilyMatrix?.({ taskId: "gui-smoke-doc-family" })',
+          true
+        );
+        if (!result?.ok) return false;
+        pass("preview_generate_document_draft_family_matrix", {
+          kinds: (result.results ?? []).map((item) => item.kind).join(",")
+        });
+        return true;
+      }, 8000);
+      if (!previewDraftFamilyMatrix) throw new Error("preview_generate_document_draft_family_matrix_failed");
+      const previewTaskBinding = await waitForDesktopGuiSmoke(async () => {
+        if (previewWin.isDestroyed?.()) return false;
+        const result = await previewWin.webContents.executeJavaScript(
+          'window.__lingxyPreviewSmoke?.runTaskBindingIsolation?.({ taskId: "gui-smoke-session-a", otherTaskId: "gui-smoke-session-b" })',
+          true
+        );
+        if (!result?.ok) return false;
+        pass("preview_task_binding_isolation", {
+          taskId: result.taskId,
+          foreignDeltaIgnored: result.foreign_delta_ignored,
+          foreignCommitIgnored: result.foreign_commit_ignored
+        });
+        return true;
+      }, 5000);
+      if (!previewTaskBinding) throw new Error("preview_task_binding_isolation_failed");
+
+      const beforeCount = linkBrowserWindows.size;
+      const smokeUrl = "data:text/html;charset=utf-8," + encodeURIComponent(`
+        <!doctype html>
+        <html>
+          <head><title>LingxY GUI Smoke Link</title></head>
+          <body><main><h1>LingxY GUI Smoke Link</h1></main></body>
+        </html>
+      `);
+      if (typeof openLinkBrowserForSmoke !== "function") {
+        throw new Error("link_browser_smoke_hook_missing");
+      }
+      openLinkBrowserForSmoke(smokeUrl);
+      const linkWindowReady = await waitForDesktopGuiSmoke(() => linkBrowserWindows.size > beforeCount, 5000);
+      if (!linkWindowReady) throw new Error("link_browser_window_not_created");
+      const linkWindow = [...linkBrowserWindows].find((candidate) => !candidate.isDestroyed?.());
+      if (!linkWindow) throw new Error("link_browser_window_missing");
+      pass("link_browser_created", {
+        closable: typeof linkWindow.isClosable === "function" ? linkWindow.isClosable() : true
+      });
+
+      const closeControlInjected = await waitForDesktopGuiSmoke(async () => {
+        if (linkWindow.isDestroyed?.()) return false;
+        return linkWindow.webContents.executeJavaScript(
+          'Boolean(document.getElementById("lingxy-link-browser-close-host"))',
+          true
+        );
+      }, 5000);
+      if (!closeControlInjected) throw new Error("link_browser_close_control_missing");
+      pass("link_browser_close_control_injected");
+
+      await linkWindow.webContents.executeJavaScript(
+        'window.location.href = "lingxy://close-link-browser"; true',
+        true
+      );
+      const closed = await waitForDesktopGuiSmoke(() => linkWindow.isDestroyed?.() === true, 5000);
+      if (!closed) throw new Error("link_browser_close_navigation_failed");
+      pass("link_browser_close_navigation");
+
+      const scheduledNotice = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runScheduleCompletionNotice?.({ taskId: "gui-smoke-scheduled-artifact" })',
+        true
+      );
+      if (!scheduledNotice?.ok) {
+        throw new Error("popup_scheduled_artifact_notice_failed");
+      }
+      let scheduledPopupWindow = null;
+      let scheduledPopupSnapshot = null;
+      const scheduledPopupReady = await waitForDesktopGuiSmoke(async () => {
+        for (const candidate of BrowserWindow.getAllWindows()) {
+          if (candidate.isDestroyed?.()) continue;
+          const url = candidate.webContents?.getURL?.() ?? "";
+          if (!url.includes("popup-card")) continue;
+          const snapshot = await candidate.webContents.executeJavaScript(`(() => {
+            const labels = [...document.querySelectorAll("#pc-actions button")]
+              .map((button) => (button.textContent || "").trim())
+              .filter(Boolean);
+            return {
+              showing: Boolean(document.getElementById("pc-card")?.classList.contains("show")),
+              kind: document.getElementById("pc-card")?.getAttribute("data-kind") || "",
+              title: document.getElementById("pc-title")?.textContent || "",
+              body: document.getElementById("pc-body")?.textContent || "",
+              labels,
+              hasPreview: labels.includes("预览"),
+              hasReveal: labels.includes("打开文件夹"),
+              hasCopy: labels.includes("复制"),
+              hasContinue: labels.includes("继续追问")
+            };
+          })()`, true).catch(() => null);
+          if (!snapshot?.body?.includes("GUI Smoke Scheduled Artifact")) continue;
+          scheduledPopupWindow = candidate;
+          scheduledPopupSnapshot = snapshot;
+          return snapshot.showing
+            && snapshot.kind === "success"
+            && snapshot.hasPreview
+            && snapshot.hasReveal
+            && snapshot.hasCopy
+            && snapshot.hasContinue;
+        }
+        return false;
+      }, 5000);
+      if (!scheduledPopupReady) {
+        throw new Error("popup_scheduled_artifact_card_missing");
+      }
+      pass("popup_scheduled_artifact_card_visible", {
+        title: scheduledPopupSnapshot.title,
+        kind: scheduledPopupSnapshot.kind
+      });
+      pass("popup_scheduled_artifact_card_controls", {
+        labels: scheduledPopupSnapshot.labels
+      });
+      await scheduledPopupWindow.webContents.executeJavaScript(
+        'document.getElementById("pc-close")?.click(); true',
+        true
+      );
+      const scheduledPopupClosed = await waitForDesktopGuiSmoke(
+        () => scheduledPopupWindow?.isDestroyed?.() === true,
+        5000
+      );
+      if (!scheduledPopupClosed) throw new Error("popup_scheduled_artifact_card_close_failed");
+      pass("popup_scheduled_artifact_card_close");
+
+      const scheduledPlainNotice = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runScheduleCompletionNotice?.({ taskId: "gui-smoke-scheduled-plain", artifactPath: null, summary: "GUI Smoke Scheduled Plain Result", artifacts: [] })',
+        true
+      );
+      if (!scheduledPlainNotice?.ok) {
+        throw new Error("popup_scheduled_plain_notice_failed");
+      }
+      let scheduledPlainPopupWindow = null;
+      let scheduledPlainSnapshot = null;
+      const scheduledPlainPopupReady = await waitForDesktopGuiSmoke(async () => {
+        for (const candidate of BrowserWindow.getAllWindows()) {
+          if (candidate.isDestroyed?.()) continue;
+          const url = candidate.webContents?.getURL?.() ?? "";
+          if (!url.includes("popup-card")) continue;
+          const snapshot = await candidate.webContents.executeJavaScript(`(() => {
+            const labels = [...document.querySelectorAll("#pc-actions button")]
+              .map((button) => (button.textContent || "").trim())
+              .filter(Boolean);
+            return {
+              showing: Boolean(document.getElementById("pc-card")?.classList.contains("show")),
+              kind: document.getElementById("pc-card")?.getAttribute("data-kind") || "",
+              title: document.getElementById("pc-title")?.textContent || "",
+              body: document.getElementById("pc-body")?.textContent || "",
+              labels,
+              hasDetail: labels.includes("查看详情"),
+              hasContinue: labels.includes("继续追问")
+            };
+          })()`, true).catch(() => null);
+          if (!snapshot?.body?.includes("GUI Smoke Scheduled Plain Result")) continue;
+          scheduledPlainPopupWindow = candidate;
+          scheduledPlainSnapshot = snapshot;
+          return snapshot.showing
+            && snapshot.kind === "success"
+            && snapshot.hasDetail
+            && snapshot.hasContinue;
+        }
+        return false;
+      }, 5000);
+      if (!scheduledPlainPopupReady) {
+        throw new Error("popup_scheduled_plain_card_missing");
+      }
+      pass("popup_scheduled_plain_card_visible", {
+        title: scheduledPlainSnapshot.title,
+        kind: scheduledPlainSnapshot.kind
+      });
+      pass("popup_scheduled_plain_card_controls", {
+        labels: scheduledPlainSnapshot.labels
+      });
+      await scheduledPlainPopupWindow.webContents.executeJavaScript(
+        'document.getElementById("pc-close")?.click(); true',
+        true
+      );
+      const scheduledPlainPopupClosed = await waitForDesktopGuiSmoke(
+        () => scheduledPlainPopupWindow?.isDestroyed?.() === true,
+        5000
+      );
+      if (!scheduledPlainPopupClosed) throw new Error("popup_scheduled_plain_card_close_failed");
+      pass("popup_scheduled_plain_card_close");
+
+      const scheduledFailureNotice = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runScheduleCompletionNotice?.({ taskId: "gui-smoke-scheduled-failed", artifactPath: null, status: "failed", summary: "GUI Smoke Scheduled Failure", artifacts: [] })',
+        true
+      );
+      if (!scheduledFailureNotice?.ok) {
+        throw new Error("popup_scheduled_failure_notice_failed");
+      }
+      let scheduledFailurePopupWindow = null;
+      let scheduledFailureSnapshot = null;
+      const scheduledFailurePopupReady = await waitForDesktopGuiSmoke(async () => {
+        for (const candidate of BrowserWindow.getAllWindows()) {
+          if (candidate.isDestroyed?.()) continue;
+          const url = candidate.webContents?.getURL?.() ?? "";
+          if (!url.includes("popup-card")) continue;
+          const snapshot = await candidate.webContents.executeJavaScript(`(() => {
+            const labels = [...document.querySelectorAll("#pc-actions button")]
+              .map((button) => (button.textContent || "").trim())
+              .filter(Boolean);
+            return {
+              showing: Boolean(document.getElementById("pc-card")?.classList.contains("show")),
+              kind: document.getElementById("pc-card")?.getAttribute("data-kind") || "",
+              title: document.getElementById("pc-title")?.textContent || "",
+              body: document.getElementById("pc-body")?.textContent || "",
+              labels,
+              hasLog: labels.includes("查看日志"),
+              hasDetail: labels.includes("查看详情"),
+              hasClose: labels.includes("关闭")
+            };
+          })()`, true).catch(() => null);
+          if (!snapshot?.body?.includes("GUI Smoke Scheduled Failure")) continue;
+          scheduledFailurePopupWindow = candidate;
+          scheduledFailureSnapshot = snapshot;
+          return snapshot.showing
+            && snapshot.kind === "error"
+            && snapshot.hasLog
+            && snapshot.hasDetail
+            && snapshot.hasClose;
+        }
+        return false;
+      }, 5000);
+      if (!scheduledFailurePopupReady) {
+        throw new Error("popup_scheduled_failure_card_missing");
+      }
+      pass("popup_scheduled_failure_card_visible", {
+        title: scheduledFailureSnapshot.title,
+        kind: scheduledFailureSnapshot.kind
+      });
+      pass("popup_scheduled_failure_card_controls", {
+        labels: scheduledFailureSnapshot.labels
+      });
+      await scheduledFailurePopupWindow.webContents.executeJavaScript(
+        'document.getElementById("pc-close")?.click(); true',
+        true
+      );
+      const scheduledFailurePopupClosed = await waitForDesktopGuiSmoke(
+        () => scheduledFailurePopupWindow?.isDestroyed?.() === true,
+        5000
+      );
+      if (!scheduledFailurePopupClosed) throw new Error("popup_scheduled_failure_card_close_failed");
+      pass("popup_scheduled_failure_card_close");
+
+      await notifyAutoUpdater({
+        kind: "update-available",
+        payload: {
+          info: {
+            version: "9.9.9-gui-smoke",
+            releaseDate: "2026-05-08T00:00:00.000Z"
+          },
+          autoDownload: false
+        }
+      });
+      let updaterPopupWindow = null;
+      let updaterPopupSnapshot = null;
+      const updaterPopupReady = await waitForDesktopGuiSmoke(async () => {
+        for (const candidate of BrowserWindow.getAllWindows()) {
+          if (candidate.isDestroyed?.()) continue;
+          const url = candidate.webContents?.getURL?.() ?? "";
+          if (!url.includes("popup-card")) continue;
+          const snapshot = await candidate.webContents.executeJavaScript(`(() => {
+            const labels = [...document.querySelectorAll("#pc-actions button")]
+              .map((button) => (button.textContent || "").trim())
+              .filter(Boolean);
+            return {
+              showing: Boolean(document.getElementById("pc-card")?.classList.contains("show")),
+              kind: document.getElementById("pc-card")?.getAttribute("data-kind") || "",
+              title: document.getElementById("pc-title")?.textContent || "",
+              body: document.getElementById("pc-body")?.textContent || "",
+              labels,
+              hasSettings: labels.includes("打开设置"),
+              hasClose: labels.includes("关闭")
+            };
+          })()`, true).catch(() => null);
+          if (!snapshot?.body?.includes("9.9.9-gui-smoke")) continue;
+          updaterPopupWindow = candidate;
+          updaterPopupSnapshot = snapshot;
+          return snapshot.showing
+            && snapshot.kind === "info"
+            && snapshot.hasSettings
+            && snapshot.hasClose;
+        }
+        return false;
+      }, 5000);
+      if (!updaterPopupReady) {
+        throw new Error("popup_updater_available_card_missing");
+      }
+      pass("popup_updater_available_card_visible", {
+        title: updaterPopupSnapshot.title,
+        kind: updaterPopupSnapshot.kind
+      });
+      pass("popup_updater_available_card_controls", {
+        labels: updaterPopupSnapshot.labels
+      });
+      await updaterPopupWindow.webContents.executeJavaScript(
+        'document.getElementById("pc-close")?.click(); true',
+        true
+      );
+      const updaterPopupClosed = await waitForDesktopGuiSmoke(
+        () => updaterPopupWindow?.isDestroyed?.() === true,
+        5000
+      );
+      if (!updaterPopupClosed) throw new Error("popup_updater_available_card_close_failed");
+      pass("popup_updater_available_card_close");
+
+      if (!registeredPopupCardManager?.showCard) {
+        throw new Error("popup_card_manager_missing");
+      }
+      const approvalCard = registeredPopupCardManager.showCard({
+        kind: "approval",
+        title: "GUI Smoke Approval",
+        lines: [
+          "This approval card is rendered by the real popup-card window.",
+          "The smoke verifies visible controls and close behavior without calling the service approval API."
+        ],
+        taskId: "gui-smoke-task",
+        conversationId: "gui-smoke-conversation",
+        openWindow: "overlay",
+        autoHideMs: 0,
+        dedupeKey: `gui-smoke-approval-${Date.now()}`
+      });
+      if (!approvalCard?.accepted || !approvalCard.cardId) {
+        throw new Error("popup_approval_card_not_accepted");
+      }
+      const findPopupWindow = () => BrowserWindow.getAllWindows().find((candidate) =>
+        !candidate.isDestroyed?.()
+        && (candidate.webContents?.getURL?.() ?? "").includes(`cardId=${approvalCard.cardId}`)
+      );
+      const popupWindowReady = await waitForDesktopGuiSmoke(() => {
+        return findPopupWindow()?.isVisible?.() === true;
+      }, 5000);
+      if (!popupWindowReady) throw new Error("popup_approval_card_not_visible");
+      const popupWindow = findPopupWindow();
+      if (!popupWindow) throw new Error("popup_approval_window_missing");
+      pass("popup_approval_card_visible");
+
+      let popupControls = null;
+      const popupControlsReady = await waitForDesktopGuiSmoke(async () => {
+        if (popupWindow.isDestroyed?.()) return false;
+        popupControls = await popupWindow.webContents.executeJavaScript(`(() => {
+          const labels = [...document.querySelectorAll("#pc-actions button")]
+            .map((button) => (button.textContent || "").trim())
+            .filter(Boolean);
+          return {
+            showing: Boolean(document.getElementById("pc-card")?.classList.contains("show")),
+            hasClose: Boolean(document.getElementById("pc-close")),
+            hasReject: labels.includes("拒绝"),
+            hasApprove: labels.includes("通过"),
+            hasDetail: labels.includes("打开对话框") || labels.includes("查看详情"),
+            labels
+          };
+        })()`, true);
+        return popupControls?.showing
+          && popupControls?.hasClose
+          && popupControls?.hasReject
+          && popupControls?.hasApprove
+          && popupControls?.hasDetail;
+      }, 5000);
+      if (!popupControlsReady) {
+        throw new Error("popup_approval_card_controls_missing");
+      }
+      pass("popup_approval_card_controls", { labels: popupControls.labels });
+
+      await popupWindow.webContents.executeJavaScript(
+        'Array.from(document.querySelectorAll("#pc-actions button")).find((button) => button.textContent.trim() === "拒绝")?.click(); true',
+        true
+      );
+      const popupClosed = await waitForDesktopGuiSmoke(() => popupWindow.isDestroyed?.() === true, 5000);
+      if (!popupClosed) throw new Error("popup_approval_card_reject_did_not_close");
+      pass("popup_approval_card_reject_closes");
+
+      writeDesktopGuiSmokeResult({ ok: true, checks });
+      app.quit();
+    } catch (error) {
+      writeDesktopGuiSmokeResult({
+        ok: false,
+        error: error?.message ?? String(error),
+        checks
+      });
+      app.exit(1);
+    }
+  }
+
   return {
     async start() {
       await app.whenReady();
@@ -2243,10 +3065,15 @@ export function createElectronShellRuntime({
       }
 
       await loadSettings();
+      ipcMain.handle("uca:get-note-recording-state", () => noteRecordingState);
+      ipcMain.handle("uca:get-settings", async () => loadSettings());
       createWindows();
       installDockDisplayRepair();
       createTray();
       registerShortcuts();
+      if (process.env.LINGXY_ELECTRON_GUI_SMOKE === "1") {
+        await mkdir(handoffDir, { recursive: true }).catch(() => {});
+      }
       await startHandoffWatcher();
       await startNotificationWatcher();
       setTimeout(() => {
@@ -2257,6 +3084,17 @@ export function createElectronShellRuntime({
       setInterval(() => { updateTrayBadge().catch(() => {}); }, 30_000);
       startClipboardWatcher();
       startActiveWindowMemoryPoll();
+      if (process.env.LINGXY_ELECTRON_GUI_SMOKE === "1") {
+        setTimeout(() => {
+          runDesktopGuiSmoke().catch((error) => {
+            writeDesktopGuiSmokeResult({
+              ok: false,
+              error: error?.message ?? String(error)
+            });
+            app.exit(1);
+          });
+        }, 250);
+      }
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {
           safeError("Failed to process second-instance args", error);
@@ -2331,8 +3169,6 @@ export function createElectronShellRuntime({
         return noteRecordingState;
       });
 
-      ipcMain.handle("uca:get-note-recording-state", () => noteRecordingState);
-
       // UCA-182 Phase 4: resolve the pdfjs-dist worker's on-disk path
       // to a file:// URL so the renderer can spin up the worker without
       // having to fetch it from the runtime server or bundle it. The
@@ -2361,7 +3197,6 @@ export function createElectronShellRuntime({
         };
       });
 
-      ipcMain.handle("uca:get-settings", async () => loadSettings());
       ipcMain.handle("uca:set-echo-mode", async (_event, enabled) => {
         return updateSettings({ echoMode: Boolean(enabled) });
       });
@@ -2631,6 +3466,19 @@ export function createElectronShellRuntime({
       popupCardManager.registerIpcHandlers({
         onResolve: async (card) => {
           try {
+            if (card.action === "updater:settings") {
+              showWindow("console");
+              enqueueWindowMessage("console", IPC_CHANNELS.shellNavigateConsole, { tabId: "settings" });
+              return;
+            }
+            if (card.action === "updater:apply") {
+              try {
+                autoUpdaterController?.applyUpdate?.({ silent: false, restart: true });
+              } catch (err) {
+                void appendDesktopDiagnosticError("auto_updater_apply_from_card_failed", err, {});
+              }
+              return;
+            }
             // P0-1 first-run consent: button click → record strategy
             // in config + trigger first scheduled check if non-off.
             if (card.payload?.consentCard) {
@@ -2742,26 +3590,7 @@ export function createElectronShellRuntime({
           },
           notify: async ({ kind, payload }) => {
             try {
-              if (kind === "update-available") {
-                await safeNotify({
-                  title: "更新可用",
-                  body: `LingxY ${payload?.info?.version ?? ""} 可下载${payload?.autoDownload ? "（正在自动下载…）" : "。打开设置查看。"}`,
-                  taskId: `updater:available:${payload?.info?.version ?? "unknown"}`,
-                  dedupeKey: `updater:available:${payload?.info?.version ?? "unknown"}`,
-                  allowContinue: false
-                });
-              } else if (kind === "update-ready") {
-                await safeNotify({
-                  title: "新版本已下载",
-                  body: `LingxY ${payload?.info?.version ?? ""} 已就绪。重启即可生效。`,
-                  taskId: `updater:ready:${payload?.info?.version ?? "unknown"}`,
-                  dedupeKey: `updater:ready:${payload?.info?.version ?? "unknown"}`,
-                  allowContinue: false
-                });
-              } else if (kind === "update-error") {
-                // Errors go to diagnostics; UI noise stays low.
-                void appendDesktopDiagnosticError("auto_updater_user_facing", new Error(payload?.message ?? "unknown"), { phase: payload?.phase });
-              }
+              await notifyAutoUpdater({ kind, payload });
             } catch (err) {
               safeWarn("[LingxY] auto-updater notify failed:", err?.message ?? err);
             }
@@ -2856,15 +3685,16 @@ export function createElectronShellRuntime({
       }, 5000).unref?.();
 
       // UCA-182 Phase 14: preview window lifecycle. Created on demand,
-      // positioned to cover the right ~42% of the primary workArea.
+      // positioned as a real, movable review window rather than a narrow
+      // side sliver so generated documents can be inspected comfortably.
       // We keep the window between uses (hide, not destroy) so the
       // next preview can paint without reloading the HTML + scripts.
       function computePreviewBounds() {
         const { workArea } = screen.getPrimaryDisplay();
-        const width = Math.max(720, Math.min(Math.round(workArea.width * 0.42), 1100));
-        const height = Math.max(480, workArea.height - 32);
-        const x = workArea.x + workArea.width - width - 16;
-        const y = workArea.y + 16;
+        const width = Math.max(980, Math.min(Math.round(workArea.width * 0.76), 1500));
+        const height = Math.max(640, Math.min(Math.round(workArea.height * 0.84), 1040));
+        const x = workArea.x + Math.max(0, Math.round((workArea.width - width) / 2));
+        const y = workArea.y + Math.max(0, Math.round((workArea.height - height) / 2));
         return { x, y, width, height };
       }
       function ensurePreviewWindow() {
@@ -2977,6 +3807,10 @@ export function createElectronShellRuntime({
         sendToPreview(IPC_CHANNELS.previewWindowCommitted, payload);
         return { ok: true };
       });
+      openPreviewWindowForSmoke = (payload = {}) => {
+        sendToPreview(IPC_CHANNELS.previewWindowInit, payload);
+        return previewWindow;
+      };
       ipcMain.handle(IPC_CHANNELS.previewWindowClose, () => {
         if (previewWindow && !previewWindow.isDestroyed()) previewWindow.hide();
         return { ok: true };
@@ -3075,6 +3909,76 @@ export function createElectronShellRuntime({
         });
         linkBrowserWindows.add(win);
         win.on("closed", () => linkBrowserWindows.delete(win));
+        function closeLinkBrowserWindow() {
+          if (!win.isDestroyed?.()) {
+            try { win.close(); } catch { /* ignore */ }
+          }
+        }
+        async function injectLinkBrowserCloseControl() {
+          if (win.isDestroyed?.() || win.webContents?.isDestroyed?.()) return;
+          try {
+            await win.webContents.executeJavaScript(`
+              (() => {
+                const hostId = "lingxy-link-browser-close-host";
+                document.getElementById(hostId)?.remove();
+                const host = document.createElement("div");
+                host.id = hostId;
+                host.style.position = "fixed";
+                host.style.top = "12px";
+                host.style.right = "12px";
+                host.style.zIndex = "2147483647";
+                host.style.pointerEvents = "auto";
+                const root = host.attachShadow({ mode: "closed" });
+                const style = document.createElement("style");
+                style.textContent = \`
+                  button {
+                    all: initial;
+                    box-sizing: border-box;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                    min-height: 32px;
+                    padding: 0 10px;
+                    border-radius: 8px;
+                    border: 1px solid rgba(15, 23, 42, 0.18);
+                    background: rgba(255, 255, 255, 0.96);
+                    color: #111827;
+                    font: 600 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+                    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.22);
+                    cursor: pointer;
+                    user-select: none;
+                    -webkit-font-smoothing: antialiased;
+                  }
+                  button:hover { background: #f8fafc; border-color: rgba(15, 23, 42, 0.28); }
+                  button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+                  .mark {
+                    display: inline-grid;
+                    place-items: center;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 50%;
+                    background: #111827;
+                    color: white;
+                    font-size: 14px;
+                    line-height: 18px;
+                  }
+                \`;
+                const button = document.createElement("button");
+                button.type = "button";
+                button.title = "关闭 LingxY 链接窗口";
+                button.setAttribute("aria-label", "关闭 LingxY 链接窗口");
+                button.innerHTML = '<span class="mark" aria-hidden="true">×</span><span>关闭</span>';
+                button.addEventListener("click", (event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  window.location.href = "lingxy://close-link-browser";
+                });
+                root.append(style, button);
+                document.documentElement.appendChild(host);
+              })();
+            `, true);
+          } catch { /* ignore pages that reject DOM injection */ }
+        }
         win.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
           const safeUrl = normalizeOpenableUrl(nextUrl);
           if (safeUrl && /^https?:/i.test(safeUrl)) {
@@ -3085,8 +3989,18 @@ export function createElectronShellRuntime({
           return { action: "deny" };
         });
         win.webContents.on("will-navigate", (event, nextUrl) => {
+          if (String(nextUrl ?? "").startsWith("lingxy://close-link-browser")) {
+            event.preventDefault();
+            closeLinkBrowserWindow();
+            return;
+          }
           const safeUrl = normalizeOpenableUrl(nextUrl);
           if (!safeUrl) event.preventDefault();
+        });
+        win.webContents.on("before-input-event", (_event, input = {}) => {
+          if (input.type === "keyDown" && input.key === "Escape") {
+            closeLinkBrowserWindow();
+          }
         });
 
         // UX polish: window title reflects the live page title rather
@@ -3112,7 +4026,11 @@ export function createElectronShellRuntime({
         }
         win.webContents.on("page-title-updated", applyDynamicTitle);
         win.webContents.on("did-navigate", applyDynamicTitle);
-        win.webContents.on("did-finish-load", applyDynamicTitle);
+        win.webContents.on("did-navigate", () => { void injectLinkBrowserCloseControl(); });
+        win.webContents.on("did-finish-load", () => {
+          applyDynamicTitle();
+          void injectLinkBrowserCloseControl();
+        });
 
         // Persist bounds whenever the user moves or resizes the window
         // so the next open lands where they left it. True trailing-edge
@@ -3173,6 +4091,7 @@ export function createElectronShellRuntime({
         win.loadURL(url);
         return { ok: true, mode: "lingxy_browser" };
       }
+      openLinkBrowserForSmoke = showLinkBrowserWindow;
 
       function readLinkOpenPreference() {
         try {
@@ -3188,13 +4107,17 @@ export function createElectronShellRuntime({
         if (!url) return { ok: false, error: "invalid_url" };
         const protocol = new URL(url).protocol;
         const canOpenInLingxy = protocol === "http:" || protocol === "https:";
-        // Resolution order: explicit caller mode > user preference >
-        // system browser default. The user-facing setting lives in
+        // Resolution order: explicit caller request > user preference >
+        // system browser default. Renderer link surfaces pass
+        // `{ ask: true }` when a click should never silently navigate
+        // away from the current LingxY surface.
+        const explicitMode = payload.ask === true
+          ? "ask"
+          : (["system", "lingxy_browser", "ask"].includes(payload.mode) ? payload.mode : null);
+        // The user-facing setting lives in
         // Console Settings → "链接打开方式" so users who liked the in-app
         // browser can pick it as their default again.
-        let mode = ["system", "lingxy_browser", "ask"].includes(payload.mode)
-          ? payload.mode
-          : readLinkOpenPreference();
+        let mode = explicitMode ?? readLinkOpenPreference();
         if (mode === "ask" && canOpenInLingxy) {
           const owner = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
           const choice = await brandIcons.showBrandedMessageBox(dialog, owner ?? undefined, {
@@ -3806,6 +4729,25 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.skillStateUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "PATCH",
+            actor,
+            pathname: "/config/skills/skills/state",
+            body: normalizeSkillStatePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_state_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
       ipcMain.handle(IPC_CHANNELS.autoSkillSave, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);
@@ -3893,6 +4835,24 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "skill_duplicate_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillDelete, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/delete",
+            body: normalizeSkillDeletePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_delete_failed",
             message: error?.message ?? String(error)
           };
         }
@@ -4606,6 +5566,32 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.taskFileRecoveryRestore, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeTaskFileRecoveryPayload(payload);
+        if (!body.taskId || !body.checkpointId) {
+          return {
+            ok: false,
+            error: "file_recovery_checkpoint_required",
+            message: "Task id and checkpoint id are required."
+          };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/task/${encodeURIComponent(body.taskId)}/file-recovery/${encodeURIComponent(body.checkpointId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "file_recovery_restore_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
 
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,
@@ -4734,6 +5720,15 @@ export async function initializeElectronShellRuntime({
 } = {}) {
   if (!electron?.app) {
     throw new Error("Electron app bindings are required to initialize the shell runtime.");
+  }
+
+  if (process.env.LINGXY_ELECTRON_GUI_SMOKE === "1") {
+    const smokeUserDataDir = process.env.LINGXY_ELECTRON_GUI_SMOKE_USER_DATA_DIR
+      ?? path.join(os.tmpdir(), `lingxy-electron-gui-smoke-${process.pid}`);
+    try {
+      mkdirSync(smokeUserDataDir, { recursive: true });
+      electron.app.setPath("userData", smokeUserDataDir);
+    } catch { /* keep Electron's default path if isolation cannot be set */ }
   }
 
   if (!electron.app.requestSingleInstanceLock()) {

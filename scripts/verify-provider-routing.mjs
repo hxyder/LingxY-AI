@@ -290,7 +290,9 @@ await writeConfig({
   assert.equal(capturedUrl, "https://api.anthropic.com/v1/messages");
   assert.equal(capturedApiKeyHeader, "sk-ant-test");
   assert.equal(capturedBody.model, "claude-sonnet-4-6");
-  assert.equal(capturedBody.system, "You are LingxY.");
+  assert.ok(Array.isArray(capturedBody.system), "Anthropic system prompt should be sent as cacheable blocks");
+  assert.equal(capturedBody.system[0].text, "You are LingxY.");
+  assert.deepEqual(capturedBody.system[0].cache_control, { type: "ephemeral" });
   assert.equal(capturedBody.messages[0].content, "say hello");
   assert.equal(result.text, "hello from claude");
 }

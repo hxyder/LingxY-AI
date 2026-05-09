@@ -22,7 +22,7 @@ import { emptySignal } from "./_signal-types.mjs";
 
 const NAME = "explicit_search";
 
-const PATTERN = /(搜索|搜一下|(?:帮我|帮忙|请)?搜(?!集|身)|查找|查一下|查询|查阅|查阅一下|检索|帮我查|帮忙查|google\b|\bbing\b|百度一下|百度搜|\bsearch\s+(?:for|the)\b|look\s+(?:up|it\s+up))/i;
+const PATTERN = /(搜索|搜一下|(?:帮我|帮忙|请)?搜(?!集|身)|查找|查一下|查询|查阅|查阅一下|检索|帮我查|帮忙查|(?:帮我|帮忙|请)?找(?:到|一下)?[^。！？!?\n]{0,40}(?:链接|资料|来源|岗位|职位|工作|报告|report|评级|jobs?|sources?|links?)|google\b|\bbing\b|百度一下|百度搜|\bsearch\s+(?:for|the)\b|\bfind\s+(?:me\s+)?[^.?!\n]{0,50}\b(?:links?|sources?|jobs?|reports?)\b|look\s+(?:up|it\s+up))/i;
 
 /**
  * @param {string} text

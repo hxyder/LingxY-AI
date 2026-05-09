@@ -63,7 +63,9 @@ it("signal: matches Chinese 不要联网 / 不要搜索 / 离线模式", () => {
     "无需上网",
     "离线模式回答即可",
     "不要使用网络",
-    "不允许访问互联网"
+    "不允许访问互联网",
+    "不要打开、访问或读取页面",
+    "不要打开或访问这个 URL"
   ]) {
     const s = detectExplicitNoSearch(text, {});
     assert.equal(s.matched, true, `expected match for "${text}"`);
@@ -95,7 +97,9 @@ it("signal: NOT matched on positive search phrasing (no negation)", () => {
     "查一下网上的 AI 新闻",
     "browse the latest news",
     "today's AI news",
-    "今天有什么 AI 新闻"
+    "今天有什么 AI 新闻",
+    "帮我找 3 个职位申请链接，不要打开网页，只把链接列出来",
+    "查找最近一周的 analyst report，给出原文链接；不要打开浏览器页面"
   ]) {
     const s = detectExplicitNoSearch(text, {});
     assert.equal(s.matched, false, `expected NO match for "${text}"`);
@@ -113,6 +117,16 @@ it("signal: NOT matched on outcome-negation (search returned nothing)", () => {
     const s = detectExplicitNoSearch(text, {});
     assert.equal(s.matched, false, `expected NO match for "${text}"`);
   }
+});
+
+it("signal: NOT matched on domain phrase '离线 Web App'", () => {
+  const s = detectExplicitNoSearch("请查找 IndexedDB 和 localStorage 在离线 Web App 数据层设计里的差异", {});
+  assert.equal(s.matched, false);
+});
+
+it("signal: matches instruction-style Chinese 离线模式", () => {
+  const s = detectExplicitNoSearch("请用离线模式回答这个问题", {});
+  assert.equal(s.matched, true);
 });
 
 it("signal: empty / non-string text → unmatched", () => {
@@ -349,6 +363,17 @@ it("e2e: '不要联网，今天 AI 新闻' → web=forbidden, research_quality=n
 it("e2e: 'do not browse, summarize today's AI news' → web=forbidden", () => {
   const spec = createTaskSpec("do not browse, summarize today's AI news", {}, {});
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+});
+
+it("e2e: do-not-open-browser link requests still require web read", () => {
+  for (const text of [
+    "帮我找 3 个今天仍值得申请的 remote operations analyst 岗位，目标总薪资 100K+，回答必须给公司、职位、薪资线索和申请链接；不要打开网页，只把链接列出来。",
+    "查找最近一周关于美国半导体股票的 analyst report 或评级更新，选 3 条最值得看的，给出机构、关注点和原文链接；不要打开浏览器页面。"
+  ]) {
+    const spec = createTaskSpec(text, {}, {});
+    assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required", text);
+    assert.ok(spec.success_contract?.required_policy_groups?.includes("external_web_read"), text);
+  }
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

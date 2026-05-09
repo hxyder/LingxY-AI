@@ -59,6 +59,10 @@ import {
   describeResolvedProvider
 } from "../executors/shared/provider-resolver.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
+import {
+  applyUserMemoryProfileToContext,
+  readUserMemoryProfileFromConfig
+} from "../memory/user-profile.mjs";
 
 function hasFastProvider() {
   return hasAnyConfiguredProvider();
@@ -1269,6 +1273,8 @@ export async function submitContextTask({
   parentTaskId = null,
   parentMessageId = null,
   conversationId = null,
+  conversationTitle = null,
+  conversationMetadata = null,
   clientMessageId = null,
   projectId = null,
   childIndex = null,
@@ -1378,8 +1384,14 @@ export async function submitContextTask({
       : (typeof withParentContext?.selection_metadata?.conversation_id === "string"
         ? withParentContext.selection_metadata.conversation_id
         : null);
-  const normalizedContextPacket = attachPriorBackendMessages(
+  const withUserMemoryContext = applyUserMemoryProfileToContext(
     withParentContext,
+    readUserMemoryProfileFromConfig(runtime.configStore?.load?.() ?? {}),
+    { projectId: projectId ?? withParentContext?.selection_metadata?.project_id ?? null }
+  );
+
+  const normalizedContextPacket = attachPriorBackendMessages(
+    withUserMemoryContext,
     effectiveConversationId,
     runtime
   );
@@ -1427,6 +1439,8 @@ export async function submitContextTask({
         userCommand,
         executionMode,
         conversationId,
+        conversationTitle,
+        conversationMetadata,
         clientMessageId,
         projectId,
         subtasks: decomposition.subtasks,
@@ -1439,6 +1453,8 @@ export async function submitContextTask({
             parentTaskId: compositeId,
             parentMessageId,
             conversationId,
+            conversationTitle,
+            conversationMetadata,
             clientMessageId,
             projectId,
             childIndex: index,
@@ -1464,6 +1480,8 @@ export async function submitContextTask({
     parentTaskId,
     parentMessageId,
     conversationId,
+    conversationTitle,
+    conversationMetadata,
     clientMessageId,
     childIndex,
     retryCount,

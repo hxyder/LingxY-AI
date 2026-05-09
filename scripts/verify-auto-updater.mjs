@@ -98,6 +98,24 @@ assert.ok(
   /safeNotify\(/.test(electronMainSrc),
   "electron-main.mjs auto-updater notify handler should reach safeNotify"
 );
+assert.ok(
+  /async function safeNotify/.test(electronMainSrc)
+    && /function showDesktopNotification/.test(electronMainSrc),
+  "electron-main.mjs must define safeNotify as the real popup-card/native notification bridge, not just call an undefined symbol"
+);
+assert.ok(
+  /async function notifyAutoUpdater/.test(electronMainSrc)
+    && /actionKey:\s*"updater:settings"/.test(electronMainSrc)
+    && /actionKey:\s*"updater:apply"/.test(electronMainSrc),
+  "electron-main.mjs updater notifications must expose real popup-card actions for settings/apply"
+);
+const popupCardSrc = read("src/desktop/renderer/popup-card.js");
+assert.ok(
+  /function customActionsFromPayload/.test(popupCardSrc)
+    && /payload\?\.buttons/.test(popupCardSrc)
+    && /resolveCard\(action/.test(popupCardSrc),
+  "popup-card.js must render caller-provided buttons so updater consent/action cards are usable"
+);
 // IPC handlers exist
 for (const channel of [
   "shellUpdaterStatus",

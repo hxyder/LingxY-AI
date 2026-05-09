@@ -4,6 +4,7 @@ import { evaluateSubmissionBoundary } from "../policy/submission-boundary.mjs";
 import {
   attachParentTaskSummary,
   attachPriorBackendMessages,
+  attachRecentConversationArtifacts,
   resolveParentFromConversation,
   shouldAutoResolveParentFromConversation
 } from "./conversation-lifecycle.mjs";
@@ -64,8 +65,13 @@ export function createTaskRecord({
   const withParentSummary = effectiveParentTaskId && runtime?.store?.getTask
     ? attachParentTaskSummary(contextPacket, effectiveParentTaskId, runtime)
     : contextPacket;
-  const enrichedContext = attachPriorBackendMessages(
+  const withPriorMessages = attachPriorBackendMessages(
     withParentSummary,
+    effectiveConversationId,
+    runtime
+  );
+  const enrichedContext = attachRecentConversationArtifacts(
+    withPriorMessages,
     effectiveConversationId,
     runtime
   );

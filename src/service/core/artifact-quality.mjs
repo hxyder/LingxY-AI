@@ -1,4 +1,10 @@
+import {
+  evaluateSpreadsheetOutlineQuality,
+  inspectSpreadsheetOutline
+} from "./spreadsheet-outline.mjs";
+
 const RESEARCH_PROFILES = new Set(["multi_source_research", "deep_research"]);
+const FAKE_ARTIFACT_TEXT_RE = /sandbox:\/|\/mnt\/data\/|点击.{0,12}下载|下载链接|download (?:the )?(?:file|artifact|link)|cannot (?:directly )?(?:create|generate|save) (?:a )?(?:file|document|spreadsheet|presentation)|can't (?:directly )?(?:create|generate|save) (?:a )?(?:file|document|spreadsheet|presentation)|无法(?:直接)?(?:创建|生成|保存)(?:文件|文档|表格|演示文稿)|不能(?:直接)?(?:创建|生成|保存)(?:文件|文档|表格|演示文稿)|我(?:已经|已)为你生成.{0,40}(?:下载|链接)/iu;
 
 function stringOf(value = "") {
   return String(value ?? "");
@@ -25,7 +31,10 @@ export function inspectDocumentOutline(outline = {}) {
     tableCount: 0,
     mermaidCount: 0,
     svgCount: 0,
-    imageCount: 0
+    imageCount: 0,
+    fakeArtifactTextCount: 0,
+    longestTextFieldChars: 0,
+    spreadsheet: null
   };
 
   if (outline && typeof outline === "object" && !Array.isArray(outline)) {
@@ -38,6 +47,8 @@ export function inspectDocumentOutline(outline = {}) {
     if (typeof value === "string") {
       const text = value.trim();
       metrics.bodyChars += text.length;
+      metrics.longestTextFieldChars = Math.max(metrics.longestTextFieldChars, text.length);
+      if (FAKE_ARTIFACT_TEXT_RE.test(text)) metrics.fakeArtifactTextCount += 1;
       const mermaidMatches = text.match(/```mermaid[\s\S]*?```/gi);
       if (mermaidMatches) metrics.mermaidCount += mermaidMatches.length;
       return;
@@ -73,12 +84,42 @@ export function evaluateDocumentOutlineQuality({ kind = "", outline = {}, task =
   const requirements = artifactQualityRequirements({ kind, task });
   const metrics = inspectDocumentOutline(outline);
   const issues = [];
+  const normalizedKind = requirements.kind;
+  const artifactRequired = task?.task_spec?.artifact?.required === true
+    || task?.task_spec?.success_contract?.artifact_created === true;
+
+  if (artifactRequired && metrics.fakeArtifactTextCount > 0) {
+    issues.push("fake_artifact_text");
+  }
+
+  if (normalizedKind === "xlsx") {
+    const spreadsheet = inspectSpreadsheetOutline(outline);
+    metrics.spreadsheet = spreadsheet;
+    const quality = evaluateSpreadsheetOutlineQuality({
+      outline,
+      requireTabular: requirements.richResearch
+    });
+    issues.push(...quality.issues);
+    return {
+      ok: issues.length === 0,
+      enforce: true,
+      metrics,
+      issues
+    };
+  }
 
   if (!requirements.enforce) {
+    if (artifactRequired && normalizedKind === "pptx") {
+      if (metrics.slideCount <= 1 && metrics.longestTextFieldChars > 500 && metrics.bulletCount < 3) {
+        issues.push("presentation_prose_dump");
+      }
+    }
+    if (issues.length > 0) {
+      return { ok: false, enforce: true, metrics, issues };
+    }
     return { ok: true, enforce: false, metrics, issues };
   }
 
-  const normalizedKind = requirements.kind;
   if (!metrics.title) {
     issues.push("missing_title");
   }
@@ -92,6 +133,9 @@ export function evaluateDocumentOutlineQuality({ kind = "", outline = {}, task =
   if (requirements.richResearch && normalizedKind === "pptx") {
     if (metrics.slideCount < 3) issues.push("too_few_slides");
     if (metrics.tableCount === 0 && metrics.mermaidCount === 0 && metrics.svgCount === 0) issues.push("missing_structured_component");
+    if (metrics.slideCount <= 1 && metrics.longestTextFieldChars > 500 && metrics.bulletCount < 3) {
+      issues.push("presentation_prose_dump");
+    }
   }
 
   return {
@@ -109,7 +153,14 @@ export function formatDocumentQualityError(result = {}, toolId = "generate_docum
     too_few_sections: "include at least two substantive sections",
     too_little_body_detail: "add enough body detail for a real artifact",
     missing_structured_component: "include at least one structured component",
-    too_few_slides: "include at least three slides"
+    too_few_slides: "include at least three slides",
+    empty_spreadsheet: "provide non-empty spreadsheet headers or rows",
+    generic_content_dump: "do not put the prose answer into a single generic Content column",
+    markdown_or_sandbox_dump: "convert markdown/download prose into real spreadsheet cells",
+    too_few_columns: "include at least two spreadsheet columns",
+    too_few_rows: "include at least one spreadsheet data row",
+    fake_artifact_text: "remove fake download/sandbox/inability text and create the real artifact content",
+    presentation_prose_dump: "split long presentation prose into multiple slides with bullets or structured components"
   };
   return `${toolId}_outline_quality_failed: ${issues.map((issue) => labels[issue] ?? issue).join("; ")}`;
 }

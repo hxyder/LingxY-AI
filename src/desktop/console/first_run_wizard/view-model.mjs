@@ -1,18 +1,24 @@
-function inferLlmStatus({ codeCliAdapters = [], providers = [] } = {}) {
+import { t } from "../../../shared/i18n/index.mjs";
+import { buildProviderSetupStatus } from "../../../service/ai/onboarding/provider-setup-status.mjs";
+
+function inferLlmStatus({ codeCliAdapters = [], providers = [], locale = "zh-CN" } = {}) {
+  const providerSetup = buildProviderSetupStatus({ providers, codeCliAdapters, locale });
   const kimi = codeCliAdapters.find((adapter) => adapter.id === "kimi-code-cli");
   if (kimi?.available) {
     return {
       status: "ready",
-      detail: "Kimi Code CLI is ready",
-      recommended: "code_cli"
+      detail: t(locale, "firstRun.llm.kimiReady"),
+      recommended: "code_cli",
+      providerSetup
     };
   }
 
   if (kimi?.configured) {
     return {
       status: "configured",
-      detail: "Kimi CLI is configured but not available",
-      recommended: "code_cli"
+      detail: t(locale, "firstRun.llm.kimiConfiguredUnavailable"),
+      recommended: "code_cli",
+      providerSetup
     };
   }
 
@@ -20,15 +26,28 @@ function inferLlmStatus({ codeCliAdapters = [], providers = [] } = {}) {
   if (provider) {
     return {
       status: "ready",
-      detail: `${provider.displayName} is available`,
-      recommended: "provider"
+      detail: t(locale, "firstRun.llm.providerAvailable", {
+        providerName: provider.displayName ?? provider.name ?? provider.id ?? "Provider"
+      }),
+      recommended: "provider",
+      providerSetup
+    };
+  }
+
+  if (providerSetup.hasConfiguredRuntime) {
+    return {
+      status: "configured",
+      detail: providerSetup.primaryIssue?.detail ?? t(locale, "firstRun.llm.providerSavedNeedsCheck"),
+      recommended: "provider",
+      providerSetup
     };
   }
 
   return {
     status: "action_needed",
-    detail: "Install and log into Kimi Code CLI first",
-    recommended: "code_cli"
+    detail: t(locale, "firstRun.llm.actionNeeded"),
+    recommended: "provider",
+    providerSetup
   };
 }
 
@@ -36,35 +55,38 @@ export function buildFirstRunWizardViewModel({
   permissions = {},
   integrations = {},
   codeCliAdapters = [],
-  providers = []
+  providers = [],
+  locale = "zh-CN"
 } = {}) {
-  const llmStatus = inferLlmStatus({ codeCliAdapters, providers });
+  const llmStatus = inferLlmStatus({ codeCliAdapters, providers, locale });
   return {
+    providerSetup: llmStatus.providerSetup,
+    locale,
     steps: [
-      { id: "welcome", title: "欢迎", optional: false, status: "ready" },
+      { id: "welcome", title: t(locale, "firstRun.welcome.title"), optional: false, status: "ready" },
       {
         id: "clipboard",
-        title: "剪贴板权限",
+        title: t(locale, "firstRun.clipboard.title"),
         optional: true,
         status: permissions.clipboard === false ? "action_needed" : "ready"
       },
       {
         id: "file_access",
-        title: "文件权限",
+        title: t(locale, "firstRun.fileAccess.title"),
         optional: true,
         status: integrations.fileEntry?.installed ? "ready" : "recommended",
-        detail: integrations.fileEntry?.detail ?? "Explorer / uca-cli entry is optional but recommended"
+        detail: integrations.fileEntry?.detail ?? t(locale, "firstRun.fileAccess.detail")
       },
       {
         id: "browser_extension",
-        title: "浏览器扩展",
+        title: t(locale, "firstRun.browserExtension.title"),
         optional: true,
         status: integrations.browserExtension?.installed ? "ready" : "optional",
-        detail: integrations.browserExtension?.detail ?? "Install later if you need webpage capture"
+        detail: integrations.browserExtension?.detail ?? t(locale, "firstRun.browserExtension.detail")
       },
       {
         id: "llm_backend",
-        title: "LLM 后端",
+        title: t(locale, "firstRun.llmBackend.title"),
         optional: false,
         status: llmStatus.status,
         detail: llmStatus.detail,
@@ -74,6 +96,6 @@ export function buildFirstRunWizardViewModel({
     recommendedPath: llmStatus.recommended,
     nextAction: llmStatus.status === "ready"
       ? "open_console"
-      : "setup_kimi_code_cli"
+      : "setup_provider"
   };
 }

@@ -16,6 +16,7 @@ const preload = read("src/desktop/renderer/preload.cjs");
 const main = read("src/desktop/tray/electron-main.mjs");
 const manifest = read("src/desktop/shared/manifest.mjs");
 const audioRoutes = read("src/service/core/http-routes/audio-routes.mjs");
+const wakeMatch = read("src/shared/echo-wake-match.mjs");
 const sherpaScript = read("scripts/local-sherpa-kws.py");
 const transcriptLocale = read("src/service/audio/transcript-locale.mjs");
 const localSurface = read("scripts/verify-local-http-surface.mjs");
@@ -81,7 +82,7 @@ for (const voiceInvariant of [
 }
 
 for (const echoInvariant of [
-  "const DEFAULT_WAKE_PROFILE",
+  "DEFAULT_WAKE_PROFILE",
   "function buildWakeProfile(settings = {})",
   "function applyEchoSettings(settings = {})",
   "停顿后自动发送；Enter 立即发送",
@@ -89,7 +90,14 @@ for (const echoInvariant of [
   "preserveContext: true",
   "getWakeDisplayName()"
 ]) {
-  assert.ok(dockJs.includes(echoInvariant), `dock echo wake profile missing invariant: ${echoInvariant}`);
+  const source = echoInvariant === "function applyEchoSettings(settings = {})"
+    || echoInvariant === "停顿后自动发送；Enter 立即发送"
+    || echoInvariant === "function startVoiceForDroppedFiles()"
+    || echoInvariant === "preserveContext: true"
+    || echoInvariant === "getWakeDisplayName()"
+    ? dockJs
+    : wakeMatch;
+  assert.ok(source.includes(echoInvariant), `echo wake profile missing invariant: ${echoInvariant}`);
 }
 
 for (const viewInvariant of [
@@ -202,6 +210,8 @@ assert.ok(audioRoutes.includes("normalizeTranscriptionTextForLocale") && audioRo
   "audio routes must normalize both one-shot and streaming transcription text by requested output locale");
 assert.ok(dockJs.includes("keywords: echoWakeProfile.phrases"),
   "echo KWS: dock must pass the saved wake profile phrases into local KWS detection");
+assert.ok(dockJs.includes("../../shared/echo-wake-match.mjs") && wakeMatch.includes("export function matchesWake"),
+  "echo KWS: Dock and fixtures must share the production wake matcher");
 assert.ok(dockJs.includes("const ECHO_VAD_SPEECH_MULTIPLIER = 2;"),
   "echo KWS: VAD speech multiplier must stay loose enough for soft wake utterances");
 assert.ok(main.includes("params.set(\"keywords\"") && main.includes("pathname: \"/echo/kws\""),

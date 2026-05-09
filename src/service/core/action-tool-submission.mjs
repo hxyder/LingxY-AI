@@ -34,7 +34,12 @@ function persistArtifacts(runtime, taskId, artifactPaths, { metadataByPath = nul
   }
 }
 
-function buildActionContextPacket({ userCommand, sourceApp = "uca.console", captureMode = "manual" }) {
+function buildActionContextPacket({
+  userCommand,
+  sourceApp = "uca.console",
+  captureMode = "manual",
+  selectionMetadata = null
+}) {
   return {
     schema_version: "1.0",
     context_id: `ctx_${crypto.randomUUID()}`,
@@ -45,6 +50,9 @@ function buildActionContextPacket({ userCommand, sourceApp = "uca.console", capt
     security_level: "internal",
     redaction_applied: false,
     text: userCommand,
+    ...(selectionMetadata && typeof selectionMetadata === "object"
+      ? { selection_metadata: selectionMetadata }
+      : {}),
     captured_at: new Date().toISOString()
   };
 }
@@ -98,6 +106,8 @@ export async function submitActionToolTask({
   captureMode = "manual",
   parentTaskId = null,
   conversationId = null,
+  conversationTitle = null,
+  conversationMetadata = null,
   clientMessageId = null,
   projectId = null,
   retryCount = 0,
@@ -107,13 +117,15 @@ export async function submitActionToolTask({
   // call the tool directly and return immediately (< 200ms).
   fastPathTool = null,
   fastPathArgs = null,
+  selectionMetadata = null,
   background = false
 }) {
   ensureRuntimeServices(runtime);
   const contextPacket = buildActionContextPacket({
     userCommand,
     sourceApp,
-    captureMode
+    captureMode,
+    selectionMetadata
   });
   const route = routeIntent(userCommand);
   const { task } = submitTaskWithConversation({
@@ -123,6 +135,8 @@ export async function submitActionToolTask({
     executionMode,
     parentTaskId,
     conversationId,
+    conversationTitle,
+    conversationMetadata,
     clientMessageId,
     projectId,
     retryCount,
@@ -235,7 +249,11 @@ export async function submitActionToolTask({
         if (!toolResult.success) {
           markTaskFailed(runtime, task, {
             code: toolResult.error ?? "action_tool_failed",
-            message: finalText
+            message: finalText,
+            tool_id: fastPathTool,
+            observation: toolResult.observation,
+            provider_id: toolResult.metadata?.provider_id ?? toolResult.provider_id,
+            provider: toolResult.metadata?.provider ?? toolResult.provider
           });
           persistArtifacts(runtime, task.task_id, toolResult.artifact_paths, { payload: toolCompletionPayload });
           return {
@@ -299,7 +317,10 @@ export async function submitActionToolTask({
 
       if (loopResult.status !== "success") {
         markTaskFailed(runtime, task, {
-          message: loopResult.error ?? "Tool loop failed."
+          message: loopResult.error ?? "Tool loop failed.",
+          tool_id: loopResult.failed_tool_id ?? loopResult.tool_id,
+          provider_id: loopResult.provider_id,
+          provider: loopResult.provider
         });
         return {
           task,

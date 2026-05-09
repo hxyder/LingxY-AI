@@ -88,6 +88,40 @@ export function createScheduledTaskRecord({
       residual_command: schedule.action_params?.userCommand ?? null
     }
   });
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "tool_call_started",
+    payload: {
+      tool_id: "create_scheduled_task",
+      tool: "create_scheduled_task",
+      args: {
+        name: schedule.name,
+        trigger: schedule.trigger,
+        action: schedule.action
+      },
+      source: "plan_scheduler"
+    }
+  });
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "tool_call_completed",
+    payload: {
+      tool_id: "create_scheduled_task",
+      tool: "create_scheduled_task",
+      success: true,
+      result: {
+        schedule_id: schedule.schedule_id,
+        next_run_at: schedule.next_run_at
+      },
+      metadata: {
+        source: "plan_scheduler",
+        schedule_id: schedule.schedule_id,
+        next_run_at: schedule.next_run_at
+      }
+    }
+  });
   updateTask(runtime, task, {
     status: "success",
     sub_status: "scheduled",

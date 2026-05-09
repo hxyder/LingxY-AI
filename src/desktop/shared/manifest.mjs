@@ -85,11 +85,13 @@ export const IPC_CHANNELS = Object.freeze({
   codeCliAdapterDelete: "uca:code-cli-adapter-delete",
   skillRegistrySave: "uca:skill-registry-save",
   skillRegistryDelete: "uca:skill-registry-delete",
+  skillStateUpdate: "uca:skill-state-update",
   autoSkillSave: "uca:auto-skill-save",
   skillMarkdownRead: "uca:skill-markdown-read",
   skillMarkdownWrite: "uca:skill-markdown-write",
   skillCreate: "uca:skill-create",
   skillDuplicate: "uca:skill-duplicate",
+  skillDelete: "uca:skill-delete",
   skillHistory: "uca:skill-history",
   skillRollback: "uca:skill-rollback",
   skillTest: "uca:skill-test",
@@ -127,7 +129,8 @@ export const IPC_CHANNELS = Object.freeze({
   taskCancel: "uca:task-cancel",
   taskRetry: "uca:task-retry",
   taskDelete: "uca:task-delete",
-  taskRestore: "uca:task-restore"
+  taskRestore: "uca:task-restore",
+  taskFileRecoveryRestore: "uca:task-file-recovery-restore"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

@@ -18,8 +18,12 @@ export async function executeAgenticToolCall({
   call,
   runtime,
   task,
-  transcript = []
+  transcript = [],
+  signal = null
 }) {
+  if (signal?.aborted) {
+    throw Object.assign(new Error("Agentic tool call aborted before execution."), { code: "ABORT_ERR" });
+  }
   const tool = registry?.get?.(call.name) ?? mcpToolById?.get?.(call.name);
   if (!tool) {
     return {
@@ -128,7 +132,8 @@ export async function executeAgenticToolCall({
       ...(toolContext ?? {}),
       runtime,
       task,
-      transcript: Array.isArray(transcript) ? transcript.slice() : []
+      transcript: Array.isArray(transcript) ? transcript.slice() : [],
+      signal
     });
     return {
       success: Boolean(result?.success),
@@ -138,6 +143,7 @@ export async function executeAgenticToolCall({
       error: result?.error ?? null
     };
   } catch (error) {
+    if (error?.code === "ABORT_ERR") throw error;
     return {
       success: false,
       observation: `Tool ${call.name} threw: ${error.message}`,

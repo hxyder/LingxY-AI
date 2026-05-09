@@ -75,8 +75,8 @@ const ROOT = path.resolve(__dirname, "..");
     "electron-main must compute the right-edge bounds for the preview window");
   assert.ok(src.includes("function ensurePreviewWindow"),
     "electron-main must lazily create the preview BrowserWindow");
-  assert.ok(src.match(/workArea\.x \+ workArea\.width - width/),
-    "electron-main must anchor the preview window to the right edge of workArea");
+  assert.ok(src.match(/workArea\.x \+ Math\.max\(0, Math\.round\(\(workArea\.width - width\) \/ 2\)\)/),
+    "electron-main must center the larger document preview window in the work area");
   assert.ok(src.includes("IPC_CHANNELS.previewWindowShow"),
     "electron-main must handle previewWindowShow");
   assert.ok(src.includes("IPC_CHANNELS.previewWindowAppendDelta"),
@@ -92,6 +92,11 @@ const ROOT = path.resolve(__dirname, "..");
     "preview-window must render a terminal empty state when commit succeeds without an artifact path");
   assert.ok(/const committedToolName = toolName \|\| state\.toolName/.test(previewSrc),
     "preview-window commits must be able to finalize artifact_created events without a toolName");
+  assert.ok(previewSrc.includes("runGenerateDocumentDraftFamilyMatrix"),
+    "preview-window smoke must cover generate_document draft previews across docx/pdf/html/xlsx/pptx");
+  for (const marker of ["Word 草稿预览", "PDF 草稿预览", "HTML 草稿预览", "Excel 草稿预览", "PowerPoint 草稿预览"]) {
+    assert.ok(previewSrc.includes(marker), `preview-window draft matrix must assert ${marker}`);
+  }
 
   const overlaySrc = await readFile(path.join(ROOT, "src/desktop/renderer/overlay.js"), "utf8");
   const consoleSrc = await readFile(path.join(ROOT, "src/desktop/renderer/console.js"), "utf8");

@@ -19,8 +19,8 @@ const js = await readFile(path.join(repoRoot, "src/desktop/renderer/console.js")
 const cache = await readFile(path.join(repoRoot, "src/desktop/renderer/conversation-cache.mjs"), "utf8");
 const viewer = await readFile(path.join(repoRoot, "src/desktop/renderer/console-conversation-viewer.mjs"), "utf8");
 
-await it("rail item: data-tab=\"conversations\" exists", () => {
-  assert.match(html, /data-tab="conversations"/);
+await it("rail item: standalone Conversations nav is not exposed", () => {
+  assert.doesNotMatch(html, /data-tab="conversations"/);
 });
 
 await it("panel: <section id=\"panel-conversations\"> exists", () => {
@@ -45,7 +45,7 @@ await it("js: tab switch hook calls loadConversationsTab", () => {
 await it("js: loadConversationsTab uses shared /conversations fetcher with archived param", () => {
   assert.match(js, /async function loadConversationsTab/);
   assert.match(js, /fetchConversations\s+as\s+cacheFetchConversations/);
-  assert.match(js, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*limit,\s*archived\s*\}\)/);
+  assert.match(js, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*limit,\s*archived(?:,\s*projectId)?\s*\}\)/);
   assert.match(js, /fetchConversationsList\(\{\s*limit:\s*200,\s*archived\s*\}\)/);
   assert.match(cache, /\/conversations\?\$\{params\.toString\(\)\}/);
 });

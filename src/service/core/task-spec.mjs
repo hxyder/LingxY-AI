@@ -512,9 +512,14 @@ function relaxConnectorWebPolicy(policy) {
 // ---------------------------------------------------------------------------
 
 const NOTE_INTENT_PATTERNS = [
-  /(?:笔记|筆記|纪要|會議紀要|会议记录|會議記錄|meeting\s+notes?|study\s+notes?|class\s+notes?)/i,
   /(?:记一下|記一下|记录一下|記錄一下|整理成(?:笔记|筆記|纪要)|总结成(?:笔记|筆記|纪要)|写成(?:笔记|筆記|纪要)|做成(?:笔记|筆記|纪要))/i,
-  /\b(?:note|notes|minutes)\b/i
+  /(?:生成|创建|制作|写|做|整理|总结).{0,16}(?:笔记|筆記|纪要|會議紀要|会议记录|會議記錄)/i,
+  /\b(?:take|create|make|write|turn\s+.*\s+into|summari[sz]e\s+.*\s+as)\b.{0,24}\b(?:note|notes|minutes)\b/i
+];
+
+const EXISTING_NOTE_READ_PATTERNS = [
+  /(?:读取|阅读|查看|分析|总结|提取).{0,24}(?:笔记|筆記|纪要|會議紀要|会议记录|會議記錄)/i,
+  /\b(?:read|analy[sz]e|summari[sz]e|extract)\b.{0,32}\b(?:note|notes|minutes)\b/i
 ];
 
 const EDITABLE_ARTIFACT_EXTENSIONS = new Set([
@@ -531,8 +536,10 @@ const EDITABLE_ARTIFACT_EXTENSIONS = new Set([
 ]);
 
 const ARTIFACT_REFINEMENT_PATTERNS = [
-  /(加上|加一些|加入|补上|补充|插入|替换|换成|删掉|删除|修改|更新|调整|优化|完善|美化|精美|润色|改一下|改得|重做|重写|重排)/i,
-  /\b(add|include|insert|replace|remove|delete|modify|edit|update|revise|refine|polish|improve|beautify|restyle)\b/i
+  /(加上|加一些|加入|补上|补充|插入|替换|换成|删掉|删除|修改|更新|调整|优化|完善|美化|精美|润色|改一下|改得|重做|重写|重排|排版|套用|格式化|做格式|表格格式|改格式)/i,
+  /(生成|创建|制作|做|改|调整|套用|美化).{0,16}(格式|样式|模板|表头|列宽|配色)/i,
+  /(格式|样式|模板|表头|列宽|配色).{0,16}(改|调整|套用|美化|优化|完善)/i,
+  /\b(add|include|insert|replace|remove|delete|modify|edit|update|revise|refine|polish|improve|beautify|restyle|format|reformat|style)\b/i
 ];
 
 const ARTIFACT_REFERENCE_PATTERNS = [
@@ -554,8 +561,24 @@ function artifactKindFromPath(filePath = "") {
   return null;
 }
 
+function recentConversationArtifactPaths(contextPacket = {}) {
+  const artifacts = Array.isArray(contextPacket?.recent_conversation_artifacts)
+    ? contextPacket.recent_conversation_artifacts
+    : [];
+  return artifacts
+    .map((artifact) => typeof artifact?.path === "string" ? artifact.path : "")
+    .filter(Boolean);
+}
+
+function editableArtifactPathsFromContext(contextPacket = {}) {
+  return [
+    ...(Array.isArray(contextPacket?.file_paths) ? contextPacket.file_paths : []),
+    ...recentConversationArtifactPaths(contextPacket)
+  ];
+}
+
 function hasEditableArtifactContext(contextPacket = {}) {
-  return (contextPacket?.file_paths ?? []).some((filePath) => {
+  return editableArtifactPathsFromContext(contextPacket).some((filePath) => {
     const normalized = String(filePath ?? "").toLowerCase();
     return [...EDITABLE_ARTIFACT_EXTENSIONS].some((ext) => normalized.endsWith(ext));
   });
@@ -573,7 +596,7 @@ function hasArtifactRefinementIntent(text, contextPacket = {}) {
 }
 
 function detectArtifactKindFromContext(contextPacket = {}) {
-  for (const filePath of contextPacket?.file_paths ?? []) {
+  for (const filePath of editableArtifactPathsFromContext(contextPacket)) {
     const kind = artifactKindFromPath(filePath);
     if (kind) return kind;
   }
@@ -595,7 +618,12 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
   if (contextPacket?.source_type === "audio_note" || contextPacket?.source_app === "uca.note") {
     return true;
   }
-  return hasContentForNote(contextPacket) && NOTE_INTENT_PATTERNS.some((p) => p.test(String(text ?? "")));
+  const rawText = String(text ?? "");
+  const creationIntent = NOTE_INTENT_PATTERNS.some((p) => p.test(rawText));
+  if (!creationIntent && EXISTING_NOTE_READ_PATTERNS.some((p) => p.test(rawText))) {
+    return false;
+  }
+  return hasContentForNote(contextPacket) && creationIntent;
 }
 
 function hasDeterministicRoutingLock({ signals, contextPacket = {}, toolPolicy, text = "" } = {}) {

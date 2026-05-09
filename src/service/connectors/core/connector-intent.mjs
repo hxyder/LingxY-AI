@@ -1,4 +1,4 @@
-const CONNECTOR_RESOURCE_PATTERN = /(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook|日历|\bcalendar\b|google\s*calendar|google\s*drive|onedrive|云端文件|网盘|连接账户|连接的账户|已连接账户|账户|账号|connected\s+accounts?)/i;
+const CONNECTOR_RESOURCE_PATTERN = /(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook|日历|\bcalendar\b|google\s*calendar|google\s*drive|onedrive|云端文件|网盘|连接账户|连接的账户|已连接账户|账户|账号|connected\s+accounts?|[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,})/i;
 // UCA-179: the CONTEXT pattern previously only matched read-side verbs
 // (list / recent / latest). A user saying "把这两个附件发给 alice@gmail.com"
 // has "gmail" from the address (so RESOURCE matches) but no

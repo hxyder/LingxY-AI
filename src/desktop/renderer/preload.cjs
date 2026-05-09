@@ -390,6 +390,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteSkillRegistry(id) {
     return ipcRenderer.invoke("uca:skill-registry-delete", id ?? "");
   },
+  updateSkillState(payload) {
+    return ipcRenderer.invoke("uca:skill-state-update", payload ?? {});
+  },
   saveAutoSkill(payload) {
     return ipcRenderer.invoke("uca:auto-skill-save", payload ?? {});
   },
@@ -404,6 +407,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   },
   duplicateSkill(payload) {
     return ipcRenderer.invoke("uca:skill-duplicate", payload ?? {});
+  },
+  deleteSkill(payload) {
+    return ipcRenderer.invoke("uca:skill-delete", payload ?? {});
   },
   listSkillHistory(payload) {
     return ipcRenderer.invoke("uca:skill-history", payload ?? {});
@@ -523,6 +529,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   },
   restoreTask(taskId) {
     return ipcRenderer.invoke("uca:task-restore", taskId ?? "");
+  },
+  restoreFileCheckpoint(taskId, checkpointId) {
+    return ipcRenderer.invoke("uca:task-file-recovery-restore", { taskId, checkpointId });
   },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);

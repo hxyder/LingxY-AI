@@ -1,0 +1,5 @@
+Release Plan: Finch-14
+
+Milestone 1: service-level function audit with 100 new prompts.
+Milestone 2: desktop GUI validation for hotkeys, overlay, microphone, Explorer menu, updater, and popup cards.
+Milestone 3: fix framework gaps in routing, artifact contracts, approvals, and observability.

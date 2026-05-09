@@ -85,10 +85,17 @@ function formatTriggerPreview(trigger = {}) {
   const type = String(trigger.type ?? trigger.trigger_type ?? "").trim();
   const at = trigger.run_at ?? trigger.at ?? trigger.next_run_at ?? "";
   const cron = trigger.cron ?? trigger.expression ?? "";
+  const natural = trigger.natural_language ?? trigger.naturalLanguage ?? trigger.text ?? "";
+  const timezone = trigger.timezone ?? trigger.time_zone ?? trigger.tz ?? "";
   if (type === "at" && at) return compactToolText(`一次 · ${at}`, 72);
   if (type === "cron" && cron) return compactToolText(`重复 · ${cron}`, 72);
-  if (type) return compactToolText(type, 72);
-  return compactToolText(String(at || cron || ""), 72);
+  if (natural) {
+    const suffix = timezone ? ` · ${timezone}` : "";
+    return compactToolText(`时间 · ${natural}${suffix}`, 72);
+  }
+  if (type) return compactToolText(`时间 · ${type}`, 72);
+  const fallback = at || cron || "";
+  return fallback ? compactToolText(`时间 · ${fallback}`, 72) : "";
 }
 
 function formatActionPreview(action = {}) {
@@ -142,7 +149,11 @@ export function formatToolArgsPreview(toolName = "", args = {}) {
     const name = pickFirstString(value, ["name", "title", "description"]);
     const trigger = formatTriggerPreview(value.trigger);
     const action = formatActionPreview(value.action);
-    return compactToolText([name, trigger, action].filter(Boolean).join(" · "), 110);
+    return compactToolText([
+      name ? `任务 · ${name}` : "",
+      trigger,
+      action ? `动作 · ${action}` : ""
+    ].filter(Boolean).join(" · "), 110);
   }
   if (normalizedToolName === "update_scheduled_task" || normalizedToolName === "delete_scheduled_task") {
     return compactToolText(pickFirstString(value, ["schedule_id", "id", "name", "title"]), 92);

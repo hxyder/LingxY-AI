@@ -5,6 +5,10 @@ import {
   normalizeProjectStore as normalizeProjectStoreBase
 } from "../../../shared/project-store.mjs";
 import {
+  buildConversationMessageContextSummary,
+  hasConversationContextSummary
+} from "../../../shared/conversation-message-context.mjs";
+import {
   applyConversationModelOverride,
   normalizeConversationModelOverride
 } from "../../../shared/conversation-model-override.mjs";
@@ -45,6 +49,298 @@ function statusForProjectFileResult(result) {
   if (result.error === "audit_log_unavailable" || result.error === "embedding_store_unavailable") return 503;
   if (result.error === "project_not_found") return 404;
   return 400;
+}
+
+export function backfillConversationMessageContextSummaries(messages = [], links = [], store = null) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages;
+  if (!store || typeof store.getTask !== "function") return messages;
+  const linksByMessage = new Map();
+  for (const link of Array.isArray(links) ? links : []) {
+    if (!link?.message_id || !link?.task_id) continue;
+    if (!linksByMessage.has(link.message_id)) linksByMessage.set(link.message_id, []);
+    linksByMessage.get(link.message_id).push(link);
+  }
+  const taskCache = new Map();
+  return messages.map((message) => {
+    if (hasConversationContextSummary(message?.metadata?.context_summary)) return message;
+    const messageLinks = linksByMessage.get(message?.message_id) ?? [];
+    let summary = null;
+    for (const link of messageLinks) {
+      if (!taskCache.has(link.task_id)) {
+        let task = null;
+        try { task = store.getTask(link.task_id); } catch { task = null; }
+        taskCache.set(link.task_id, task);
+      }
+      const task = taskCache.get(link.task_id);
+      summary = buildConversationMessageContextSummary(
+        task?.context_packet ?? task?.contextPacket ?? task?.context_packet_initial ?? task?.contextPacketInitial
+      );
+      if (summary) break;
+    }
+    if (!summary) return message;
+    return {
+      ...message,
+      metadata: {
+        ...(message.metadata ?? {}),
+        context_summary: summary,
+        context_summary_backfilled: true
+      }
+    };
+  });
+}
+
+function normalizeConversationSearchTerm(value = "") {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function conversationSearchHaystack(conversation = {}, messages = []) {
+  const parts = [
+    conversation.title,
+    conversation.summary,
+    conversation.last_message_preview
+  ];
+  for (const message of messages) {
+    parts.push(message?.content);
+    const summary = message?.metadata?.context_summary;
+    if (summary && typeof summary === "object") {
+      parts.push(
+        summary.title,
+        summary.url,
+        summary.text_preview,
+        ...(Array.isArray(summary.file_paths) ? summary.file_paths : []),
+        ...(Array.isArray(summary.image_paths) ? summary.image_paths : [])
+      );
+    }
+  }
+  return parts.filter(Boolean).map((part) => String(part)).join("\n");
+}
+
+function snippetAroundMatch(text = "", query = "", limit = 180) {
+  const source = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!source) return "";
+  const lower = source.toLowerCase();
+  const needle = String(query ?? "").toLowerCase();
+  const idx = needle ? lower.indexOf(needle) : -1;
+  if (idx < 0) return source.slice(0, limit);
+  const pad = Math.max(24, Math.floor((limit - needle.length) / 2));
+  const start = Math.max(0, idx - pad);
+  const end = Math.min(source.length, idx + needle.length + pad);
+  return `${start > 0 ? "..." : ""}${source.slice(start, end)}${end < source.length ? "..." : ""}`;
+}
+
+function firstMatchingMessage(messages = [], query = "") {
+  const term = normalizeConversationSearchTerm(query);
+  if (!term) return null;
+  return messages.find((message) => {
+    const haystack = conversationSearchHaystack({}, [message]).toLowerCase();
+    return haystack.includes(term);
+  }) ?? null;
+}
+
+function clampConversationTitle(value = "", fallback = "Forked conversation") {
+  const title = String(value ?? "").trim();
+  return (title || fallback).slice(0, 200);
+}
+
+function branchTimestamp() {
+  return new Date().toISOString();
+}
+
+function messageMetadataWithBranchSource(message = {}) {
+  return {
+    ...(message.metadata ?? {}),
+    copied_from: {
+      conversation_id: message.conversation_id,
+      message_id: message.message_id,
+      seq: message.seq
+    }
+  };
+}
+
+function resolveConversationBranchCut({
+  store,
+  conversationId,
+  messageId = null,
+  throughSeq = null,
+  defaultToLast = true
+} = {}) {
+  if (typeof store?.getConversationMessages !== "function") return null;
+  const messages = store.getConversationMessages(conversationId, { sinceSeq: 0, limit: 5000 });
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return defaultToLast ? { messages: [], target: null, throughSeq: -1 } : null;
+  }
+  let target = null;
+  if (messageId && typeof store.getMessage === "function") {
+    const maybe = store.getMessage(messageId);
+    if (maybe?.conversation_id === conversationId) target = maybe;
+  }
+  if (!target && Number.isFinite(Number(throughSeq))) {
+    const seq = Number(throughSeq);
+    target = messages.find((message) => Number(message.seq) === seq) ?? null;
+  }
+  if (!target && defaultToLast) target = messages[messages.length - 1] ?? null;
+  if (!target && !defaultToLast) return null;
+  const seq = target ? Number(target.seq) : -1;
+  return { messages, target, throughSeq: seq };
+}
+
+export function createConversationBranch({
+  store,
+  sourceConversationId,
+  branchKind = "fork",
+  throughMessageId = null,
+  throughSeq = null,
+  beforeMessageId = null,
+  newConversationId = null,
+  title = null,
+  editedContent = null,
+  actor = "desktop_console"
+} = {}) {
+  if (typeof store?.getConversation !== "function"
+      || typeof store?.insertConversation !== "function"
+      || typeof store?.appendMessage !== "function") {
+    return { ok: false, status: 404, error: "conversation store not available" };
+  }
+  const source = store.getConversation(sourceConversationId);
+  if (!source) return { ok: false, status: 404, error: "conversation not found" };
+  if (newConversationId && typeof store.getConversation === "function" && store.getConversation(newConversationId)) {
+    return { ok: false, status: 409, error: "target conversation already exists" };
+  }
+
+  const editTarget = beforeMessageId && typeof store.getMessage === "function"
+    ? store.getMessage(beforeMessageId)
+    : null;
+  if (beforeMessageId && editTarget?.conversation_id !== sourceConversationId) {
+    return { ok: false, status: 404, error: "message not found" };
+  }
+  if (beforeMessageId && (typeof editedContent !== "string" || !editedContent.trim())) {
+    return { ok: false, status: 400, error: "edited content required" };
+  }
+  const cut = resolveConversationBranchCut({
+    store,
+    conversationId: sourceConversationId,
+    messageId: beforeMessageId ? null : throughMessageId,
+    throughSeq,
+    defaultToLast: true
+  });
+  if (!cut) return { ok: false, status: 404, error: "conversation messages not available" };
+  if (throughMessageId && cut.target?.message_id !== throughMessageId) {
+    return { ok: false, status: 404, error: "message not found" };
+  }
+
+  const copyThroughSeq = editTarget ? Number(editTarget.seq) - 1 : cut.throughSeq;
+  const createdAt = branchTimestamp();
+  const branchMeta = {
+    ...(source.metadata ?? {}),
+    branch: {
+      kind: branchKind,
+      source_conversation_id: sourceConversationId,
+      source_message_id: editTarget?.message_id ?? cut.target?.message_id ?? null,
+      source_seq: editTarget?.seq ?? cut.target?.seq ?? null,
+      actor,
+      created_at: createdAt
+    }
+  };
+  const conversation = store.insertConversation({
+    conversation_id: newConversationId || undefined,
+    project_id: source.project_id ?? null,
+    title: clampConversationTitle(title, `${source.title ?? "Conversation"} (${branchKind})`),
+    metadata: branchMeta
+  });
+  const copiedMessages = [];
+  for (const message of cut.messages) {
+    if (Number(message.seq) > copyThroughSeq) continue;
+    copiedMessages.push(store.appendMessage({
+      conversation_id: conversation.conversation_id,
+      role: message.role,
+      content: message.content,
+      status: message.status ?? null,
+      metadata: messageMetadataWithBranchSource(message)
+    }));
+  }
+  let editedMessage = null;
+  if (editTarget) {
+    editedMessage = store.appendMessage({
+      conversation_id: conversation.conversation_id,
+      role: editTarget.role,
+      content: editedContent,
+      status: editTarget.status ?? null,
+      metadata: {
+        ...(editTarget.metadata ?? {}),
+        edited_from: {
+          conversation_id: editTarget.conversation_id,
+          message_id: editTarget.message_id,
+          seq: editTarget.seq
+        }
+      }
+    });
+  }
+  return {
+    ok: true,
+    conversation,
+    source_conversation: source,
+    branch: branchMeta.branch,
+    copied_messages: copiedMessages,
+    edited_message: editedMessage
+  };
+}
+
+export function searchConversationHistory({
+  store,
+  query = "",
+  projectId = null,
+  limit = 20,
+  archived = 0,
+  messageLimit = 200
+} = {}) {
+  const term = normalizeConversationSearchTerm(query);
+  if (!term || typeof store?.listConversations !== "function" || typeof store?.getConversationMessages !== "function") {
+    return [];
+  }
+  const maxConversations = Math.max(Number(limit) * 8, Number(limit) + 20, 50);
+  const conversations = store.listConversations({
+    projectId,
+    limit: Math.min(Math.max(maxConversations, 1), 500),
+    archived
+  });
+  const results = [];
+  for (const conversation of conversations) {
+    const messages = store.getConversationMessages(conversation.conversation_id, {
+      sinceSeq: 0,
+      limit: Math.max(1, Math.min(Number(messageLimit) || 200, 500))
+    });
+    const links = [];
+    if (typeof store.getMessageTasks === "function") {
+      for (const message of messages) {
+        for (const link of store.getMessageTasks(message.message_id) ?? []) links.push(link);
+      }
+    }
+    const enrichedMessages = backfillConversationMessageContextSummaries(messages, links, store);
+    const haystack = conversationSearchHaystack(conversation, enrichedMessages);
+    if (!haystack.toLowerCase().includes(term)) continue;
+    const matchingMessage = firstMatchingMessage(enrichedMessages, term);
+    const snippetSource = matchingMessage
+      ? conversationSearchHaystack({}, [matchingMessage])
+      : haystack;
+    const contextSummary = matchingMessage?.metadata?.context_summary ?? null;
+    results.push({
+      conversation,
+      conversation_id: conversation.conversation_id,
+      title: conversation.title ?? "Untitled conversation",
+      updated_at: conversation.updated_at ?? conversation.created_at ?? null,
+      message_count: conversation.message_count ?? enrichedMessages.length,
+      task_count: conversation.task_count ?? 0,
+      match: {
+        message_id: matchingMessage?.message_id ?? null,
+        seq: matchingMessage?.seq ?? null,
+        role: matchingMessage?.role ?? null,
+        snippet: snippetAroundMatch(snippetSource, term),
+        context_summary: hasConversationContextSummary(contextSummary) ? contextSummary : null
+      }
+    });
+    if (results.length >= limit) break;
+  }
+  return results;
 }
 
 export async function tryHandleNoteProjectConversationRoute({
@@ -257,6 +553,30 @@ export async function tryHandleNoteProjectConversationRoute({
     return true;
   }
 
+  if (method === "GET" && url.pathname === "/conversations/search") {
+    if (typeof runtime.store?.listConversations !== "function"
+        || typeof runtime.store?.getConversationMessages !== "function") {
+      sendJson(response, 200, { query: url.searchParams.get("q") ?? "", results: [] });
+      return true;
+    }
+    const projectId = url.searchParams.get("project_id") ?? null;
+    const limitParam = parseInt(url.searchParams.get("limit") ?? "20", 10);
+    const archivedParam = url.searchParams.get("archived");
+    const archived = archivedParam === "any" ? "any"
+      : archivedParam === "1" || archivedParam === "true" ? 1
+        : 0;
+    const query = url.searchParams.get("q") ?? url.searchParams.get("query") ?? "";
+    const results = searchConversationHistory({
+      store: runtime.store,
+      query,
+      projectId,
+      archived,
+      limit: Number.isFinite(limitParam) ? Math.max(1, Math.min(limitParam, 50)) : 20
+    });
+    sendJson(response, 200, { query, results });
+    return true;
+  }
+
   if (method === "POST" && url.pathname === "/conversations") {
     if (!requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS })) return true;
     if (typeof runtime.store?.insertConversation !== "function") {
@@ -308,10 +628,11 @@ export async function tryHandleNoteProjectConversationRoute({
         for (const link of runtime.store.getMessageTasks(id) ?? []) links.push(link);
       }
     }
+    const enrichedMessages = backfillConversationMessageContextSummaries(messages, links, runtime.store);
     sendJson(response, 200, {
       conversation_id: conversationId,
       since_seq: sinceSeq,
-      messages,
+      messages: enrichedMessages,
       message_task_links: links
     });
     return true;
@@ -340,7 +661,47 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   const conversationByIdMatch = url.pathname.match(/^\/conversation\/([^/]+)$/);
+  const conversationForkMatch = url.pathname.match(/^\/conversation\/([^/]+)\/fork$/);
+  const conversationRewindMatch = url.pathname.match(/^\/conversation\/([^/]+)\/rewind$/);
+  const conversationMessageEditMatch = url.pathname.match(/^\/conversation\/([^/]+)\/messages\/([^/]+)\/edit$/);
   const conversationModelMatch = url.pathname.match(/^\/conversation\/([^/]+)\/model$/);
+  if (method === "POST" && (conversationForkMatch || conversationRewindMatch || conversationMessageEditMatch)) {
+    const actor = requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS });
+    if (!actor) return true;
+    const body = await readJsonBody(request);
+    const sourceConversationId = decodeURIComponent(
+      conversationForkMatch?.[1] ?? conversationRewindMatch?.[1] ?? conversationMessageEditMatch?.[1]
+    );
+    const editMessageId = conversationMessageEditMatch ? decodeURIComponent(conversationMessageEditMatch[2]) : null;
+    const requestedId = typeof body?.conversation_id === "string" && body.conversation_id.trim()
+      ? body.conversation_id.trim().slice(0, 128)
+      : null;
+    const result = createConversationBranch({
+      store: runtime.store,
+      sourceConversationId,
+      branchKind: conversationMessageEditMatch ? "edit" : conversationRewindMatch ? "rewind" : "fork",
+      throughMessageId: typeof body?.through_message_id === "string" ? body.through_message_id : null,
+      throughSeq: body?.through_seq,
+      beforeMessageId: editMessageId,
+      newConversationId: requestedId,
+      title: typeof body?.title === "string" ? body.title : null,
+      editedContent: typeof body?.content === "string" ? body.content : null,
+      actor
+    });
+    if (!result.ok) {
+      sendJson(response, result.status ?? 400, { error: result.error ?? "conversation branch failed" });
+      return true;
+    }
+    sendJson(response, 200, {
+      conversation: result.conversation,
+      source_conversation: result.source_conversation,
+      branch: result.branch,
+      copied_messages: result.copied_messages,
+      edited_message: result.edited_message
+    });
+    return true;
+  }
+
   if ((method === "PATCH" || method === "DELETE") && conversationModelMatch) {
     const conversationId = conversationModelMatch[1];
     if (!requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS })) return true;
@@ -425,9 +786,10 @@ export async function tryHandleNoteProjectConversationRoute({
         for (const link of runtime.store.getMessageTasks(message.message_id) ?? []) links.push(link);
       }
     }
+    const enrichedMessages = backfillConversationMessageContextSummaries(messages, links, runtime.store);
     sendJson(response, 200, {
       conversation: conv,
-      messages,
+      messages: enrichedMessages,
       message_task_links: links
     });
     return true;

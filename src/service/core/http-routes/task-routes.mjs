@@ -22,6 +22,10 @@ import {
   normalizeArtifactSource
 } from "../artifact-action-contract.mjs";
 import { normalizeArtifactVersionMetadata } from "../store/artifact-metadata.mjs";
+import {
+  applyFileReversibilityCheckpoint,
+  collectFileReversibilityCheckpoints
+} from "../../action_tools/file-reversibility.mjs";
 
 function taskDeletedFilterFromUrl(url) {
   return normalizeDeletedFilter(url.searchParams.get("deleted") ?? false);
@@ -496,6 +500,7 @@ async function handleTaskEventStream({ request, response, url, runtime, taskId }
 export async function tryHandleTaskRoute({ request, response, method, url, runtime }) {
   const taskLogMatch = url.pathname.match(/^\/task\/([^/]+)\/log$/);
   const taskEventMatch = url.pathname.match(/^\/task\/([^/]+)\/events$/);
+  const fileRecoveryMatch = url.pathname.match(/^\/task\/([^/]+)\/file-recovery\/([^/]+)$/);
   const taskMatch = url.pathname.match(/^\/task\/([^/]+)$/);
   const cancelMatch = url.pathname.match(/^\/task\/([^/]+)\/cancel$/);
   const retryMatch = url.pathname.match(/^\/task\/([^/]+)\/retry$/);
@@ -615,6 +620,47 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
       runtime,
       taskId: taskEventMatch[1]
     });
+    return true;
+  }
+
+  if (fileRecoveryMatch && method === "POST") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) return true;
+    const taskId = decodeURIComponent(fileRecoveryMatch[1]);
+    const checkpointId = decodeURIComponent(fileRecoveryMatch[2]);
+    const task = runtime.store.getTask(taskId);
+    if (!task) {
+      sendJson(response, 404, { error: "task_not_found" });
+      return true;
+    }
+    const events = runtime.store.getTaskEvents(taskId);
+    const checkpoint = collectFileReversibilityCheckpoints(events)
+      .find((entry) => entry.checkpoint_id === checkpointId);
+    if (!checkpoint) {
+      sendJson(response, 404, { error: "checkpoint_not_found" });
+      return true;
+    }
+    try {
+      const result = await applyFileReversibilityCheckpoint(checkpoint, { actor });
+      emitTaskEvent({
+        runtime,
+        taskId,
+        eventType: "file_recovery_applied",
+        payload: {
+          checkpoint_id: checkpointId,
+          reverse_operation: result.reverse_operation,
+          target_path: result.target_path,
+          backup_path: result.backup_path ?? null,
+          restored_by: actor
+        }
+      });
+      sendJson(response, 200, { restored: true, task_id: taskId, recovery: result });
+    } catch (error) {
+      sendJson(response, 400, {
+        error: "file_recovery_failed",
+        message: error?.message ?? String(error)
+      });
+    }
     return true;
   }
 

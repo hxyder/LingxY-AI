@@ -61,6 +61,24 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("audio-routes.mjs", "POST", "/echo/speak", {
+    domain: "audio",
+    effect: "local_tts_playback",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("audio-routes.mjs", "POST", "/echo/speak/cancel", {
+    domain: "audio",
+    effect: "local_tts_control",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("audio-routes.mjs", "POST", "/echo/tts/preference", {
+    domain: "audio",
+    effect: "config_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("audio-routes.mjs", "GET", "/echo/kws/status", {
     domain: "audio",
     effect: "local_probe",
@@ -159,6 +177,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "PATCH", "/config/skills/skills/state", {
+    domain: "skills_config",
+    effect: "config_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/code-cli/adapters", {
     domain: "code_cli_config",
     effect: "config_mutation",
@@ -179,6 +203,12 @@ const expectedSurfaces = [
   }),
   surface("config-provider-routes.mjs", "POST", "/config/features", {
     domain: "runtime_config",
+    effect: "config_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/config/user-memory", {
+    domain: "user_memory",
     effect: "config_mutation",
     boundary: "guarded_desktop_actor",
     migration: "done"
@@ -231,6 +261,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "POST", "/skills/install/github", {
+    domain: "skills_config",
+    effect: "local_install",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/skills/test", {
     domain: "skills_config",
     effect: "descriptor_validation",
@@ -270,6 +306,12 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/skills/duplicate", {
     domain: "skills_config",
     effect: "local_file_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/skills/delete", {
+    domain: "skills_config",
+    effect: "local_file_delete",
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
@@ -399,6 +441,24 @@ const expectedSurfaces = [
   surface("note-project-conversation-routes.mjs", "PATCH", "/^\\/conversation\\/([^/]+)\\/model$/", {
     domain: "conversation",
     effect: "model_route_override",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("note-project-conversation-routes.mjs", "POST", "/^\\/conversation\\/([^/]+)\\/fork$/", {
+    domain: "conversation",
+    effect: "branch_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("note-project-conversation-routes.mjs", "POST", "/^\\/conversation\\/([^/]+)\\/messages\\/([^/]+)\\/edit$/", {
+    domain: "conversation",
+    effect: "branch_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("note-project-conversation-routes.mjs", "POST", "/^\\/conversation\\/([^/]+)\\/rewind$/", {
+    domain: "conversation",
+    effect: "branch_mutation",
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
@@ -598,6 +658,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("task-routes.mjs", "POST", "/^\\/task\\/([^/]+)\\/file-recovery\\/([^/]+)$/", {
+    domain: "tasks",
+    effect: "local_file_restore",
+    boundary: "guarded_desktop_actor",
+    migration: "fw018_checkpoint_restore"
+  }),
   surface("task-routes.mjs", "POST", "/^\\/task\\/([^/]+)\\/retry$/", {
     domain: "tasks",
     effect: "task_control",
@@ -761,6 +827,20 @@ function assertDesktopActorGuard(surfaceEntry) {
           if (compoundLine.includes(variableMatch[1])) {
             routeIndex = compoundMethodIndex;
           }
+        }
+      }
+      if (routeIndex < 0) {
+        let offset = 0;
+        for (const line of source.split(/\r?\n/)) {
+          if (
+            line.includes("if (")
+            && line.includes(`method === "${surfaceEntry.method}"`)
+            && line.includes(variableMatch[1])
+          ) {
+            routeIndex = offset;
+            break;
+          }
+          offset += line.length + 1;
         }
       }
     } else {

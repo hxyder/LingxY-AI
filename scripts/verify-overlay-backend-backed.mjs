@@ -72,6 +72,13 @@ await it("overlay.js: switchConversation triggers backend rebuild via loadConver
   assert.match(overlay, /loadConversationFromBackend\(conversationState\.id\)/);
 });
 
+await it("overlay.js: canonical automatic conversations use backend messages, not local auto-turn duplication", () => {
+  assert.match(overlay, /function\s+ensureCanonicalAutomaticConversation\s*\(/);
+  assert.match(overlay, /backendCanonical:\s*true/);
+  assert.match(overlay, /conv\.metadata\?\.backendCanonical\s*!==\s*true/);
+  assert.match(overlay, /canonicalConversationIdForTask\(task,\s*detail\)/);
+});
+
 await it("overlay.js: F1 invariants stay (no '[当前对话上下文]' or conversation_turns in outbound)", () => {
   const submitPart = overlay.slice(overlay.indexOf("addSystemBubble(\"Submitting"));
   assert.ok(!submitPart.includes("[当前对话上下文]"));

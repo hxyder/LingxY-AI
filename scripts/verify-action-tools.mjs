@@ -439,6 +439,25 @@ const writeOverwrite = await registry.call("write_file", {
 }, { outputDir: toolSandbox });
 assert.equal(writeOverwrite.success, true);
 
+// write_file — absolute path inside configured artifact output root allowed
+const configuredOutputRoot = path.join(repoRoot, ".tmp", "verify-action-tools", "configured-output");
+await mkdirFs(configuredOutputRoot, { recursive: true });
+const writeConfiguredRoot = await registry.call("write_file", {
+  path: path.join(configuredOutputRoot, "brokered-summary.md"),
+  content: "brokered output path",
+  overwrite: true
+}, {
+  outputDir: toolSandbox,
+  runtime: {
+    configStore: {
+      load() {
+        return { output: { defaultDir: configuredOutputRoot } };
+      }
+    }
+  }
+});
+assert.equal(writeConfiguredRoot.success, true, "write_file should accept absolute paths under configured output root");
+
 // run_script — language whitelist enforcement
 const runBadLang = await registry.call("run_script", {
   language: "ruby",
