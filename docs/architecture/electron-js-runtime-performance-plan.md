@@ -146,6 +146,8 @@ Conversation/session spine status:
   `conversation_sessions` and `session_items`. Task submission writes only the
   durable user-message/task-anchor skeleton; high-frequency deltas remain out of
   session_items.
+- CX-002 is done: tool call and tool observation events are persisted as typed
+  session_items while streaming deltas remain excluded.
 
 Current next step: PR-06, artifact extraction background lane.
 

@@ -10,6 +10,7 @@ import {
   SESSION_ITEM_KINDS,
   createConversationSessionService
 } from "../../src/service/core/session/conversation-session-service.mjs";
+import { emitTaskEvent } from "../../src/service/core/task-runtime/event-emitter.mjs";
 import { ensureRuntimeServices } from "../../src/service/core/task-runtime/runtime-services.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
 
@@ -119,4 +120,72 @@ test("task submission records user message and task anchor session items", () =>
   );
   assert.equal(items[0].message_id, result.userMessage.message_id);
   assert.equal(items[1].task_id, result.task.task_id);
+});
+
+test("tool task events are persisted as typed session items", () => {
+  const published = [];
+  const runtime = {
+    store: createInMemoryStoreScaffold(),
+    queue: {
+      snapshot() { return { queued: 0, running: 0 }; }
+    },
+    eventBus: { publish(event) { published.push(event); } },
+    logsDir: null,
+    toolContext: {}
+  };
+  ensureRuntimeServices(runtime);
+  const result = submitTaskWithConversation({
+    route,
+    contextPacket: { source_type: "clipboard", source_app: "uca.overlay" },
+    userCommand: "查一下资料",
+    executionMode: "interactive",
+    conversationId: "conv_tool_session",
+    runtime
+  });
+
+  emitTaskEvent({
+    runtime,
+    taskId: result.task.task_id,
+    eventType: "tool_call_started",
+    payload: {
+      tool_id: "web_search_fetch",
+      tool_call_id: "call_1",
+      args: { query: "LingxY" }
+    }
+  });
+  emitTaskEvent({
+    runtime,
+    taskId: result.task.task_id,
+    eventType: "tool_call_completed",
+    payload: {
+      tool_id: "web_search_fetch",
+      tool_call_id: "call_1",
+      success: true,
+      observation: "Found source material."
+    }
+  });
+  emitTaskEvent({
+    runtime,
+    taskId: result.task.task_id,
+    eventType: "text_delta",
+    payload: { delta: "not persisted to session items" }
+  });
+
+  const session = runtime.conversationSessions.getLatestForConversation("conv_tool_session");
+  const items = runtime.conversationSessions.listItems(session.session_id);
+  const toolItems = items.filter((item) => [
+    SESSION_ITEM_KINDS.TOOL_CALL,
+    SESSION_ITEM_KINDS.TOOL_OBSERVATION
+  ].includes(item.kind));
+
+  assert.deepEqual(toolItems.map((item) => item.kind), [
+    SESSION_ITEM_KINDS.TOOL_CALL,
+    SESSION_ITEM_KINDS.TOOL_OBSERVATION
+  ]);
+  assert.equal(toolItems[0].payload.tool_id, "web_search_fetch");
+  assert.deepEqual(toolItems[0].payload.args, { query: "LingxY" });
+  assert.equal(toolItems[1].content_text, "Found source material.");
+  assert.equal(toolItems[1].payload.success, true);
+  assert.equal(items.some((item) => item.content_text === "not persisted to session items"), false);
+  assert.ok(published.some((event) => event.event_type === "conversation_step"));
 });

@@ -12,6 +12,15 @@ export const SESSION_ITEM_KINDS = Object.freeze({
   RUNTIME_NOTE: "runtime_note"
 });
 
+const TOOL_EVENT_TYPES = new Set([
+  "tool_call_started",
+  "tool_call_proposed",
+  "tool_call_completed",
+  "tool_call_denied"
+]);
+
+const MAX_SESSION_CONTENT_CHARS = 12000;
+
 function newId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -33,6 +42,34 @@ function normalizeMetadata(metadata = {}) {
 function normalizeItemKind(kind) {
   const value = String(kind ?? SESSION_ITEM_KINDS.RUNTIME_NOTE).trim();
   return value || SESSION_ITEM_KINDS.RUNTIME_NOTE;
+}
+
+function truncateContent(value) {
+  const text = String(value ?? "");
+  if (text.length <= MAX_SESSION_CONTENT_CHARS) return text;
+  return `${text.slice(0, MAX_SESSION_CONTENT_CHARS)}...[truncated ${text.length} chars]`;
+}
+
+function pickToolId(payload = {}) {
+  return payload.tool_id ?? payload.tool ?? payload.name ?? payload.toolName ?? null;
+}
+
+function pickToolCallId(payload = {}) {
+  return payload.tool_call_id ?? payload.call_id ?? payload.id ?? null;
+}
+
+function pickToolArgs(payload = {}) {
+  return payload.args ?? payload.arguments ?? payload.input ?? payload.params ?? null;
+}
+
+function pickObservationText(payload = {}) {
+  return payload.observation
+    ?? payload.message
+    ?? payload.error
+    ?? payload.result?.observation
+    ?? payload.result?.message
+    ?? payload.result?.error
+    ?? "";
 }
 
 export function createConversationSessionService({ store, metrics = null } = {}) {
@@ -162,6 +199,50 @@ export function createConversationSessionService({ store, metrics = null } = {})
     return session;
   }
 
+  function recordTaskEvent({ taskId, eventType, payload = {}, event = null } = {}) {
+    if (!TOOL_EVENT_TYPES.has(eventType) || !taskId) return null;
+    const task = store.getTask?.(taskId);
+    const conversationId = task?.conversation_id ?? payload?.conversation_id ?? null;
+    if (!conversationId) return null;
+
+    const session = ensureSession({
+      conversationId,
+      projectId: task?.project_id ?? null,
+      parentTaskId: task?.parent_task_id ?? null,
+      activeTaskId: taskId,
+      metadata: {
+        tool_events_recorded: true
+      }
+    });
+
+    const toolId = pickToolId(payload);
+    const toolCallId = pickToolCallId(payload);
+    const args = pickToolArgs(payload);
+    const isCall = eventType === "tool_call_started" || eventType === "tool_call_proposed";
+    const observation = pickObservationText(payload);
+
+    return appendItem({
+      sessionId: session.session_id,
+      kind: isCall ? SESSION_ITEM_KINDS.TOOL_CALL : SESSION_ITEM_KINDS.TOOL_OBSERVATION,
+      content: isCall ? null : truncateContent(observation),
+      taskId,
+      payload: {
+        event_type: eventType,
+        tool_id: toolId,
+        tool_call_id: toolCallId,
+        args,
+        success: payload.success ?? null,
+        error: payload.error ?? payload.result?.error ?? null,
+        metadata: payload.metadata ?? null,
+        result: isCall ? null : payload.result ?? null
+      },
+      provenance: {
+        task_event_id: event?.event_id ?? null,
+        task_event_type: eventType
+      }
+    });
+  }
+
   function listItems(sessionId, options = {}) {
     return store.listSessionItems(sessionId, options);
   }
@@ -170,6 +251,7 @@ export function createConversationSessionService({ store, metrics = null } = {})
     ensureSession,
     appendItem,
     recordTaskSubmission,
+    recordTaskEvent,
     getSession: (sessionId) => store.getConversationSession(sessionId),
     getLatestForConversation: (conversationId) => store.getLatestConversationSession(conversationId),
     listItems

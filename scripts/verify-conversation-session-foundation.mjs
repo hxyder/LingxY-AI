@@ -14,6 +14,7 @@ const sqliteStore = read("src/service/core/store/sqlite-store.mjs");
 const service = read("src/service/core/session/conversation-session-service.mjs");
 const runtimeServices = read("src/service/core/task-runtime/runtime-services.mjs");
 const taskSubmission = read("src/service/core/task-runtime/task-submission.mjs");
+const eventEmitter = read("src/service/core/task-runtime/event-emitter.mjs");
 const compiler = read("src/service/core/context/context-compiler.mjs");
 const docs = `${read("docs/architecture/agent-runtime-spine.md")}\n${read("docs/architecture/electron-js-runtime-performance-plan.md")}`;
 
@@ -32,12 +33,19 @@ for (const [name, source] of [
 
 assert.match(service, /CONVERSATION_SESSION_SCHEMA_VERSION/, "session service must version its schema");
 assert.match(service, /recordTaskSubmission/, "session service must expose task submission recording");
+assert.match(service, /recordTaskEvent/, "session service must expose task event recording");
 assert.match(service, /USER_MESSAGE/, "session service must define user_message item kind");
 assert.match(service, /TASK_ANCHOR/, "session service must define task_anchor item kind");
+assert.match(service, /TOOL_CALL/, "session service must define tool_call item kind");
+assert.match(service, /TOOL_OBSERVATION/, "session service must define tool_observation item kind");
+assert.match(service, /tool_call_started[\s\S]*tool_call_completed/, "session service must map tool events");
 assert.doesNotMatch(service, /src\/desktop|desktop\//, "session service must not import desktop code");
 
 assert.match(runtimeServices, /createConversationSessionService/, "runtime services must create the session service");
 assert.match(taskSubmission, /recordTaskSubmission/, "task submission must record session items when service is present");
+assert.match(eventEmitter, /recordTaskEvent/, "event emitter must offer tool events to the session service");
+assert.match(eventEmitter, /Session observability must never break tool execution or streaming/,
+  "session event recording must be fail-soft");
 
 assert.doesNotMatch(compiler, /conversation_messages/, "ContextCompiler must not scrape visible chat tables directly");
 assert.match(docs, /CX-001[\s\S]{0,220}Done/, "runtime spine must mark CX-001 done");

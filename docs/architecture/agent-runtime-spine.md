@@ -72,7 +72,7 @@ executes.
 | PR-04 | Renderer streaming batching verifier and fixes | Done |
 | PR-05 | ContextCompiler service boundary | Done |
 | CX-001 | ConversationSession storage and service skeleton | Done |
-| CX-002 | Tool calls and observations as session items | Pending |
+| CX-002 | Tool calls and observations as session items | Done |
 | CX-003 | FollowUpResolver with regression seeds | Pending |
 | CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Pending |
 | AX-001 | Typed ArtifactExtract records | Pending |
@@ -165,7 +165,21 @@ executes.
 - `npm run verify:conversation-session-foundation` verifies the storage and
   service boundary.
 
-Current next step: CX-002, tool calls and observations as session items.
+## CX-002 Acceptance
+
+- `tool_call_started` and `tool_call_proposed` events are persisted as
+  `tool_call` session_items.
+- `tool_call_completed` and `tool_call_denied` events are persisted as
+  `tool_observation` session_items.
+- Tool observations include tool id, tool call id, success/error metadata, and a
+  bounded text observation when available.
+- High-frequency streaming deltas remain excluded from session_items.
+- Session observability is fail-soft and cannot break tool execution or
+  streaming.
+- `npm run verify:conversation-session-foundation` verifies tool event session
+  recording.
+
+Current next step: CX-003, FollowUpResolver with regression seeds.
 
 ## Legacy Archive Policy
 

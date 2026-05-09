@@ -222,6 +222,16 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   if (!EPHEMERAL_EVENT_TYPES.has(eventType)) {
     runtime.store.appendEvent(record);
   }
+  try {
+    runtime.conversationSessions?.recordTaskEvent?.({
+      taskId,
+      eventType,
+      payload: effectivePayload,
+      event: record
+    });
+  } catch {
+    // Session observability must never break tool execution or streaming.
+  }
   runtime.eventBus.publish(record);
   if (taskId && !firstEventTimingEmitted.has(taskId) && isExecutorEvent(eventType, effectivePayload)) {
     firstEventTimingEmitted.add(taskId);
