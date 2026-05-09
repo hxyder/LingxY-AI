@@ -157,6 +157,9 @@ Conversation/session spine status:
 - AX-001 is done: typed `artifact_extracts` records and service/store methods
   exist, and ContextCompiler can select existing extracts without parsing files
   in Electron or the task creation hot path.
+- AX-002 is done: typed `artifact_lineage` records and semantic transform
+  contracts are persisted and validated in the service layer without Electron
+  main/renderer work or blocking artifact IO.
 
 Current next step: PR-06, artifact extraction background lane.
 

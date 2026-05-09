@@ -80,7 +80,7 @@ executes.
 | CX-003 | FollowUpResolver with regression seeds | Done |
 | CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Done |
 | AX-001 | Typed ArtifactExtract records | Done |
-| AX-002 | Artifact lineage and semantic contracts | Pending |
+| AX-002 | Artifact lineage and semantic contracts | Done |
 | AX-003 | Typed transforms | Pending |
 | MX-001 | Memory governance surfaces | Pending |
 | MX-002 | Session compaction | Pending |
@@ -234,7 +234,24 @@ executes.
 - `npm run verify:artifact-extract-foundation` verifies storage, service wiring,
   compiler inclusion, and no blocking extraction in runtime hot paths.
 
-Current next step: AX-002, Artifact lineage and semantic contracts.
+## AX-002 Acceptance
+
+- `artifact_lineage` and `artifact_lineage_sources` are additive service-owned
+  storage tables for target artifacts, source artifacts, source extracts, and
+  transform contract validation.
+- Memory and SQLite stores expose `getArtifact`, `appendArtifactLineage`,
+  `listArtifactLineageForArtifact`, and `listArtifactLineageForTask`.
+- `ArtifactLineageService` owns schema versioning, transform lineage writes,
+  semantic contract validation, and metrics for lineage recording.
+- Transform semantic contracts reject unrelated `create_new` artifacts, missing
+  source artifacts, target-kind mismatches, missing source extracts without
+  explicit quality reasons, and fake or unstable artifact target paths.
+- This PR does not implement heavy typed transform flows; XLSX/PPTX/DOCX
+  deterministic conversion remains AX-003 work on top of the lineage contract.
+- `npm run verify:artifact-lineage-contracts` verifies storage, service wiring,
+  contract rules, docs, and no blocking artifact IO in lineage validation.
+
+Current next step: AX-003, Typed transforms.
 
 ## Legacy Archive Policy
 

@@ -53,6 +53,31 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   created_at TEXT NOT NULL,
   FOREIGN KEY(artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
 );`,
+  artifactLineage: `CREATE TABLE IF NOT EXISTS artifact_lineage (
+  lineage_id TEXT PRIMARY KEY,
+  task_id TEXT,
+  conversation_id TEXT,
+  action TEXT NOT NULL,
+  target_artifact_id TEXT NOT NULL,
+  target_kind TEXT,
+  transform_kind TEXT,
+  contract_json TEXT,
+  validation_json TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(target_artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
+);`,
+  artifactLineageSources: `CREATE TABLE IF NOT EXISTS artifact_lineage_sources (
+  lineage_source_id TEXT PRIMARY KEY,
+  lineage_id TEXT NOT NULL,
+  source_artifact_id TEXT NOT NULL,
+  source_extract_id TEXT,
+  relation TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(lineage_id) REFERENCES artifact_lineage(lineage_id) ON DELETE CASCADE,
+  FOREIGN KEY(source_artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE,
+  FOREIGN KEY(source_extract_id) REFERENCES artifact_extracts(extract_id) ON DELETE SET NULL
+);`,
   schedules: `CREATE TABLE IF NOT EXISTS schedules (
   schedule_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -256,7 +281,17 @@ export const SQLITE_INDEX_SQL = Object.freeze([
   `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_task
      ON artifact_extracts(task_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_conversation
-     ON artifact_extracts(conversation_id, created_at DESC)`
+     ON artifact_extracts(conversation_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_target
+     ON artifact_lineage(target_artifact_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_task
+     ON artifact_lineage(task_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_conversation
+     ON artifact_lineage(conversation_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_sources_source
+     ON artifact_lineage_sources(source_artifact_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_sources_extract
+     ON artifact_lineage_sources(source_extract_id, created_at DESC)`
 ]);
 
 export function buildStoreManifest() {

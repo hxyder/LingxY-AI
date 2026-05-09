@@ -354,6 +354,19 @@ export function createSqliteStore({ dbPath }) {
       @extract_id, @artifact_id, @task_id, @conversation_id, @kind, @label, @locator_json,
       @content_text, @data_json, @source, @confidence, @metadata_json, @created_at
     )`),
+    insertArtifactLineage: db.prepare(`INSERT OR REPLACE INTO artifact_lineage (
+      lineage_id, task_id, conversation_id, action, target_artifact_id, target_kind,
+      transform_kind, contract_json, validation_json, metadata_json, created_at
+    ) VALUES (
+      @lineage_id, @task_id, @conversation_id, @action, @target_artifact_id, @target_kind,
+      @transform_kind, @contract_json, @validation_json, @metadata_json, @created_at
+    )`),
+    deleteArtifactLineageSources: db.prepare("DELETE FROM artifact_lineage_sources WHERE lineage_id = ?"),
+    insertArtifactLineageSource: db.prepare(`INSERT OR REPLACE INTO artifact_lineage_sources (
+      lineage_source_id, lineage_id, source_artifact_id, source_extract_id, relation, created_at
+    ) VALUES (
+      @lineage_source_id, @lineage_id, @source_artifact_id, @source_extract_id, @relation, @created_at
+    )`),
     getArtifactById: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, parent_artifact_id, revision_of, version_label, created_at FROM artifacts WHERE artifact_id = ?"),
     getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, parent_artifact_id, revision_of, version_label, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
     listArtifactExtractsForArtifact: db.prepare(`
@@ -368,6 +381,42 @@ export function createSqliteStore({ dbPath }) {
       SELECT extract_id, artifact_id, task_id, conversation_id, kind, label, locator_json,
              content_text, data_json, source, confidence, metadata_json, created_at
         FROM artifact_extracts
+       WHERE task_id = @task_id
+       ORDER BY created_at DESC
+       LIMIT @limit
+    `),
+    getArtifactLineageById: db.prepare(`
+      SELECT lineage_id, task_id, conversation_id, action, target_artifact_id, target_kind,
+             transform_kind, contract_json, validation_json, metadata_json, created_at
+        FROM artifact_lineage
+       WHERE lineage_id = ?
+    `),
+    listArtifactLineageSources: db.prepare(`
+      SELECT lineage_source_id, lineage_id, source_artifact_id, source_extract_id, relation, created_at
+        FROM artifact_lineage_sources
+       WHERE lineage_id = ?
+       ORDER BY created_at ASC
+    `),
+    listArtifactLineageForTarget: db.prepare(`
+      SELECT lineage_id, task_id, conversation_id, action, target_artifact_id, target_kind,
+             transform_kind, contract_json, validation_json, metadata_json, created_at
+        FROM artifact_lineage
+       WHERE target_artifact_id = @artifact_id
+       ORDER BY created_at DESC
+       LIMIT @limit
+    `),
+    listArtifactLineageIdsForSource: db.prepare(`
+      SELECT lineage_id, MAX(created_at) AS last_seen_at
+        FROM artifact_lineage_sources
+       WHERE source_artifact_id = @artifact_id
+       GROUP BY lineage_id
+       ORDER BY last_seen_at DESC
+       LIMIT @limit
+    `),
+    listArtifactLineageForTask: db.prepare(`
+      SELECT lineage_id, task_id, conversation_id, action, target_artifact_id, target_kind,
+             transform_kind, contract_json, validation_json, metadata_json, created_at
+        FROM artifact_lineage
        WHERE task_id = @task_id
        ORDER BY created_at DESC
        LIMIT @limit
@@ -785,6 +834,9 @@ export function createSqliteStore({ dbPath }) {
       statements.insertArtifact.run(record);
       return clone(record);
     },
+    getArtifact(artifactId) {
+      return mapArtifact(statements.getArtifactById.get(artifactId));
+    },
     getArtifactsForTask(taskId) {
       return statements.getArtifactsForTask.all(taskId).map(mapArtifact);
     },
@@ -820,6 +872,74 @@ export function createSqliteStore({ dbPath }) {
         task_id: taskId,
         limit: Math.max(1, Math.min(limit ?? 100, 500))
       }).map(mapArtifactExtract);
+    },
+    appendArtifactLineage(lineage) {
+      if (!lineage?.target_artifact_id) throw new Error("appendArtifactLineage: target_artifact_id required");
+      const target = mapArtifact(statements.getArtifactById.get(lineage.target_artifact_id));
+      const sourceArtifactIds = Array.isArray(lineage.source_artifact_ids)
+        ? lineage.source_artifact_ids.filter(Boolean)
+        : [];
+      const sourceExtractIds = Array.isArray(lineage.source_extract_ids)
+        ? lineage.source_extract_ids.filter(Boolean)
+        : [];
+      const record = {
+        lineage_id: lineage.lineage_id ?? newId("alineage"),
+        task_id: lineage.task_id ?? target?.task_id ?? null,
+        conversation_id: lineage.conversation_id ?? target?.conversation_id ?? null,
+        action: String(lineage.action ?? "create_new"),
+        target_artifact_id: lineage.target_artifact_id,
+        target_kind: lineage.target_kind ?? target?.kind ?? null,
+        transform_kind: lineage.transform_kind ?? null,
+        contract_json: encodeJson(lineage.contract ?? {}),
+        validation_json: encodeJson(lineage.validation ?? {}),
+        metadata_json: encodeJson(lineage.metadata ?? {}),
+        created_at: lineage.created_at ?? nowIso()
+      };
+      const writeLineage = db.transaction(() => {
+        statements.insertArtifactLineage.run(record);
+        statements.deleteArtifactLineageSources.run(record.lineage_id);
+        for (const [index, sourceArtifactId] of sourceArtifactIds.entries()) {
+          statements.insertArtifactLineageSource.run({
+            lineage_source_id: newId("alinsrc"),
+            lineage_id: record.lineage_id,
+            source_artifact_id: sourceArtifactId,
+            source_extract_id: sourceExtractIds[index] ?? null,
+            relation: "source",
+            created_at: record.created_at
+          });
+        }
+      });
+      writeLineage();
+      return this.getArtifactLineage(record.lineage_id);
+    },
+    getArtifactLineage(lineageId) {
+      return mapArtifactLineage(
+        statements.getArtifactLineageById.get(lineageId),
+        statements.listArtifactLineageSources.all(lineageId)
+      );
+    },
+    listArtifactLineageForArtifact(artifactId, { role = "any", limit = 50 } = {}) {
+      const boundedLimit = Math.max(1, Math.min(limit ?? 50, 500));
+      const byTarget = role === "source"
+        ? []
+        : statements.listArtifactLineageForTarget.all({ artifact_id: artifactId, limit: boundedLimit });
+      const bySource = role === "target"
+        ? []
+        : statements.listArtifactLineageIdsForSource
+          .all({ artifact_id: artifactId, limit: boundedLimit })
+          .map((row) => statements.getArtifactLineageById.get(row.lineage_id))
+          .filter(Boolean);
+      const byId = new Map([...byTarget, ...bySource].map((row) => [row.lineage_id, row]));
+      return [...byId.values()]
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, boundedLimit)
+        .map((row) => mapArtifactLineage(row, statements.listArtifactLineageSources.all(row.lineage_id)));
+    },
+    listArtifactLineageForTask(taskId, { limit = 100 } = {}) {
+      return statements.listArtifactLineageForTask.all({
+        task_id: taskId,
+        limit: Math.max(1, Math.min(limit ?? 100, 500))
+      }).map((row) => mapArtifactLineage(row, statements.listArtifactLineageSources.all(row.lineage_id)));
     },
     getArtifactsForConversation(conversationId, { limit = 100 } = {}) {
       if (!conversationId) return [];
@@ -1209,6 +1329,35 @@ function mapArtifactExtract(row) {
     data: decodeJson(row.data_json, null),
     source: row.source ?? null,
     confidence: row.confidence ?? null,
+    metadata: decodeJson(row.metadata_json, {}),
+    created_at: row.created_at
+  };
+}
+
+function mapArtifactLineage(row, sources = []) {
+  if (!row) {
+    return null;
+  }
+  const sourceRows = Array.isArray(sources) ? sources : [];
+  return {
+    lineage_id: row.lineage_id,
+    task_id: row.task_id ?? null,
+    conversation_id: row.conversation_id ?? null,
+    action: row.action,
+    target_artifact_id: row.target_artifact_id,
+    target_kind: row.target_kind ?? null,
+    transform_kind: row.transform_kind ?? null,
+    source_artifact_ids: sourceRows.map((source) => source.source_artifact_id).filter(Boolean),
+    source_extract_ids: sourceRows.map((source) => source.source_extract_id).filter(Boolean),
+    sources: sourceRows.map((source) => ({
+      lineage_source_id: source.lineage_source_id,
+      source_artifact_id: source.source_artifact_id,
+      source_extract_id: source.source_extract_id ?? null,
+      relation: source.relation,
+      created_at: source.created_at
+    })),
+    contract: decodeJson(row.contract_json, {}),
+    validation: decodeJson(row.validation_json, {}),
     metadata: decodeJson(row.metadata_json, {}),
     created_at: row.created_at
   };

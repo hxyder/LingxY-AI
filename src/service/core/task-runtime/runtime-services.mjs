@@ -4,6 +4,7 @@ import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
+import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
 
 function hasConversationSessionStore(store) {
@@ -23,6 +24,16 @@ function hasArtifactExtractStore(store) {
     && typeof store.appendArtifactExtract === "function"
     && typeof store.listArtifactExtractsForArtifact === "function"
     && typeof store.listArtifactExtractsForTask === "function"
+  );
+}
+
+function hasArtifactLineageStore(store) {
+  return Boolean(
+    store
+    && typeof store.getArtifact === "function"
+    && typeof store.appendArtifactLineage === "function"
+    && typeof store.listArtifactLineageForArtifact === "function"
+    && typeof store.listArtifactLineageForTask === "function"
   );
 }
 
@@ -47,6 +58,12 @@ export function ensureRuntimeServices(runtime) {
   }
   if (!runtime.artifactExtracts && hasArtifactExtractStore(runtime.store)) {
     runtime.artifactExtracts = createArtifactExtractService({
+      store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
+  if (!runtime.artifactLineage && hasArtifactLineageStore(runtime.store)) {
+    runtime.artifactLineage = createArtifactLineageService({
       store: runtime.store,
       metrics: runtime.metrics
     });

@@ -33,6 +33,8 @@ export function createInMemoryStoreScaffold() {
     conversationSessions: new Map(),
     sessionItems: [],
     artifactExtracts: [],
+    artifactLineage: [],
+    artifactLineageSources: [],
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -67,6 +69,14 @@ export function createInMemoryStoreScaffold() {
       this.tasks.delete(taskId);
       this.taskEvents = this.taskEvents.filter((e) => e.task_id !== taskId);
       this.artifacts = this.artifacts.filter((a) => a.task_id !== taskId);
+      const removedLineageIds = new Set(
+        this.artifactLineage
+          .filter((lineage) => lineage.task_id === taskId)
+          .map((lineage) => lineage.lineage_id)
+      );
+      this.artifactLineage = this.artifactLineage.filter((lineage) => lineage.task_id !== taskId);
+      this.artifactLineageSources = this.artifactLineageSources
+        .filter((source) => !removedLineageIds.has(source.lineage_id));
       return existed;
     },
     listTasks(options = {}) {
@@ -113,6 +123,9 @@ export function createInMemoryStoreScaffold() {
     },
     getArtifactsForTask(taskId) {
       return this.artifacts.filter((artifact) => artifact.task_id === taskId);
+    },
+    getArtifact(artifactId) {
+      return this.artifacts.find((artifact) => artifact.artifact_id === artifactId) ?? null;
     },
     getArtifactsForConversation(conversationId, { limit = 100 } = {}) {
       if (!conversationId) return [];
@@ -167,6 +180,79 @@ export function createInMemoryStoreScaffold() {
           locator: { ...(extract.locator ?? {}) },
           metadata: { ...(extract.metadata ?? {}) }
         }));
+    },
+    appendArtifactLineage(lineage) {
+      if (!lineage?.target_artifact_id) throw new Error("appendArtifactLineage: target_artifact_id required");
+      const target = this.getArtifact(lineage.target_artifact_id);
+      const sourceArtifactIds = Array.isArray(lineage.source_artifact_ids)
+        ? lineage.source_artifact_ids.filter(Boolean)
+        : [];
+      const sourceExtractIds = Array.isArray(lineage.source_extract_ids)
+        ? lineage.source_extract_ids.filter(Boolean)
+        : [];
+      const record = {
+        lineage_id: lineage.lineage_id ?? memNewId("alineage"),
+        task_id: lineage.task_id ?? target?.task_id ?? null,
+        conversation_id: lineage.conversation_id ?? target?.conversation_id ?? null,
+        action: String(lineage.action ?? "create_new"),
+        target_artifact_id: lineage.target_artifact_id,
+        target_kind: lineage.target_kind ?? target?.kind ?? null,
+        transform_kind: lineage.transform_kind ?? null,
+        contract: lineage.contract ?? {},
+        validation: lineage.validation ?? {},
+        metadata: lineage.metadata ?? {},
+        created_at: lineage.created_at ?? memNowIso()
+      };
+      this.artifactLineage.push(record);
+      for (const [index, sourceArtifactId] of sourceArtifactIds.entries()) {
+        this.artifactLineageSources.push({
+          lineage_source_id: memNewId("alinsrc"),
+          lineage_id: record.lineage_id,
+          source_artifact_id: sourceArtifactId,
+          source_extract_id: sourceExtractIds[index] ?? null,
+          relation: "source",
+          created_at: record.created_at
+        });
+      }
+      return this.getArtifactLineage(record.lineage_id);
+    },
+    getArtifactLineage(lineageId) {
+      const record = this.artifactLineage.find((lineage) => lineage.lineage_id === lineageId);
+      if (!record) return null;
+      const sources = this.artifactLineageSources.filter((source) => source.lineage_id === lineageId);
+      return {
+        ...record,
+        source_artifact_ids: sources.map((source) => source.source_artifact_id),
+        source_extract_ids: sources.map((source) => source.source_extract_id).filter(Boolean),
+        contract: { ...(record.contract ?? {}) },
+        validation: { ...(record.validation ?? {}) },
+        metadata: { ...(record.metadata ?? {}) }
+      };
+    },
+    listArtifactLineageForArtifact(artifactId, { role = "any", limit = 50 } = {}) {
+      const lineageIdsFromSource = new Set(
+        this.artifactLineageSources
+          .filter((source) => source.source_artifact_id === artifactId)
+          .map((source) => source.lineage_id)
+      );
+      return this.artifactLineage
+        .filter((lineage) => {
+          const isTarget = lineage.target_artifact_id === artifactId;
+          const isSource = lineageIdsFromSource.has(lineage.lineage_id);
+          if (role === "target") return isTarget;
+          if (role === "source") return isSource;
+          return isTarget || isSource;
+        })
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, Math.max(1, Math.min(limit ?? 50, 500)))
+        .map((lineage) => this.getArtifactLineage(lineage.lineage_id));
+    },
+    listArtifactLineageForTask(taskId, { limit = 100 } = {}) {
+      return this.artifactLineage
+        .filter((lineage) => lineage.task_id === taskId)
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, Math.max(1, Math.min(limit ?? 100, 500)))
+        .map((lineage) => this.getArtifactLineage(lineage.lineage_id));
     },
     listProjectArtifacts({ projectId = null, limit = 100 } = {}) {
       if (!projectId) return [];
