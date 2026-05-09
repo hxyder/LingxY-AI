@@ -5,6 +5,7 @@ Electron, or desktop execution stack, read:
 
 - `docs/architecture/agent-runtime-spine.md`
 - `docs/architecture/electron-js-runtime-performance-plan.md`
+- `docs/architecture/post-runtime-upgrade-roadmap.md`
 - `lingxy_codex_ready_agent_runtime_upgrade_plan.md`
 - `lingxy_electron_js_codex_execution_plan.md`
 

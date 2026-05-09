@@ -24,10 +24,12 @@ const spine = readRequired("docs/architecture/agent-runtime-spine.md");
 const performance = readRequired(
   "docs/architecture/electron-js-runtime-performance-plan.md",
 );
+const postRuntimeRoadmap = readRequired("docs/architecture/post-runtime-upgrade-roadmap.md");
 
 assertIncludes(agents, "AGENTS.md", [
   "docs/architecture/agent-runtime-spine.md",
   "docs/architecture/electron-js-runtime-performance-plan.md",
+  "docs/architecture/post-runtime-upgrade-roadmap.md",
   "Do not fix runtime bugs with prompt-only patches.",
   "Do not special-case specific user phrases, task ids, conversation ids, or sample",
   "Do not put heavy work in Electron main process or renderer.",
@@ -77,6 +79,24 @@ assertIncludes(
     "duplicate route/script registrations",
     "Sidecar Decision Gate",
     "PR-02",
+  ],
+);
+
+assertIncludes(
+  postRuntimeRoadmap,
+  "docs/architecture/post-runtime-upgrade-roadmap.md",
+  [
+    "True sub-agent runtime",
+    "Multi-model execution",
+    "Generic HITL graph resume",
+    "Desktop/GUI completion",
+    "Plugin/MCP marketplace",
+    "Privacy/sandbox hardening",
+    "WindowSession State Machine",
+    "Sub-Agent Runtime Contract",
+    "Bind Model Roles To Real Call Sites",
+    "Marketplace Trust Model",
+    "OS-Level Sandbox Decision Records",
   ],
 );
 

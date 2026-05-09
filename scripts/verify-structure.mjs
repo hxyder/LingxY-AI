@@ -11,6 +11,7 @@ const requiredPaths = [
   "AGENTS.md",
   "docs/architecture/agent-runtime-spine.md",
   "docs/architecture/electron-js-runtime-performance-plan.md",
+  "docs/architecture/post-runtime-upgrade-roadmap.md",
   "docs/architecture/layer_overview.md",
   "docs/architecture/data_flow.md",
   "docs/architecture/process_topology.md",
