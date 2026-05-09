@@ -32,6 +32,7 @@ export function createInMemoryStoreScaffold() {
     messageTaskLinks: [],
     conversationSessions: new Map(),
     sessionItems: [],
+    sessionCompactions: [],
     artifactExtracts: [],
     artifactLineage: [],
     artifactLineageSources: [],
@@ -596,6 +597,56 @@ export function createInMemoryStoreScaffold() {
           payload: { ...(item.payload ?? {}) },
           provenance: { ...(item.provenance ?? {}) }
         }));
+    },
+    appendSessionCompaction(compaction) {
+      if (!compaction?.session_id) throw new Error("appendSessionCompaction: session_id required");
+      const session = this.conversationSessions.get(compaction.session_id);
+      if (!session) throw new Error(`appendSessionCompaction: session ${compaction.session_id} not found`);
+      const record = {
+        compaction_id: compaction.compaction_id ?? memNewId("scomp"),
+        session_id: compaction.session_id,
+        conversation_id: compaction.conversation_id ?? session.conversation_id ?? null,
+        project_id: compaction.project_id ?? session.project_id ?? null,
+        source_start_order: Number.isInteger(compaction.source_start_order) ? compaction.source_start_order : 0,
+        source_end_order: Number.isInteger(compaction.source_end_order) ? compaction.source_end_order : 0,
+        source_item_count: Number.isInteger(compaction.source_item_count) ? compaction.source_item_count : 0,
+        summary_text: String(compaction.summary_text ?? ""),
+        facts: Array.isArray(compaction.facts) ? [...compaction.facts] : [],
+        open_threads: Array.isArray(compaction.open_threads) ? [...compaction.open_threads] : [],
+        artifact_ids: Array.isArray(compaction.artifact_ids) ? [...compaction.artifact_ids] : [],
+        task_ids: Array.isArray(compaction.task_ids) ? [...compaction.task_ids] : [],
+        metadata: compaction.metadata ?? {},
+        created_at: compaction.created_at ?? memNowIso()
+      };
+      this.sessionCompactions.push(record);
+      return {
+        ...record,
+        facts: [...record.facts],
+        open_threads: [...record.open_threads],
+        artifact_ids: [...record.artifact_ids],
+        task_ids: [...record.task_ids],
+        metadata: { ...(record.metadata ?? {}) }
+      };
+    },
+    listSessionCompactions(sessionId, { limit = 20 } = {}) {
+      return this.sessionCompactions
+        .filter((compaction) => compaction.session_id === sessionId)
+        .sort((a, b) => {
+          if (b.source_end_order !== a.source_end_order) return b.source_end_order - a.source_end_order;
+          return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+        })
+        .slice(0, Math.max(1, Math.min(limit ?? 20, 200)))
+        .map((compaction) => ({
+          ...compaction,
+          facts: [...(compaction.facts ?? [])],
+          open_threads: [...(compaction.open_threads ?? [])],
+          artifact_ids: [...(compaction.artifact_ids ?? [])],
+          task_ids: [...(compaction.task_ids ?? [])],
+          metadata: { ...(compaction.metadata ?? {}) }
+        }));
+    },
+    getLatestSessionCompaction(sessionId) {
+      return this.listSessionCompactions(sessionId, { limit: 1 })[0] ?? null;
     }
   };
 }

@@ -6,6 +6,7 @@ import { createPendingApprovalService } from "../../scheduler/pending-approvals.
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
 import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
 import { createArtifactTransformService } from "../artifact-transforms/artifact-transform-service.mjs";
+import { createSessionCompactionService } from "../session/session-compaction-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
 
 function hasConversationSessionStore(store) {
@@ -16,6 +17,17 @@ function hasConversationSessionStore(store) {
     && typeof store.getLatestConversationSession === "function"
     && typeof store.appendSessionItem === "function"
     && typeof store.listSessionItems === "function"
+  );
+}
+
+function hasSessionCompactionStore(store) {
+  return Boolean(
+    store
+    && typeof store.getConversationSession === "function"
+    && typeof store.listSessionItems === "function"
+    && typeof store.appendSessionCompaction === "function"
+    && typeof store.listSessionCompactions === "function"
+    && typeof store.getLatestSessionCompaction === "function"
   );
 }
 
@@ -63,6 +75,12 @@ export function ensureRuntimeServices(runtime) {
   });
   if (!runtime.conversationSessions && hasConversationSessionStore(runtime.store)) {
     runtime.conversationSessions = createConversationSessionService({
+      store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
+  if (!runtime.sessionCompactions && hasSessionCompactionStore(runtime.store)) {
+    runtime.sessionCompactions = createSessionCompactionService({
       store: runtime.store,
       metrics: runtime.metrics
     });

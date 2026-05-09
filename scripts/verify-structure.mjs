@@ -418,6 +418,7 @@ const requiredPaths = [
   "scripts/verify-artifact-lineage-contracts.mjs",
   "scripts/verify-artifact-transform-flows.mjs",
   "scripts/verify-memory-governance.mjs",
+  "scripts/verify-session-compaction.mjs",
   "scripts/verify-ai-integrations.mjs",
   "scripts/verify-behavior-tests.mjs",
   "scripts/verify-doc-references.mjs",

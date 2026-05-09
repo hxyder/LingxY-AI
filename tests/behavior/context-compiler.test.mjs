@@ -9,6 +9,7 @@ import {
   SESSION_ITEM_KINDS,
   createConversationSessionService
 } from "../../src/service/core/session/conversation-session-service.mjs";
+import { createSessionCompactionService } from "../../src/service/core/session/session-compaction-service.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 
 test("context compiler creates typed selected items with inclusion reasons", () => {
@@ -137,6 +138,58 @@ test("context compiler enforces compact default traces and records omissions", (
   assert.ok(compiled.omitted_count > compiled.omissions.length);
   assert.equal(compiled.omissions.length, 3);
   assert.equal(compiled.debug_trace, undefined);
+});
+
+test("context compiler includes latest session compaction before stale transcript tails", () => {
+  const store = createInMemoryStoreScaffold();
+  store.insertConversation({ conversation_id: "conv_compiled_compaction" });
+  const sessions = createConversationSessionService({ store });
+  const session = sessions.ensureSession({
+    conversationId: "conv_compiled_compaction",
+    activeTaskId: "task_compact_seed"
+  });
+  for (let index = 0; index < 5; index += 1) {
+    sessions.appendItem({
+      sessionId: session.session_id,
+      kind: SESSION_ITEM_KINDS.TOOL_OBSERVATION,
+      taskId: `task_compact_${index}`,
+      content: `Observation ${index} about the spreadsheet-to-PPT work thread.`,
+      payload: { tool_id: "write_file", success: true }
+    });
+  }
+  const compactions = createSessionCompactionService({ store });
+  const compacted = compactions.compactSession({
+    sessionId: session.session_id,
+    minItems: 5
+  });
+  assert.equal(compacted.compacted, true);
+
+  const compiled = compileContextForTask({
+    task: {
+      task_id: "task_follow_compacted",
+      conversation_id: "conv_compiled_compaction",
+      user_command: "继续处理这个会话里的文件",
+      context_packet: {
+        prior_messages: [
+          { role: "user", content: "stale transcript tail" }
+        ]
+      }
+    },
+    runtime: {
+      store,
+      conversationSessions: sessions,
+      sessionCompactions: compactions
+    },
+    limits: {
+      maxItems: 4
+    }
+  });
+
+  const compactionItem = compiled.selected.find((item) => item.kind === "session_compaction");
+  assert.ok(compactionItem);
+  assert.equal(compactionItem.source, "conversation_session.session_compactions");
+  assert.ok(compactionItem.content.includes("Session compaction 0-4"));
+  assert.equal(compactionItem.value.source_item_count, 5);
 });
 
 test("context compiler emits runtime metrics when available", () => {

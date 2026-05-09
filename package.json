@@ -202,6 +202,7 @@
     "verify:artifact-lineage-contracts": "node scripts/verify-artifact-lineage-contracts.mjs",
     "verify:artifact-transform-flows": "node scripts/verify-artifact-transform-flows.mjs",
     "verify:memory-governance": "node scripts/verify-memory-governance.mjs",
+    "verify:session-compaction": "node scripts/verify-session-compaction.mjs",
     "verify:runtime-search-popup-autotask": "node scripts/verify-runtime-search-popup-autotask.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
     "verify:email-monitoring": "node scripts/verify-email-monitoring.mjs",

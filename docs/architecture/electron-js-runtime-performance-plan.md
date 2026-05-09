@@ -167,6 +167,9 @@ Conversation/session spine status:
 - MX-001 is done: memory governance adds reviewed memory/proposal surfaces and
   scoped background-context selection without moving memory learning into
   Electron main/renderer hot paths.
+- MX-002 is done: service-owned `session_compactions` records summarize older
+  typed session_items deterministically for ContextCompiler without model calls,
+  transcript scraping, or Electron main/renderer work.
 
 Current next step: PR-06, artifact extraction background lane.
 

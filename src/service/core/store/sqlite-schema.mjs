@@ -239,6 +239,23 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   FOREIGN KEY(session_id) REFERENCES conversation_sessions(session_id) ON DELETE CASCADE,
   UNIQUE(session_id, order_index)
 );`,
+  sessionCompactions: `CREATE TABLE IF NOT EXISTS session_compactions (
+  compaction_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  conversation_id TEXT,
+  project_id TEXT,
+  source_start_order INTEGER NOT NULL,
+  source_end_order INTEGER NOT NULL,
+  source_item_count INTEGER NOT NULL,
+  summary_text TEXT NOT NULL,
+  facts_json TEXT,
+  open_threads_json TEXT,
+  artifact_ids_json TEXT,
+  task_ids_json TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(session_id) REFERENCES conversation_sessions(session_id) ON DELETE CASCADE
+);`,
   schemaMigrations: `CREATE TABLE IF NOT EXISTS schema_migrations (
   migration_id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL,
@@ -276,6 +293,10 @@ export const SQLITE_INDEX_SQL = Object.freeze([
      ON session_items(session_id, order_index)`,
   `CREATE INDEX IF NOT EXISTS idx_session_items_task
      ON session_items(task_id, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_session_compactions_session
+     ON session_compactions(session_id, source_end_order DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_session_compactions_conversation
+     ON session_compactions(conversation_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_artifact
      ON artifact_extracts(artifact_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_task

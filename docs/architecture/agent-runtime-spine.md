@@ -87,7 +87,7 @@ executes.
 | AX-002 | Artifact lineage and semantic contracts | Done |
 | AX-003 | Typed transforms | Done |
 | MX-001 | Memory governance surfaces | Done |
-| MX-002 | Session compaction | Pending |
+| MX-002 | Session compaction | Done |
 | UX-001 | Context debug panel | Pending |
 | GX-001 | Graph nodes for runtime execution | Pending |
 | GX-002 | Checkpoints, fork, and replay | Pending |
@@ -292,7 +292,24 @@ executes.
 - `npm run verify:memory-governance` verifies governance contracts, routes, UI
   hooks, tests, and docs.
 
-Current next step: MX-002, Session compaction.
+## MX-002 Acceptance
+
+- `session_compactions` is additive service-owned storage linked to
+  ConversationSession records by `session_id`.
+- `SessionCompactionService` owns deterministic compaction of ordered
+  session_items into bounded summaries with source order range, source count,
+  facts, open threads, artifact ids, task ids, provenance, and schema version.
+- Compaction does not call a model, prompt-only summarizer, Electron main
+  process, renderer code, transcript scraping, or heavy file IO.
+- Memory and SQLite stores expose `appendSessionCompaction`,
+  `listSessionCompactions`, and `getLatestSessionCompaction`.
+- ContextCompiler can select the latest session compaction as typed runtime
+  context while current command, resolver decisions, parent summaries, explicit
+  files, artifacts, and active session anchors keep higher priority.
+- `npm run verify:session-compaction` verifies storage, service wiring,
+  compiler inclusion, deterministic tests, and docs.
+
+Current next step: UX-001, Context debug panel.
 
 ## Legacy Archive Policy
 

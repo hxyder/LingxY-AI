@@ -18,6 +18,7 @@ export const CONTEXT_ITEM_PRIORITIES = Object.freeze({
   artifact_extract_metadata: 804,
   session_task_anchor: 760,
   session_artifact_reference: 750,
+  session_compaction: 735,
   session_tool_observation: 720,
   session_tool_call: 700,
   prior_message: 520,
@@ -102,6 +103,17 @@ function listSessionItems(sessionId, runtime, limits) {
   }
 }
 
+function getLatestSessionCompaction(sessionId, runtime) {
+  if (!sessionId) return null;
+  try {
+    return runtime?.sessionCompactions?.latestForSession?.(sessionId)
+      ?? runtime?.store?.getLatestSessionCompaction?.(sessionId)
+      ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function sessionItemCandidateKind(item) {
   switch (item?.kind) {
     case SESSION_ITEM_KINDS.TASK_ANCHOR:
@@ -134,6 +146,29 @@ function sessionItemReason(kind) {
 
 function collectSessionCandidates(candidates, { task = {}, runtime = null, limits }) {
   const session = getLatestSessionForTask(task, runtime);
+  const compaction = getLatestSessionCompaction(session?.session_id, runtime);
+  if (compaction?.summary_text) {
+    pushCandidate(candidates, {
+      id: compaction.compaction_id ? `ctx_session_compaction_${compaction.compaction_id}` : undefined,
+      kind: "session_compaction",
+      source: "conversation_session.session_compactions",
+      trust: "runtime_session_compaction",
+      content: cleanText(compaction.summary_text),
+      value: {
+        compaction_id: compaction.compaction_id ?? null,
+        session_id: compaction.session_id ?? session?.session_id ?? null,
+        conversation_id: compaction.conversation_id ?? session?.conversation_id ?? null,
+        source_start_order: compaction.source_start_order ?? null,
+        source_end_order: compaction.source_end_order ?? null,
+        source_item_count: compaction.source_item_count ?? null,
+        facts: Array.isArray(compaction.facts) ? compaction.facts.slice(0, 12) : [],
+        open_threads: Array.isArray(compaction.open_threads) ? compaction.open_threads.slice(0, 8) : [],
+        artifact_ids: Array.isArray(compaction.artifact_ids) ? compaction.artifact_ids.slice(0, 12) : [],
+        task_ids: Array.isArray(compaction.task_ids) ? compaction.task_ids.slice(0, 12) : []
+      },
+      reason: "deterministic session compaction summarizes older typed session items without reading transcript tails"
+    });
+  }
   const items = listSessionItems(session?.session_id, runtime, limits);
   for (const [index, item] of items.entries()) {
     const kind = sessionItemCandidateKind(item);

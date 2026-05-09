@@ -87,6 +87,26 @@ function mapSessionItem(row) {
   };
 }
 
+function mapSessionCompaction(row) {
+  if (!row) return null;
+  return {
+    compaction_id: row.compaction_id,
+    session_id: row.session_id,
+    conversation_id: row.conversation_id,
+    project_id: row.project_id,
+    source_start_order: row.source_start_order,
+    source_end_order: row.source_end_order,
+    source_item_count: row.source_item_count,
+    summary_text: row.summary_text,
+    facts: decodeJson(row.facts_json, []),
+    open_threads: decodeJson(row.open_threads_json, []),
+    artifact_ids: decodeJson(row.artifact_ids_json, []),
+    task_ids: decodeJson(row.task_ids_json, []),
+    metadata: decodeJson(row.metadata_json, {}),
+    created_at: row.created_at
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -656,7 +676,20 @@ export function createSqliteStore({ dbPath }) {
        WHERE session_id = @session_id
          AND order_index >= @since_order
        ORDER BY order_index ASC
-       LIMIT @limit`)
+       LIMIT @limit`),
+    insertSessionCompaction: db.prepare(`INSERT INTO session_compactions
+      (compaction_id, session_id, conversation_id, project_id, source_start_order, source_end_order, source_item_count, summary_text, facts_json, open_threads_json, artifact_ids_json, task_ids_json, metadata_json, created_at)
+      VALUES (@compaction_id, @session_id, @conversation_id, @project_id, @source_start_order, @source_end_order, @source_item_count, @summary_text, @facts_json, @open_threads_json, @artifact_ids_json, @task_ids_json, @metadata_json, @created_at)`),
+    listSessionCompactions: db.prepare(`
+      SELECT * FROM session_compactions
+       WHERE session_id = @session_id
+       ORDER BY source_end_order DESC, created_at DESC
+       LIMIT @limit`),
+    getLatestSessionCompaction: db.prepare(`
+      SELECT * FROM session_compactions
+       WHERE session_id = ?
+       ORDER BY source_end_order DESC, created_at DESC
+       LIMIT 1`)
   };
 
   function upsertTask(task) {
@@ -1309,6 +1342,38 @@ export function createSqliteStore({ dbPath }) {
         since_order: Math.max(0, sinceOrder | 0),
         limit: Math.max(1, Math.min(limit ?? 500, 5000))
       }).map(mapSessionItem);
+    },
+    appendSessionCompaction(compaction) {
+      if (!compaction?.session_id) throw new Error("appendSessionCompaction: session_id required");
+      const session = mapConversationSession(statements.getConversationSession.get(compaction.session_id));
+      if (!session) throw new Error(`appendSessionCompaction: session ${compaction.session_id} not found`);
+      const record = {
+        compaction_id: compaction.compaction_id ?? newId("scomp"),
+        session_id: compaction.session_id,
+        conversation_id: compaction.conversation_id ?? session.conversation_id ?? null,
+        project_id: compaction.project_id ?? session.project_id ?? null,
+        source_start_order: Number.isInteger(compaction.source_start_order) ? compaction.source_start_order : 0,
+        source_end_order: Number.isInteger(compaction.source_end_order) ? compaction.source_end_order : 0,
+        source_item_count: Number.isInteger(compaction.source_item_count) ? compaction.source_item_count : 0,
+        summary_text: String(compaction.summary_text ?? ""),
+        facts_json: encodeJson(Array.isArray(compaction.facts) ? compaction.facts : []),
+        open_threads_json: encodeJson(Array.isArray(compaction.open_threads) ? compaction.open_threads : []),
+        artifact_ids_json: encodeJson(Array.isArray(compaction.artifact_ids) ? compaction.artifact_ids : []),
+        task_ids_json: encodeJson(Array.isArray(compaction.task_ids) ? compaction.task_ids : []),
+        metadata_json: encodeJson(compaction.metadata ?? {}),
+        created_at: compaction.created_at ?? nowIso()
+      };
+      statements.insertSessionCompaction.run(record);
+      return mapSessionCompaction(record);
+    },
+    listSessionCompactions(sessionId, { limit = 20 } = {}) {
+      return statements.listSessionCompactions.all({
+        session_id: sessionId,
+        limit: Math.max(1, Math.min(limit ?? 20, 200))
+      }).map(mapSessionCompaction);
+    },
+    getLatestSessionCompaction(sessionId) {
+      return mapSessionCompaction(statements.getLatestSessionCompaction.get(sessionId));
     }
   };
 }
