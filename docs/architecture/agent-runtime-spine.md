@@ -70,6 +70,7 @@ executes.
 | PR-02 | Performance baseline instrumentation | Done |
 | PR-03 | Main process blocking verifier | Done |
 | PR-04 | Renderer streaming batching verifier and fixes | Done |
+| PR-05 | ContextCompiler service boundary | Done |
 | CX-001 | ConversationSession storage and service skeleton | Pending |
 | CX-002 | Tool calls and observations as session items | Pending |
 | CX-003 | FollowUpResolver with regression seeds | Pending |
@@ -138,7 +139,20 @@ executes.
 - `npm run verify:desktop-gui-smoke` covers overlay, console, and preview
   high-volume stream delta load paths.
 
-Current next step: PR-05, keeping context compilation off hot Electron paths.
+## PR-05 Acceptance
+
+- `ContextCompiler` ownership starts in `src/service/core/context`, not Electron
+  main process or renderer code.
+- Compiled context items are typed and carry deterministic inclusion reasons.
+- Compact traces are the default; full candidate traces are debug-only.
+- Runtime metrics include `context.compile` timing and selected/omitted item
+  counters.
+- Electron desktop code is guarded from importing or owning context
+  compilation.
+- `npm run verify:context-compiler-boundary` verifies the service/runtime
+  boundary.
+
+Current next step: CX-001, ConversationSession storage and service skeleton.
 
 ## Legacy Archive Policy
 

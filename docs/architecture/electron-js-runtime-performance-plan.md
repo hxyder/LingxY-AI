@@ -33,7 +33,7 @@ process or renderer code.
 | PR-02 | Performance baseline instrumentation | Done |
 | PR-03 | Main process blocking verifier | Done |
 | PR-04 | Renderer streaming batching verifier and fixes | Done |
-| PR-05 | Context compiler off hot Electron paths | Context assembly stays in service/runtime layer |
+| PR-05 | Context compiler off hot Electron paths | Done |
 | PR-06 | Artifact extraction background lane | Extract/transform work does not block UI |
 | PR-07 | Runtime graph scheduling budget | Graph execution has concurrency and cancellation guards |
 | PR-08 | Desktop GUI perf smoke | Startup and interaction smoke reports remain bounded |
@@ -117,7 +117,30 @@ Verification:
 - `npm run check:fast`
 - `npm run verify:desktop-gui-smoke`
 
-Current next step: PR-05, keeping context compilation off hot Electron paths.
+## PR-05 Status
+
+Status: done.
+
+Implementation:
+
+- ContextCompiler service/runtime boundary is established by
+  `src/service/core/context/context-compiler.mjs`.
+- Compiled context items are typed and include deterministic reasons for why
+  each item was selected.
+- Default output is compact; debug candidate traces are opt-in.
+- Runtime baseline metrics record `context.compile` timing and selected/omitted
+  context item counters.
+- `scripts/verify-context-compiler-boundary.mjs` blocks Electron desktop code
+  from importing or owning ContextCompiler logic.
+
+Verification:
+
+- `npm run verify:context-compiler-boundary`
+- `node --test tests/behavior/context-compiler.test.mjs`
+- `node scripts/verify-structure.mjs`
+- `npm run check:fast`
+
+Current next step: PR-06, artifact extraction background lane.
 
 ## Sidecar Decision Gate
 
