@@ -27,6 +27,33 @@ export function createConsoleTaskEventController({
   let selectedTaskEventTaskId = null;
   let selectedTaskEventBaseUrl = null;
   let handledSelectedTaskEventIds = new Set();
+  let pendingSelectedTaskEvents = [];
+  let selectedTaskEventBatchRaf = 0;
+
+  function scheduleSelectedTaskEventBatch() {
+    if (selectedTaskEventBatchRaf) return;
+    const schedule = typeof requestAnimationFrame === "function"
+      ? requestAnimationFrame
+      : (callback) => setTimeout(callback, 16);
+    selectedTaskEventBatchRaf = schedule(() => {
+      selectedTaskEventBatchRaf = 0;
+      void flushSelectedTaskEventBatch();
+    });
+  }
+
+  function queueSelectedTaskEventFrame(rawEvent) {
+    pendingSelectedTaskEvents.push(rawEvent);
+    scheduleSelectedTaskEventBatch();
+  }
+
+  async function flushSelectedTaskEventBatch() {
+    if (pendingSelectedTaskEvents.length === 0) return;
+    const batch = pendingSelectedTaskEvents;
+    pendingSelectedTaskEvents = [];
+    for (const rawEvent of batch) {
+      await handleSelectedTaskEventFrame(rawEvent);
+    }
+  }
 
   function close() {
     selectedTaskEventStream?.close?.();
@@ -34,6 +61,7 @@ export function createConsoleTaskEventController({
     selectedTaskEventTaskId = null;
     selectedTaskEventBaseUrl = null;
     handledSelectedTaskEventIds = new Set();
+    pendingSelectedTaskEvents = [];
   }
 
   function updateTaskInWorkspace(taskId, patchEvent) {
@@ -96,7 +124,7 @@ export function createConsoleTaskEventController({
     selectedTaskEventBaseUrl = state.serviceBaseUrl;
     selectedTaskEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
       onEvent(event) {
-        void handleSelectedTaskEventFrame(event);
+        queueSelectedTaskEventFrame(event);
       },
       onError(error) {
         showStreamError(error);
@@ -108,6 +136,8 @@ export function createConsoleTaskEventController({
     close,
     ensure,
     handleSelectedTaskEventFrame,
+    flushSelectedTaskEventBatch,
+    queueSelectedTaskEventFrame,
     updateTaskInWorkspace
   };
 }

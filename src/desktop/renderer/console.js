@@ -1643,13 +1643,19 @@ async function regenerateConsoleChatTask(taskId, btn) {
 
 const pendingConsoleChatTextDeltas = new Map();
 let consoleChatTextDeltaRaf = 0;
+let pendingConsoleChatThinkingDelta = "";
+let consoleChatThinkingDeltaRaf = 0;
+
+function scheduleAnimationFrame(callback) {
+  const schedule = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (fn) => setTimeout(fn, 16);
+  return schedule(callback);
+}
 
 function scheduleConsoleChatTextDeltaFlush() {
   if (consoleChatTextDeltaRaf) return;
-  const schedule = typeof requestAnimationFrame === "function"
-    ? requestAnimationFrame
-    : (callback) => setTimeout(callback, 16);
-  consoleChatTextDeltaRaf = schedule(() => {
+  consoleChatTextDeltaRaf = scheduleAnimationFrame(() => {
     consoleChatTextDeltaRaf = 0;
     flushConsoleChatTextDeltas();
   });
@@ -1677,6 +1683,27 @@ function flushConsoleChatTextDeltas(taskId = null) {
   for (const [queuedTaskId, delta] of batch) {
     appendConsoleChatTextDelta(queuedTaskId, delta);
   }
+}
+
+function scheduleConsoleChatThinkingDeltaFlush() {
+  if (consoleChatThinkingDeltaRaf) return;
+  consoleChatThinkingDeltaRaf = scheduleAnimationFrame(() => {
+    consoleChatThinkingDeltaRaf = 0;
+    flushConsoleChatThinkingDelta();
+  });
+}
+
+function queueConsoleChatThinkingDelta(delta) {
+  if (!delta) return;
+  pendingConsoleChatThinkingDelta += String(delta);
+  scheduleConsoleChatThinkingDeltaFlush();
+}
+
+function flushConsoleChatThinkingDelta() {
+  const delta = pendingConsoleChatThinkingDelta;
+  if (!delta) return;
+  pendingConsoleChatThinkingDelta = "";
+  appendConsoleChatThinkingDelta(delta);
 }
 
 function appendConsoleChatTextDelta(taskId, delta) {
@@ -2359,6 +2386,7 @@ function appendConsoleChatProgress(frame, textOverride = "") {
 }
 
 function closeConsoleChatThinkingCard() {
+  flushConsoleChatThinkingDelta();
   if (!consoleChatThinkingCard) return;
   consoleChatThinkingCard.open = false;
   const status = consoleChatThinkingCard.querySelector(".cth-status");
@@ -2524,7 +2552,7 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
         return;
       }
       if (frame.event === "reasoning_delta") {
-        appendConsoleChatThinkingDelta(payload.delta ?? "");
+        queueConsoleChatThinkingDelta(payload.delta ?? "");
       } else if (frame.event === "pending_approval_created") {
         void surfaceApprovalPopup(payload, { taskId });
         appendConsoleChatProgress(frame);

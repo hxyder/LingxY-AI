@@ -82,8 +82,10 @@ assert.match(consoleJs, /frame\.event === "success" \|\| frame\.event === "parti
 
 assert.match(overlayJs, /pendingOverlayTextDeltaText/,
   "overlay must queue text deltas");
-assert.match(overlayJs, /requestAnimationFrame[\s\S]{0,260}flushOverlayTextDelta\(\)/,
-  "overlay must flush text deltas on animation frames");
+assert.match(overlayJs, /function scheduleOverlayFrame[\s\S]{0,160}requestAnimationFrame/,
+  "overlay must centralize stream flush scheduling on animation frames");
+assert.match(overlayJs, /scheduleOverlayTextDeltaFlush[\s\S]{0,180}scheduleOverlayFrame[\s\S]{0,120}flushOverlayTextDelta\(\)/,
+  "overlay must flush text deltas through the animation-frame scheduler");
 assert.match(overlayJs, /frame\.event === "text_delta"[\s\S]{0,360}queueOverlayTextDelta\(frameTaskId, delta\)/,
   "overlay SSE handler must queue text_delta instead of rendering immediately");
 assert.match(overlayJs, /frame\.event === "inline_result"[\s\S]{0,80}flushOverlayTextDelta\(\)/,

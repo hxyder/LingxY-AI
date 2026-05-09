@@ -44,7 +44,7 @@ record.
 | PR-01 | Architecture guardrails, canonical docs, guardrail verifier | Done |
 | PR-02 | Performance baseline instrumentation | Done |
 | PR-03 | Main process blocking verifier | Done |
-| PR-04 | Renderer streaming batching verifier and fixes | Pending |
+| PR-04 | Renderer streaming batching verifier and fixes | Done |
 | CX-001 | ConversationSession storage and service skeleton | Pending |
 | CX-002 | Tool calls and observations as session items | Pending |
 | CX-003 | FollowUpResolver with regression seeds | Pending |
@@ -94,7 +94,23 @@ record.
 - `npm run verify:main-process-blocking` verifies the main-process blocking
   boundary.
 
-Current next step: PR-04, the renderer streaming batching verifier and fixes.
+## PR-04 Acceptance
+
+- Console chat `text_delta` and `reasoning_delta` streams are frame-batched
+  before DOM updates.
+- Overlay assistant text and thinking streams are frame-batched before DOM
+  updates.
+- Selected task detail SSE frames are queued and flushed in a render frame
+  instead of rendering directly inside the stream callback.
+- Live preview tool-input deltas and preview-window streaming renders remain
+  debounced/batched.
+- Renderer streaming surfaces expose smoke hooks for high-volume delta loads.
+- `npm run verify:renderer-stream-batching` verifies the renderer streaming
+  batching boundary.
+- `npm run verify:desktop-gui-smoke` covers overlay, console, and preview
+  high-volume stream delta load paths.
+
+Current next step: PR-05, keeping context compilation off hot Electron paths.
 
 ## Legacy Archive Policy
 

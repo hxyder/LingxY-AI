@@ -27,7 +27,7 @@ process or renderer code.
 | PR-01 | Docs and `AGENTS.md` guardrails | Done |
 | PR-02 | Performance baseline instrumentation | Done |
 | PR-03 | Main process blocking verifier | Done |
-| PR-04 | Renderer streaming batching verifier and fixes | Streaming bursts are coalesced and smoke-tested |
+| PR-04 | Renderer streaming batching verifier and fixes | Done |
 | PR-05 | Context compiler off hot Electron paths | Context assembly stays in service/runtime layer |
 | PR-06 | Artifact extraction background lane | Extract/transform work does not block UI |
 | PR-07 | Runtime graph scheduling budget | Graph execution has concurrency and cancellation guards |
@@ -87,7 +87,32 @@ Verification:
 - `node scripts/verify-structure.mjs`
 - `npm run check:fast`
 
-Current next step: PR-04, the renderer streaming batching verifier and fixes.
+## PR-04 Status
+
+Status: done.
+
+Implementation:
+
+- `scripts/verify-renderer-stream-batching.mjs` guards renderer streaming
+  surfaces against per-frame DOM mutation regressions.
+- Console chat text deltas and reasoning deltas are queued and flushed on a
+  render frame.
+- Overlay assistant text deltas and thinking deltas are queued and flushed on a
+  render frame.
+- Selected task detail SSE frames are batched before task-detail rendering.
+- Existing live preview delta batching and preview-window streaming debounce are
+  pinned by the verifier.
+
+Verification:
+
+- `npm run verify:renderer-stream-batching`
+- `node scripts/verify-desktop-renderer.mjs`
+- `node scripts/verify-console-ui.mjs`
+- `node scripts/verify-structure.mjs`
+- `npm run check:fast`
+- `npm run verify:desktop-gui-smoke`
+
+Current next step: PR-05, keeping context compilation off hot Electron paths.
 
 ## Sidecar Decision Gate
 

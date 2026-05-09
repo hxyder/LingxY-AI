@@ -411,6 +411,8 @@ let streamingBubbleRawText = "";
 let pendingOverlayTextDeltaTaskId = null;
 let pendingOverlayTextDeltaText = "";
 let overlayTextDeltaRaf = 0;
+let pendingOverlayThinkingDeltaText = "";
+let overlayThinkingDeltaRaf = 0;
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
 let renderedEvidenceSummaryTaskIds = new Set();
 let renderedContentEvidenceTaskIds = new Set();
@@ -2106,6 +2108,34 @@ function safeJsonParseForOverlay(raw) {
 // different code paths and we don't want to thread the ref everywhere.
 let activeThinkingEl = null;
 let activeThinkingText = "";
+function scheduleOverlayFrame(callback) {
+  const schedule = typeof requestAnimationFrame === "function"
+    ? requestAnimationFrame
+    : (fn) => setTimeout(fn, 16);
+  return schedule(callback);
+}
+
+function scheduleOverlayThinkingDeltaFlush() {
+  if (overlayThinkingDeltaRaf) return;
+  overlayThinkingDeltaRaf = scheduleOverlayFrame(() => {
+    overlayThinkingDeltaRaf = 0;
+    flushOverlayThinkingDelta();
+  });
+}
+
+function queueOverlayThinkingDelta(delta) {
+  if (!delta) return;
+  pendingOverlayThinkingDeltaText += String(delta);
+  scheduleOverlayThinkingDeltaFlush();
+}
+
+function flushOverlayThinkingDelta() {
+  const delta = pendingOverlayThinkingDeltaText;
+  if (!delta) return;
+  pendingOverlayThinkingDeltaText = "";
+  appendThinkingDelta(delta);
+}
+
 function appendThinkingDelta(delta) {
   if (!activeThinkingEl) {
     const det = document.createElement("div");
@@ -2136,6 +2166,7 @@ function appendThinkingDelta(delta) {
   bubbleAreaPin.maybeScrollToBottom();
 }
 function closeActiveThinkingCard() {
+  flushOverlayThinkingDelta();
   if (!activeThinkingEl) return;
   activeThinkingEl.classList.remove("is-open");
   activeThinkingEl.querySelector(".thinking-summary")?.setAttribute("aria-expanded", "false");
@@ -2716,7 +2747,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
   // per delta.
   if (frame.event === "reasoning_delta") {
     const delta = String(frame.data?.delta ?? "");
-    if (delta) appendThinkingDelta(delta);
+    if (delta) queueOverlayThinkingDelta(delta);
   }
   if (frame.event === "tool_call_completed") {
     const toolId = getToolEventId(frame);
@@ -3098,10 +3129,7 @@ function replayTaskTimelineEvents(events = []) {
 
 function scheduleOverlayTextDeltaFlush() {
   if (overlayTextDeltaRaf) return;
-  const schedule = typeof requestAnimationFrame === "function"
-    ? requestAnimationFrame
-    : (callback) => setTimeout(callback, 16);
-  overlayTextDeltaRaf = schedule(() => {
+  overlayTextDeltaRaf = scheduleOverlayFrame(() => {
     overlayTextDeltaRaf = 0;
     flushOverlayTextDelta();
   });
