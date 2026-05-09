@@ -13,6 +13,7 @@ function memNowIso() { return new Date().toISOString(); }
 function memNewId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
 const VALID_ROLES = new Set(["user", "assistant", "system", "tool_summary"]);
 const VALID_RELATIONS = new Set(["triggered", "answered_by", "tool_summary_for"]);
+const VALID_SESSION_STATUSES = new Set(["active", "archived", "closed"]);
 
 export function createInMemoryStoreScaffold() {
   return {
@@ -29,6 +30,8 @@ export function createInMemoryStoreScaffold() {
     conversations: new Map(),
     conversationMessages: [],
     messageTaskLinks: [],
+    conversationSessions: new Map(),
+    sessionItems: [],
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -385,6 +388,80 @@ export function createInMemoryStoreScaffold() {
       return this.messageTaskLinks
         .filter((l) => l.task_id === task_id)
         .map((l) => ({ ...l }));
+    },
+
+    upsertConversationSession(session) {
+      if (!session?.session_id) throw new Error("upsertConversationSession: session_id required");
+      if (!session?.conversation_id) throw new Error("upsertConversationSession: conversation_id required");
+      const existing = this.conversationSessions.get(session.session_id);
+      const ts = memNowIso();
+      const record = {
+        session_id: session.session_id,
+        conversation_id: session.conversation_id,
+        project_id: session.project_id ?? existing?.project_id ?? null,
+        parent_task_id: session.parent_task_id ?? existing?.parent_task_id ?? null,
+        active_task_id: session.active_task_id ?? existing?.active_task_id ?? null,
+        status: VALID_SESSION_STATUSES.has(session.status) ? session.status : (existing?.status ?? "active"),
+        created_at: session.created_at ?? existing?.created_at ?? ts,
+        updated_at: session.updated_at ?? ts,
+        metadata: session.metadata ?? existing?.metadata ?? {}
+      };
+      this.conversationSessions.set(record.session_id, record);
+      return { ...record, metadata: { ...(record.metadata ?? {}) } };
+    },
+    getConversationSession(sessionId) {
+      const session = this.conversationSessions.get(sessionId);
+      return session ? { ...session, metadata: { ...(session.metadata ?? {}) } } : null;
+    },
+    getLatestConversationSession(conversationId) {
+      if (!conversationId) return null;
+      const sessions = [...this.conversationSessions.values()]
+        .filter((session) => session.conversation_id === conversationId)
+        .sort((a, b) => String(b.updated_at ?? "").localeCompare(String(a.updated_at ?? "")));
+      const session = sessions[0] ?? null;
+      return session ? { ...session, metadata: { ...(session.metadata ?? {}) } } : null;
+    },
+    appendSessionItem(item) {
+      if (!item?.session_id) throw new Error("appendSessionItem: session_id required");
+      const session = this.conversationSessions.get(item.session_id);
+      if (!session) throw new Error(`appendSessionItem: session ${item.session_id} not found`);
+      const ts = item.ts ?? memNowIso();
+      const order_index = item.order_index ?? this.sessionItems
+        .filter((row) => row.session_id === item.session_id)
+        .reduce((max, row) => Math.max(max, row.order_index), -1) + 1;
+      const record = {
+        item_id: item.item_id ?? memNewId("sitem"),
+        session_id: item.session_id,
+        order_index,
+        kind: String(item.kind ?? "runtime_note"),
+        role: item.role ?? null,
+        task_id: item.task_id ?? null,
+        artifact_id: item.artifact_id ?? null,
+        message_id: item.message_id ?? null,
+        ts,
+        content_text: item.content_text ?? item.content ?? null,
+        payload: item.payload ?? {},
+        provenance: item.provenance ?? {}
+      };
+      this.sessionItems.push(record);
+      session.updated_at = ts;
+      if (record.task_id) session.active_task_id = record.task_id;
+      return {
+        ...record,
+        payload: { ...(record.payload ?? {}) },
+        provenance: { ...(record.provenance ?? {}) }
+      };
+    },
+    listSessionItems(sessionId, { sinceOrder = 0, limit = 500 } = {}) {
+      return this.sessionItems
+        .filter((item) => item.session_id === sessionId && item.order_index >= (sinceOrder | 0))
+        .sort((a, b) => a.order_index - b.order_index)
+        .slice(0, Math.max(1, Math.min(limit ?? 500, 5000)))
+        .map((item) => ({
+          ...item,
+          payload: { ...(item.payload ?? {}) },
+          provenance: { ...(item.provenance ?? {}) }
+        }));
     }
   };
 }

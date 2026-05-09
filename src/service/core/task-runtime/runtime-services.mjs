@@ -3,6 +3,18 @@ import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
+import { createConversationSessionService } from "../session/conversation-session-service.mjs";
+
+function hasConversationSessionStore(store) {
+  return Boolean(
+    store
+    && typeof store.upsertConversationSession === "function"
+    && typeof store.getConversationSession === "function"
+    && typeof store.getLatestConversationSession === "function"
+    && typeof store.appendSessionItem === "function"
+    && typeof store.listSessionItems === "function"
+  );
+}
 
 export function ensureRuntimeServices(runtime) {
   runtime.activeExecutions ??= new Map();
@@ -17,6 +29,12 @@ export function ensureRuntimeServices(runtime) {
     store: runtime.store,
     queue: runtime.queue
   });
+  if (!runtime.conversationSessions && hasConversationSessionStore(runtime.store)) {
+    runtime.conversationSessions = createConversationSessionService({
+      store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
   runtime.securityBroker ??= createSecurityBroker({ runtime });
   // UCA-182 Phase 20: wire executeApprovedAction so approving a
   // source_type="agent_tool_call" record actually runs the tool the

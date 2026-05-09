@@ -140,6 +140,13 @@ Verification:
 - `node scripts/verify-structure.mjs`
 - `npm run check:fast`
 
+Conversation/session spine status:
+
+- CX-001 is done: ConversationSession service-owned storage exists through
+  `conversation_sessions` and `session_items`. Task submission writes only the
+  durable user-message/task-anchor skeleton; high-frequency deltas remain out of
+  session_items.
+
 Current next step: PR-06, artifact extraction background lane.
 
 ## Sidecar Decision Gate

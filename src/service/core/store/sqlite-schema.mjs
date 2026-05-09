@@ -170,6 +170,34 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   PRIMARY KEY (message_id, task_id, relation),
   FOREIGN KEY(message_id) REFERENCES conversation_messages(message_id) ON DELETE CASCADE
 );`,
+  conversationSessions: `CREATE TABLE IF NOT EXISTS conversation_sessions (
+  session_id TEXT PRIMARY KEY,
+  conversation_id TEXT NOT NULL,
+  project_id TEXT,
+  parent_task_id TEXT,
+  active_task_id TEXT,
+  status TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  metadata_json TEXT,
+  FOREIGN KEY(conversation_id) REFERENCES conversations(conversation_id) ON DELETE CASCADE
+);`,
+  sessionItems: `CREATE TABLE IF NOT EXISTS session_items (
+  item_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  order_index INTEGER NOT NULL,
+  kind TEXT NOT NULL,
+  role TEXT,
+  task_id TEXT,
+  artifact_id TEXT,
+  message_id TEXT,
+  ts TEXT NOT NULL,
+  content_text TEXT,
+  payload_json TEXT NOT NULL,
+  provenance_json TEXT,
+  FOREIGN KEY(session_id) REFERENCES conversation_sessions(session_id) ON DELETE CASCADE,
+  UNIQUE(session_id, order_index)
+);`,
   schemaMigrations: `CREATE TABLE IF NOT EXISTS schema_migrations (
   migration_id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL,
@@ -200,7 +228,13 @@ export const SQLITE_INDEX_SQL = Object.freeze([
   `CREATE INDEX IF NOT EXISTS idx_messages_conv_seq
      ON conversation_messages(conversation_id, seq)`,
   `CREATE INDEX IF NOT EXISTS idx_msg_tasks_task
-     ON conversation_message_tasks(task_id)`
+     ON conversation_message_tasks(task_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_sessions_conversation
+     ON conversation_sessions(conversation_id, updated_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_session_items_order
+     ON session_items(session_id, order_index)`,
+  `CREATE INDEX IF NOT EXISTS idx_session_items_task
+     ON session_items(task_id, ts DESC)`
 ]);
 
 export function buildStoreManifest() {

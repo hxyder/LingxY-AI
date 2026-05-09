@@ -86,6 +86,12 @@ export function submitTaskWithConversation(params) {
       runtime.store.linkMessageToTask(messageIdToLink, task.task_id, "triggered");
     }
 
+    runtime.conversationSessions?.recordTaskSubmission?.({
+      conversation,
+      userMessage,
+      task
+    });
+
     return { task, userMessage, conversation };
   });
 }

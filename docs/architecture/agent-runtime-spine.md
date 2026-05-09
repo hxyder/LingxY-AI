@@ -71,7 +71,7 @@ executes.
 | PR-03 | Main process blocking verifier | Done |
 | PR-04 | Renderer streaming batching verifier and fixes | Done |
 | PR-05 | ContextCompiler service boundary | Done |
-| CX-001 | ConversationSession storage and service skeleton | Pending |
+| CX-001 | ConversationSession storage and service skeleton | Done |
 | CX-002 | Tool calls and observations as session items | Pending |
 | CX-003 | FollowUpResolver with regression seeds | Pending |
 | CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Pending |
@@ -152,7 +152,20 @@ executes.
 - `npm run verify:context-compiler-boundary` verifies the service/runtime
   boundary.
 
-Current next step: CX-001, ConversationSession storage and service skeleton.
+## CX-001 Acceptance
+
+- `conversation_sessions` and `session_items` are additive service-owned storage
+  tables.
+- `ConversationSessionService` owns typed session creation, ordered session_items,
+  and task-submission recording.
+- Task submission records a `user_message` item and a `task_anchor` item without
+  changing executor prompt behavior.
+- Existing visible `conversation_messages` remain the user-facing transcript;
+  session_items are the runtime work thread for follow-up/context upgrades.
+- `npm run verify:conversation-session-foundation` verifies the storage and
+  service boundary.
+
+Current next step: CX-002, tool calls and observations as session items.
 
 ## Legacy Archive Policy
 

@@ -54,6 +54,39 @@ function mapMessage(row) {
   };
 }
 
+function mapConversationSession(row) {
+  if (!row) return null;
+  return {
+    session_id: row.session_id,
+    conversation_id: row.conversation_id,
+    project_id: row.project_id,
+    parent_task_id: row.parent_task_id,
+    active_task_id: row.active_task_id,
+    status: row.status,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    metadata: decodeJson(row.metadata_json, {})
+  };
+}
+
+function mapSessionItem(row) {
+  if (!row) return null;
+  return {
+    item_id: row.item_id,
+    session_id: row.session_id,
+    order_index: row.order_index,
+    kind: row.kind,
+    role: row.role,
+    task_id: row.task_id,
+    artifact_id: row.artifact_id,
+    message_id: row.message_id,
+    ts: row.ts,
+    content_text: row.content_text,
+    payload: decodeJson(row.payload_json, {}),
+    provenance: decodeJson(row.provenance_json, {})
+  };
+}
+
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
 }
@@ -520,7 +553,37 @@ export function createSqliteStore({ dbPath }) {
     listTaskMessages: db.prepare(`
       SELECT message_id, task_id, relation, created_at
         FROM conversation_message_tasks
-       WHERE task_id = ? ORDER BY created_at ASC`)
+       WHERE task_id = ? ORDER BY created_at ASC`),
+    upsertConversationSession: db.prepare(`INSERT INTO conversation_sessions
+      (session_id, conversation_id, project_id, parent_task_id, active_task_id, status, created_at, updated_at, metadata_json)
+      VALUES (@session_id, @conversation_id, @project_id, @parent_task_id, @active_task_id, @status, @created_at, @updated_at, @metadata_json)
+      ON CONFLICT(session_id) DO UPDATE SET
+        conversation_id = excluded.conversation_id,
+        project_id = excluded.project_id,
+        parent_task_id = excluded.parent_task_id,
+        active_task_id = excluded.active_task_id,
+        status = excluded.status,
+        updated_at = excluded.updated_at,
+        metadata_json = excluded.metadata_json`),
+    getConversationSession: db.prepare("SELECT * FROM conversation_sessions WHERE session_id = ?"),
+    getLatestConversationSession: db.prepare(`
+      SELECT * FROM conversation_sessions
+       WHERE conversation_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 1`),
+    nextSessionItemOrder: db.prepare(`
+      SELECT COALESCE(MAX(order_index), -1) + 1 AS next
+        FROM session_items
+       WHERE session_id = ?`),
+    insertSessionItem: db.prepare(`INSERT INTO session_items
+      (item_id, session_id, order_index, kind, role, task_id, artifact_id, message_id, ts, content_text, payload_json, provenance_json)
+      VALUES (@item_id, @session_id, @order_index, @kind, @role, @task_id, @artifact_id, @message_id, @ts, @content_text, @payload_json, @provenance_json)`),
+    listSessionItems: db.prepare(`
+      SELECT * FROM session_items
+       WHERE session_id = @session_id
+         AND order_index >= @since_order
+       ORDER BY order_index ASC
+       LIMIT @limit`)
   };
 
   function upsertTask(task) {
@@ -997,6 +1060,78 @@ export function createSqliteStore({ dbPath }) {
     },
     getTaskMessages(task_id) {
       return statements.listTaskMessages.all(task_id);
+    },
+    upsertConversationSession(session) {
+      const existing = session.session_id
+        ? mapConversationSession(statements.getConversationSession.get(session.session_id))
+        : null;
+      const ts = nowIso();
+      const record = {
+        session_id: session.session_id ?? newId("session"),
+        conversation_id: session.conversation_id,
+        project_id: session.project_id ?? existing?.project_id ?? null,
+        parent_task_id: session.parent_task_id ?? existing?.parent_task_id ?? null,
+        active_task_id: session.active_task_id ?? existing?.active_task_id ?? null,
+        status: session.status ?? existing?.status ?? "active",
+        created_at: session.created_at ?? existing?.created_at ?? ts,
+        updated_at: session.updated_at ?? ts,
+        metadata_json: encodeJson(session.metadata ?? existing?.metadata ?? {})
+      };
+      statements.upsertConversationSession.run(record);
+      return mapConversationSession(statements.getConversationSession.get(record.session_id));
+    },
+    getConversationSession(sessionId) {
+      return mapConversationSession(statements.getConversationSession.get(sessionId));
+    },
+    getLatestConversationSession(conversationId) {
+      return mapConversationSession(statements.getLatestConversationSession.get(conversationId));
+    },
+    appendSessionItem(item) {
+      if (!item?.session_id) throw new Error("appendSessionItem: session_id required");
+      return db.transaction(() => {
+        const session = mapConversationSession(statements.getConversationSession.get(item.session_id));
+        if (!session) throw new Error(`appendSessionItem: session ${item.session_id} not found`);
+        const ts = item.ts ?? nowIso();
+        const order_index = item.order_index ?? statements.nextSessionItemOrder.get(item.session_id).next;
+        const record = {
+          item_id: item.item_id ?? newId("sitem"),
+          session_id: item.session_id,
+          order_index,
+          kind: String(item.kind ?? "runtime_note"),
+          role: item.role ?? null,
+          task_id: item.task_id ?? null,
+          artifact_id: item.artifact_id ?? null,
+          message_id: item.message_id ?? null,
+          ts,
+          content_text: item.content_text ?? item.content ?? null,
+          payload_json: encodeJson(item.payload ?? {}),
+          provenance_json: encodeJson(item.provenance ?? {})
+        };
+        statements.insertSessionItem.run(record);
+        statements.upsertConversationSession.run({
+          session_id: session.session_id,
+          conversation_id: session.conversation_id,
+          project_id: session.project_id,
+          parent_task_id: session.parent_task_id,
+          active_task_id: record.task_id ?? session.active_task_id,
+          status: session.status,
+          created_at: session.created_at,
+          updated_at: ts,
+          metadata_json: encodeJson(session.metadata ?? {})
+        });
+        return mapSessionItem({
+          ...record,
+          payload_json: record.payload_json,
+          provenance_json: record.provenance_json
+        });
+      })();
+    },
+    listSessionItems(sessionId, { sinceOrder = 0, limit = 500 } = {}) {
+      return statements.listSessionItems.all({
+        session_id: sessionId,
+        since_order: Math.max(0, sinceOrder | 0),
+        limit: Math.max(1, Math.min(limit ?? 500, 5000))
+      }).map(mapSessionItem);
     }
   };
 }
