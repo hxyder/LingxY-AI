@@ -43,7 +43,7 @@ record.
 | --- | --- | --- |
 | PR-01 | Architecture guardrails, canonical docs, guardrail verifier | Done |
 | PR-02 | Performance baseline instrumentation | Done |
-| PR-03 | Main process blocking verifier | Pending |
+| PR-03 | Main process blocking verifier | Done |
 | PR-04 | Renderer streaming batching verifier and fixes | Pending |
 | CX-001 | ConversationSession storage and service skeleton | Pending |
 | CX-002 | Tool calls and observations as session items | Pending |
@@ -81,7 +81,20 @@ record.
   baseline instrumentation.
 - `npm run verify:runtime-performance-baseline` verifies the baseline contract.
 
-Current next step: PR-03, the main process blocking verifier.
+## PR-03 Acceptance
+
+- Electron main/tray files do not use synchronous filesystem APIs,
+  synchronous child-process APIs, or `Atomics.wait`.
+- Brand icon resolution preloads file bytes asynchronously before tray badge
+  composition uses cached in-memory data.
+- Desktop GUI smoke isolation and crash dump directory setup use asynchronous
+  directory creation.
+- Oversized IPC handlers are rejected before they become hidden business logic
+  in Electron main.
+- `npm run verify:main-process-blocking` verifies the main-process blocking
+  boundary.
+
+Current next step: PR-04, the renderer streaming batching verifier and fixes.
 
 ## Legacy Archive Policy
 

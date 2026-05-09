@@ -1,5 +1,4 @@
 import path from "node:path";
-import { mkdirSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, unlink, watch, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -136,14 +135,17 @@ function installDesktopDiagnostics({ app, crashReporter } = {}) {
   if (!app || !crashReporter?.start) return;
   try {
     const crashDir = path.join(desktopLogsDir(), "crash-dumps");
-    mkdirSync(crashDir, { recursive: true });
-    app.setPath?.("crashDumps", crashDir);
-    crashReporter.start({
-      uploadToServer: false,
-      compress: false,
-      globalExtra: {
-        app: "LingxY"
-      }
+    void mkdir(crashDir, { recursive: true }).then(() => {
+      app.setPath?.("crashDumps", crashDir);
+      crashReporter.start({
+        uploadToServer: false,
+        compress: false,
+        globalExtra: {
+          app: "LingxY"
+        }
+      });
+    }).catch((error) => {
+      void appendDesktopDiagnosticError("crash_reporter_start_failed", error, {});
     });
   } catch (error) {
     void appendDesktopDiagnosticError("crash_reporter_start_failed", error, {});
@@ -2272,6 +2274,133 @@ export function createElectronShellRuntime({
     } catch { /* service not ready */ }
   }
 
+  async function fetchEchoTtsMenuState() {
+    const fallback = { preference: { enabled: true }, engineUnavailable: false };
+    if (!resolvedServiceBaseUrl) return fallback;
+    try {
+      const ttsResp = await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
+        method: "GET",
+        headers: { "x-uca-actor": "desktop_shell" },
+        signal: AbortSignal.timeout(500)
+      });
+      if (!ttsResp.ok) return fallback;
+      const ttsData = await ttsResp.json().catch(() => ({}));
+      return {
+        preference: ttsData.preference ?? fallback.preference,
+        engineUnavailable: Boolean(ttsData.engineUnavailable)
+      };
+    } catch {
+      return fallback;
+    }
+  }
+
+  async function setEchoTtsEnabled(enabled) {
+    if (!resolvedServiceBaseUrl) return;
+    try {
+      await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-uca-actor": "desktop_shell" },
+        body: JSON.stringify({ enabled })
+      });
+    } catch { /* surfaced visually next time the menu opens */ }
+  }
+
+  function notifyDockWindow(channel, payload) {
+    const dock = windows.get("dock");
+    if (dock && !dock.webContents?.isDestroyed?.()) {
+      dock.webContents.send(channel, payload);
+      return true;
+    }
+    return false;
+  }
+
+  async function clearUserKeywordSamples() {
+    try {
+      const dir = path.resolve(process.cwd(), "models", "user-keywords");
+      const files = await readdir(dir).catch(() => []);
+      await Promise.all(files
+        .filter((f) => f.endsWith(".txt") || f.endsWith(".webm") || f.endsWith(".wav") || f.endsWith(".json"))
+        .map((f) => unlink(path.join(dir, f)).catch(() => null)));
+      notifyDockWindow("uca:echo-bubble-show", {
+        text: "✓ 个人唤醒词样本已清除",
+        kind: "info",
+        durationMs: 1800
+      });
+    } catch (err) {
+      safeWarn("[LingxY] clear-user-keywords failed:", err?.message ?? err);
+    }
+  }
+
+  function buildDockContextMenu({ current, ttsPreference, ttsEngineUnavailable }) {
+    return Menu.buildFromTemplate([
+      {
+        label: "正常模式",
+        type: "radio",
+        checked: !current.echoMode,
+        click() { void updateSettings({ echoMode: false }); }
+      },
+      {
+        label: "Echo 模式（常开唤醒）",
+        type: "radio",
+        checked: Boolean(current.echoMode),
+        click() { void updateSettings({ echoMode: true }); }
+      },
+      { type: "separator" },
+      {
+        label: ttsEngineUnavailable
+          ? "语音回复（系统 TTS 不可用）"
+          : "语音回复",
+        type: "checkbox",
+        checked: Boolean(ttsPreference.enabled) && !ttsEngineUnavailable,
+        enabled: !ttsEngineUnavailable,
+        click(menuItem) { void setEchoTtsEnabled(menuItem.checked); }
+      },
+      { type: "separator" },
+      {
+        label: "录入我的唤醒词（3 次）...",
+        enabled: Boolean(current.echoMode),
+        click() {
+          notifyDockWindow("uca:start-wake-enrollment", { at: Date.now() });
+        }
+      },
+      {
+        label: "清除个人唤醒词样本",
+        enabled: Boolean(current.echoMode),
+        click() {
+          void clearUserKeywordSamples();
+        }
+      },
+      { type: "separator" },
+      {
+        label: "打开 Dock 开发者工具（查看 Echo 日志）",
+        click() {
+          const dock = windows.get("dock");
+          if (dock && !dock.webContents?.isDestroyed?.()) {
+            try { dock.webContents.openDevTools({ mode: "detach" }); } catch { /* ignore */ }
+          }
+        }
+      },
+      { type: "separator" },
+      { label: "打开主控台", click() { showWindow("console"); } },
+      { label: "打开对话框", click() { showWindow("overlay"); } },
+      { type: "separator" },
+      { label: "退出 LingxY", click() { app.quit(); } }
+    ]);
+  }
+
+  async function showDockContextMenu() {
+    const current = await loadSettings();
+    const dockWin = windows.get("dock");
+    if (!dockWin || dockWin.webContents?.isDestroyed?.()) return;
+    const { preference, engineUnavailable } = await fetchEchoTtsMenuState();
+    const menu = buildDockContextMenu({
+      current,
+      ttsPreference: preference,
+      ttsEngineUnavailable: engineUnavailable
+    });
+    menu.popup({ window: dockWin });
+  }
+
   function writeDesktopGuiSmokeResult(result) {
     try {
       process.stdout?.write?.(`LINGXY_GUI_SMOKE_RESULT ${JSON.stringify(result)}\n`);
@@ -3020,6 +3149,7 @@ export function createElectronShellRuntime({
   return {
     async start() {
       await app.whenReady();
+      await brandIcons.initialize();
       try {
         await ensureEmbeddedServiceRuntime();
       } catch (error) {
@@ -3262,112 +3392,7 @@ export function createElectronShellRuntime({
       // look-and-feel, keyboard-nav, and the menu survives window-focus
       // changes cleanly.
       ipcMain.handle("uca:show-dock-menu", async () => {
-        const current = await loadSettings();
-        const dockWin = windows.get("dock");
-        if (!dockWin || dockWin.webContents?.isDestroyed?.()) return;
-        // Best-effort fetch of the echo TTS preference with a hard timeout
-        // so a stuck service never blocks the menu from popping. Codex
-        // review caught this: an awaited fetch with no abort signal would
-        // leave the user staring at a frozen orb on right-click.
-        let ttsPreference = { enabled: true };
-        let ttsEngineUnavailable = false;
-        try {
-          if (resolvedServiceBaseUrl) {
-            const ttsResp = await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
-              method: "GET",
-              headers: { "x-uca-actor": "desktop_shell" },
-              signal: AbortSignal.timeout(500)
-            });
-            if (ttsResp.ok) {
-              const ttsData = await ttsResp.json().catch(() => ({}));
-              ttsPreference = ttsData.preference ?? ttsPreference;
-              ttsEngineUnavailable = Boolean(ttsData.engineUnavailable);
-            }
-          }
-        } catch { /* fall through with defaults — timeout, abort, or service down */ }
-        const setEchoTtsEnabled = async (enabled) => {
-          if (!resolvedServiceBaseUrl) return;
-          try {
-            await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
-              method: "POST",
-              headers: { "content-type": "application/json", "x-uca-actor": "desktop_shell" },
-              body: JSON.stringify({ enabled })
-            });
-          } catch { /* surfaced visually next time the menu opens */ }
-        };
-        const menu = Menu.buildFromTemplate([
-          {
-            label: "正常模式",
-            type: "radio",
-            checked: !current.echoMode,
-            click() { void updateSettings({ echoMode: false }); }
-          },
-          {
-            label: "Echo 模式（常开唤醒）",
-            type: "radio",
-            checked: Boolean(current.echoMode),
-            click() { void updateSettings({ echoMode: true }); }
-          },
-          { type: "separator" },
-          {
-            label: ttsEngineUnavailable
-              ? "语音回复（系统 TTS 不可用）"
-              : "语音回复",
-            type: "checkbox",
-            checked: Boolean(ttsPreference.enabled) && !ttsEngineUnavailable,
-            enabled: !ttsEngineUnavailable,
-            click(menuItem) { void setEchoTtsEnabled(menuItem.checked); }
-          },
-          { type: "separator" },
-          {
-            label: "录入我的唤醒词（3 次）...",
-            enabled: Boolean(current.echoMode),
-            click() {
-              const dock = windows.get("dock");
-              if (dock && !dock.webContents?.isDestroyed?.()) {
-                dock.webContents.send("uca:start-wake-enrollment", { at: Date.now() });
-              }
-            }
-          },
-          {
-            label: "清除个人唤醒词样本",
-            enabled: Boolean(current.echoMode),
-            async click() {
-              try {
-                const dir = path.resolve(process.cwd(), "models", "user-keywords");
-                const files = await readdir(dir).catch(() => []);
-                await Promise.all(files
-                  .filter((f) => f.endsWith(".txt") || f.endsWith(".webm") || f.endsWith(".wav") || f.endsWith(".json"))
-                  .map((f) => unlink(path.join(dir, f)).catch(() => null)));
-                const dock = windows.get("dock");
-                if (dock && !dock.webContents?.isDestroyed?.()) {
-                  dock.webContents.send("uca:echo-bubble-show", {
-                    text: "✓ 个人唤醒词样本已清除",
-                    kind: "info", durationMs: 1800
-                  });
-                }
-              } catch (err) {
-                safeWarn("[LingxY] clear-user-keywords failed:", err?.message ?? err);
-              }
-            }
-          },
-          { type: "separator" },
-          {
-            label: "打开 Dock 开发者工具（查看 Echo 日志）",
-            click() {
-              const dock = windows.get("dock");
-              if (dock && !dock.webContents?.isDestroyed?.()) {
-                try { dock.webContents.openDevTools({ mode: "detach" }); } catch { /* ignore */ }
-              }
-            }
-          },
-          { type: "separator" },
-          { label: "打开主控台", click() { showWindow("console"); } },
-          { label: "打开对话框", click() { showWindow("overlay"); } },
-          { type: "separator" },
-          { label: "退出 LingxY", click() { app.quit(); } }
-        ]);
-        menu.popup({ window: dockWin });
+        await showDockContextMenu();
       });
 
       // Echo mode coordination — the dock renderer owns the wake-word
@@ -5726,7 +5751,7 @@ export async function initializeElectronShellRuntime({
     const smokeUserDataDir = process.env.LINGXY_ELECTRON_GUI_SMOKE_USER_DATA_DIR
       ?? path.join(os.tmpdir(), `lingxy-electron-gui-smoke-${process.pid}`);
     try {
-      mkdirSync(smokeUserDataDir, { recursive: true });
+      await mkdir(smokeUserDataDir, { recursive: true });
       electron.app.setPath("userData", smokeUserDataDir);
     } catch { /* keep Electron's default path if isolation cannot be set */ }
   }

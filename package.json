@@ -192,6 +192,7 @@
     "verify:runtime-wiring": "node scripts/verify-runtime-wiring.mjs",
     "verify:runtime-upgrade-guardrails": "node scripts/verify-runtime-upgrade-guardrails.mjs",
     "verify:runtime-performance-baseline": "node scripts/verify-runtime-performance-baseline.mjs",
+    "verify:main-process-blocking": "node scripts/verify-main-process-blocking.mjs",
     "verify:runtime-search-popup-autotask": "node scripts/verify-runtime-search-popup-autotask.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
     "verify:email-monitoring": "node scripts/verify-email-monitoring.mjs",

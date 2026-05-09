@@ -16,7 +16,7 @@
  * stub `nativeImage.createFromPath` without monkey-patching Electron.
  */
 import path from "node:path";
-import { existsSync, readFileSync } from "node:fs";
+import { access, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +33,16 @@ export const BRAND_AUMID = "com.uca.desktop";
  * include `assets/icons/**` in `package.json` build.files, so the
  * folder is present in the asar/bundle alongside source.
  */
-function resolveIconsDir({ app }) {
+async function pathExists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveIconsDir({ app }) {
   const candidates = [];
   if (app && typeof app.getAppPath === "function") {
     candidates.push(path.join(app.getAppPath(), "assets", "icons"));
@@ -45,7 +54,7 @@ function resolveIconsDir({ app }) {
   }
   candidates.push(path.join(REPO_ROOT, "assets", "icons"));
   for (const dir of candidates) {
-    if (existsSync(path.join(dir, "lingxy-64.png"))) {
+    if (await pathExists(path.join(dir, "lingxy-64.png"))) {
       return dir;
     }
   }
@@ -93,8 +102,30 @@ export function createBrandIconResolver({ app, nativeImage }) {
   if (!nativeImage || typeof nativeImage.createFromPath !== "function") {
     throw new Error("createBrandIconResolver: nativeImage binding is required");
   }
-  const iconsDir = resolveIconsDir({ app });
+  let iconsDir = path.join(REPO_ROOT, "assets", "icons");
+  let initialized = false;
+  let initializePromise = null;
   const cache = new Map();
+  const pngBase64Cache = new Map();
+
+  async function initialize() {
+    if (initializePromise) return initializePromise;
+    initializePromise = (async () => {
+      iconsDir = await resolveIconsDir({ app });
+      await Promise.all(AVAILABLE_PNG_SIZES.map(async (size) => {
+        const pngPath = path.join(iconsDir, `lingxy-${size}.png`);
+        try {
+          const bytes = await readFile(pngPath);
+          pngBase64Cache.set(size, bytes.toString("base64"));
+        } catch {
+          // Missing sizes fall back to the nearest available native image.
+        }
+      }));
+      initialized = true;
+      return { iconsDir };
+    })();
+    return initializePromise;
+  }
 
   function resolveBrandIcon({ size = 64 } = {}) {
     const actual = nearestAvailableSize(size);
@@ -122,11 +153,10 @@ export function createBrandIconResolver({ app, nativeImage }) {
     }
     const renderSize = size * 2;
     const sourceSize = nearestAvailableSize(renderSize);
-    const pngPath = path.join(iconsDir, `lingxy-${sourceSize}.png`);
-    if (!existsSync(pngPath)) {
+    const pngBase64 = pngBase64Cache.get(sourceSize);
+    if (!initialized || !pngBase64) {
       return resolveBrandIcon({ size });
     }
-    const pngBase64 = readFileSync(pngPath).toString("base64");
     // composeTrayBadgeSvg viewBox stays at renderSize; the icon will
     // render sharply at logical size on 1x, 2x, and 3x displays.
     const svg = composeTrayBadgeSvg({ pngBase64, size: renderSize, count });
@@ -187,7 +217,10 @@ export function createBrandIconResolver({ app, nativeImage }) {
   }
 
   return {
-    iconsDir,
+    get iconsDir() {
+      return iconsDir;
+    },
+    initialize,
     resolveBrandIcon,
     resolveBrandIcoPath,
     composeTrayIcon,

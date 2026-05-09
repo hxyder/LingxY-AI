@@ -26,7 +26,7 @@ process or renderer code.
 | --- | --- | --- |
 | PR-01 | Docs and `AGENTS.md` guardrails | Done |
 | PR-02 | Performance baseline instrumentation | Done |
-| PR-03 | Main process blocking verifier | Script flags sync IO, CPU loops, and long handlers in main |
+| PR-03 | Main process blocking verifier | Done |
 | PR-04 | Renderer streaming batching verifier and fixes | Streaming bursts are coalesced and smoke-tested |
 | PR-05 | Context compiler off hot Electron paths | Context assembly stays in service/runtime layer |
 | PR-06 | Artifact extraction background lane | Extract/transform work does not block UI |
@@ -63,7 +63,31 @@ Verification:
 - `node scripts/verify-structure.mjs`
 - `npm run check:fast`
 
-Current next step: PR-03, the main process blocking verifier.
+## PR-03 Status
+
+Status: done.
+
+Implementation:
+
+- `scripts/verify-main-process-blocking.mjs` scans `index.cjs` and
+  `src/desktop/tray` for sync filesystem APIs, sync child-process APIs,
+  `Atomics.wait`, busy waits, and oversized IPC handlers.
+- `src/desktop/tray/brand-icons.mjs` resolves icon files asynchronously and
+  preloads PNG bytes into an in-memory cache before tray badge composition.
+- `src/desktop/tray/electron-main.mjs` no longer uses `mkdirSync`; crash dump
+  and GUI-smoke directories are created with async filesystem calls.
+- The dock menu IPC handler delegates to focused helper functions instead of
+  embedding a long block of menu and cleanup logic inline.
+
+Verification:
+
+- `npm run verify:main-process-blocking`
+- `node scripts/verify-brand-assets.mjs`
+- `node scripts/verify-desktop-shell.mjs`
+- `node scripts/verify-structure.mjs`
+- `npm run check:fast`
+
+Current next step: PR-04, the renderer streaming batching verifier and fixes.
 
 ## Sidecar Decision Gate
 
