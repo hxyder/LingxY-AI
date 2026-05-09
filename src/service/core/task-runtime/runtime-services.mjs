@@ -3,6 +3,7 @@ import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
+import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
 
 function hasConversationSessionStore(store) {
@@ -13,6 +14,15 @@ function hasConversationSessionStore(store) {
     && typeof store.getLatestConversationSession === "function"
     && typeof store.appendSessionItem === "function"
     && typeof store.listSessionItems === "function"
+  );
+}
+
+function hasArtifactExtractStore(store) {
+  return Boolean(
+    store
+    && typeof store.appendArtifactExtract === "function"
+    && typeof store.listArtifactExtractsForArtifact === "function"
+    && typeof store.listArtifactExtractsForTask === "function"
   );
 }
 
@@ -31,6 +41,12 @@ export function ensureRuntimeServices(runtime) {
   });
   if (!runtime.conversationSessions && hasConversationSessionStore(runtime.store)) {
     runtime.conversationSessions = createConversationSessionService({
+      store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
+  if (!runtime.artifactExtracts && hasArtifactExtractStore(runtime.store)) {
+    runtime.artifactExtracts = createArtifactExtractService({
       store: runtime.store,
       metrics: runtime.metrics
     });

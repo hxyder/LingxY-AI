@@ -37,6 +37,22 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   version_label TEXT,
   created_at TEXT NOT NULL
 );`,
+  artifactExtracts: `CREATE TABLE IF NOT EXISTS artifact_extracts (
+  extract_id TEXT PRIMARY KEY,
+  artifact_id TEXT NOT NULL,
+  task_id TEXT,
+  conversation_id TEXT,
+  kind TEXT NOT NULL,
+  label TEXT,
+  locator_json TEXT,
+  content_text TEXT,
+  data_json TEXT,
+  source TEXT,
+  confidence REAL,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY(artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE
+);`,
   schedules: `CREATE TABLE IF NOT EXISTS schedules (
   schedule_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -234,7 +250,13 @@ export const SQLITE_INDEX_SQL = Object.freeze([
   `CREATE INDEX IF NOT EXISTS idx_session_items_order
      ON session_items(session_id, order_index)`,
   `CREATE INDEX IF NOT EXISTS idx_session_items_task
-     ON session_items(task_id, ts DESC)`
+     ON session_items(task_id, ts DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_artifact
+     ON artifact_extracts(artifact_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_task
+     ON artifact_extracts(task_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_artifact_extracts_conversation
+     ON artifact_extracts(conversation_id, created_at DESC)`
 ]);
 
 export function buildStoreManifest() {

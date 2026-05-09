@@ -11,6 +11,11 @@ export const CONTEXT_ITEM_PRIORITIES = Object.freeze({
   attached_image: 840,
   latest_artifact: 830,
   recent_artifact: 820,
+  artifact_extract_summary: 815,
+  artifact_extract_text: 810,
+  artifact_extract_section: 808,
+  artifact_extract_table: 806,
+  artifact_extract_metadata: 804,
   session_task_anchor: 760,
   session_artifact_reference: 750,
   session_tool_observation: 720,
@@ -25,7 +30,9 @@ const DEFAULT_LIMITS = Object.freeze({
   maxItems: 32,
   maxTextChars: 8000,
   maxOmissions: 64,
-  sessionItemLimit: 200
+  sessionItemLimit: 200,
+  artifactExtractLimit: 24,
+  perArtifactExtractLimit: 4
 });
 
 function cleanText(value) {
@@ -155,6 +162,67 @@ function collectSessionCandidates(candidates, { task = {}, runtime = null, limit
   }
 }
 
+function artifactExtractCandidateKind(extract) {
+  switch (extract?.kind) {
+    case "summary":
+      return "artifact_extract_summary";
+    case "section":
+      return "artifact_extract_section";
+    case "table":
+      return "artifact_extract_table";
+    case "metadata":
+      return "artifact_extract_metadata";
+    default:
+      return "artifact_extract_text";
+  }
+}
+
+function listArtifactExtractsForArtifact(artifactId, runtime, limits) {
+  if (!artifactId) return [];
+  try {
+    const extracts = runtime?.artifactExtracts?.listForArtifact?.(artifactId, {
+      limit: limits.perArtifactExtractLimit
+    }) ?? runtime?.store?.listArtifactExtractsForArtifact?.(artifactId, {
+      limit: limits.perArtifactExtractLimit
+    }) ?? [];
+    return Array.isArray(extracts) ? extracts : [];
+  } catch {
+    return [];
+  }
+}
+
+function collectArtifactExtractCandidates(candidates, { artifacts = [], runtime = null, limits }) {
+  let count = 0;
+  for (const artifact of artifacts) {
+    if (count >= limits.artifactExtractLimit) break;
+    const extracts = listArtifactExtractsForArtifact(artifact?.artifact_id, runtime, limits);
+    for (const extract of extracts) {
+      if (count >= limits.artifactExtractLimit) break;
+      const kind = artifactExtractCandidateKind(extract);
+      pushCandidate(candidates, {
+        id: extract.extract_id ? `ctx_artifact_extract_${extract.extract_id}` : undefined,
+        kind,
+        source: "artifact_extracts",
+        trust: "runtime_artifact_extract",
+        content: cleanText(extract.content_text),
+        value: {
+          extract_id: extract.extract_id ?? null,
+          artifact_id: extract.artifact_id ?? artifact?.artifact_id ?? null,
+          task_id: extract.task_id ?? artifact?.task_id ?? null,
+          conversation_id: extract.conversation_id ?? null,
+          extract_kind: extract.kind ?? null,
+          label: extract.label ?? null,
+          locator: extract.locator ?? {},
+          data: extract.data ?? null,
+          confidence: extract.confidence ?? null
+        },
+        reason: "typed artifact extract exposes artifact content without reading the file on the task hot path"
+      });
+      count += 1;
+    }
+  }
+}
+
 function collectCandidates({ task = {}, runtime = null, extraItems = [], limits = DEFAULT_LIMITS } = {}) {
   const ctx = task.context_packet ?? {};
   const candidates = [];
@@ -244,7 +312,8 @@ function collectCandidates({ task = {}, runtime = null, extraItems = [], limits 
     if (index >= 15) break;
   }
 
-  for (const [index, artifact] of toArray(ctx.recent_conversation_artifacts).entries()) {
+  const recentArtifacts = toArray(ctx.recent_conversation_artifacts);
+  for (const [index, artifact] of recentArtifacts.entries()) {
     pushCandidate(candidates, {
       kind: index === 0 ? "latest_artifact" : "recent_artifact",
       source: "context_packet.recent_conversation_artifacts",
@@ -260,6 +329,12 @@ function collectCandidates({ task = {}, runtime = null, extraItems = [], limits 
     });
     if (index >= 15) break;
   }
+
+  collectArtifactExtractCandidates(candidates, {
+    artifacts: recentArtifacts,
+    runtime,
+    limits
+  });
 
   collectSessionCandidates(candidates, { task, runtime, limits });
 

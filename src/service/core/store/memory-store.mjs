@@ -32,6 +32,7 @@ export function createInMemoryStoreScaffold() {
     messageTaskLinks: [],
     conversationSessions: new Map(),
     sessionItems: [],
+    artifactExtracts: [],
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -119,6 +120,53 @@ export function createInMemoryStoreScaffold() {
         .filter((artifact) => artifact.conversation_id === conversationId)
         .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
         .slice(0, Math.max(1, Math.min(limit ?? 100, 500)));
+    },
+    appendArtifactExtract(extract) {
+      if (!extract?.artifact_id) throw new Error("appendArtifactExtract: artifact_id required");
+      const artifact = this.artifacts.find((row) => row.artifact_id === extract.artifact_id) ?? null;
+      const record = {
+        extract_id: extract.extract_id ?? memNewId("aext"),
+        artifact_id: extract.artifact_id,
+        task_id: extract.task_id ?? artifact?.task_id ?? null,
+        conversation_id: extract.conversation_id ?? artifact?.conversation_id ?? null,
+        kind: String(extract.kind ?? "text"),
+        label: extract.label ?? null,
+        locator: extract.locator ?? {},
+        content_text: extract.content_text ?? extract.content ?? null,
+        data: extract.data ?? null,
+        source: extract.source ?? "artifact_extract_service",
+        confidence: Number.isFinite(extract.confidence) ? extract.confidence : null,
+        metadata: extract.metadata ?? {},
+        created_at: extract.created_at ?? memNowIso()
+      };
+      this.artifactExtracts.push(record);
+      return {
+        ...record,
+        locator: { ...(record.locator ?? {}) },
+        metadata: { ...(record.metadata ?? {}) }
+      };
+    },
+    listArtifactExtractsForArtifact(artifactId, { limit = 50 } = {}) {
+      return this.artifactExtracts
+        .filter((extract) => extract.artifact_id === artifactId)
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, Math.max(1, Math.min(limit ?? 50, 500)))
+        .map((extract) => ({
+          ...extract,
+          locator: { ...(extract.locator ?? {}) },
+          metadata: { ...(extract.metadata ?? {}) }
+        }));
+    },
+    listArtifactExtractsForTask(taskId, { limit = 100 } = {}) {
+      return this.artifactExtracts
+        .filter((extract) => extract.task_id === taskId)
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, Math.max(1, Math.min(limit ?? 100, 500)))
+        .map((extract) => ({
+          ...extract,
+          locator: { ...(extract.locator ?? {}) },
+          metadata: { ...(extract.metadata ?? {}) }
+        }));
     },
     listProjectArtifacts({ projectId = null, limit = 100 } = {}) {
       if (!projectId) return [];

@@ -79,7 +79,7 @@ executes.
 | CX-002 | Tool calls and observations as session items | Done |
 | CX-003 | FollowUpResolver with regression seeds | Done |
 | CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Done |
-| AX-001 | Typed ArtifactExtract records | Pending |
+| AX-001 | Typed ArtifactExtract records | Done |
 | AX-002 | Artifact lineage and semantic contracts | Pending |
 | AX-003 | Typed transforms | Pending |
 | MX-001 | Memory governance surfaces | Pending |
@@ -218,7 +218,23 @@ executes.
 - `npm run verify:context-compiler-v1` verifies V1 wiring, session evidence
   compilation, task stamping, and the guardrails for later consumer migration.
 
-Current next step: AX-001, Typed ArtifactExtract records.
+## AX-001 Acceptance
+
+- `artifact_extracts` is an additive service-owned storage table for typed
+  ArtifactExtract records linked to artifacts, tasks, and conversations.
+- Memory and SQLite stores expose `appendArtifactExtract`,
+  `listArtifactExtractsForArtifact`, and `listArtifactExtractsForTask`.
+- `ArtifactExtractService` owns typed extract normalization, schema versioning,
+  text bounds, and metrics for already-produced extraction results.
+- ContextCompiler reads existing typed extracts and can select summaries, text,
+  sections, tables, and metadata without reading artifact files on the task
+  creation hot path.
+- This PR does not perform heavy artifact parsing; background extraction lanes
+  and richer file-format extractors remain separate follow-up work.
+- `npm run verify:artifact-extract-foundation` verifies storage, service wiring,
+  compiler inclusion, and no blocking extraction in runtime hot paths.
+
+Current next step: AX-002, Artifact lineage and semantic contracts.
 
 ## Legacy Archive Policy
 

@@ -347,7 +347,31 @@ export function createSqliteStore({ dbPath }) {
       @artifact_id, @task_id, @conversation_id, @path, @mime_type, @kind, @source, @bytes, @sha256, @status,
       @parent_artifact_id, @revision_of, @version_label, @created_at
     )`),
+    insertArtifactExtract: db.prepare(`INSERT OR REPLACE INTO artifact_extracts (
+      extract_id, artifact_id, task_id, conversation_id, kind, label, locator_json,
+      content_text, data_json, source, confidence, metadata_json, created_at
+    ) VALUES (
+      @extract_id, @artifact_id, @task_id, @conversation_id, @kind, @label, @locator_json,
+      @content_text, @data_json, @source, @confidence, @metadata_json, @created_at
+    )`),
+    getArtifactById: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, parent_artifact_id, revision_of, version_label, created_at FROM artifacts WHERE artifact_id = ?"),
     getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, parent_artifact_id, revision_of, version_label, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
+    listArtifactExtractsForArtifact: db.prepare(`
+      SELECT extract_id, artifact_id, task_id, conversation_id, kind, label, locator_json,
+             content_text, data_json, source, confidence, metadata_json, created_at
+        FROM artifact_extracts
+       WHERE artifact_id = @artifact_id
+       ORDER BY created_at DESC
+       LIMIT @limit
+    `),
+    listArtifactExtractsForTask: db.prepare(`
+      SELECT extract_id, artifact_id, task_id, conversation_id, kind, label, locator_json,
+             content_text, data_json, source, confidence, metadata_json, created_at
+        FROM artifact_extracts
+       WHERE task_id = @task_id
+       ORDER BY created_at DESC
+       LIMIT @limit
+    `),
     getArtifactsForConversation: db.prepare(`
       SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status,
              parent_artifact_id, revision_of, version_label, created_at
@@ -764,6 +788,39 @@ export function createSqliteStore({ dbPath }) {
     getArtifactsForTask(taskId) {
       return statements.getArtifactsForTask.all(taskId).map(mapArtifact);
     },
+    appendArtifactExtract(extract) {
+      if (!extract?.artifact_id) throw new Error("appendArtifactExtract: artifact_id required");
+      const artifact = mapArtifact(statements.getArtifactById.get(extract.artifact_id));
+      const record = {
+        extract_id: extract.extract_id ?? newId("aext"),
+        artifact_id: extract.artifact_id,
+        task_id: extract.task_id ?? artifact?.task_id ?? null,
+        conversation_id: extract.conversation_id ?? artifact?.conversation_id ?? null,
+        kind: String(extract.kind ?? "text"),
+        label: extract.label ?? null,
+        locator_json: encodeJson(extract.locator ?? {}),
+        content_text: extract.content_text ?? extract.content ?? null,
+        data_json: encodeJson(extract.data ?? null),
+        source: extract.source ?? "artifact_extract_service",
+        confidence: Number.isFinite(extract.confidence) ? extract.confidence : null,
+        metadata_json: encodeJson(extract.metadata ?? {}),
+        created_at: extract.created_at ?? nowIso()
+      };
+      statements.insertArtifactExtract.run(record);
+      return mapArtifactExtract(record);
+    },
+    listArtifactExtractsForArtifact(artifactId, { limit = 50 } = {}) {
+      return statements.listArtifactExtractsForArtifact.all({
+        artifact_id: artifactId,
+        limit: Math.max(1, Math.min(limit ?? 50, 500))
+      }).map(mapArtifactExtract);
+    },
+    listArtifactExtractsForTask(taskId, { limit = 100 } = {}) {
+      return statements.listArtifactExtractsForTask.all({
+        task_id: taskId,
+        limit: Math.max(1, Math.min(limit ?? 100, 500))
+      }).map(mapArtifactExtract);
+    },
     getArtifactsForConversation(conversationId, { limit = 100 } = {}) {
       if (!conversationId) return [];
       return statements.getArtifactsForConversation.all({
@@ -1133,5 +1190,26 @@ export function createSqliteStore({ dbPath }) {
         limit: Math.max(1, Math.min(limit ?? 500, 5000))
       }).map(mapSessionItem);
     }
+  };
+}
+
+function mapArtifactExtract(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    extract_id: row.extract_id,
+    artifact_id: row.artifact_id,
+    task_id: row.task_id ?? null,
+    conversation_id: row.conversation_id ?? null,
+    kind: row.kind,
+    label: row.label ?? null,
+    locator: decodeJson(row.locator_json, {}),
+    content_text: row.content_text ?? null,
+    data: decodeJson(row.data_json, null),
+    source: row.source ?? null,
+    confidence: row.confidence ?? null,
+    metadata: decodeJson(row.metadata_json, {}),
+    created_at: row.created_at
   };
 }

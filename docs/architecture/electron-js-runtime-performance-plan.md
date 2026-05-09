@@ -154,6 +154,9 @@ Conversation/session spine status:
 - CX-004 is done: ContextCompiler V1 stamps compact `compiled_context` on task
   context after session/follow-up enrichment, with deterministic priorities,
   inclusion reasons, and typed session item evidence.
+- AX-001 is done: typed `artifact_extracts` records and service/store methods
+  exist, and ContextCompiler can select existing extracts without parsing files
+  in Electron or the task creation hot path.
 
 Current next step: PR-06, artifact extraction background lane.
 
