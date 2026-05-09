@@ -20,6 +20,10 @@ and long-term observability.
 | Desktop/GUI completion | `FRAMEWORK_GAP_ANALYSIS.md` sections 3.5, 3.6, 3.8, 5.5; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-007/FW-008/FW-013/FW-014/FW-017/FW-030 | Real GUI smoke is strong but not complete; real mic/KWS, full WindowSession, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
 | Timeline/trace/export | `FRAMEWORK_GAP_ANALYSIS.md` sections 3.1, 5.6; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-010/FW-023/FW-024 | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
 | Memory governance next pass | `FRAMEWORK_GAP_ANALYSIS.md` section 5.3; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-019 | Editable memory exists; auto-learning proposals, review history, undo, and richer project scoping remain. |
+| SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
+| Permission/mode model | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` Wave 12; `lingxy_electron_js_codex_execution_plan.md` queue-class notes | `execution_mode` exists, privacy policy exists, and approvals exist; user-visible mode/tool-surface mapping remains incomplete. |
+| Sidecar decision record | `lingxy_electron_js_codex_execution_plan.md` PR-09/PR-19; sidecar decision gate | Sidecars are constrained by guardrails, but a dedicated decision-record template/verifier is still missing. |
+| Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | File reversibility checkpoint metadata exists; optional project-level git checkpoint mode remains deferred. |
 | Plugin/MCP marketplace | `FRAMEWORK_GAP_ANALYSIS.md` sections 5.9 and MCP ecosystem notes; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-027; `docs/task-runtime/MCP_INTEGRATION.md` | Skill/MCP trust primitives exist; discovery, trust preview, signatures, sharing UX, and external MCP governance remain. |
 | Privacy/sandbox hardening | `FRAMEWORK_GAP_ANALYSIS.md` section 5.8; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-026 | Privacy policy/broker foundation exists; OS-level sandbox/codesign boundaries and richer controls remain. |
 | Task/conversation/project IA migration | `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-028; `docs/architecture/current-codebase-structure-audit.md` | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
@@ -35,6 +39,33 @@ and long-term observability.
   verified; once verified, replace old call sites and delete or archive obsolete
   code in the same PR or in a named cleanup PR with a blocking verifier.
 - Do not put heavy work in Electron main process or renderer.
+
+## Program-Grounded Triage
+
+These items are not accepted merely because an older plan suggested them. Each
+candidate must be checked against the current program first:
+
+- Current event streaming already keeps `text_delta`, `tool_input_delta`,
+  `reasoning_delta`, and `tool_planner_decision` out of durable event storage,
+  so a DB queue is not automatically required for high-frequency token streams.
+- Artifact extraction already has a service-owned background lane, so the next
+  risk is write-path durability/backpressure, not parser CPU in Electron.
+- SQLite currently uses `better-sqlite3` inside the service store. That is
+  acceptable until a measured hot path or broad state growth proves queueing or
+  a DB worker is needed.
+- `execution_mode`, approval gates, and privacy sandbox policy already exist.
+  The missing part is a coherent user-visible mode contract, not a rewrite of
+  every approval.
+- File-level reversibility checkpoints already exist. Git checkpoints are
+  optional project-level recovery, not a replacement.
+
+Decision standard:
+
+- If the current code already has a safe framework path, keep it and add a
+  verifier rather than replacing it.
+- If the current code has partial coverage, add a scoped completion PR.
+- If the current code has no measured problem, add a decision record or audit
+  gate instead of implementation.
 
 ## Phase A: Roadmap And Status Hygiene
 
@@ -58,7 +89,113 @@ Verification:
 - `node scripts/verify-structure.mjs`
 - New roadmap verifier if this phase edits status automation.
 
-## Phase B: Desktop Experience Completion
+## Phase B: Runtime Persistence, Trace Budgets, And Mode Model
+
+### RT-001: SQLite Write-Path Audit And Queue Decision
+
+Scope:
+
+- Audit all SQLite/store write paths for tasks, events, session items,
+  artifact extracts, artifact lineage, context traces, memory proposals,
+  graph checkpoints, schedules, approvals, and eval/perf metadata.
+- Define priority classes: critical control writes, normal runtime writes,
+  low-priority trace/eval writes, and background maintenance writes.
+- Decide, from measured or structural evidence, whether to keep direct service
+  writes, add a service-owned write queue, or move a subset to a DB worker.
+- Keep Electron main process and renderer out of DB batching.
+
+Acceptance:
+
+- The audit identifies which writes are already safe, which writes are on hot
+  paths, and which writes are optional diagnostics.
+- Critical task lifecycle, terminal state, approval-required, and checkpoint
+  writes remain durable enough for recovery.
+- High-volume or diagnostic writes do not block streaming or UI.
+- If a queue is not implemented, the verifier records why direct writes remain
+  acceptable for the current program.
+- If a queue is implemented, snapshots expose depth, age, flush latency,
+  dropped low-priority writes, and last error.
+
+Verification:
+
+- New `verify-sqlite-write-path-budget`
+- Behavior tests for priority ordering, flush failure, shutdown drain, and
+  low-priority backpressure only if a queue is implemented.
+- `npm run check:fast`
+
+### RT-002: Session/Context/Artifact Write Budget Enforcement
+
+Scope:
+
+- Apply the RT-001 decision to non-critical `session_items`, context traces,
+  memory proposal records, artifact extracts, artifact lineage, and eval/perf
+  metadata.
+- Keep user-message/task-anchor writes critical or immediately durable when they
+  are needed for follow-up correctness.
+
+Acceptance:
+
+- Conversation/session continuity remains correct under queued writes.
+- ContextCompiler can read required durable state without depending on delayed
+  diagnostic writes.
+- Artifact transform success does not report before required lineage/contract
+  writes are durable or explicitly recoverable.
+- If direct writes remain, tests prove they are not on high-frequency stream
+  paths and stay within budget.
+
+Verification:
+
+- Existing session/context/artifact behavior tests.
+- New write-budget or write-queue integration tests for session and artifact
+  paths.
+
+### RT-003: Context Trace Persistence And Budget Audit
+
+Scope:
+
+- Reconcile the older `context_compile_traces` plan with the current compact
+  compiled-context/debug-panel implementation.
+- Decide whether a persistent trace table is still required, or whether current
+  task metadata plus lazy JSON export is the canonical trace storage.
+- Enforce `context_compile_ms` and `context_trace_size_bytes` budgets in the
+  chosen contract.
+
+Acceptance:
+
+- There is one canonical context trace storage/export path.
+- Full traces remain opt-in and do not render by default.
+- Stale older trace surfaces are deleted or archived after replacement.
+
+Verification:
+
+- `node scripts/verify-context-compiler-v1.mjs`
+- `node scripts/verify-context-debug-panel-lazy-load.mjs`
+- New context trace budget verifier.
+
+### RT-004: Permission And Mode Model
+
+Scope:
+
+- Map existing `execution_mode`, approval policy, privacy sandbox policy, and
+  tool risk tiers into user-visible modes.
+- Show the active mode in Overlay and Console.
+- Make mode affect tool surface and approval threshold through the existing
+  policy layer, not prompt wording.
+
+Acceptance:
+
+- Users can understand whether the current task is interactive,
+  approval-required, unattended-safe, local-only, or dry-run-like.
+- Mode changes are persisted, audited, and visible in task trace.
+- Existing approval and privacy sandbox checks still pass.
+
+Verification:
+
+- `node scripts/verify-privacy-sandbox-policy.mjs`
+- `node scripts/verify-approval-task-bridge.mjs`
+- New mode-model behavior/UI verifier.
+
+## Phase C: Desktop Experience Completion
 
 ### DX-001: WindowSession State Machine
 
@@ -171,7 +308,7 @@ Verification:
 - `npm run verify:desktop-gui-smoke`
 - New preview screenshot-diff verifier.
 
-## Phase C: Voice And Real Desktop Hardware
+## Phase D: Voice And Real Desktop Hardware
 
 ### VX-001: Real Audio Fixture And KWS Corpus
 
@@ -210,7 +347,7 @@ Verification:
 
 - New opt-in `npm run verify:desktop-audio-hardware-smoke`
 
-## Phase D: Generic Graph Resume And True Sub-Agents
+## Phase E: Generic Graph Resume, Reversibility, And True Sub-Agents
 
 ### GX-003: Generic Agent/Tool Graph Resume
 
@@ -233,6 +370,26 @@ Verification:
 - `node scripts/verify-approval-resume-state.mjs`
 - `npm run verify:desktop-gui-smoke`
 - New graph-resume behavior/eval tests.
+
+### RV-001: Optional Git Checkpoint Mode
+
+Scope:
+
+- Evaluate optional git-backed project checkpoints for file mutation tasks.
+- Keep existing file-level reversibility checkpoints as the default.
+- Require a project opt-in and clear rollback behavior before running git
+  commands.
+
+Acceptance:
+
+- Git checkpoint mode never mutates repositories without explicit opt-in.
+- Restore behavior is understandable and recoverable.
+- File-level reversibility remains available when git is absent or disabled.
+
+Verification:
+
+- `node scripts/verify-file-reversibility-checkpoint.mjs`
+- New opt-in git checkpoint verifier with temporary repositories only.
 
 ### SA-001: Sub-Agent Runtime Contract
 
@@ -274,7 +431,7 @@ Verification:
 - New sub-agent eval corpus.
 - `node scripts/verify-task-trace-timeline.mjs`
 
-## Phase E: Multi-Model Execution
+## Phase F: Multi-Model Execution
 
 ### MM-001: Bind Model Roles To Real Call Sites
 
@@ -312,7 +469,7 @@ Verification:
 - New reviewer-loop evals.
 - Real-LLM comparison report for targeted cases.
 
-## Phase F: Plugin, Skill, MCP Marketplace
+## Phase G: Plugin, Skill, MCP Marketplace
 
 ### PM-001: Marketplace Trust Model
 
@@ -373,7 +530,7 @@ Verification:
 
 - New stale-plugin-reference verifier.
 
-## Phase G: Privacy, Sandbox, And Release Hardening
+## Phase H: Privacy, Sandbox, Sidecars, And Release Hardening
 
 ### SH-001: OS-Level Sandbox Decision Records
 
@@ -394,7 +551,27 @@ Verification:
 - `node scripts/verify-privacy-sandbox-policy.mjs`
 - New sandbox decision-record verifier.
 
-### SH-002: Audit Export And Policy Trace
+### SH-002: Sidecar Decision Record Template
+
+Scope:
+
+- Add `docs/architecture/sidecar-decision-record.md`.
+- Require a measured bottleneck, why worker/child process is insufficient,
+  serialization/cancellation boundary, failure behavior, packaging impact, and
+  rollback path.
+- Explicitly prohibit sidecars as a general business-logic rewrite.
+
+Acceptance:
+
+- No Rust/Go/Python/native sidecar can be introduced without filling the record
+  and passing the verifier.
+- Sidecar decisions distinguish performance isolation from security isolation.
+
+Verification:
+
+- New `verify-sidecar-decision-record`
+
+### SH-003: Audit Export And Policy Trace
 
 Scope:
 
@@ -410,7 +587,7 @@ Verification:
 
 - New audit-export behavior tests.
 
-## Phase H: Observability And Quality Trends
+## Phase I: Observability And Quality Trends
 
 ### OQ-001: Eval Trend Store
 
@@ -450,24 +627,30 @@ Verification:
 ## Recommended PR Order
 
 1. PX-001: tracked roadmap/status hygiene.
-2. DX-001: WindowSession state machine.
-3. DX-002: Electron main IPC boundary split.
-4. DX-003: renderer runtime client consolidation.
-5. DX-004: keyboard-only/a11y GUI pass.
-6. DX-005: first-run/i18n/preview fidelity completion.
-7. VX-001: real audio/KWS fixtures.
-8. GX-003: generic graph resume.
-9. SA-001: sub-agent runtime contract.
-10. SA-002: sub-agent UI/evals.
-11. MM-001: bind model roles to call sites.
-12. MM-002: reviewer/voting loops.
-13. PM-001: marketplace trust model.
-14. PM-002: external MCP governance.
-15. PM-003: sharing/signatures/archive cleanup.
-16. SH-001: OS sandbox decision records.
-17. SH-002: audit export and policy trace.
-18. OQ-001: eval trend store.
-19. OQ-002: span taxonomy and optional OTEL export.
+2. RT-001: SQLite write-path audit and queue decision.
+3. RT-002: session/context/artifact write budget enforcement.
+4. RT-003: context trace persistence and budget audit.
+5. RT-004: permission and mode model.
+6. DX-001: WindowSession state machine.
+7. DX-002: Electron main IPC boundary split.
+8. DX-003: renderer runtime client consolidation.
+9. DX-004: keyboard-only/a11y GUI pass.
+10. DX-005: first-run/i18n/preview fidelity completion.
+11. VX-001: real audio/KWS fixtures.
+12. GX-003: generic graph resume.
+13. RV-001: optional git checkpoint mode.
+14. SA-001: sub-agent runtime contract.
+15. SA-002: sub-agent UI/evals.
+16. MM-001: bind model roles to call sites.
+17. MM-002: reviewer/voting loops.
+18. PM-001: marketplace trust model.
+19. PM-002: external MCP governance.
+20. PM-003: sharing/signatures/archive cleanup.
+21. SH-001: OS sandbox decision records.
+22. SH-002: sidecar decision record template.
+23. SH-003: audit export and policy trace.
+24. OQ-001: eval trend store.
+25. OQ-002: span taxonomy and optional OTEL export.
 
 This order intentionally completes desktop state and observability before true
 sub-agents and multi-model collaboration. Sub-agents multiply failures if window
