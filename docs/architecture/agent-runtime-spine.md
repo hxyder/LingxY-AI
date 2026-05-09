@@ -382,7 +382,7 @@ executes.
 - `npm run verify:followup-artifact-eval-corpus` verifies corpus size,
   category minimums, hard metrics, timing capture, tests, and docs.
 
-Current next step: performance PR-07, runtime graph scheduling budget.
+Current next step: none in the canonical runtime/performance sequences.
 
 ## Legacy Archive Policy
 

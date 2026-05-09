@@ -234,6 +234,7 @@
     "verify:functional-acceptance": "node scripts/verify-functional-acceptance.mjs",
     "verify:user-interaction-smoke": "node scripts/verify-user-interaction-smoke.mjs",
     "verify:desktop-gui-smoke": "node scripts/run-electron-gui-smoke.mjs",
+    "verify:desktop-gui-perf-smoke": "node scripts/verify-desktop-gui-perf-smoke.mjs",
     "verify:security-policy": "node scripts/verify-security-policy.mjs",
     "verify:code-of-conduct": "node scripts/verify-code-of-conduct.mjs",
     "verify:issue-templates": "node scripts/verify-issue-templates.mjs",

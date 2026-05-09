@@ -42,6 +42,7 @@ const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
 const DOCK_WINDOW_ID = "dock";
 const ECHO_DOCK_DROP_VOICE_READY_MS = 30_000;
+const DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT = Date.now();
 const DOCK_HUD_SCROLL_LOCK_CSS = `
   html, body, #dockButton {
     position: fixed !important;
@@ -2425,6 +2426,21 @@ export function createElectronShellRuntime({
   async function runDesktopGuiSmoke() {
     const checks = [];
     const pass = (name, extra = {}) => checks.push({ name, ok: true, ...extra });
+    const smokeRunStartedAt = Date.now();
+    let firstWindowReadyMs = null;
+    const buildPerfReport = () => {
+      const completedAt = Date.now();
+      return {
+        process_started_at: new Date(DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT).toISOString(),
+        smoke_started_at: new Date(smokeRunStartedAt).toISOString(),
+        smoke_completed_at: new Date(completedAt).toISOString(),
+        startup_ms: firstWindowReadyMs ?? Math.max(0, smokeRunStartedAt - DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT),
+        first_window_ready_ms: firstWindowReadyMs ?? Math.max(0, smokeRunStartedAt - DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT),
+        interaction_ms: Math.max(0, completedAt - smokeRunStartedAt),
+        total_ms: Math.max(0, completedAt - DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT),
+        check_count: checks.length
+      };
+    };
     try {
       showWindow("overlay");
       const overlayWindow = windows.get("overlay");
@@ -2433,6 +2449,7 @@ export function createElectronShellRuntime({
       }
       const overlayVisible = await waitForDesktopGuiSmoke(() => overlayWindow.isVisible?.() === true, 5000);
       if (!overlayVisible) throw new Error("overlay_window_not_visible");
+      firstWindowReadyMs = Math.max(0, Date.now() - DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT);
       pass("overlay_visible");
 
       const overlaySmokeHookReady = await waitForDesktopGuiSmoke(async () => {
@@ -3134,13 +3151,14 @@ export function createElectronShellRuntime({
       if (!popupClosed) throw new Error("popup_approval_card_reject_did_not_close");
       pass("popup_approval_card_reject_closes");
 
-      writeDesktopGuiSmokeResult({ ok: true, checks });
+      writeDesktopGuiSmokeResult({ ok: true, checks, perf: buildPerfReport() });
       app.quit();
     } catch (error) {
       writeDesktopGuiSmokeResult({
         ok: false,
         error: error?.message ?? String(error),
-        checks
+        checks,
+        perf: buildPerfReport()
       });
       app.exit(1);
     }

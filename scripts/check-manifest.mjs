@@ -183,6 +183,7 @@ export const CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-auto-updater.mjs",
   "node scripts/verify-functional-acceptance.mjs",
   "node scripts/verify-user-interaction-smoke.mjs",
+  "node scripts/verify-desktop-gui-perf-smoke.mjs",
   "node scripts/verify-security-policy.mjs",
   "node scripts/verify-code-of-conduct.mjs",
   "node scripts/verify-issue-templates.mjs",
@@ -252,5 +253,6 @@ export const FAST_CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-ui-extras.mjs",
   "node scripts/verify-auto-updater.mjs",
   "node scripts/verify-functional-acceptance.mjs",
-  "node scripts/verify-user-interaction-smoke.mjs"
+  "node scripts/verify-user-interaction-smoke.mjs",
+  "node scripts/verify-desktop-gui-perf-smoke.mjs"
 ]);

@@ -37,7 +37,7 @@ process or renderer code.
 | PR-05 | Context compiler off hot Electron paths | Done |
 | PR-06 | Artifact extraction background lane | Done |
 | PR-07 | Runtime graph scheduling budget | Done |
-| PR-08 | Desktop GUI perf smoke | Startup and interaction smoke reports remain bounded |
+| PR-08 | Desktop GUI perf smoke | Done |
 
 ## PR-01 Status
 
@@ -191,7 +191,19 @@ Conversation/session spine status:
   snapshots. It does not replace the still-reachable scheduler/template DAG
   path under `src/service/dag`.
 
-Current next step: PR-08, desktop GUI perf smoke.
+PR-08 is done: the Electron GUI smoke runner now requires a structured perf
+report with startup, first-window, interaction, total, and check-count metrics,
+and enforces configurable budgets before accepting a smoke pass. The smoke
+result includes partial perf diagnostics even on failure.
+
+Current next step: none in this performance sequence.
+
+Verification:
+
+- `npm run verify:desktop-gui-perf-smoke`
+- `node --test tests/behavior/desktop-gui-perf-smoke.test.mjs`
+- `npm run verify:desktop-gui-smoke`
+- `npm run check:fast`
 
 ## Sidecar Decision Gate
 

@@ -8,10 +8,16 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import electronPath from "electron";
+import {
+  readDesktopGuiSmokePerfBudget,
+  summarizeDesktopGuiSmokePerf,
+  validateDesktopGuiSmokePerfResult
+} from "./gui-smoke-perf-contract.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const timeoutMs = Number(process.env.LINGXY_ELECTRON_GUI_SMOKE_TIMEOUT_MS ?? 30_000);
 const smokeUserDataDir = path.join(os.tmpdir(), `lingxy-electron-gui-smoke-run-${process.pid}`);
+const perfBudget = readDesktopGuiSmokePerfBudget(process.env);
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -331,8 +337,16 @@ function finish(error = null) {
   }
   try {
     assert.equal(parsedResult?.ok, true, parsedResult?.error ?? "Electron GUI smoke failed");
+    const perfValidation = validateDesktopGuiSmokePerfResult(parsedResult, perfBudget);
+    assert.equal(
+      perfValidation.ok,
+      true,
+      `Electron GUI smoke perf budget failed: ${perfValidation.failures.join(", ")}`
+    );
     const checkNames = parsedResult.checks?.map((check) => check.name).join(", ") ?? "";
-    console.log(`electron gui smoke ok${checkNames ? ` (${checkNames})` : ""}`);
+    console.log(
+      `electron gui smoke ok${checkNames ? ` (${checkNames})` : ""} ${summarizeDesktopGuiSmokePerf(parsedResult)}`
+    );
   } catch (assertionError) {
     console.error(assertionError.message);
     process.exitCode = 1;
