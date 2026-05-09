@@ -3,6 +3,7 @@ import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
+import { createRuntimeGraphCheckpointService } from "../graph/runtime-graph-checkpoints.mjs";
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
 import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
 import { createArtifactTransformService } from "../artifact-transforms/artifact-transform-service.mjs";
@@ -28,6 +29,14 @@ function hasSessionCompactionStore(store) {
     && typeof store.appendSessionCompaction === "function"
     && typeof store.listSessionCompactions === "function"
     && typeof store.getLatestSessionCompaction === "function"
+  );
+}
+
+function hasRuntimeGraphCheckpointStore(store) {
+  return Boolean(
+    store
+    && typeof store.appendEvent === "function"
+    && typeof store.getTask === "function"
   );
 }
 
@@ -82,6 +91,13 @@ export function ensureRuntimeServices(runtime) {
   if (!runtime.sessionCompactions && hasSessionCompactionStore(runtime.store)) {
     runtime.sessionCompactions = createSessionCompactionService({
       store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
+  if (!runtime.runtimeGraph && hasRuntimeGraphCheckpointStore(runtime.store)) {
+    runtime.runtimeGraph = createRuntimeGraphCheckpointService({
+      store: runtime.store,
+      eventBus: runtime.eventBus,
       metrics: runtime.metrics
     });
   }

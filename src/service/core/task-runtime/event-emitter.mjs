@@ -233,6 +233,17 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
     // Session observability must never break tool execution or streaming.
   }
   runtime.eventBus.publish(record);
+  try {
+    runtime.runtimeGraph?.recordTaskEvent?.({
+      taskId,
+      eventType,
+      payload: effectivePayload,
+      event: record,
+      runtime
+    });
+  } catch {
+    // Graph checkpoint observability must never break task execution.
+  }
   if (taskId && !firstEventTimingEmitted.has(taskId) && isExecutorEvent(eventType, effectivePayload)) {
     firstEventTimingEmitted.add(taskId);
     emitPhaseTiming(runtime, taskId, "executor_first_event");

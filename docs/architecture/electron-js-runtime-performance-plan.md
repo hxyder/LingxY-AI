@@ -173,6 +173,10 @@ Conversation/session spine status:
 - UX-001 is done: the Context debug panel renders compact selected/omitted
   context summaries by default and lazy-copies full JSON only on demand, so raw
   giant traces are not rendered in the task detail hot path.
+- GX-001 is done: runtime graph node metadata and
+  `runtime_graph_checkpoint` task events are recorded in service/runtime code
+  from existing task events without moving graph execution or checkpoint work
+  into Electron main process or renderer code.
 
 Current next step: PR-06, artifact extraction background lane.
 

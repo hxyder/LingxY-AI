@@ -89,7 +89,7 @@ executes.
 | MX-001 | Memory governance surfaces | Done |
 | MX-002 | Session compaction | Done |
 | UX-001 | Context debug panel | Done |
-| GX-001 | Graph nodes for runtime execution | Pending |
+| GX-001 | Graph nodes for runtime execution | Done |
 | GX-002 | Checkpoints, fork, and replay | Pending |
 | EX-001 | Eval corpus for context/follow-up/artifact regressions | Pending |
 
@@ -325,7 +325,23 @@ executes.
 - `npm run verify:context-debug-panel-lazy-load` verifies renderer wiring,
   bounded lists, lazy JSON copying, styles, tests, and docs.
 
-Current next step: GX-001, Graph nodes for runtime execution.
+## GX-001 Acceptance
+
+- Task creation stamps a lightweight `context_packet.runtime_graph` contract with
+  the main execution nodes: ingest, resolve_session, resolve_followup,
+  compile_context, plan, act, validate, synthesize, and persist_session.
+- `RuntimeGraphCheckpointService` records typed `runtime_graph_checkpoint` task
+  events from existing task events instead of adding a second executor loop.
+- Approval checkpoints carry a resume token; cancelled and failed task events
+  map to interrupted or failed graph nodes.
+- Runtime graph checkpoints are service/runtime-owned and do not import heavy
+  graph frameworks, Electron main process, or renderer code.
+- Existing `src/service/dag` remains the template/scheduler DAG path; it is not
+  deleted or archived in this PR because it is still reachable.
+- `npm run verify:runtime-graph-nodes` verifies node topology, checkpoint event
+  mapping, runtime wiring, tests, and docs.
+
+Current next step: GX-002, Checkpoints, fork, and replay.
 
 ## Legacy Archive Policy
 

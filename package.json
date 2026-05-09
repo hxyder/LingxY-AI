@@ -204,6 +204,7 @@
     "verify:memory-governance": "node scripts/verify-memory-governance.mjs",
     "verify:session-compaction": "node scripts/verify-session-compaction.mjs",
     "verify:context-debug-panel-lazy-load": "node scripts/verify-context-debug-panel-lazy-load.mjs",
+    "verify:runtime-graph-nodes": "node scripts/verify-runtime-graph-nodes.mjs",
     "verify:runtime-search-popup-autotask": "node scripts/verify-runtime-search-popup-autotask.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
     "verify:email-monitoring": "node scripts/verify-email-monitoring.mjs",

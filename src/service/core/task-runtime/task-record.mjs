@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { createTaskSpec, validateTaskSpec } from "../task-spec.mjs";
 import { evaluateSubmissionBoundary } from "../policy/submission-boundary.mjs";
 import { compileContextForTask } from "../context/context-compiler.mjs";
+import { buildTaskRuntimeGraph } from "../graph/runtime-graph-checkpoints.mjs";
 import {
   attachParentTaskSummary,
   attachPriorBackendMessages,
@@ -125,8 +126,17 @@ export function createTaskRecord({
     },
     runtime
   );
+  const contextWithRuntimeGraph = {
+    ...(enrichedContext ?? {}),
+    runtime_graph: buildTaskRuntimeGraph({
+      taskId,
+      conversationId: effectiveConversationId,
+      parentTaskId: effectiveParentTaskId,
+      sessionId: null
+    })
+  };
 
-  const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
+  const taskSpec = createTaskSpec(userCommand, contextWithRuntimeGraph, route);
   const taskSpecValidation = validateTaskSpec(taskSpec);
   const selectedExecutor = executorOverride ?? taskSpec.suggested_executor ?? route.executor;
 
@@ -161,9 +171,9 @@ export function createTaskRecord({
     task_spec_valid: taskSpecValidation.valid,
     task_spec_errors: taskSpecValidation.errors,
     execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
-    context_packet: enrichedContext,
+    context_packet: contextWithRuntimeGraph,
     source_dedupe_key: buildSourceDedupeKey(
-      enrichedContext,
+      contextWithRuntimeGraph,
       userCommand,
       selectedExecutor
     )

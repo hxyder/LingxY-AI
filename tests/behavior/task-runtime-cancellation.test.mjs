@@ -98,10 +98,18 @@ test("task cancellation force path marks task cancelled and finishes queue", asy
   assert.equal(task.failure_category, "user_interrupted");
   assert.match(task.failure_user_message, /强制/);
   assert.deepEqual(runtime.finished, [task.task_id]);
+  const events = runtime.store.getTaskEvents(task.task_id);
   assert.deepEqual(
-    runtime.store.getTaskEvents(task.task_id).map((event) => event.event_type),
+    events
+      .filter((event) => event.event_type !== "runtime_graph_checkpoint")
+      .map((event) => event.event_type),
     ["status_changed", "cancel_requested", "status_changed", "cancelled"]
   );
+  assert.ok(events.some((event) => (
+    event.event_type === "runtime_graph_checkpoint"
+    && event.payload?.node === "act"
+    && event.payload?.status === "interrupted"
+  )));
 });
 
 test("task cancellation second request force-finishes an already cancelling task", async () => {
@@ -116,8 +124,16 @@ test("task cancellation second request force-finishes an already cancelling task
   assert.equal(task.status, "cancelled");
   assert.equal(task.sub_status, "user_interrupted");
   assert.deepEqual(runtime.finished, [task.task_id]);
+  const events = runtime.store.getTaskEvents(task.task_id);
   assert.deepEqual(
-    runtime.store.getTaskEvents(task.task_id).map((event) => event.event_type),
+    events
+      .filter((event) => event.event_type !== "runtime_graph_checkpoint")
+      .map((event) => event.event_type),
     ["status_changed", "cancelled"]
   );
+  assert.ok(events.some((event) => (
+    event.event_type === "runtime_graph_checkpoint"
+    && event.payload?.node === "act"
+    && event.payload?.status === "interrupted"
+  )));
 });
