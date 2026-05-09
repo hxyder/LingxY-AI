@@ -5,6 +5,7 @@ import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
 import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
+import { createArtifactTransformService } from "../artifact-transforms/artifact-transform-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
 
 function hasConversationSessionStore(store) {
@@ -37,6 +38,16 @@ function hasArtifactLineageStore(store) {
   );
 }
 
+function hasArtifactTransformStore(store) {
+  return Boolean(
+    store
+    && typeof store.getTask === "function"
+    && typeof store.getArtifact === "function"
+    && typeof store.appendArtifact === "function"
+    && typeof store.listArtifactExtractsForArtifact === "function"
+  );
+}
+
 export function ensureRuntimeServices(runtime) {
   runtime.activeExecutions ??= new Map();
   // UCA-077 P4-04.5: registry must be a singleton on the runtime so that
@@ -65,6 +76,18 @@ export function ensureRuntimeServices(runtime) {
   if (!runtime.artifactLineage && hasArtifactLineageStore(runtime.store)) {
     runtime.artifactLineage = createArtifactLineageService({
       store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
+  if (!runtime.artifactTransforms
+    && hasArtifactTransformStore(runtime.store)
+    && runtime.actionToolRegistry
+    && runtime.artifactLineage) {
+    runtime.artifactTransforms = createArtifactTransformService({
+      store: runtime.store,
+      actionToolRegistry: runtime.actionToolRegistry,
+      artifactLineage: runtime.artifactLineage,
+      conversationSessions: runtime.conversationSessions ?? null,
       metrics: runtime.metrics
     });
   }

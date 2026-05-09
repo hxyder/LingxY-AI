@@ -160,6 +160,9 @@ Conversation/session spine status:
 - AX-002 is done: typed `artifact_lineage` records and semantic transform
   contracts are persisted and validated in the service layer without Electron
   main/renderer work or blocking artifact IO.
+- AX-003 is done: the service layer owns the first typed `xlsx_to_pptx`
+  transform flow, consuming existing extracts and writing lineage without
+  Electron main/renderer work or source-file parsing in the transform path.
 
 Current next step: PR-06, artifact extraction background lane.
 

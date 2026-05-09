@@ -200,6 +200,7 @@
     "verify:follow-up-resolver-foundation": "node scripts/verify-follow-up-resolver-foundation.mjs",
     "verify:artifact-extract-foundation": "node scripts/verify-artifact-extract-foundation.mjs",
     "verify:artifact-lineage-contracts": "node scripts/verify-artifact-lineage-contracts.mjs",
+    "verify:artifact-transform-flows": "node scripts/verify-artifact-transform-flows.mjs",
     "verify:runtime-search-popup-autotask": "node scripts/verify-runtime-search-popup-autotask.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
     "verify:email-monitoring": "node scripts/verify-email-monitoring.mjs",

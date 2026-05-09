@@ -81,7 +81,7 @@ executes.
 | CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Done |
 | AX-001 | Typed ArtifactExtract records | Done |
 | AX-002 | Artifact lineage and semantic contracts | Done |
-| AX-003 | Typed transforms | Pending |
+| AX-003 | Typed transforms | Done |
 | MX-001 | Memory governance surfaces | Pending |
 | MX-002 | Session compaction | Pending |
 | UX-001 | Context debug panel | Pending |
@@ -251,7 +251,25 @@ executes.
 - `npm run verify:artifact-lineage-contracts` verifies storage, service wiring,
   contract rules, docs, and no blocking artifact IO in lineage validation.
 
-Current next step: AX-003, Typed transforms.
+## AX-003 Acceptance
+
+- `ArtifactTransformService` owns typed transform flows in the service layer,
+  outside Electron main process and renderer code.
+- The first deterministic structure-first transform is `xlsx_to_pptx`: it
+  consumes existing typed table/summary ArtifactExtract records, builds a PPTX
+  outline with a summary slide and one slide per table candidate, and preserves
+  workbook headers in table slides.
+- The transform reuses `generate_document` for target artifact generation,
+  registers the target artifact, writes `ArtifactLineage`, and records a session
+  `artifact_reference` when ConversationSession is available.
+- The AX-003 flow does not parse source XLSX files on the transform path; source
+  file extraction remains owned by background extraction lanes.
+- The outline validator rejects one-slide prose dumps and missing table slides.
+- `npm run verify:artifact-transform-flows` verifies service wiring, real PPTX
+  generation, lineage, session reference persistence, and no blocking source
+  extraction in transform code.
+
+Current next step: MX-001, Memory governance surfaces.
 
 ## Legacy Archive Policy
 

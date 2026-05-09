@@ -645,6 +645,21 @@ function renderBullets(items = []) {
   return `<ul>${items.filter(Boolean).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
 }
 
+function renderPreviewTable(table = null) {
+  if (!table || typeof table !== "object") return "";
+  const headers = Array.isArray(table.headers) ? table.headers : [];
+  const rows = Array.isArray(table.rows) ? table.rows : [];
+  if (headers.length === 0 && rows.length === 0) return "";
+  return `
+    <table>
+      ${headers.length > 0 ? `<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>` : ""}
+      <tbody>
+        ${rows.map((row) => `<tr>${(Array.isArray(row) ? row : [row]).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
 function renderPreviewDiagrams(section = {}) {
   const diagrams = sectionDiagrams(section);
   if (diagrams.length === 0) return "";
@@ -680,6 +695,7 @@ export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {
           ${renderPreviewDiagrams(slide)}
           ${renderPreviewSvgs(slide)}
           ${renderBullets(slide?.bullets)}
+          ${renderPreviewTable(slide?.table)}
         </section>
       `).join("")}
     `;
@@ -696,12 +712,7 @@ export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {
       return `
         <section class="sheet">
           <div class="sheet-name">${escapeHtml(sheet.name ?? "Sheet")}</div>
-          <table>
-            ${headers.length > 0 ? `<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>` : ""}
-            <tbody>
-              ${rows.map((row) => `<tr>${(Array.isArray(row) ? row : [row]).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}
-            </tbody>
-          </table>
+          ${renderPreviewTable({ headers, rows })}
         </section>
       `;
     }).join("");
@@ -720,6 +731,7 @@ export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {
         ${renderPreviewDiagrams(section)}
         ${renderPreviewSvgs(section)}
         ${renderBullets(section?.bullets)}
+        ${renderPreviewTable(section?.table)}
       </section>
     `).join("")}
   `;
