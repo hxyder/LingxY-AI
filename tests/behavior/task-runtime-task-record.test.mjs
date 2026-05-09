@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import {
+  SESSION_ITEM_KINDS,
+  createConversationSessionService
+} from "../../src/service/core/session/conversation-session-service.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 import { createTaskRecord } from "../../src/service/core/task-runtime/task-record.mjs";
 
@@ -27,6 +31,16 @@ function makeRuntimeWithParent() {
     status: "success",
     result_summary: "parent answer",
     conversation_id: "conv_record"
+  });
+  runtime.conversationSessions = createConversationSessionService({ store });
+  const session = runtime.conversationSessions.ensureSession({
+    conversationId: "conv_record",
+    activeTaskId: "task_parent"
+  });
+  runtime.conversationSessions.appendItem({
+    sessionId: session.session_id,
+    kind: SESSION_ITEM_KINDS.TASK_ANCHOR,
+    taskId: "task_parent"
   });
   return runtime;
 }

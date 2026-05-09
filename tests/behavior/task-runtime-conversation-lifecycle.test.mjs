@@ -10,10 +10,11 @@ import {
   deriveConversationTitle,
   ensureConversation
 } from "../../src/service/core/task-runtime/conversation-lifecycle.mjs";
+import { ensureRuntimeServices } from "../../src/service/core/task-runtime/runtime-services.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
 
 function makeRuntime() {
-  return {
+  const runtime = {
     store: createInMemoryStoreScaffold(),
     queue: createTaskQueueScaffold(),
     eventBus: createEventBusScaffold(),
@@ -22,6 +23,8 @@ function makeRuntime() {
     securityBroker: { clearTaskRedactionMap() {} },
     platform: {}
   };
+  ensureRuntimeServices(runtime);
+  return runtime;
 }
 
 const baseRoute = {

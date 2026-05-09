@@ -61,6 +61,10 @@ executes.
 - Patch check: reject changes that only special-case a symptom; every change
   must enforce a framework invariant or update the PR plan to explain why the
   framework shape changed.
+- Replacement discipline: once a new framework path is verified and wired,
+  migrate callers to it and retire old reachable code. Do not keep parallel
+  old/new implementations reachable unless a named feature flag and cleanup PR
+  explain the temporary overlap.
 
 ## PR Sequence
 
@@ -73,7 +77,7 @@ executes.
 | PR-05 | ContextCompiler service boundary | Done |
 | CX-001 | ConversationSession storage and service skeleton | Done |
 | CX-002 | Tool calls and observations as session items | Done |
-| CX-003 | FollowUpResolver with regression seeds | Pending |
+| CX-003 | FollowUpResolver with regression seeds | Done |
 | CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Pending |
 | AX-001 | Typed ArtifactExtract records | Pending |
 | AX-002 | Artifact lineage and semantic contracts | Pending |
@@ -179,7 +183,22 @@ executes.
 - `npm run verify:conversation-session-foundation` verifies tool event session
   recording.
 
-Current next step: CX-003, FollowUpResolver with regression seeds.
+## CX-003 Acceptance
+
+- `FollowUpResolver` lives in the service-owned session layer and is the single
+  task follow-up parent selection entry point.
+- Resolver output is versioned, typed, and persisted into task context metadata
+  as `selection_metadata.follow_up_resolution`.
+- Follow-up parent selection uses typed session anchors such as `task_anchor`,
+  `tool_call`, `tool_observation`, and `artifact_reference`.
+- New-topic requests do not inherit stale session anchors.
+- Caller-provided parent ids still win, but only through the resolver contract.
+- Old lifecycle follow-up resolver exports and task-list scan call sites are
+  retired so the new framework path does not coexist with old reachable logic.
+- `npm run verify:follow-up-resolver-foundation` verifies the resolver boundary,
+  retired old references, docs, and regression seed coverage.
+
+Current next step: CX-004, ContextCompiler V1 with deterministic inclusion reasons.
 
 ## Legacy Archive Policy
 
@@ -190,6 +209,8 @@ Historical code can be archived or deleted when all of the following are true:
 - Replacement behavior exists and has targeted tests or verifiers.
 - Migration risk is documented, including rollback path.
 - Any remaining compatibility path is behind a named feature flag.
+- When a new framework path fully replaces an old one, retire the old exports
+  and call sites in the same PR when verifier coverage can prove the replacement.
 
 If those conditions are not met, keep the code reachable and plan a dedicated
 cleanup PR after the framework replacement is wired.

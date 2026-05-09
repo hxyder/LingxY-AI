@@ -44,6 +44,10 @@ must apply to every user task it executes.
    migration shape before generating or editing broad code.
 8. Patch check: explicitly check whether the change is only a local patch; if it
    is not enforcing a framework invariant, redesign it before implementation.
+9. Replacement discipline: when a new framework path is verified and wired,
+   migrate callers to it and retire old reachable code in the same PR or in a
+   named follow-up cleanup PR with a blocking verifier. Do not leave parallel
+   old/new implementations reachable without an explicit feature flag.
 
 Verification expectations:
 
@@ -60,7 +64,9 @@ Legacy code policy:
 - Do not delete or archive old code only because it looks stale.
 - First prove the code is unused or superseded with references, import/call-site
   checks, tests, and runtime wiring analysis.
-- Prefer a small archive or deletion PR with explicit rollback notes after the
-  replacement path is verified.
-- If old code is still reachable, either migrate callers to the new framework
-  first or keep the compatibility path behind a named feature flag.
+- When the new framework path exists and passes its verifier, replace old call
+  sites and remove the old implementation surface instead of keeping both paths.
+- If removal cannot be completed safely in the same PR, create a named cleanup
+  PR step and add a verifier that prevents new old-path references.
+- If old code is still reachable during migration, either migrate callers to the
+  new framework first or keep the compatibility path behind a named feature flag.

@@ -2,51 +2,10 @@
  * Conversation lifecycle helpers for task-runtime.
  *
  * This module owns conversation row creation, prior-message enrichment,
- * follow-up parent resolution, title backfill, and assistant outcome messages.
+ * title backfill, and assistant outcome messages.
  * It intentionally does not create task records; task-runtime.mjs remains the
  * orchestration shell that combines task creation, audit, queueing, and events.
  */
-
-export function resolveParentFromConversation(conversationId, runtime) {
-  if (typeof conversationId !== "string" || conversationId.length === 0) return null;
-  if (typeof runtime?.store?.listTasks !== "function") return null;
-  try {
-    const candidates = runtime.store.listTasks().filter((task) =>
-      task && typeof task === "object" && task.conversation_id === conversationId
-    );
-    if (candidates.length === 0) return null;
-    candidates.sort((a, b) => {
-      const aTs = typeof a.created_at === "string" ? a.created_at : "";
-      const bTs = typeof b.created_at === "string" ? b.created_at : "";
-      if (aTs === bTs) return 0;
-      return aTs < bTs ? 1 : -1;
-    });
-    const newest = candidates[0];
-    return typeof newest?.task_id === "string" ? newest.task_id : null;
-  } catch {
-    return null;
-  }
-}
-
-const SHORT_FOLLOWUP_REPLY = /^(好|好的?|可以|继续|需要|要|对|是|是的|嗯|ok|okay|yes|sure|please)\s*[!.！。]?$/i;
-const REFERENTIAL_FOLLOWUP = /(^|\s)(上个|上一|刚才|之前|前面|那个|这个|这些|那些|它|它们|里面的|文件夹里的|图片里的|表格里的|文档里的|这张|那张|第一张|第二张|同样|一样|照这个|继续|再来|改一下|补充|加上|打开它|打开这个|打开那个)(\s|$|[，。！？,.!?])/i;
-const SHORT_SLOT_REPLY_BLOCKER = /(打开|启动|运行|删除|移动|复制|保存|导出|发送|发邮件|搜索|查一下|查询|查找|新闻|天气|气温|股价|股票|美股|A股|汇率|价格|多少钱|文件|文件夹|图片|上传|下载|日历|提醒|定时|为什么|怎么办|怎么|如何|生成|创建|制作|做成|做一个|报表|表格|格式|文档|幻灯片|电子表格|走势|\?|？|\bopen\b|\blaunch\b|\brun\b|\bdelete\b|\bmove\b|\bcopy\b|\bsave\b|\bexport\b|\bsend\b|\bemail\b|\bsearch\b|\bnews\b|\bweather\b|\bstock\b|\bprice\b|\bfile\b|\bfolder\b|\bimage\b|\bcalendar\b|\bremind\b|\bschedule\b|\bcreate\b|\bgenerate\b|\bmake\b|\breport\b|\bformat\b|\bexcel\b|\bxlsx\b|\bpptx?\b|\bdocx?\b|\bpdf\b|\bwhy\b|\bhow\b|\bwhat\b)/i;
-
-function looksLikeShortSlotReply(text = "") {
-  const value = String(text ?? "").trim();
-  if (!value) return false;
-  if (value.length > 24) return false;
-  if (SHORT_SLOT_REPLY_BLOCKER.test(value)) return false;
-  return /^[\p{L}\p{N}\s,，.'’_-]+$/u.test(value);
-}
-
-export function shouldAutoResolveParentFromConversation(userCommand = "") {
-  const text = String(userCommand ?? "").trim();
-  if (!text) return false;
-  if (SHORT_FOLLOWUP_REPLY.test(text)) return true;
-  if (looksLikeShortSlotReply(text)) return true;
-  return REFERENTIAL_FOLLOWUP.test(text);
-}
 
 export function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   try {

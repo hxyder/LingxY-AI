@@ -23,7 +23,7 @@ process or renderer code.
   `AGENTS.md` and `docs/architecture/agent-runtime-spine.md`: module
   boundaries, architecture rules file, upgrade task scope, forbidden
   modification areas, interface contracts, test gate, design-before-generation,
-  and patch check. This is not a runtime requirement for every user task.
+  patch check, and replacement discipline. This is not a runtime requirement for every user task.
 
 ## PR Sequence
 
@@ -148,6 +148,9 @@ Conversation/session spine status:
   session_items.
 - CX-002 is done: tool call and tool observation events are persisted as typed
   session_items while streaming deltas remain excluded.
+- CX-003 is done: FollowUpResolver uses typed session anchors for follow-up
+  parent selection, writes resolver decisions into task context metadata, and
+  retires old lifecycle follow-up resolver call sites.
 
 Current next step: PR-06, artifact extraction background lane.
 
@@ -167,5 +170,6 @@ A sidecar proposal must include:
 
 Old Electron or runtime paths may be archived only after their imports,
 registrations, package scripts, and runtime callers are checked. Prefer a
-dedicated cleanup PR after the new path is verified, not opportunistic deletion
-inside a behavior PR.
+dedicated cleanup PR after the new path is verified when same-PR removal is
+risky, but replace old call sites immediately when the new framework path has
+verifier coverage.

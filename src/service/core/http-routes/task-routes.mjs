@@ -4,9 +4,9 @@ import { retryTask } from "../../retry/retry-manager.mjs";
 import {
   cancelTask,
   emitTaskEvent,
-  readTaskEventLog,
-  shouldAutoResolveParentFromConversation
+  readTaskEventLog
 } from "../task-runtime.mjs";
+import { looksLikeFollowUpSignal } from "../session/follow-up-resolver.mjs";
 import { setUserLocation } from "../../utils/location.mjs";
 import { submitActionToolTask } from "../action-tool-submission.mjs";
 import { submitBrowserTask } from "../browser-submission.mjs";
@@ -294,7 +294,7 @@ export async function submitTaskFromBody(runtime, body) {
   const requestParentTaskId = typeof body.parent_task_id === "string" && body.parent_task_id
     ? body.parent_task_id
     : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null);
-  const effectiveRequestParentTaskId = requestParentTaskId && shouldAutoResolveParentFromConversation(userCommand)
+  const effectiveRequestParentTaskId = requestParentTaskId && looksLikeFollowUpSignal(userCommand)
     ? requestParentTaskId
     : null;
   const requestClientMessageId = typeof body.client_message_id === "string" && body.client_message_id

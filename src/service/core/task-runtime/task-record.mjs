@@ -4,10 +4,12 @@ import { evaluateSubmissionBoundary } from "../policy/submission-boundary.mjs";
 import {
   attachParentTaskSummary,
   attachPriorBackendMessages,
-  attachRecentConversationArtifacts,
-  resolveParentFromConversation,
-  shouldAutoResolveParentFromConversation
+  attachRecentConversationArtifacts
 } from "./conversation-lifecycle.mjs";
+import {
+  compactFollowUpResolution,
+  resolveFollowUp
+} from "../session/follow-up-resolver.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -52,15 +54,16 @@ export function createTaskRecord({
     typeof rawConversationId === "string" && rawConversationId.length > 0
       ? rawConversationId
       : null;
-  const callerProvidedParent = parentTaskId != null;
-  const continuationSignal = shouldAutoResolveParentFromConversation(userCommand);
-  const autoResolvedParentTaskId = !callerProvidedParent && continuationSignal
-    ? resolveParentFromConversation(effectiveConversationId, runtime)
-    : null;
-  const effectiveParentTaskId = parentTaskId ?? autoResolvedParentTaskId;
+  const followUpResolution = resolveFollowUp({
+    userCommand,
+    conversationId: effectiveConversationId,
+    parentTaskId,
+    runtime
+  });
+  const effectiveParentTaskId = parentTaskId ?? followUpResolution.parent_task_id ?? null;
   const isCompositeChild = Number.isInteger(childIndex);
   const isContinuation = retryCount > 0
-    || (Boolean(effectiveParentTaskId) && !isCompositeChild && continuationSignal);
+    || (Boolean(effectiveParentTaskId) && !isCompositeChild && followUpResolution.should_continue);
 
   const withParentSummary = effectiveParentTaskId && runtime?.store?.getTask
     ? attachParentTaskSummary(contextPacket, effectiveParentTaskId, runtime)
@@ -70,11 +73,21 @@ export function createTaskRecord({
     effectiveConversationId,
     runtime
   );
-  const enrichedContext = attachRecentConversationArtifacts(
+  const withRecentArtifacts = attachRecentConversationArtifacts(
     withPriorMessages,
     effectiveConversationId,
     runtime
   );
+  const compactResolution = compactFollowUpResolution(followUpResolution);
+  const enrichedContext = compactResolution
+    ? {
+        ...(withRecentArtifacts ?? {}),
+        selection_metadata: {
+          ...((withRecentArtifacts ?? {}).selection_metadata ?? {}),
+          follow_up_resolution: compactResolution
+        }
+      }
+    : withRecentArtifacts;
 
   const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
   const taskSpecValidation = validateTaskSpec(taskSpec);

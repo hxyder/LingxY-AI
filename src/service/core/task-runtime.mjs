@@ -7,9 +7,13 @@ export {
   attachPriorBackendMessages,
   backfillConversationTitles,
   deriveConversationTitle,
-  ensureConversation,
-  shouldAutoResolveParentFromConversation
+  ensureConversation
 } from "./task-runtime/conversation-lifecycle.mjs";
+export {
+  compactFollowUpResolution,
+  looksLikeFollowUpSignal,
+  resolveFollowUp
+} from "./session/follow-up-resolver.mjs";
 export { emitTaskEvent } from "./task-runtime/event-emitter.mjs";
 export { createTaskRecord } from "./task-runtime/task-record.mjs";
 export { ensureRuntimeServices } from "./task-runtime/runtime-services.mjs";

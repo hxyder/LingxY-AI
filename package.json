@@ -196,6 +196,7 @@
     "verify:renderer-stream-batching": "node scripts/verify-renderer-stream-batching.mjs",
     "verify:context-compiler-boundary": "node scripts/verify-context-compiler-boundary.mjs",
     "verify:conversation-session-foundation": "node scripts/verify-conversation-session-foundation.mjs",
+    "verify:follow-up-resolver-foundation": "node scripts/verify-follow-up-resolver-foundation.mjs",
     "verify:runtime-search-popup-autotask": "node scripts/verify-runtime-search-popup-autotask.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
     "verify:email-monitoring": "node scripts/verify-email-monitoring.mjs",

@@ -43,6 +43,7 @@ assertIncludes(agents, "AGENTS.md", [
   "Test gate",
   "Design-before-generation",
   "Patch check",
+  "Replacement discipline",
 ]);
 
 assertIncludes(spine, "docs/architecture/agent-runtime-spine.md", [
@@ -52,6 +53,7 @@ assertIncludes(spine, "docs/architecture/agent-runtime-spine.md", [
   "Mandatory Upgrade PR Protocol",
   "not a runtime rule for every user task",
   "Upgrade task scope",
+  "Replacement discipline",
   "PR-01",
   "Legacy Archive Policy",
 ]);
@@ -65,6 +67,7 @@ assertIncludes(
     "Streaming UI updates must be batched",
     "mandatory upgrade PR protocol",
     "not a runtime requirement for every user task",
+    "replacement discipline",
     "Sidecar Decision Gate",
     "PR-02",
   ],
