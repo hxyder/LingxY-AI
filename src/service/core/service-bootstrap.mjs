@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { sanitizeProviderConfig, sanitizeTaskRouteForProvider } from "../../shared/provider-catalog.mjs";
 import { buildStoreManifest } from "./store/sqlite-schema.mjs";
 import {
@@ -81,6 +82,7 @@ export function createServiceBootstrap({
   paths = null,
   secretStore = null
 } = {}) {
+  const bootstrapStartedAt = performance.now();
   // Ensure configStore is always available — verify scripts and email monitor
   // need load()/save()/patch() even when no disk-backed store is provided.
   if (!configStore) {
@@ -349,6 +351,14 @@ export function createServiceBootstrap({
     });
     return security;
   };
+  runtime.metrics.recordRuntimeTiming("service.bootstrap.create_runtime", performance.now() - bootstrapStartedAt, {
+    source: "service-bootstrap",
+    status: "success"
+  });
+  runtime.metrics.incrementRuntimeCounter("service.bootstrap.created", 1, {
+    source: "service-bootstrap",
+    status: "success"
+  });
   return {
     store: buildStoreManifest(),
     runtime,

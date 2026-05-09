@@ -24,8 +24,8 @@ process or renderer code.
 
 | Step | Scope | Acceptance |
 | --- | --- | --- |
-| PR-01 | Docs and `AGENTS.md` guardrails | Guardrails are discoverable and verified |
-| PR-02 | Performance baseline instrumentation | Timers and counters exist outside hot UI paths |
+| PR-01 | Docs and `AGENTS.md` guardrails | Done |
+| PR-02 | Performance baseline instrumentation | Done |
 | PR-03 | Main process blocking verifier | Script flags sync IO, CPU loops, and long handlers in main |
 | PR-04 | Renderer streaming batching verifier and fixes | Streaming bursts are coalesced and smoke-tested |
 | PR-05 | Context compiler off hot Electron paths | Context assembly stays in service/runtime layer |
@@ -41,6 +41,29 @@ Verification:
 
 - `node scripts/verify-runtime-upgrade-guardrails.mjs`
 - `node scripts/verify-structure.mjs`
+
+## PR-02 Status
+
+Status: done.
+
+Implementation:
+
+- `src/service/metrics/registry.mjs` owns runtime baseline timers and counters.
+- `src/service/core/service-bootstrap.mjs` records `service.bootstrap.create_runtime`
+  and `service.bootstrap.created`.
+- `/metrics` includes `uca_runtime_timing_*` and `uca_runtime_counter_total`.
+- `runtime.metrics.snapshot()` includes `runtime_baseline`.
+- Electron main and renderer do not own the baseline instrumentation.
+
+Verification:
+
+- `npm run verify:runtime-performance-baseline`
+- `npm run verify:runtime-upgrade-guardrails`
+- `node scripts/verify-status-metrics.mjs`
+- `node scripts/verify-structure.mjs`
+- `npm run check:fast`
+
+Current next step: PR-03, the main process blocking verifier.
 
 ## Sidecar Decision Gate
 
@@ -60,4 +83,3 @@ Old Electron or runtime paths may be archived only after their imports,
 registrations, package scripts, and runtime callers are checked. Prefer a
 dedicated cleanup PR after the new path is verified, not opportunistic deletion
 inside a behavior PR.
-

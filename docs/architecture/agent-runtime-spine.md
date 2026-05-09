@@ -41,8 +41,8 @@ record.
 
 | Step | Scope | Status |
 | --- | --- | --- |
-| PR-01 | Architecture guardrails, canonical docs, guardrail verifier | Done in this PR |
-| PR-02 | Performance baseline instrumentation | Pending |
+| PR-01 | Architecture guardrails, canonical docs, guardrail verifier | Done |
+| PR-02 | Performance baseline instrumentation | Done |
 | PR-03 | Main process blocking verifier | Pending |
 | PR-04 | Renderer streaming batching verifier and fixes | Pending |
 | CX-001 | ConversationSession storage and service skeleton | Pending |
@@ -70,6 +70,19 @@ record.
 - `node scripts/verify-runtime-upgrade-guardrails.mjs` verifies the guardrail
   files.
 
+## PR-02 Acceptance
+
+- Runtime baseline timing and counter APIs live in `src/service/metrics`.
+- Service bootstrap records a real startup timing and counter through the
+  service metrics registry.
+- Baseline metrics are exposed in both `runtime.metrics.snapshot()` and
+  `/metrics` Prometheus output.
+- Electron main process and renderer do not import service metrics or own this
+  baseline instrumentation.
+- `npm run verify:runtime-performance-baseline` verifies the baseline contract.
+
+Current next step: PR-03, the main process blocking verifier.
+
 ## Legacy Archive Policy
 
 Historical code can be archived or deleted when all of the following are true:
@@ -82,4 +95,3 @@ Historical code can be archived or deleted when all of the following are true:
 
 If those conditions are not met, keep the code reachable and plan a dedicated
 cleanup PR after the framework replacement is wired.
-
