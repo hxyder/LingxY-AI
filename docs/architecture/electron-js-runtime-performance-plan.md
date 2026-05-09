@@ -170,6 +170,9 @@ Conversation/session spine status:
 - MX-002 is done: service-owned `session_compactions` records summarize older
   typed session_items deterministically for ContextCompiler without model calls,
   transcript scraping, or Electron main/renderer work.
+- UX-001 is done: the Context debug panel renders compact selected/omitted
+  context summaries by default and lazy-copies full JSON only on demand, so raw
+  giant traces are not rendered in the task detail hot path.
 
 Current next step: PR-06, artifact extraction background lane.
 

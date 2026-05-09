@@ -685,6 +685,95 @@
   line-height: 1.35;
 }
 
+.context-debug-panel {
+  display: grid;
+  gap: 12px;
+}
+
+.context-debug-kind-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.context-debug-kind {
+  min-width: 0;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+.context-debug-kind strong {
+  color: var(--text);
+}
+
+.context-debug-section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.context-debug-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  color: var(--text);
+}
+
+.context-debug-row-list {
+  display: grid;
+  gap: 6px;
+}
+
+.context-debug-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.26fr) minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+
+.context-debug-row-kind {
+  min-width: 0;
+  color: var(--accent);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.context-debug-row-main {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.context-debug-row-source,
+.context-debug-row-reason {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+.context-debug-row-text {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
+.context-debug-empty {
+  font-size: var(--fs-xs);
+}
+
 .trace-phase-list {
   display: grid;
   gap: 8px;

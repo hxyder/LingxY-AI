@@ -127,7 +127,8 @@ import {
   describeTaskTokens,
   renderLlmUsagePanel,
   renderTaskTracePanel,
-  renderFileReversibilityPanel
+  renderFileReversibilityPanel,
+  renderContextDebugPanel
 } from "./console-task-detail.mjs";
 import {
   createConsoleTaskEventController
@@ -203,6 +204,8 @@ const taskDetailSummary = document.querySelector("#taskDetailSummary");
 const taskChildCount = document.querySelector("#taskChildCount");
 const taskChildList = document.querySelector("#taskChildList");
 const taskTimeline = document.querySelector("#taskTimeline");
+const taskContextDebugPanel = document.querySelector("#taskContextDebugPanel");
+const taskContextDebugBody = document.querySelector("#taskContextDebugBody");
 const taskArtifactCount = document.querySelector("#taskArtifactCount");
 const taskArtifactList = document.querySelector("#taskArtifactList");
 const taskArtifactPreview = document.querySelector("#taskArtifactPreview");
@@ -839,6 +842,8 @@ const state = {
   updatingSecurity: false,
   selectedDagExecutionId: null,
   selectedTaskDetail: null,
+  contextDebugSelectedLimit: 12,
+  contextDebugOmittedLimit: 8,
   selectedTaskArtifactPath: null,
   templatePreviewLoadKey: null,
   selectedProjectId: null,
@@ -6046,10 +6051,72 @@ function renderTaskConversationLink(task = {}) {
   `;
 }
 
+function resetContextDebugPaging() {
+  state.contextDebugSelectedLimit = 12;
+  state.contextDebugOmittedLimit = 8;
+}
+
+async function copySelectedTaskContextDebugJson(button) {
+  const task = state.selectedTaskDetail?.task ?? null;
+  const compiledContext = task?.context_packet?.compiled_context ?? null;
+  if (!compiledContext) return;
+  const previous = button.textContent;
+  button.disabled = true;
+  try {
+    const payload = JSON.stringify(compiledContext, null, 2);
+    if (typeof window.ucaShell?.writeClipboardText === "function") {
+      await window.ucaShell.writeClipboardText(payload);
+    } else {
+      await navigator.clipboard?.writeText?.(payload);
+    }
+    button.textContent = "Copied";
+  } catch {
+    button.textContent = "Copy failed";
+  } finally {
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = previous;
+    }, 1200);
+  }
+}
+
+function renderTaskContextDebug(detail) {
+  if (!taskContextDebugPanel || !taskContextDebugBody) return;
+  const task = detail?.task ?? null;
+  const html = task ? renderContextDebugPanel(task, {
+    selectedLimit: state.contextDebugSelectedLimit,
+    omittedLimit: state.contextDebugOmittedLimit
+  }) : "";
+  if (!html) {
+    taskContextDebugBody.innerHTML = "";
+    setTaskDetailPanelVisible("taskContextDebugPanel", false);
+    return;
+  }
+  taskContextDebugBody.innerHTML = html;
+  setTaskDetailPanelVisible("taskContextDebugPanel", true);
+  for (const btn of taskContextDebugBody.querySelectorAll("[data-context-debug-copy]")) {
+    btn.addEventListener("click", () => {
+      void copySelectedTaskContextDebugJson(btn);
+    });
+  }
+  for (const btn of taskContextDebugBody.querySelectorAll("[data-context-debug-more]")) {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.contextDebugMore;
+      if (target === "selected") {
+        state.contextDebugSelectedLimit += 12;
+      } else if (target === "omitted") {
+        state.contextDebugOmittedLimit += 8;
+      }
+      renderTaskContextDebug(state.selectedTaskDetail);
+    });
+  }
+}
+
 function renderTaskDetail(detail) {
   if (!detail) {
     selectedTaskEventController.close();
     state.selectedTaskDetail = null;
+    resetContextDebugPaging();
     taskDetailSummary.innerHTML = `
       <div class="task-empty-detail" role="status">
         <h2>Task runs are execution records<span class="zh">任务是执行记录</span></h2>
@@ -6068,7 +6135,9 @@ function renderTaskDetail(detail) {
     setTaskDetailPanelVisible("taskSubtasksPanel", false);
     setTaskDetailPanelVisible("taskArtifactsPanel", false);
     setTaskDetailPanelVisible("taskTimelinePanel", false);
+    setTaskDetailPanelVisible("taskContextDebugPanel", false);
     setTaskDetailPanelVisible("taskRecentConversationsPanel", false);
+    renderTaskContextDebug(null);
     renderTaskArtifacts(null);
     renderTaskChildren(null);
     retryTaskButton.disabled = true;
@@ -6082,6 +6151,7 @@ function renderTaskDetail(detail) {
   setTaskDetailPanelVisible("taskRecentConversationsPanel", false);
 
   state.selectedTaskDetail = detail;
+  resetContextDebugPaging();
   const task = detail.task ?? {};
   const { descriptor: providerDescriptor, downgraded } = extractTaskProviderInfo(detail);
   const failBlock = task.failure_category ? `
@@ -6285,6 +6355,7 @@ function renderTaskDetail(detail) {
     });
   }
   wireEvidenceSourceActions(taskDetailSummary, window.ucaShell);
+  renderTaskContextDebug(detail);
   const events = detail.events ?? [];
   if (events.length > 0) {
     // Walk events in order so each entry can render its derived step
@@ -6357,6 +6428,7 @@ async function refreshTaskDetail({ showLoading = false } = {}) {
     state.selectedTaskDetail = null;
     taskDetailSummary.innerHTML = `<p class="muted" style="font-size:12px;">Failed: ${escapeHtml(error.message)}</p>`;
     taskTimeline.innerHTML = "";
+    renderTaskContextDebug(null);
     renderTaskArtifacts(null);
   }
 }

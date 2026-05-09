@@ -88,7 +88,7 @@ executes.
 | AX-003 | Typed transforms | Done |
 | MX-001 | Memory governance surfaces | Done |
 | MX-002 | Session compaction | Done |
-| UX-001 | Context debug panel | Pending |
+| UX-001 | Context debug panel | Done |
 | GX-001 | Graph nodes for runtime execution | Pending |
 | GX-002 | Checkpoints, fork, and replay | Pending |
 | EX-001 | Eval corpus for context/follow-up/artifact regressions | Pending |
@@ -309,7 +309,23 @@ executes.
 - `npm run verify:session-compaction` verifies storage, service wiring,
   compiler inclusion, deterministic tests, and docs.
 
-Current next step: UX-001, Context debug panel.
+## UX-001 Acceptance
+
+- Task detail includes a Context debug panel that renders a compact summary of
+  session id, conversation id, parent task, resolver mode/confidence, selected
+  context groups, omitted reasons, and artifact/source targets.
+- The panel reads only the already-stamped
+  `task.context_packet.compiled_context`; it does not run ContextCompiler in the
+  renderer, read transcript tails, or perform heavy file/context work in
+  Electron.
+- Selected and omitted context rows are bounded by default with a More control
+  for larger traces.
+- Full context JSON is copy-only and serialized lazily when the Copy JSON button
+  is clicked; raw giant JSON is not embedded or rendered by default.
+- `npm run verify:context-debug-panel-lazy-load` verifies renderer wiring,
+  bounded lists, lazy JSON copying, styles, tests, and docs.
+
+Current next step: GX-001, Graph nodes for runtime execution.
 
 ## Legacy Archive Policy
 

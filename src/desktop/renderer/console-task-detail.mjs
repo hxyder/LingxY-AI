@@ -164,6 +164,192 @@ function renderTraceMetric(label, value) {
   `;
 }
 
+function safeArray(value) {
+  return Array.isArray(value) ? value.filter((item) => item !== undefined && item !== null) : [];
+}
+
+function compactDebugText(value, max = 140) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}...`;
+}
+
+function firstSelectedValue(selected, key) {
+  for (const item of selected) {
+    if (item?.value?.[key] != null && item.value[key] !== "") return item.value[key];
+  }
+  return null;
+}
+
+function countByKind(items) {
+  const counts = new Map();
+  for (const item of items) {
+    const kind = item?.kind ?? "unknown";
+    counts.set(kind, (counts.get(kind) ?? 0) + 1);
+  }
+  return [...counts.entries()].sort((left, right) => right[1] - left[1]);
+}
+
+function selectedItemSummary(item = {}) {
+  const value = item.value ?? {};
+  const anchors = [
+    value.task_id ? `task ${value.task_id}` : "",
+    value.artifact_id ? `artifact ${value.artifact_id}` : "",
+    value.tool_id ? `tool ${value.tool_id}` : "",
+    value.compaction_id ? `compaction ${value.compaction_id}` : "",
+    item.path ? `path ${item.path}` : ""
+  ].filter(Boolean);
+  const text = compactDebugText(item.content ?? anchors.join(" · ") ?? item.reason ?? "", 160);
+  return {
+    kind: item.kind ?? "unknown",
+    source: item.source ?? "runtime",
+    reason: compactDebugText(item.reason ?? item.inclusion_reason ?? "", 180),
+    text
+  };
+}
+
+function omittedItemSummary(item = {}) {
+  return {
+    kind: item.kind ?? "unknown",
+    source: item.source ?? "runtime",
+    reason: compactDebugText(item.reason ?? "omitted", 180)
+  };
+}
+
+export function buildContextDebugPanelView(task = {}) {
+  const ctx = task?.context_packet ?? {};
+  const compiled = ctx.compiled_context ?? null;
+  if (!compiled || typeof compiled !== "object") {
+    return null;
+  }
+  const selected = safeArray(compiled.selected);
+  const omissions = safeArray(compiled.omissions);
+  const resolver = ctx.selection_metadata?.follow_up_resolution ?? {};
+  const sourceArtifactIds = selected
+    .map((item) => item?.value?.artifact_id)
+    .filter(Boolean);
+  const targetKinds = selected
+    .map((item) => item?.value?.kind ?? item?.value?.target_kind ?? null)
+    .filter(Boolean);
+  return {
+    compiled,
+    session: {
+      session_id: firstSelectedValue(selected, "session_id") ?? null,
+      conversation_id: compiled.conversation_id ?? task.conversation_id ?? ctx.selection_metadata?.conversation_id ?? null,
+      project_id: task.project_id ?? ctx.selection_metadata?.project_id ?? null,
+      parent_task_id: compiled.parent_task_id ?? task.parent_task_id ?? resolver.parent_task_id ?? null,
+      is_continuation: Boolean(task.is_continuation ?? resolver.should_continue),
+      resolver_mode: resolver.mode ?? null,
+      resolver_confidence: resolver.confidence ?? null
+    },
+    stats: {
+      selected_count: selected.length,
+      omitted_count: Number(compiled.omitted_count ?? omissions.length),
+      candidate_count: compiled.stats?.candidate_count ?? null,
+      text_chars: compiled.stats?.text_chars ?? null
+    },
+    selected_counts: countByKind(selected),
+    omitted_counts: countByKind(omissions),
+    selected: selected.map(selectedItemSummary),
+    omissions: omissions.map(omittedItemSummary),
+    action_target: {
+      source_artifact_ids: [...new Set(sourceArtifactIds)],
+      target_kinds: [...new Set(targetKinds)]
+    }
+  };
+}
+
+function renderContextDebugMetric(label, value) {
+  const display = value == null || value === "" ? "n/a" : String(value);
+  return renderTraceMetric(label, display);
+}
+
+function renderKindCounts(counts) {
+  if (!counts.length) return "";
+  return `
+    <div class="context-debug-kind-list">
+      ${counts.slice(0, 12).map(([kind, count]) => `
+        <span class="context-debug-kind">${escapeHtml(kind)} <strong>${escapeHtml(String(count))}</strong></span>
+      `).join("")}
+    </div>
+  `;
+}
+
+function renderContextRows(items, limit, emptyText) {
+  const rows = safeArray(items).slice(0, Math.max(1, limit));
+  if (rows.length === 0) {
+    return `<div class="muted context-debug-empty">${escapeHtml(emptyText)}</div>`;
+  }
+  return `
+    <div class="context-debug-row-list">
+      ${rows.map((item) => `
+        <div class="context-debug-row">
+          <span class="context-debug-row-kind">${escapeHtml(item.kind)}</span>
+          <span class="context-debug-row-main">
+            <span class="context-debug-row-source">${escapeHtml(item.source)}</span>
+            ${item.text ? `<span class="context-debug-row-text">${escapeHtml(item.text)}</span>` : ""}
+            <span class="context-debug-row-reason">${escapeHtml(item.reason)}</span>
+          </span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+export function renderContextDebugPanel(task = {}, {
+  selectedLimit = 12,
+  omittedLimit = 8
+} = {}) {
+  const view = buildContextDebugPanelView(task);
+  if (!view) return "";
+  const session = view.session;
+  const action = view.action_target;
+  return `
+    <div class="context-debug-panel" data-context-debug-panel="compact">
+      <div class="task-trace-head">
+        <div>
+          <div class="task-trace-title">Context<span class="zh">上下文</span></div>
+          <div class="muted">${view.stats.selected_count} selected · ${view.stats.omitted_count} omitted</div>
+        </div>
+        <button type="button" class="btn btn-sm btn-ghost" data-context-debug-copy="1">Copy JSON</button>
+      </div>
+      <div class="trace-metric-grid">
+        ${renderContextDebugMetric("Session", session.session_id)}
+        ${renderContextDebugMetric("Conversation", session.conversation_id)}
+        ${renderContextDebugMetric("Parent", session.parent_task_id)}
+        ${renderContextDebugMetric("Resolver", session.resolver_mode)}
+        ${renderContextDebugMetric("Confidence", session.resolver_confidence)}
+        ${renderContextDebugMetric("Candidates", view.stats.candidate_count)}
+      </div>
+      ${renderKindCounts(view.selected_counts)}
+      <div class="context-debug-section">
+        <div class="context-debug-section-head">
+          <span>Selected</span>
+          ${view.selected.length > selectedLimit ? `<button type="button" class="btn btn-sm btn-ghost" data-context-debug-more="selected">More</button>` : ""}
+        </div>
+        ${renderContextRows(view.selected, selectedLimit, "No selected context.")}
+      </div>
+      <div class="context-debug-section">
+        <div class="context-debug-section-head">
+          <span>Omitted</span>
+          ${view.omissions.length > omittedLimit ? `<button type="button" class="btn btn-sm btn-ghost" data-context-debug-more="omitted">More</button>` : ""}
+        </div>
+        ${renderKindCounts(view.omitted_counts)}
+        ${renderContextRows(view.omissions, omittedLimit, "No omitted context.")}
+      </div>
+      ${action.source_artifact_ids.length || action.target_kinds.length ? `
+        <div class="context-debug-section">
+          <div class="context-debug-section-head"><span>Action target</span></div>
+          <div class="context-debug-kind-list">
+            ${action.source_artifact_ids.slice(0, 8).map((id) => `<span class="context-debug-kind">source ${escapeHtml(id)}</span>`).join("")}
+            ${action.target_kinds.slice(0, 6).map((kind) => `<span class="context-debug-kind">kind ${escapeHtml(kind)}</span>`).join("")}
+          </div>
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
 function renderTraceTimeline(trace = {}) {
   const timeline = Array.isArray(trace.timeline) ? trace.timeline.slice(0, 8) : [];
   if (timeline.length === 0) return "";
