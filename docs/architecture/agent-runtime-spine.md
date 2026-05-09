@@ -78,7 +78,7 @@ executes.
 | CX-001 | ConversationSession storage and service skeleton | Done |
 | CX-002 | Tool calls and observations as session items | Done |
 | CX-003 | FollowUpResolver with regression seeds | Done |
-| CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Pending |
+| CX-004 | ContextCompiler V1 with deterministic inclusion reasons | Done |
 | AX-001 | Typed ArtifactExtract records | Pending |
 | AX-002 | Artifact lineage and semantic contracts | Pending |
 | AX-003 | Typed transforms | Pending |
@@ -198,7 +198,27 @@ executes.
 - `npm run verify:follow-up-resolver-foundation` verifies the resolver boundary,
   retired old references, docs, and regression seed coverage.
 
-Current next step: CX-004, ContextCompiler V1 with deterministic inclusion reasons.
+## CX-004 Acceptance
+
+- `ContextCompiler` V1 compiles current command, FollowUpResolver decisions,
+  parent summaries, explicit attachments, recent artifacts, prior messages,
+  background contexts, and typed ConversationSession items into one selected
+  context contract.
+- Selected items carry deterministic `reason`, `inclusion_reason`, priority,
+  source, trust, and selected/omitted decisions.
+- Candidate ordering is deterministic and priority-based so active user command,
+  follow-up resolution, parent summary, explicit attachments, artifacts, and
+  session evidence outrank stale transcript tail.
+- Task creation stamps compact `context_packet.compiled_context` once after
+  follow-up/session enrichment and before task-spec generation.
+- Context compile failures are fail-soft and recorded in selection metadata
+  instead of breaking task submission.
+- ContextCompiler remains service/runtime-owned, does not scrape
+  `conversation_messages` directly, and does not import Electron desktop code.
+- `npm run verify:context-compiler-v1` verifies V1 wiring, session evidence
+  compilation, task stamping, and the guardrails for later consumer migration.
+
+Current next step: AX-001, Typed ArtifactExtract records.
 
 ## Legacy Archive Policy
 

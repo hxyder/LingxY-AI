@@ -68,6 +68,9 @@ test("task record factory applies conversation precedence and enriches follow-up
   assert.equal(task.is_continuation, true);
   assert.equal(task.context_packet.parent_task_summary.parent_task_id, "task_parent");
   assert.ok(task.context_packet.prior_messages.some((message) => message.content === "parent answer"));
+  assert.equal(task.context_packet.compiled_context.owner, "service/runtime");
+  assert.ok(task.context_packet.compiled_context.selected.some((item) => item.kind === "follow_up_resolution"));
+  assert.ok(task.context_packet.compiled_context.selected.some((item) => item.kind === "session_task_anchor"));
 });
 
 test("task record factory does not auto-parent standalone document generation requests", () => {

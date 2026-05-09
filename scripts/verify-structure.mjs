@@ -403,6 +403,7 @@ const requiredPaths = [
   "scripts/verify-main-process-blocking.mjs",
   "scripts/verify-renderer-stream-batching.mjs",
   "scripts/verify-context-compiler-boundary.mjs",
+  "scripts/verify-context-compiler-v1.mjs",
   "scripts/verify-conversation-session-foundation.mjs",
   "scripts/verify-follow-up-resolver-foundation.mjs",
   "scripts/verify-ai-integrations.mjs",

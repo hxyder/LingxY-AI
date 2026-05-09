@@ -151,6 +151,9 @@ Conversation/session spine status:
 - CX-003 is done: FollowUpResolver uses typed session anchors for follow-up
   parent selection, writes resolver decisions into task context metadata, and
   retires old lifecycle follow-up resolver call sites.
+- CX-004 is done: ContextCompiler V1 stamps compact `compiled_context` on task
+  context after session/follow-up enrichment, with deterministic priorities,
+  inclusion reasons, and typed session item evidence.
 
 Current next step: PR-06, artifact extraction background lane.
 

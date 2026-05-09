@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { createTaskSpec, validateTaskSpec } from "../task-spec.mjs";
 import { evaluateSubmissionBoundary } from "../policy/submission-boundary.mjs";
+import { compileContextForTask } from "../context/context-compiler.mjs";
 import {
   attachParentTaskSummary,
   attachPriorBackendMessages,
@@ -31,6 +32,30 @@ function buildSourceDedupeKey(contextPacket, userCommand, executor) {
   return `${contextPacket.source_type}:${contextPacket.source_app}:${executor}:${userCommand}:${sourceKey}`;
 }
 
+function attachCompiledContext(contextPacket, draftTask, runtime) {
+  try {
+    const compiledContext = compileContextForTask({
+      task: {
+        ...draftTask,
+        context_packet: contextPacket
+      },
+      runtime
+    });
+    return {
+      ...(contextPacket ?? {}),
+      compiled_context: compiledContext
+    };
+  } catch (error) {
+    return {
+      ...(contextPacket ?? {}),
+      selection_metadata: {
+        ...((contextPacket ?? {}).selection_metadata ?? {}),
+        context_compile_error: error?.message ?? "context_compile_failed"
+      }
+    };
+  }
+}
+
 export function createTaskRecord({
   route,
   contextPacket,
@@ -47,6 +72,8 @@ export function createTaskRecord({
   boundaryContext = null,
   runtime = null
 }) {
+  const taskId = createId("task");
+  const createdAt = nowIso();
   const rawConversationId = conversationId
     ?? contextPacket?.selection_metadata?.conversation_id
     ?? null;
@@ -79,7 +106,7 @@ export function createTaskRecord({
     runtime
   );
   const compactResolution = compactFollowUpResolution(followUpResolution);
-  const enrichedContext = compactResolution
+  const contextWithFollowUpResolution = compactResolution
     ? {
         ...(withRecentArtifacts ?? {}),
         selection_metadata: {
@@ -88,15 +115,25 @@ export function createTaskRecord({
         }
       }
     : withRecentArtifacts;
+  const enrichedContext = attachCompiledContext(
+    contextWithFollowUpResolution,
+    {
+      task_id: taskId,
+      conversation_id: effectiveConversationId,
+      parent_task_id: effectiveParentTaskId,
+      user_command: userCommand
+    },
+    runtime
+  );
 
   const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
   const taskSpecValidation = validateTaskSpec(taskSpec);
   const selectedExecutor = executorOverride ?? taskSpec.suggested_executor ?? route.executor;
 
   const taskRecord = {
-    task_id: createId("task"),
-    created_at: nowIso(),
-    updated_at: nowIso(),
+    task_id: taskId,
+    created_at: createdAt,
+    updated_at: createdAt,
     status: "queued",
     sub_status: "queued",
     progress: 0,

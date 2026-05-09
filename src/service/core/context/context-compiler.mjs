@@ -1,12 +1,31 @@
 import { performance } from "node:perf_hooks";
+import { SESSION_ITEM_KINDS } from "../session/conversation-session-service.mjs";
 
 export const COMPILED_CONTEXT_SCHEMA_VERSION = "1.0";
 export const CONTEXT_COMPILER_OWNER = "service/runtime";
+export const CONTEXT_ITEM_PRIORITIES = Object.freeze({
+  current_user_command: 1000,
+  follow_up_resolution: 950,
+  parent_task_summary: 900,
+  attached_file: 850,
+  attached_image: 840,
+  latest_artifact: 830,
+  recent_artifact: 820,
+  session_task_anchor: 760,
+  session_artifact_reference: 750,
+  session_tool_observation: 720,
+  session_tool_call: 700,
+  prior_message: 520,
+  captured_text: 500,
+  background_context: 450,
+  extra: 300
+});
 
 const DEFAULT_LIMITS = Object.freeze({
   maxItems: 32,
   maxTextChars: 8000,
-  maxOmissions: 64
+  maxOmissions: 64,
+  sessionItemLimit: 200
 });
 
 function cleanText(value) {
@@ -19,6 +38,10 @@ function toArray(value) {
 
 function stableItemId(kind, source, index) {
   return `ctx_${kind}_${source}_${index}`;
+}
+
+function priorityForKind(kind) {
+  return CONTEXT_ITEM_PRIORITIES[kind] ?? CONTEXT_ITEM_PRIORITIES.extra;
 }
 
 function estimateChars(item = {}) {
@@ -40,11 +63,99 @@ function pushCandidate(candidates, item) {
     id: item.id ?? stableItemId(item.kind, item.source ?? "runtime", candidates.length),
     source: item.source ?? "runtime",
     trust: item.trust ?? "runtime",
+    priority: Number.isFinite(item.priority) ? item.priority : priorityForKind(item.kind),
+    inclusion_reason: item.inclusion_reason ?? item.reason,
     ...item
   });
 }
 
-function collectCandidates({ task = {}, extraItems = [] } = {}) {
+function getLatestSessionForTask(task, runtime) {
+  const conversationId = task?.conversation_id;
+  if (!conversationId) return null;
+  try {
+    return runtime?.conversationSessions?.getLatestForConversation?.(conversationId)
+      ?? runtime?.store?.getLatestConversationSession?.(conversationId)
+      ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function listSessionItems(sessionId, runtime, limits) {
+  if (!sessionId) return [];
+  try {
+    const items = runtime?.conversationSessions?.listItems?.(sessionId, {
+      limit: limits.sessionItemLimit
+    }) ?? runtime?.store?.listSessionItems?.(sessionId, {
+      limit: limits.sessionItemLimit
+    }) ?? [];
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+
+function sessionItemCandidateKind(item) {
+  switch (item?.kind) {
+    case SESSION_ITEM_KINDS.TASK_ANCHOR:
+      return "session_task_anchor";
+    case SESSION_ITEM_KINDS.TOOL_CALL:
+      return "session_tool_call";
+    case SESSION_ITEM_KINDS.TOOL_OBSERVATION:
+      return "session_tool_observation";
+    case SESSION_ITEM_KINDS.ARTIFACT_REFERENCE:
+      return "session_artifact_reference";
+    default:
+      return null;
+  }
+}
+
+function sessionItemReason(kind) {
+  switch (kind) {
+    case "session_task_anchor":
+      return "typed session task anchor links the conversation work thread to a task";
+    case "session_tool_call":
+      return "typed session tool call records what action was attempted";
+    case "session_tool_observation":
+      return "typed session tool observation records execution evidence for continuity";
+    case "session_artifact_reference":
+      return "typed session artifact reference can be a follow-up target";
+    default:
+      return "typed session item is available to the context compiler";
+  }
+}
+
+function collectSessionCandidates(candidates, { task = {}, runtime = null, limits }) {
+  const session = getLatestSessionForTask(task, runtime);
+  const items = listSessionItems(session?.session_id, runtime, limits);
+  for (const [index, item] of items.entries()) {
+    const kind = sessionItemCandidateKind(item);
+    if (!kind) continue;
+    pushCandidate(candidates, {
+      id: item.item_id ? `ctx_session_${item.item_id}` : stableItemId(kind, "session_items", index),
+      kind,
+      source: "conversation_session.session_items",
+      trust: "runtime_session",
+      role: item.role ?? null,
+      content: cleanText(item.content_text),
+      value: {
+        session_id: item.session_id ?? session?.session_id ?? null,
+        item_id: item.item_id ?? null,
+        order_index: Number.isInteger(item.order_index) ? item.order_index : null,
+        task_id: item.task_id ?? null,
+        artifact_id: item.artifact_id ?? null,
+        tool_id: item.payload?.tool_id ?? null,
+        tool_call_id: item.payload?.tool_call_id ?? null,
+        success: item.payload?.success ?? null,
+        parent_task_id: item.payload?.parent_task_id ?? null,
+        is_continuation: item.payload?.is_continuation ?? null
+      },
+      reason: sessionItemReason(kind)
+    });
+  }
+}
+
+function collectCandidates({ task = {}, runtime = null, extraItems = [], limits = DEFAULT_LIMITS } = {}) {
   const ctx = task.context_packet ?? {};
   const candidates = [];
 
@@ -55,6 +166,38 @@ function collectCandidates({ task = {}, extraItems = [] } = {}) {
     content: cleanText(task.user_command),
     reason: "current task command is always the active intent anchor"
   });
+
+  const followUpResolution = ctx.selection_metadata?.follow_up_resolution;
+  if (followUpResolution && typeof followUpResolution === "object") {
+    pushCandidate(candidates, {
+      kind: "follow_up_resolution",
+      source: "context_packet.selection_metadata.follow_up_resolution",
+      trust: "runtime_decision",
+      value: {
+        mode: followUpResolution.mode ?? null,
+        parent_task_id: followUpResolution.parent_task_id ?? null,
+        confidence: followUpResolution.confidence ?? null,
+        should_continue: followUpResolution.should_continue ?? null,
+        anchors: Array.isArray(followUpResolution.anchors)
+          ? followUpResolution.anchors.slice(0, 4)
+          : []
+      },
+      reason: "FollowUpResolver decision determines whether prior work is an active context target"
+    });
+  }
+
+  if (ctx.parent_task_summary && typeof ctx.parent_task_summary === "object") {
+    pushCandidate(candidates, {
+      kind: "parent_task_summary",
+      source: "context_packet.parent_task_summary",
+      trust: "runtime_summary",
+      content: cleanText(ctx.parent_task_summary.assistant_final_text),
+      value: {
+        parent_task_id: ctx.parent_task_summary.parent_task_id ?? task.parent_task_id ?? null
+      },
+      reason: "parent task summary is the bounded result text for the selected follow-up parent"
+    });
+  }
 
   for (const [index, message] of toArray(ctx.prior_messages).entries()) {
     pushCandidate(candidates, {
@@ -103,7 +246,7 @@ function collectCandidates({ task = {}, extraItems = [] } = {}) {
 
   for (const [index, artifact] of toArray(ctx.recent_conversation_artifacts).entries()) {
     pushCandidate(candidates, {
-      kind: "recent_artifact",
+      kind: index === 0 ? "latest_artifact" : "recent_artifact",
       source: "context_packet.recent_conversation_artifacts",
       trust: "runtime",
       value: {
@@ -117,6 +260,8 @@ function collectCandidates({ task = {}, extraItems = [] } = {}) {
     });
     if (index >= 15) break;
   }
+
+  collectSessionCandidates(candidates, { task, runtime, limits });
 
   const capturedText = cleanText(ctx.text);
   if (capturedText) {
@@ -144,6 +289,15 @@ function collectCandidates({ task = {}, extraItems = [] } = {}) {
     const hasValue = item.value !== undefined && item.value !== null;
     return hasPath || hasContent || hasValue;
   });
+}
+
+function rankCandidates(candidates) {
+  return candidates
+    .map((candidate, originalIndex) => ({ ...candidate, original_index: originalIndex }))
+    .sort((left, right) => {
+      if (right.priority !== left.priority) return right.priority - left.priority;
+      return left.original_index - right.original_index;
+    });
 }
 
 function selectCandidates(candidates, limits) {
@@ -183,7 +337,11 @@ function selectCandidates(candidates, limits) {
       textChars += candidateChars;
     }
 
-    selected.push(item);
+    selected.push({
+      ...item,
+      decision: "selected",
+      inclusion_reason: item.inclusion_reason ?? item.reason
+    });
   }
 
   return {
@@ -222,7 +380,7 @@ export function compileContextForTask({
     ...DEFAULT_LIMITS,
     ...limits
   };
-  const candidates = collectCandidates({ task, extraItems });
+  const candidates = rankCandidates(collectCandidates({ task, runtime, extraItems, limits: resolvedLimits }));
   const selection = selectCandidates(candidates, resolvedLimits);
   const compiled = {
     schema_version: COMPILED_CONTEXT_SCHEMA_VERSION,
