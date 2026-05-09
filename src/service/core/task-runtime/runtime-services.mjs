@@ -4,6 +4,7 @@ import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
 import { createRuntimeGraphCheckpointService } from "../graph/runtime-graph-checkpoints.mjs";
+import { createRuntimeGraphReplayService } from "../graph/runtime-graph-replay.mjs";
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
 import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
 import { createArtifactTransformService } from "../artifact-transforms/artifact-transform-service.mjs";
@@ -37,6 +38,14 @@ function hasRuntimeGraphCheckpointStore(store) {
     store
     && typeof store.appendEvent === "function"
     && typeof store.getTask === "function"
+  );
+}
+
+function hasRuntimeGraphReplayStore(store) {
+  return Boolean(
+    store
+    && typeof store.getTask === "function"
+    && typeof store.getTaskEvents === "function"
   );
 }
 
@@ -99,6 +108,11 @@ export function ensureRuntimeServices(runtime) {
       store: runtime.store,
       eventBus: runtime.eventBus,
       metrics: runtime.metrics
+    });
+  }
+  if (!runtime.runtimeGraphReplay && hasRuntimeGraphReplayStore(runtime.store)) {
+    runtime.runtimeGraphReplay = createRuntimeGraphReplayService({
+      store: runtime.store
     });
   }
   if (!runtime.artifactExtracts && hasArtifactExtractStore(runtime.store)) {

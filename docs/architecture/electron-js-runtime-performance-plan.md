@@ -177,6 +177,9 @@ Conversation/session spine status:
   `runtime_graph_checkpoint` task events are recorded in service/runtime code
   from existing task events without moving graph execution or checkpoint work
   into Electron main process or renderer code.
+- GX-002 is done: replay/fork checkpoint planning is a service-layer contract
+  over durable task events; it does not move graph execution or time-travel work
+  into Electron main process or renderer code.
 
 Current next step: PR-06, artifact extraction background lane.
 

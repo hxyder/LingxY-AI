@@ -90,7 +90,7 @@ executes.
 | MX-002 | Session compaction | Done |
 | UX-001 | Context debug panel | Done |
 | GX-001 | Graph nodes for runtime execution | Done |
-| GX-002 | Checkpoints, fork, and replay | Pending |
+| GX-002 | Checkpoints, fork, and replay | Done |
 | EX-001 | Eval corpus for context/follow-up/artifact regressions | Pending |
 
 ## PR-01 Acceptance
@@ -341,7 +341,23 @@ executes.
 - `npm run verify:runtime-graph-nodes` verifies node topology, checkpoint event
   mapping, runtime wiring, tests, and docs.
 
-Current next step: GX-002, Checkpoints, fork, and replay.
+## GX-002 Acceptance
+
+- `RuntimeGraphReplayService` reads durable `runtime_graph_checkpoint` task
+  events and exposes checkpoint listing, checkpoint lookup, replay plan, and
+  fork seed contracts without adding a second executor loop.
+- Replay plans select a checkpoint by id, node, or status, map it to an
+  explicit resume kind (`approval_resume`, `retry_from_node`,
+  `fork_from_interruption`, or `fork_from_prefix`), and build a bounded event
+  prefix that excludes checkpoint events themselves.
+- Fork seeds carry the source task, source checkpoint, parent task, conversation
+  prefix, session prefix, and context patch needed by later UI/executor wiring.
+- The service is wired as `runtime.runtimeGraphReplay` and remains service-owned:
+  it imports no Electron main/renderer code and no heavyweight graph framework.
+- `npm run verify:runtime-graph-replay` verifies the replay/fork contract,
+  service wiring, behavior tests, and docs.
+
+Current next step: EX-001, eval corpus for context/follow-up/artifact regressions.
 
 ## Legacy Archive Policy
 
