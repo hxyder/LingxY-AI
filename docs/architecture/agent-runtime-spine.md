@@ -91,7 +91,7 @@ executes.
 | UX-001 | Context debug panel | Done |
 | GX-001 | Graph nodes for runtime execution | Done |
 | GX-002 | Checkpoints, fork, and replay | Done |
-| EX-001 | Eval corpus for context/follow-up/artifact regressions | Pending |
+| EX-001 | Eval corpus for context/follow-up/artifact regressions | Done |
 
 ## PR-01 Acceptance
 
@@ -364,7 +364,25 @@ executes.
 - `npm run verify:runtime-graph-replay` verifies the replay/fork contract,
   service wiring, behavior tests, and docs.
 
-Current next step: EX-001, eval corpus for context/follow-up/artifact regressions.
+## EX-001 Acceptance
+
+- `FOLLOWUP_ARTIFACT_EVAL_CASES` contains at least 50 semantic continuity cases
+  across pronoun follow-up, artifact conversion, artifact edits, ambiguity,
+  stale parent avoidance, cross-conversation isolation, user corrections,
+  direct-task routing, validator clarification, and scheduled/system isolation.
+- `runFollowupArtifactEvalCorpus` runs the existing FollowUpResolver and
+  ContextCompiler against each case and records `followup_resolve_ms` and
+  `context_compile_ms` timing fields.
+- Hard metrics are enforced at zero: wrong parent, stale artifact, unrelated
+  artifact success, missing ambiguity clarification, ignored correction, and
+  fake artifact success.
+- FollowUpResolver recognizes CJK referential phrases without requiring
+  whitespace boundaries, so prompts such as `把这个转成 PPT` stay attached to
+  the typed session anchor instead of becoming orphan tasks.
+- `npm run verify:followup-artifact-eval-corpus` verifies corpus size,
+  category minimums, hard metrics, timing capture, tests, and docs.
+
+Current next step: performance PR-07, runtime graph scheduling budget.
 
 ## Legacy Archive Policy
 
