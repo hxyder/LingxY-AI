@@ -3,7 +3,19 @@ import { appendBackgroundContext } from "../core/intent/background-contexts.mjs"
 export const USER_MEMORY_PROFILE_VERSION = 1;
 
 const MAX_ITEMS = 40;
+const MAX_PROPOSALS = 80;
 const MAX_TEXT_CHARS = 600;
+const MEMORY_TYPES = new Set([
+  "user_preference",
+  "project_fact",
+  "project_decision",
+  "workflow_rule",
+  "user_correction",
+  "rejected_assumption",
+  "artifact_summary",
+  "episodic_task"
+]);
+const PROPOSAL_STATUSES = new Set(["pending", "approved", "rejected"]);
 
 function normalizeText(value, max = MAX_TEXT_CHARS) {
   return `${value ?? ""}`
@@ -20,6 +32,24 @@ function normalizeId(value, fallback) {
     .replace(/[^a-z0-9_.-]+/g, "_")
     .replace(/^_+|_+$/g, "")
     .slice(0, 80);
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function normalizeMemoryType(value, fallback = "user_preference") {
+  const type = normalizeText(value, 80);
+  return MEMORY_TYPES.has(type) ? type : fallback;
+}
+
+function normalizeScope(value, fallback = "global") {
+  const scope = normalizeText(value, 40) || fallback;
+  return ["global", "project", "conversation", "artifact"].includes(scope) ? scope : fallback;
+}
+
+function normalizeProvenance(value = {}) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 function normalizeMemoryItems(items = [], { defaultScope = "global", projectId = null } = {}) {
@@ -47,6 +77,73 @@ function normalizeMemoryItems(items = [], { defaultScope = "global", projectId =
   return out;
 }
 
+function normalizeGovernedMemoryItems(items = [], { now = nowIso() } = {}) {
+  const seen = new Set();
+  const list = Array.isArray(items) ? items : [];
+  const out = [];
+  for (const raw of list) {
+    const text = normalizeText(raw?.text);
+    if (!text) continue;
+    const type = normalizeMemoryType(raw?.type);
+    const scope = normalizeScope(raw?.scope, raw?.projectId || raw?.project_id ? "project" : "global");
+    const projectId = normalizeText(raw?.projectId ?? raw?.project_id, 120) || null;
+    const conversationId = normalizeText(raw?.conversationId ?? raw?.conversation_id, 120) || null;
+    const artifactId = normalizeText(raw?.artifactId ?? raw?.artifact_id, 120) || null;
+    const id = normalizeId(raw?.id, `${type}_${scope}_${projectId ?? conversationId ?? artifactId ?? "global"}_${text.slice(0, 32)}`);
+    const dedupeKey = `${type}:${scope}:${projectId ?? ""}:${conversationId ?? ""}:${artifactId ?? ""}:${text.toLowerCase()}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    out.push({
+      id,
+      type,
+      text,
+      scope,
+      ...(projectId ? { projectId } : {}),
+      ...(conversationId ? { conversationId } : {}),
+      ...(artifactId ? { artifactId } : {}),
+      source: normalizeText(raw?.source, 80) || "manual",
+      provenance: normalizeProvenance(raw?.provenance),
+      createdAt: normalizeText(raw?.createdAt ?? raw?.created_at, 40) || now,
+      updatedAt: normalizeText(raw?.updatedAt ?? raw?.updated_at, 40) || now
+    });
+    if (out.length >= MAX_ITEMS) break;
+  }
+  return out;
+}
+
+function normalizeMemoryProposals(items = [], { now = nowIso() } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  const out = [];
+  for (const raw of list) {
+    const text = normalizeText(raw?.text);
+    if (!text) continue;
+    const type = normalizeMemoryType(raw?.type, "user_correction");
+    const scope = normalizeScope(raw?.scope, raw?.projectId || raw?.project_id ? "project" : "global");
+    const status = PROPOSAL_STATUSES.has(raw?.status) ? raw.status : "pending";
+    const projectId = normalizeText(raw?.projectId ?? raw?.project_id, 120) || null;
+    const conversationId = normalizeText(raw?.conversationId ?? raw?.conversation_id, 120) || null;
+    const artifactId = normalizeText(raw?.artifactId ?? raw?.artifact_id, 120) || null;
+    const proposalId = normalizeId(raw?.proposalId ?? raw?.proposal_id ?? raw?.id, `proposal_${type}_${text.slice(0, 32)}`);
+    out.push({
+      proposalId,
+      type,
+      text,
+      scope,
+      status,
+      ...(projectId ? { projectId } : {}),
+      ...(conversationId ? { conversationId } : {}),
+      ...(artifactId ? { artifactId } : {}),
+      source: normalizeText(raw?.source, 80) || "candidate_detection",
+      provenance: normalizeProvenance(raw?.provenance),
+      createdAt: normalizeText(raw?.createdAt ?? raw?.created_at, 40) || now,
+      updatedAt: normalizeText(raw?.updatedAt ?? raw?.updated_at, 40) || now,
+      reviewedAt: normalizeText(raw?.reviewedAt ?? raw?.reviewed_at, 40) || null
+    });
+    if (out.length >= MAX_PROPOSALS) break;
+  }
+  return out;
+}
+
 export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOString() } = {}) {
   const profile = input && typeof input === "object" ? input : {};
   return {
@@ -56,7 +153,9 @@ export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOSt
     preferences: normalizeMemoryItems(profile.preferences ?? [], { defaultScope: "global" }),
     projectMemories: normalizeMemoryItems(profile.projectMemories ?? profile.project_memories ?? [], {
       defaultScope: "project"
-    })
+    }),
+    approvedMemories: normalizeGovernedMemoryItems(profile.approvedMemories ?? profile.approved_memories ?? [], { now }),
+    proposals: normalizeMemoryProposals(profile.proposals ?? profile.memoryProposals ?? profile.memory_proposals ?? [], { now })
   };
 }
 
@@ -68,6 +167,23 @@ export function readUserMemoryProfileFromConfig(config = {}) {
 
 function renderItemList(items = []) {
   return items.map((item) => `- ${item.text}`).join("\n");
+}
+
+function relevantGovernedMemories(items = [], { projectId = null, conversationId = null, artifactId = null } = {}) {
+  const normalizedProjectId = normalizeText(projectId, 120);
+  const normalizedConversationId = normalizeText(conversationId, 120);
+  const normalizedArtifactId = normalizeText(artifactId, 120);
+  return items.filter((item) => {
+    if (item.scope === "global") return true;
+    if (item.scope === "project") return !normalizedProjectId || item.projectId === normalizedProjectId;
+    if (item.scope === "conversation") return !normalizedConversationId || item.conversationId === normalizedConversationId;
+    if (item.scope === "artifact") return !normalizedArtifactId || item.artifactId === normalizedArtifactId;
+    return false;
+  });
+}
+
+function renderGovernedMemoryList(items = []) {
+  return items.map((item) => `- [${item.type}] ${item.text}`).join("\n");
 }
 
 export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = null } = {}) {
@@ -90,26 +206,147 @@ export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = nul
     });
   }
 
+  const governed = relevantGovernedMemories(sanitized.approvedMemories, { projectId });
+  const globalGoverned = governed.filter((item) => item.scope !== "project");
+  if (globalGoverned.length > 0) {
+    entries.push({
+      kind: "user_profile",
+      priority: "background",
+      origin: "pre_task_seed",
+      content: [
+        "Reviewed memory approved by the user. Use only when scoped and relevant; current instructions override memory.",
+        renderGovernedMemoryList(globalGoverned)
+      ].join("\n"),
+      metadata: {
+        memory_governance: true,
+        user_memory_ids: globalGoverned.map((item) => item.id),
+        memory_types: [...new Set(globalGoverned.map((item) => item.type))]
+      }
+    });
+  }
+
   const normalizedProjectId = normalizeText(projectId, 120);
   const projectItems = sanitized.projectMemories
     .filter((item) => !normalizedProjectId || item.projectId === normalizedProjectId);
-  if (projectItems.length > 0) {
+  const projectGoverned = governed.filter((item) => item.scope === "project");
+  if (projectItems.length > 0 || projectGoverned.length > 0) {
     entries.push({
       kind: "project_memory",
       priority: "background",
       origin: "pre_task_seed",
       content: [
         `Project memory${normalizedProjectId ? ` for project_id=${normalizedProjectId}` : ""}. Treat as editable background, not a replacement for current file/page evidence.`,
-        renderItemList(projectItems)
+        renderItemList(projectItems),
+        renderGovernedMemoryList(projectGoverned)
       ].join("\n"),
       metadata: {
         project_id: normalizedProjectId || null,
-        user_memory_ids: projectItems.map((item) => item.id)
+        memory_governance: projectGoverned.length > 0,
+        user_memory_ids: [
+          ...projectItems.map((item) => item.id),
+          ...projectGoverned.map((item) => item.id)
+        ],
+        memory_types: [...new Set(projectGoverned.map((item) => item.type))]
       }
     });
   }
 
   return entries;
+}
+
+export function createMemoryProposal({
+  type = "user_correction",
+  text,
+  scope = "global",
+  projectId = null,
+  conversationId = null,
+  artifactId = null,
+  source = "candidate_detection",
+  provenance = {},
+  now = nowIso()
+} = {}) {
+  const normalized = normalizeMemoryProposals([{
+    proposalId: `proposal_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    type,
+    text,
+    scope,
+    projectId,
+    conversationId,
+    artifactId,
+    source,
+    provenance,
+    status: "pending",
+    createdAt: now,
+    updatedAt: now
+  }], { now })[0];
+  if (!normalized) throw new Error("createMemoryProposal: text required");
+  return normalized;
+}
+
+export function approveMemoryProposal(profile = {}, proposalId, patch = {}, { now = nowIso() } = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  const proposal = sanitized.proposals.find((item) => item.proposalId === proposalId);
+  if (!proposal || proposal.status !== "pending") return sanitized;
+  const approved = normalizeGovernedMemoryItems([{
+    id: patch.id,
+    type: patch.type ?? proposal.type,
+    text: patch.text ?? proposal.text,
+    scope: patch.scope ?? proposal.scope,
+    projectId: patch.projectId ?? proposal.projectId,
+    conversationId: patch.conversationId ?? proposal.conversationId,
+    artifactId: patch.artifactId ?? proposal.artifactId,
+    source: "memory_proposal",
+    provenance: {
+      proposal_id: proposal.proposalId,
+      proposal_source: proposal.source,
+      ...(proposal.provenance ?? {}),
+      ...(normalizeProvenance(patch.provenance))
+    },
+    createdAt: now,
+    updatedAt: now
+  }], { now })[0];
+  return sanitizeUserMemoryProfile({
+    ...sanitized,
+    updatedAt: now,
+    approvedMemories: [...sanitized.approvedMemories, approved],
+    proposals: sanitized.proposals.map((item) => item.proposalId === proposalId
+      ? { ...item, status: "approved", reviewedAt: now, updatedAt: now }
+      : item)
+  }, { now });
+}
+
+export function rejectMemoryProposal(profile = {}, proposalId, { now = nowIso() } = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  return sanitizeUserMemoryProfile({
+    ...sanitized,
+    updatedAt: now,
+    proposals: sanitized.proposals.map((item) => item.proposalId === proposalId
+      ? { ...item, status: "rejected", reviewedAt: now, updatedAt: now }
+      : item)
+  }, { now });
+}
+
+export function deleteApprovedMemory(profile = {}, memoryId, { now = nowIso() } = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  return sanitizeUserMemoryProfile({
+    ...sanitized,
+    updatedAt: now,
+    approvedMemories: sanitized.approvedMemories.filter((item) => item.id !== memoryId)
+  }, { now });
+}
+
+export function upsertApprovedMemory(profile = {}, memory = {}, { now = nowIso() } = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  const normalized = normalizeGovernedMemoryItems([{ ...memory, updatedAt: now }], { now })[0];
+  if (!normalized) return sanitized;
+  const exists = sanitized.approvedMemories.some((item) => item.id === normalized.id);
+  return sanitizeUserMemoryProfile({
+    ...sanitized,
+    updatedAt: now,
+    approvedMemories: exists
+      ? sanitized.approvedMemories.map((item) => item.id === normalized.id ? normalized : item)
+      : [...sanitized.approvedMemories, normalized]
+  }, { now });
 }
 
 export function applyUserMemoryProfileToContext(contextPacket = {}, profile = {}, { projectId = null } = {}) {

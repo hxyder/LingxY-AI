@@ -163,6 +163,9 @@ Conversation/session spine status:
 - AX-003 is done: the service layer owns the first typed `xlsx_to_pptx`
   transform flow, consuming existing extracts and writing lineage without
   Electron main/renderer work or source-file parsing in the transform path.
+- MX-001 is done: memory governance adds reviewed memory/proposal surfaces and
+  scoped background-context selection without moving memory learning into
+  Electron main/renderer hot paths.
 
 Current next step: PR-06, artifact extraction background lane.
 

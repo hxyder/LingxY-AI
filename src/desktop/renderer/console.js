@@ -190,6 +190,10 @@ const userMemoryPreferences = document.querySelector("#userMemoryPreferences");
 const userMemoryProjectNotes = document.querySelector("#userMemoryProjectNotes");
 const userMemorySaveBtn = document.querySelector("#userMemorySaveBtn");
 const userMemoryState = document.querySelector("#userMemoryState");
+const userMemoryApprovedState = document.querySelector("#userMemoryApprovedState");
+const userMemoryApprovedList = document.querySelector("#userMemoryApprovedList");
+const userMemoryProposalState = document.querySelector("#userMemoryProposalState");
+const userMemoryProposalList = document.querySelector("#userMemoryProposalList");
 const taskComposer = document.querySelector("#taskComposer");
 const commandInput = document.querySelector("#commandInput");
 const submitState = document.querySelector("#submitState");
@@ -3868,6 +3872,89 @@ function parseProjectMemoryLines(text = "") {
     .filter((item) => item.text);
 }
 
+function renderGovernedMemoryList(profile = {}) {
+  const approved = Array.isArray(profile.approvedMemories) ? profile.approvedMemories : [];
+  const proposals = Array.isArray(profile.proposals) ? profile.proposals : [];
+  const pending = proposals.filter((item) => item?.status === "pending");
+  if (userMemoryApprovedState) {
+    userMemoryApprovedState.textContent = `${approved.length} approved`;
+  }
+  if (userMemoryProposalState) {
+    userMemoryProposalState.textContent = `${pending.length} pending`;
+  }
+  if (userMemoryApprovedList) {
+    if (approved.length === 0) {
+      renderEmpty(userMemoryApprovedList, "No approved governed memory.");
+    } else {
+      userMemoryApprovedList.innerHTML = approved.map((item) => `
+        <div class="surface" style="padding:10px 12px;">
+          <div class="row">
+            <strong style="font-size:13px;">${escapeHtml(item.type ?? "memory")}</strong>
+            <span class="chip muted">${escapeHtml(item.scope ?? "global")}</span>
+          </div>
+          <p style="margin:6px 0 0;font-size:12px;">${escapeHtml(item.text ?? "")}</p>
+          <p class="muted" style="margin:4px 0 0;font-size:11px;">${escapeHtml(item.source ?? "manual")}</p>
+          <div class="toolbar" style="margin-top:6px;">
+            <button class="btn btn-sm btn-danger" data-memory-delete="${escapeHtml(item.id ?? "")}">Delete</button>
+          </div>
+        </div>
+      `).join("");
+      for (const btn of userMemoryApprovedList.querySelectorAll("[data-memory-delete]")) {
+        btn.addEventListener("click", async () => {
+          const id = btn.dataset.memoryDelete;
+          if (!id || !userMemoryState) return;
+          userMemoryState.textContent = "Deleting memory...";
+          try {
+            const result = await fetchJson(`/config/user-memory/memories/${encodeURIComponent(id)}`, desktopJsonOptions("DELETE", {}));
+            state.workspace.userMemory = result.userMemory ?? state.workspace.userMemory;
+            renderUserMemorySettings();
+          } catch (error) {
+            userMemoryState.textContent = `Failed: ${error.message}`;
+          }
+        });
+      }
+    }
+  }
+  if (userMemoryProposalList) {
+    if (pending.length === 0) {
+      renderEmpty(userMemoryProposalList, "No pending proposals.");
+    } else {
+      userMemoryProposalList.innerHTML = pending.map((item) => `
+        <div class="surface" style="padding:10px 12px;">
+          <div class="row">
+            <strong style="font-size:13px;">${escapeHtml(item.type ?? "proposal")}</strong>
+            <span class="chip warning">${escapeHtml(item.scope ?? "global")}</span>
+          </div>
+          <p style="margin:6px 0 0;font-size:12px;">${escapeHtml(item.text ?? "")}</p>
+          <p class="muted" style="margin:4px 0 0;font-size:11px;">${escapeHtml(item.source ?? "candidate_detection")}</p>
+          <div class="toolbar" style="margin-top:6px;">
+            <button class="btn btn-sm" data-memory-approve="${escapeHtml(item.proposalId ?? "")}">Approve</button>
+            <button class="btn btn-sm btn-danger" data-memory-reject="${escapeHtml(item.proposalId ?? "")}">Reject</button>
+          </div>
+        </div>
+      `).join("");
+      for (const btn of userMemoryProposalList.querySelectorAll("[data-memory-approve],[data-memory-reject]")) {
+        btn.addEventListener("click", async () => {
+          const proposalId = btn.dataset.memoryApprove || btn.dataset.memoryReject;
+          if (!proposalId || !userMemoryState) return;
+          const action = btn.dataset.memoryReject ? "reject" : "approve";
+          userMemoryState.textContent = `${action === "approve" ? "Approving" : "Rejecting"} proposal...`;
+          try {
+            const result = await fetchJson(
+              `/config/user-memory/proposals/${encodeURIComponent(proposalId)}`,
+              desktopJsonOptions("POST", { action })
+            );
+            state.workspace.userMemory = result.userMemory ?? state.workspace.userMemory;
+            renderUserMemorySettings();
+          } catch (error) {
+            userMemoryState.textContent = `Failed: ${error.message}`;
+          }
+        });
+      }
+    }
+  }
+}
+
 function renderUserMemorySettings() {
   const profile = state.workspace.userMemory ?? {};
   if (userMemoryEnabled) userMemoryEnabled.checked = profile.enabled !== false;
@@ -3878,6 +3965,7 @@ function renderUserMemorySettings() {
     const projectCount = Array.isArray(profile.projectMemories) ? profile.projectMemories.length : 0;
     userMemoryState.textContent = `${prefCount} preference${prefCount === 1 ? "" : "s"} · ${projectCount} project note${projectCount === 1 ? "" : "s"}`;
   }
+  renderGovernedMemoryList(profile);
 }
 
 async function saveUserMemorySettings() {
@@ -3887,7 +3975,9 @@ async function saveUserMemorySettings() {
     const payload = {
       enabled: userMemoryEnabled?.checked !== false,
       preferences: parseMemoryLines(userMemoryPreferences?.value ?? ""),
-      projectMemories: parseProjectMemoryLines(userMemoryProjectNotes?.value ?? "")
+      projectMemories: parseProjectMemoryLines(userMemoryProjectNotes?.value ?? ""),
+      approvedMemories: state.workspace.userMemory?.approvedMemories ?? [],
+      proposals: state.workspace.userMemory?.proposals ?? []
     };
     const result = await fetchJson("/config/user-memory", desktopJsonOptions("POST", payload));
     state.workspace.userMemory = result.userMemory ?? payload;

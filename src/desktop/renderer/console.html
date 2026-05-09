@@ -2282,6 +2282,16 @@
           <textarea id="userMemoryPreferences" rows="5" placeholder="One preference per line"></textarea>
           <label for="userMemoryProjectNotes" style="margin-top:10px;">Project memory</label>
           <textarea id="userMemoryProjectNotes" rows="5" placeholder="project_id | note"></textarea>
+          <div class="row" style="align-items:center;margin-top:12px;">
+            <strong style="font-size:13px;">Approved memory</strong>
+            <span id="userMemoryApprovedState" class="muted" style="font-size:12px;"></span>
+          </div>
+          <div id="userMemoryApprovedList" class="stack" style="gap:8px;margin-top:8px;"></div>
+          <div class="row" style="align-items:center;margin-top:12px;">
+            <strong style="font-size:13px;">Memory proposals</strong>
+            <span id="userMemoryProposalState" class="muted" style="font-size:12px;"></span>
+          </div>
+          <div id="userMemoryProposalList" class="stack" style="gap:8px;margin-top:8px;"></div>
           <div class="toolbar" style="margin-top:10px;">
             <button id="userMemorySaveBtn" class="btn" type="button">Save memory</button>
           </div>

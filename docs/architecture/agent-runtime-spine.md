@@ -82,7 +82,7 @@ executes.
 | AX-001 | Typed ArtifactExtract records | Done |
 | AX-002 | Artifact lineage and semantic contracts | Done |
 | AX-003 | Typed transforms | Done |
-| MX-001 | Memory governance surfaces | Pending |
+| MX-001 | Memory governance surfaces | Done |
 | MX-002 | Session compaction | Pending |
 | UX-001 | Context debug panel | Pending |
 | GX-001 | Graph nodes for runtime execution | Pending |
@@ -269,7 +269,24 @@ executes.
   generation, lineage, session reference persistence, and no blocking source
   extraction in transform code.
 
-Current next step: MX-001, Memory governance surfaces.
+## MX-001 Acceptance
+
+- User memory has governed `approvedMemories` and `proposals` alongside legacy
+  editable preferences and project notes.
+- Memory types include `user_correction` and `rejected_assumption`; pending
+  proposals are not injected into task context until reviewed.
+- Desktop-guarded HTTP routes can create memory proposals, approve/reject
+  proposals, and delete approved memory.
+- Console Settings shows approved memory and pending proposals with approve,
+  reject, and delete controls.
+- Approved governed memory carries source/provenance and is injected only as
+  scoped background context, so current instructions still override memory.
+- ContextCompiler can select scoped reviewed memory through structured
+  `background_contexts`.
+- `npm run verify:memory-governance` verifies governance contracts, routes, UI
+  hooks, tests, and docs.
+
+Current next step: MX-002, Session compaction.
 
 ## Legacy Archive Policy
 

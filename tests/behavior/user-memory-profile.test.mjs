@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 
 import { classifyContextSources } from "../../src/service/core/intent/context-sources.mjs";
 import { renderBackgroundContextsBlock } from "../../src/service/core/intent/background-contexts.mjs";
+import { compileContextForTask } from "../../src/service/core/context/context-compiler.mjs";
 import {
   applyUserMemoryProfileToContext,
+  approveMemoryProposal,
   buildUserMemoryBackgroundEntries,
+  createMemoryProposal,
+  deleteApprovedMemory,
+  rejectMemoryProposal,
   sanitizeUserMemoryProfile
 } from "../../src/service/memory/user-profile.mjs";
 
@@ -80,4 +85,100 @@ test("disabled user memory does not inject entries", () => {
 
   assert.equal(context.background_contexts?.length ?? 0, 0);
   assert.equal(context.selection_metadata?.user_memory_injected, undefined);
+});
+
+test("memory governance requires proposal review before approved memory injection", () => {
+  const proposal = createMemoryProposal({
+    type: "rejected_assumption",
+    text: "Do not route ordinary report requests into Master Plan.",
+    source: "user_correction",
+    provenance: { task_id: "task_memory_seed" },
+    now: "2026-05-09T07:00:00.000Z"
+  });
+  const pendingProfile = sanitizeUserMemoryProfile({
+    proposals: [proposal]
+  }, { now: "2026-05-09T07:01:00.000Z" });
+  assert.equal(pendingProfile.proposals[0].status, "pending");
+  assert.equal(buildUserMemoryBackgroundEntries(pendingProfile).length, 0);
+
+  const approvedProfile = approveMemoryProposal(
+    pendingProfile,
+    proposal.proposalId,
+    {},
+    { now: "2026-05-09T07:02:00.000Z" }
+  );
+  assert.equal(approvedProfile.proposals[0].status, "approved");
+  assert.equal(approvedProfile.approvedMemories.length, 1);
+  assert.equal(approvedProfile.approvedMemories[0].type, "rejected_assumption");
+  assert.equal(approvedProfile.approvedMemories[0].provenance.proposal_id, proposal.proposalId);
+
+  const entries = buildUserMemoryBackgroundEntries(approvedProfile);
+  assert.equal(entries.length, 1);
+  assert.match(entries[0].content, /rejected_assumption/);
+  assert.deepEqual(entries[0].metadata.memory_types, ["rejected_assumption"]);
+});
+
+test("memory governance can reject proposals and delete approved memory", () => {
+  const proposal = createMemoryProposal({
+    type: "user_correction",
+    text: "Prefer direct artifact tasks.",
+    now: "2026-05-09T07:10:00.000Z"
+  });
+  const rejected = rejectMemoryProposal(
+    { proposals: [proposal] },
+    proposal.proposalId,
+    { now: "2026-05-09T07:11:00.000Z" }
+  );
+  assert.equal(rejected.proposals[0].status, "rejected");
+  assert.equal(rejected.approvedMemories.length, 0);
+
+  const approved = approveMemoryProposal(
+    { proposals: [proposal] },
+    proposal.proposalId,
+    {},
+    { now: "2026-05-09T07:12:00.000Z" }
+  );
+  const deleted = deleteApprovedMemory(
+    approved,
+    approved.approvedMemories[0].id,
+    { now: "2026-05-09T07:13:00.000Z" }
+  );
+  assert.equal(deleted.approvedMemories.length, 0);
+});
+
+test("context compiler can select scoped reviewed memory", () => {
+  const context = applyUserMemoryProfileToContext(
+    { text: "", selection_metadata: {} },
+    {
+      approvedMemories: [
+        {
+          id: "mem_project_decision",
+          type: "project_decision",
+          scope: "project",
+          projectId: "proj_a",
+          text: "Use structure-first artifact transforms."
+        },
+        {
+          id: "mem_other_project",
+          type: "project_fact",
+          scope: "project",
+          projectId: "proj_b",
+          text: "Do not select this."
+        }
+      ]
+    },
+    { projectId: "proj_a" }
+  );
+  const compiled = compileContextForTask({
+    task: {
+      task_id: "task_memory_context",
+      project_id: "proj_a",
+      user_command: "继续升级转换流程",
+      context_packet: context
+    }
+  });
+  const selected = compiled.selected.find((item) => item.source === "context_packet.background_contexts");
+  assert.ok(selected);
+  assert.match(selected.value.content, /structure-first artifact transforms/);
+  assert.doesNotMatch(selected.value.content, /Do not select this/);
 });

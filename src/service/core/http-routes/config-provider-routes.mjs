@@ -48,7 +48,11 @@ import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 import { saveAutoSkill } from "../skill-pattern-tracker.mjs";
 import {
+  approveMemoryProposal,
+  createMemoryProposal,
+  deleteApprovedMemory,
   readUserMemoryProfileFromConfig,
+  rejectMemoryProposal,
   sanitizeUserMemoryProfile
 } from "../../memory/user-profile.mjs";
 import { buildModelRoleRoutingSummary } from "../../ai/model-role-routing.mjs";
@@ -581,6 +585,48 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       ok: true,
       userMemory
     });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/config/user-memory/proposals") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    const config = runtime.configStore?.load?.() ?? {};
+    const current = readUserMemoryProfileFromConfig(config);
+    const proposal = createMemoryProposal(body?.proposal ?? body ?? {});
+    const userMemory = sanitizeUserMemoryProfile({
+      ...current,
+      proposals: [proposal, ...(current.proposals ?? [])]
+    });
+    runtime.configStore?.patch?.({ ai: { userMemory } });
+    sendJson(response, 200, { ok: true, proposal, userMemory });
+    return true;
+  }
+
+  const memoryProposalMatch = url.pathname.match(/^\/config\/user-memory\/proposals\/([^/]+)$/);
+  if (memoryProposalMatch && method === "POST") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const proposalId = decodeURIComponent(memoryProposalMatch[1]);
+    const body = await readJsonBody(request);
+    const config = runtime.configStore?.load?.() ?? {};
+    const current = readUserMemoryProfileFromConfig(config);
+    const action = String(body?.action ?? "").trim();
+    const userMemory = action === "reject"
+      ? rejectMemoryProposal(current, proposalId)
+      : approveMemoryProposal(current, proposalId, body?.memory ?? {});
+    runtime.configStore?.patch?.({ ai: { userMemory } });
+    sendJson(response, 200, { ok: true, userMemory });
+    return true;
+  }
+
+  if (method === "DELETE" && url.pathname.startsWith("/config/user-memory/memories/")) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const memoryId = decodeURIComponent(url.pathname.replace(/^\/config\/user-memory\/memories\//, ""));
+    const config = runtime.configStore?.load?.() ?? {};
+    const current = readUserMemoryProfileFromConfig(config);
+    const userMemory = deleteApprovedMemory(current, memoryId);
+    runtime.configStore?.patch?.({ ai: { userMemory } });
+    sendJson(response, 200, { ok: true, userMemory });
     return true;
   }
 
