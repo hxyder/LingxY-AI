@@ -23,7 +23,8 @@ process or renderer code.
   `AGENTS.md` and `docs/architecture/agent-runtime-spine.md`: module
   boundaries, architecture rules file, upgrade task scope, forbidden
   modification areas, interface contracts, test gate, design-before-generation,
-  patch check, and replacement discipline. This is not a runtime requirement for every user task.
+  patch check, replacement discipline, and legacy removal discipline. This is
+  not a runtime requirement for every user task.
 
 ## PR Sequence
 
@@ -187,4 +188,6 @@ Old Electron or runtime paths may be archived only after their imports,
 registrations, package scripts, and runtime callers are checked. Prefer a
 dedicated cleanup PR after the new path is verified when same-PR removal is
 risky, but replace old call sites immediately when the new framework path has
-verifier coverage.
+verifier coverage. Once replacement is proven, delete obsolete code or move it
+to a clear archive area and verify stale references, duplicate entry points,
+duplicate route/script registrations, and variable/name collisions are gone.

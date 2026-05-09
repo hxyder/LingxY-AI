@@ -48,6 +48,10 @@ must apply to every user task it executes.
    migrate callers to it and retire old reachable code in the same PR or in a
    named follow-up cleanup PR with a blocking verifier. Do not leave parallel
    old/new implementations reachable without an explicit feature flag.
+10. Legacy removal discipline: once replacement is proven, delete the old code
+    or move it to an explicit archive area, then check imports, route
+    registrations, package scripts, public exports, duplicate entry points, and
+    variable/name collisions so the old path cannot be referenced accidentally.
 
 Verification expectations:
 
@@ -66,6 +70,9 @@ Legacy code policy:
   checks, tests, and runtime wiring analysis.
 - When the new framework path exists and passes its verifier, replace old call
   sites and remove the old implementation surface instead of keeping both paths.
+- After replacement, delete obsolete code or move it to a clear archive area and
+  verify there are no stale imports, duplicated public APIs, duplicate package
+  scripts, repeated route registrations, or variable/name collisions.
 - If removal cannot be completed safely in the same PR, create a named cleanup
   PR step and add a verifier that prevents new old-path references.
 - If old code is still reachable during migration, either migrate callers to the

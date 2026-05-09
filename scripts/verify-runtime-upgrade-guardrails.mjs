@@ -44,6 +44,9 @@ assertIncludes(agents, "AGENTS.md", [
   "Design-before-generation",
   "Patch check",
   "Replacement discipline",
+  "Legacy removal discipline",
+  "delete the old code",
+  "variable/name collisions",
 ]);
 
 assertIncludes(spine, "docs/architecture/agent-runtime-spine.md", [
@@ -54,8 +57,10 @@ assertIncludes(spine, "docs/architecture/agent-runtime-spine.md", [
   "not a runtime rule for every user task",
   "Upgrade task scope",
   "Replacement discipline",
+  "Legacy removal discipline",
   "PR-01",
   "Legacy Archive Policy",
+  "duplicated route/script registrations",
 ]);
 
 assertIncludes(
@@ -68,6 +73,8 @@ assertIncludes(
     "mandatory upgrade PR protocol",
     "not a runtime requirement for every user task",
     "replacement discipline",
+    "legacy removal discipline",
+    "duplicate route/script registrations",
     "Sidecar Decision Gate",
     "PR-02",
   ],

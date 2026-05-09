@@ -65,6 +65,10 @@ executes.
   migrate callers to it and retire old reachable code. Do not keep parallel
   old/new implementations reachable unless a named feature flag and cleanup PR
   explain the temporary overlap.
+- Legacy removal discipline: after replacement is verified, delete obsolete
+  code or move it to an explicit archive area, then check stale imports,
+  duplicate entry points, public exports, route registrations, package scripts,
+  and variable/name collisions.
 
 ## PR Sequence
 
@@ -100,6 +104,8 @@ executes.
 - Guardrails reject prompt-only fixes and phrase/task-id special cases.
 - Guardrails forbid heavy work in Electron main process or renderer.
 - Legacy archive/delete policy requires evidence before removal.
+- Replacement completion requires old code to be deleted or archived once the
+  new path is verified, with stale-reference and duplicate-name checks.
 - `node scripts/verify-runtime-upgrade-guardrails.mjs` verifies the guardrail
   files.
 
@@ -299,6 +305,10 @@ Historical code can be archived or deleted when all of the following are true:
 - Any remaining compatibility path is behind a named feature flag.
 - When a new framework path fully replaces an old one, retire the old exports
   and call sites in the same PR when verifier coverage can prove the replacement.
+- After replacement, delete obsolete implementation files or move them to a
+  clearly named archive area, and verify there are no stale imports, duplicated
+  entry points, duplicated route/script registrations, or variable/name
+  collisions.
 
 If those conditions are not met, keep the code reachable and plan a dedicated
 cleanup PR after the framework replacement is wired.
