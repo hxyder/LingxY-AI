@@ -5,6 +5,7 @@ import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
 import { createRuntimeGraphCheckpointService } from "../graph/runtime-graph-checkpoints.mjs";
 import { createRuntimeGraphReplayService } from "../graph/runtime-graph-replay.mjs";
+import { createRuntimeGraphScheduler } from "../graph/runtime-graph-scheduler.mjs";
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
 import { createArtifactExtractBackgroundLane } from "../artifact-extracts/artifact-extract-background-lane.mjs";
 import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
@@ -116,6 +117,9 @@ export function ensureRuntimeServices(runtime) {
       store: runtime.store
     });
   }
+  runtime.runtimeGraphScheduler ??= createRuntimeGraphScheduler({
+    metrics: runtime.metrics
+  });
   if (!runtime.artifactExtracts && hasArtifactExtractStore(runtime.store)) {
     runtime.artifactExtracts = createArtifactExtractService({
       store: runtime.store,

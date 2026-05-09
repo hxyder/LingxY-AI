@@ -36,7 +36,7 @@ process or renderer code.
 | PR-04 | Renderer streaming batching verifier and fixes | Done |
 | PR-05 | Context compiler off hot Electron paths | Done |
 | PR-06 | Artifact extraction background lane | Done |
-| PR-07 | Runtime graph scheduling budget | Graph execution has concurrency and cancellation guards |
+| PR-07 | Runtime graph scheduling budget | Done |
 | PR-08 | Desktop GUI perf smoke | Startup and interaction smoke reports remain bounded |
 
 ## PR-01 Status
@@ -185,8 +185,13 @@ Conversation/session spine status:
   AbortSignal support, and structured failed/partial `ArtifactExtract` records.
   The worker foundation lives under `src/service/workers/` and imports no
   Electron main process or renderer code.
+- PR-07 is done: `runtimeGraphScheduler` provides a service-owned scheduling
+  budget for graph node work with global concurrency, per-session serialization,
+  bounded queue depth, AbortSignal cancellation, node timeouts, and budget
+  snapshots. It does not replace the still-reachable scheduler/template DAG
+  path under `src/service/dag`.
 
-Current next step: PR-07, runtime graph scheduling budget.
+Current next step: PR-08, desktop GUI perf smoke.
 
 ## Sidecar Decision Gate
 
