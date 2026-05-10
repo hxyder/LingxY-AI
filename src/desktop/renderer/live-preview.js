@@ -30,8 +30,8 @@
     "render_svg"
   ]);
 
-  function ensureShell() {
-    return typeof window !== "undefined" ? window.ucaShell : null;
+  function ensurePreviewShell() {
+    return typeof window !== "undefined" ? window.livePreviewShellClient : null;
   }
 
   const pendingPreviewDeltas = new Map();
@@ -49,27 +49,27 @@
   }
 
   function flushPreviewDeltas() {
-    const shell = ensureShell();
-    if (!shell?.appendPreviewDelta || pendingPreviewDeltas.size === 0) return false;
+    const previewShell = ensurePreviewShell();
+    if (!previewShell?.appendPreviewDelta || pendingPreviewDeltas.size === 0) return false;
     const batch = [...pendingPreviewDeltas.values()];
     pendingPreviewDeltas.clear();
     for (const payload of batch) {
-      shell.appendPreviewDelta(payload);
+      previewShell.appendPreviewDelta(payload);
     }
     return true;
   }
 
   function openForTool({ toolName, args, taskId } = {}) {
     if (!PREVIEWABLE_ARTIFACT_TOOLS.has(toolName)) return false;
-    const shell = ensureShell();
-    if (!shell?.showPreviewWindow) return false;
-    shell.showPreviewWindow({ kind: "tool", toolName, args: args ?? {}, taskId: taskId ?? null });
+    const previewShell = ensurePreviewShell();
+    if (!previewShell?.showPreviewWindow) return false;
+    previewShell.showPreviewWindow({ kind: "tool", toolName, args: args ?? {}, taskId: taskId ?? null });
     return true;
   }
 
   function appendDelta({ toolName, partialJson, taskId } = {}) {
-    const shell = ensureShell();
-    if (!shell?.appendPreviewDelta) return false;
+    const previewShell = ensurePreviewShell();
+    if (!previewShell?.appendPreviewDelta) return false;
     const payload = { toolName, partialJson: partialJson ?? "", taskId: taskId ?? null };
     const key = `${payload.taskId ?? "active"}:${toolName ?? ""}`;
     pendingPreviewDeltas.set(key, payload);
@@ -79,24 +79,24 @@
 
   function commit(payload = {}) {
     flushPreviewDeltas();
-    const shell = ensureShell();
-    if (!shell?.commitPreviewWindow) return false;
-    shell.commitPreviewWindow(payload);
+    const previewShell = ensurePreviewShell();
+    if (!previewShell?.commitPreviewWindow) return false;
+    previewShell.commitPreviewWindow(payload);
     return true;
   }
 
   function openForFile({ filePath, mime } = {}) {
     if (!filePath) return false;
-    const shell = ensureShell();
-    if (!shell?.showPreviewWindow) return false;
-    shell.showPreviewWindow({ kind: "open-file", filePath, mime: mime ?? null });
+    const previewShell = ensurePreviewShell();
+    if (!previewShell?.showPreviewWindow) return false;
+    previewShell.showPreviewWindow({ kind: "open-file", filePath, mime: mime ?? null });
     return true;
   }
 
   function close() {
-    const shell = ensureShell();
-    if (!shell?.closePreviewWindow) return false;
-    shell.closePreviewWindow();
+    const previewShell = ensurePreviewShell();
+    if (!previewShell?.closePreviewWindow) return false;
+    previewShell.closePreviewWindow();
     return true;
   }
 

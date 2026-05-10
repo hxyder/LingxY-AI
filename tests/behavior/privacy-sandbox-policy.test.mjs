@@ -6,7 +6,7 @@ import {
   buildPrivacySandboxSummary,
   evaluatePrivacySandboxToolPolicy,
   normalizePrivacySandboxPolicy
-} from "../../src/service/security/privacy-sandbox-policy.mjs";
+} from "../../src/shared/privacy-sandbox-policy.mjs";
 import { buildPrivacySettingsViewModel } from "../../src/desktop/console/privacy_settings/view-model.mjs";
 
 const networkTool = { id: "web_search_fetch", required_capabilities: ["network"] };

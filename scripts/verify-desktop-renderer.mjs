@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { IPC_CHANNELS } from "../src/desktop/shared/manifest.mjs";
@@ -9,6 +9,16 @@ const repoRoot = path.resolve(__dirname, "..");
 
 async function read(relativePath) {
   return readFile(path.join(repoRoot, relativePath), "utf8");
+}
+
+async function readDesktopTrayIpcModules() {
+  const ipcDir = path.join(repoRoot, "src/desktop/tray/ipc");
+  const entries = await readdir(ipcDir, { withFileTypes: true });
+  return Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
+      .map((entry) => readFile(path.join(ipcDir, entry.name), "utf8"))
+  );
 }
 
 const preload = await read("src/desktop/renderer/preload.cjs");
@@ -243,7 +253,15 @@ assert.equal(/canvas\s*\{[\s\S]{0,180}width:\s*100%;[\s\S]{0,80}height:\s*100%;/
 const popupCardHtml = await read("src/desktop/renderer/popup-card.html");
 assert.equal(popupCardHtml.includes("pc-card"), true);
 
-const mainProcess = await read("src/desktop/tray/electron-main.mjs");
+const mainProcess = [
+  await read("src/desktop/tray/electron-main.mjs"),
+  await read("src/desktop/tray/desktop-service-client.mjs"),
+  await read("src/desktop/tray/desktop-window-config.mjs"),
+  await read("src/desktop/tray/desktop-window-bounds.mjs"),
+  await read("src/desktop/tray/desktop-paths.mjs"),
+  await read("src/desktop/tray/desktop-notifications.mjs"),
+  ...(await readDesktopTrayIpcModules())
+].join("\n");
 const dockGeometry = await read("src/desktop/tray/dock-geometry.mjs");
 assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);
 assert.equal(mainProcess.includes("useContentSize: true"), true);
@@ -381,9 +399,9 @@ assert.equal(mainProcess.includes("showDesktopNotification"), true);
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);
 assert.equal(mainProcess.includes("setPermissionCheckHandler"), true);
 
-assert.equal(consoleJs.includes("window.ucaShell.openUrl"), true);
+assert.equal(consoleJs.includes("consoleShellClient.openUrl"), true);
 assert.equal(consoleJs.includes('source: "console_chat"'), true);
-assert.equal(overlayJs.includes("window.ucaShell?.openUrl"), true);
+assert.equal(overlayJs.includes("overlayShellClient?.openUrl"), true);
 assert.equal(overlayJs.includes('source: "overlay_chat"'), true);
 
 console.log("Desktop renderer verification passed.");

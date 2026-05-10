@@ -16,9 +16,9 @@ Status: verified against the current repository on 2026-05-09.
 | --- | --- | --- | --- |
 | Desktop shell | `src/desktop/tray/**`, `src/desktop/shared/manifest.mjs` | Electron main process, window lifecycle, IPC handlers, local service process lifecycle | May import shared contracts and service host modules needed to launch the runtime. Renderer code must not own shell process state. |
 | Desktop renderer | `src/desktop/renderer/**` | Console, dock, overlay, popup, preview UI | Talks through preload `window.ucaShell` and local HTTP APIs. Must not import `src/service/**` directly. |
-| Desktop view models | `src/desktop/console/**`, `src/desktop/overlay/**` | UI state models and desktop-facing runtime client helpers | Transitional desktop-owned layer. Current exception: `src/desktop/console/runtime-client.mjs` reads service pricing data and should be revisited before broader movement. |
+| Desktop view models | `src/desktop/console/**`, `src/desktop/overlay/**` | UI state models and desktop-facing runtime client helpers | Transitional desktop-owned layer. Must not import `src/service/**` directly. Current documented exception: `src/desktop/console/runtime-client.mjs` reads service pricing data and should be revisited before broader movement. |
 | Service runtime | `src/service/core/**`, `src/service/executors/**`, `src/service/action_tools/**`, `src/service/store/**` | task runtime, HTTP server/routes, tool registry/execution, artifacts, memory, connectors, scheduler, metrics | Owns task and artifact behavior. Must not import renderer UI modules. |
-| Shared contracts | `src/shared/**`, `docs/protocols/**` | shared schemas, provider/config contracts, project-store and model helpers | Must remain runtime-neutral: no Electron imports and no `src/service/**` or renderer imports. |
+| Shared contracts | `src/shared/**`, `docs/protocols/**` | shared schemas, provider/config contracts, project-store, model helpers, pure provider setup status, pure privacy sandbox policy | Must remain runtime-neutral: no Electron imports and no `src/service/**` or renderer imports. |
 | Scripts/verifiers | `scripts/**`, `tests/**` | build/test/verification gates and one-off repo tooling | May read product code to verify contracts, but must not become runtime dependencies. |
 | Native host and CLI | `uca-native-host/**`, `uca-cli/**` | external process surfaces and command-line/native integration | Must remain explicit integration surfaces, not hidden renderer or service dependencies. |
 | Office add-in | `office_addin/**` | Office web add-in UI/bridge/runtime | Talks through documented HTTP/bridge surfaces only. |
@@ -33,7 +33,17 @@ Status: verified against the current repository on 2026-05-09.
 | `src/service/action_tools/tools/index.mjs` | Service runtime | Single built-in tool registry surface with 64 current tool ids. |
 | `src/service/core/http-server.mjs` and `src/service/core/http-routes/**` | Service runtime | 14 route groups are mounted in a fixed order. |
 | `src/service/core/context-submission.mjs` | Service runtime | Session/context compilation and task submission boundary. |
-| `src/service/core/agent-loop.mjs` | Service runtime | Agent loop behavior and tool execution orchestration. |
+| `src/service/executors/tool_using/agent-loop.mjs` | Service runtime | High-risk tool-using agent loop behavior, provider loop, approval, preview, and tool execution orchestration. |
+| `src/service/executors/agentic/planner.mjs` | Service runtime | High-risk agentic planning and execution dispatch path. |
+
+## Resolved Phase 2A.2 Boundary Moves
+
+The strengthened Phase 2A.1 verifier exposed direct desktop-to-service imports in console view-models. Phase 2A.2 resolves them by moving the pure contracts to `src/shared/**` and migrating both desktop and service callers to the shared ownership boundary. The only remaining documented desktop-to-service exception is `src/desktop/console/runtime-client.mjs` importing service pricing data.
+
+| Contract | New owner | Former callers migrated |
+| --- | --- | --- |
+| Provider setup status | `src/shared/provider-setup-status.mjs` | first-run view-model, provider config routes, onboarding tests/verifiers |
+| Privacy sandbox policy | `src/shared/privacy-sandbox-policy.mjs` | privacy settings view-model, security broker, privacy tests/verifiers |
 
 ## Verification
 
@@ -43,4 +53,4 @@ Run:
 node scripts/verify-code-ownership-boundaries.mjs
 ```
 
-The verifier checks that this map exists, required owner paths are documented, `src/shared/**` stays runtime-neutral, and renderer UI files do not import `src/service/**` directly.
+The verifier checks that this map exists, required owner paths are documented, `src/shared/**` stays runtime-neutral, and desktop UI/view-model files under `src/desktop/renderer/**`, `src/desktop/console/**`, and `src/desktop/overlay/**` do not import `src/service/**` directly except the documented pricing-data exception.

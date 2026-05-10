@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "utf8");
+const readDesktopTrayIpcModules = () => readdirSync(path.join(repoRoot, "src/desktop/tray/ipc"), { withFileTypes: true })
+  .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
+  .map((entry) => readFileSync(path.join(repoRoot, "src/desktop/tray/ipc", entry.name), "utf8"));
 
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
@@ -13,7 +16,10 @@ const dockJs = read("src/desktop/renderer/dock.js");
 const audioDevice = read("src/desktop/renderer/audio-device.mjs");
 const audioView = read("src/desktop/renderer/overlay-audio-view.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
-const main = read("src/desktop/tray/electron-main.mjs");
+const main = [
+  read("src/desktop/tray/electron-main.mjs"),
+  ...readDesktopTrayIpcModules()
+].join("\n");
 const manifest = read("src/desktop/shared/manifest.mjs");
 const audioRoutes = read("src/service/core/http-routes/audio-routes.mjs");
 const wakeMatch = read("src/shared/echo-wake-match.mjs");
@@ -129,11 +135,11 @@ for (const noteInvariant of [
   "async function enterNoteMode()",
   "function startNoteMicCapture(",
   "function startNoteSysCapture()",
-  "window.ucaShell?.getDesktopAudioSource?.()",
+  "overlayShellClient?.getDesktopAudioSource?.()",
   "startNoteMicRecorder(stream",
   "noteMediaRecorder = new MediaRecorder",
   "async function finishNote()",
-  "window.ucaShell?.setNoteRecordingState?."
+  "overlayShellClient?.setNoteRecordingState?."
 ]) {
   assert.ok(overlayJs.includes(noteInvariant), `note recorder missing invariant: ${noteInvariant}`);
 }
@@ -233,7 +239,7 @@ assert.ok(main.includes("surface: settings?.echoMode ? \"echo_receipt\" : \"over
   && dockJs.includes("sendEchoWake"),
   "dock drop: main owns normal/Echo surface policy, while Echo stays in hidden voice handoff");
 assert.ok(main.includes("preserveContext: Boolean(payload.preserveContext)")
-  && overlayJs.includes("window.ucaShell?.onEchoWake"),
+  && overlayJs.includes("overlayShellClient?.onEchoWake"),
   "Echo wake: preserveContext must survive dock -> main -> overlay handoff");
 assert.ok(overlayJs.includes("async function submitComposerInput()")
   && overlayJs.includes("await stopVoiceRecognition()")

@@ -10,24 +10,26 @@ const root = path.resolve(__dirname, "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 
 const electronMain = read("src/desktop/tray/electron-main.mjs");
+const shellOpenUrlIpc = read("src/desktop/tray/ipc/register-shell-open-url-ipc.mjs");
+const mainProcess = `${electronMain}\n${shellOpenUrlIpc}`;
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const consoleJs = read("src/desktop/renderer/console.js");
 const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
 
 assert.match(
-  electronMain,
+  mainProcess,
   /const explicitMode = payload\.ask === true\s*\?\s*"ask"[\s\S]{0,800}let mode = explicitMode\s*\?\?\s*readLinkOpenPreference\(\)/,
   "shell URL handler must honor renderer ask:true before falling back to stored linkOpenMode"
 );
 
 assert.match(
-  electronMain,
+  mainProcess,
   /if \(mode === "ask" && canOpenInLingxy\)[\s\S]{0,600}buttons:\s*\["LingxY 新窗口", "系统浏览器", "取消"\][\s\S]{0,260}cancelId:\s*2/,
   "ask mode must show a cancellable LingxY/system-browser choice dialog"
 );
 
 assert.match(
-  electronMain,
+  mainProcess,
   /defaultId:\s*1/,
   "link choice dialog must default to system browser rather than the in-app browser"
 );

@@ -19,17 +19,22 @@ const ROOT = path.resolve(__dirname, "..");
 // --- 2. live-preview.js is a thin IPC proxy (no DOM injection) ------
 {
   const src = await readFile(path.join(ROOT, "src/desktop/renderer/live-preview.js"), "utf8");
+  const consoleHtml = await readFile(path.join(ROOT, "src/desktop/renderer/console.html"), "utf8");
+  const overlayHtml = await readFile(path.join(ROOT, "src/desktop/renderer/overlay.html"), "utf8");
   // Must no longer inject a #livePreview root into the host page.
   assert.ok(!/createElement\("div"\)[\s\S]{0,200}id\s*=\s*"livePreview"/.test(src),
     "live-preview.js must not inject a #livePreview DOM root into overlay/console");
   // Must delegate through ucaShell IPC helpers.
-  assert.ok(src.includes("shell.showPreviewWindow"),
+  assert.ok(consoleHtml.includes("live-preview-shell-client.js")
+      && overlayHtml.includes("live-preview-shell-client.js"),
+    "console/overlay must load the live preview shell client before live-preview.js");
+  assert.ok(src.includes("previewShell.showPreviewWindow"),
     "live-preview.js must forward openForTool / openForFile through showPreviewWindow");
-  assert.ok(src.includes("shell.appendPreviewDelta"),
+  assert.ok(src.includes("previewShell.appendPreviewDelta"),
     "live-preview.js must forward appendDelta through appendPreviewDelta");
-  assert.ok(src.includes("shell.commitPreviewWindow"),
+  assert.ok(src.includes("previewShell.commitPreviewWindow"),
     "live-preview.js must forward commit through commitPreviewWindow");
-  assert.ok(src.includes("shell.closePreviewWindow"),
+  assert.ok(src.includes("previewShell.closePreviewWindow"),
     "live-preview.js must forward close through closePreviewWindow");
 }
 
@@ -68,26 +73,34 @@ const ROOT = path.resolve(__dirname, "..");
     "manifest.mjs WINDOW_IDS must register `preview`");
 }
 
-// --- 5. electron-main wires the window + IPC handlers ---------------
+// --- 5. electron-main wires the window; preview IPC module owns handlers
 {
   const src = await readFile(path.join(ROOT, "src/desktop/tray/electron-main.mjs"), "utf8");
+  const previewIpc = await readFile(path.join(ROOT, "src/desktop/tray/ipc/register-preview-ipc.mjs"), "utf8");
   assert.ok(src.includes("function computePreviewBounds"),
     "electron-main must compute the right-edge bounds for the preview window");
   assert.ok(src.includes("function ensurePreviewWindow"),
     "electron-main must lazily create the preview BrowserWindow");
   assert.ok(src.match(/workArea\.x \+ Math\.max\(0, Math\.round\(\(workArea\.width - width\) \/ 2\)\)/),
     "electron-main must center the larger document preview window in the work area");
-  assert.ok(src.includes("IPC_CHANNELS.previewWindowShow"),
-    "electron-main must handle previewWindowShow");
-  assert.ok(src.includes("IPC_CHANNELS.previewWindowAppendDelta"),
-    "electron-main must handle previewWindowAppendDelta");
-  assert.ok(src.includes("IPC_CHANNELS.previewWindowCommit"),
-    "electron-main must handle previewWindowCommit");
+  assert.ok(src.includes("registerPreviewIpc"),
+    "electron-main must register the preview IPC module");
+  assert.ok(previewIpc.includes("IPC_CHANNELS.previewWindowShow"),
+    "preview IPC module must handle previewWindowShow");
+  assert.ok(previewIpc.includes("IPC_CHANNELS.previewWindowAppendDelta"),
+    "preview IPC module must handle previewWindowAppendDelta");
+  assert.ok(previewIpc.includes("IPC_CHANNELS.previewWindowCommit"),
+    "preview IPC module must handle previewWindowCommit");
 }
 
 // --- 6. terminal preview states never remain loading ------------------
 {
+  const html = await readFile(path.join(ROOT, "src/desktop/renderer/preview-window.html"), "utf8");
   const previewSrc = await readFile(path.join(ROOT, "src/desktop/renderer/preview-window.js"), "utf8");
+  assert.ok(html.includes("preview/shell-preview-client.js"),
+    "preview-window must load the preview shell client before preview-window.js");
+  assert.ok(previewSrc.includes("previewShellClient"),
+    "preview-window must consume the preview shell client instead of direct shell calls");
   assert.ok(previewSrc.includes("没有收到可预览的文件路径"),
     "preview-window must render a terminal empty state when commit succeeds without an artifact path");
   assert.ok(/const committedToolName = toolName \|\| state\.toolName/.test(previewSrc),

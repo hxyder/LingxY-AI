@@ -6,6 +6,24 @@ import {
   toTaskEventFrame
 } from "./task-event-stream.js";
 import {
+  createRuntimeHttpClient
+} from "./shared/runtime-http-client.mjs";
+import {
+  createRuntimeTaskClient
+} from "./shared/runtime-task-client.mjs";
+import {
+  createRendererShellClient
+} from "./shared/shell-client.mjs";
+import {
+  createConsoleConnectorsClient
+} from "./console/console-connectors-client.mjs";
+import {
+  createConsoleNotesRuntimeClient
+} from "./console/console-notes-runtime-client.mjs";
+import {
+  createConsoleSkillsClient
+} from "./console/console-skills-client.mjs";
+import {
   buildScheduleActionFromText,
   parseScheduleTriggerFromText
 } from "./schedule-parser.js";
@@ -177,6 +195,7 @@ import {
 const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
 const workspaceRenderSignatures = new Map();
+const consoleShellClient = createRendererShellClient();
 
 const runtimeState = document.querySelector("#runtimeState");
 const summaryGrid = document.querySelector("#summaryGrid");
@@ -573,12 +592,12 @@ function renderEchoDiagnostics(payload = null) {
 }
 
 async function loadEchoDiagnostics({ force = false } = {}) {
-  if (!echoDiagnosticsPanel || typeof window.ucaShell?.getEchoDiagnostics !== "function") return null;
+  if (!echoDiagnosticsPanel || typeof consoleShellClient?.getEchoDiagnostics !== "function") return null;
   const now = Date.now();
   if (!force && echoDiagnosticsInFlight) return echoDiagnosticsInFlight;
   if (!force && echoDiagnosticsLastLoadedAt && now - echoDiagnosticsLastLoadedAt < 30_000) return null;
   if (force && echoWakeState) echoWakeState.textContent = "Checking voice status...";
-  echoDiagnosticsInFlight = window.ucaShell.getEchoDiagnostics()
+  echoDiagnosticsInFlight = consoleShellClient.getEchoDiagnostics()
     .then((payload) => {
       echoDiagnosticsLastLoadedAt = Date.now();
       renderEchoDiagnostics(payload);
@@ -604,16 +623,16 @@ async function loadEchoDiagnostics({ force = false } = {}) {
 }
 
 async function loadEchoWakeSettings() {
-  if (typeof window.ucaShell?.getSettings !== "function") return;
+  if (typeof consoleShellClient?.getSettings !== "function") return;
   try {
-    renderEchoWakeSettings(await window.ucaShell.getSettings());
+    renderEchoWakeSettings(await consoleShellClient.getSettings());
     void loadEchoDiagnostics();
   } catch {
     // Non-fatal: settings can still be loaded on the next broadcast.
   }
 }
 
-window.ucaShell?.onSettingsChanged?.((settings) => {
+consoleShellClient?.onSettingsChanged?.((settings) => {
   renderEchoWakeSettings(settings ?? {});
   echoDiagnosticsLastLoadedAt = 0;
   void loadEchoDiagnostics();
@@ -777,8 +796,8 @@ document.querySelectorAll(".theme-swatch").forEach((btn) => {
 });
 
 // External navigation request (e.g., overlay's settings shortcut button)
-if (window.ucaShell?.onNavigateConsole) {
-  window.ucaShell.onNavigateConsole((payload = {}) => {
+if (consoleShellClient?.onNavigateConsole) {
+  consoleShellClient.onNavigateConsole((payload = {}) => {
     const tabId = typeof payload.tabId === "string" ? payload.tabId : "settings";
     switchTab(tabId);
     if (tabId === "projects") {
@@ -852,6 +871,19 @@ const state = {
   projectStoreRemoteReady: false,
   projectStoreSyncing: false
 };
+
+const consoleRuntimeHttpClient = createRuntimeHttpClient({
+  getBaseUrl: () => state.serviceBaseUrl
+});
+const consoleTaskClient = createRuntimeTaskClient({
+  httpClient: consoleRuntimeHttpClient
+});
+const consoleConnectorsClient = createConsoleConnectorsClient({
+  httpClient: consoleRuntimeHttpClient
+});
+const consoleSkillsClient = createConsoleSkillsClient({
+  httpClient: consoleRuntimeHttpClient
+});
 
 let consoleChatEventStream = null;
 const consoleChatTaskStreams = new Map();
@@ -1114,12 +1146,12 @@ async function openConsoleChatExternalLink(anchor) {
   const href = normalizeExternalUrl(anchor?.getAttribute?.("href") ?? anchor?.href ?? "");
   if (!href) return false;
   try {
-    if (window.ucaShell?.openUrl) {
-      await window.ucaShell.openUrl(href, { ask: true, source: "console_chat" });
+    if (consoleShellClient?.openUrl) {
+      await consoleShellClient.openUrl(href, { ask: true, source: "console_chat" });
       return true;
     }
-    if (window.ucaShell?.openExternal) {
-      await window.ucaShell.openExternal(href);
+    if (consoleShellClient?.openExternal) {
+      await consoleShellClient.openExternal(href);
       return true;
     }
     window.open(href, "_blank", "noopener,noreferrer");
@@ -1408,16 +1440,21 @@ async function createScheduleFromConsole() {
 }
 
 async function fetchJson(pathname, options = {}) {
-  const response = await fetch(`${state.serviceBaseUrl}${pathname}`, options);
-  const payloadText = await response.text();
-  const payload = payloadText ? JSON.parse(payloadText) : {};
-  if (!response.ok) throw new Error(payload.message ?? payload.error ?? pathname);
-  return payload;
+  return consoleRuntimeHttpClient.fetchJson(pathname, options);
 }
 
 async function fetchJsonWithFallback(pathname, fallback, label = pathname) {
   try {
     return await fetchJson(pathname);
+  } catch (error) {
+    console.warn(`[console] ${label} refresh failed`, error);
+    return fallback;
+  }
+}
+
+async function fetchClientJsonWithFallback(fetcher, fallback, label) {
+  try {
+    return await fetcher();
   } catch (error) {
     console.warn(`[console] ${label} refresh failed`, error);
     return fallback;
@@ -2044,7 +2081,7 @@ function appendConsoleChatEvidenceSourcesToBody(body, summary) {
   holder.dataset.chatEvidenceSources = "true";
   holder.innerHTML = html;
   body.appendChild(holder);
-  wireEvidenceSourceActions(holder, window.ucaShell);
+  wireEvidenceSourceActions(holder, consoleShellClient);
   return true;
 }
 
@@ -2097,7 +2134,7 @@ function appendConsoleChatContentEvidence(taskId, entries) {
 async function appendConsoleChatContentEvidenceFromTask(taskId) {
   if (!taskId || consoleChatContentEvidenceTaskIds.has(taskId)) return;
   try {
-    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const detail = await consoleTaskClient.fetchTaskDetail(taskId);
     appendConsoleChatContentEvidence(taskId, extractContentEvidenceFromTaskDetail(detail));
   } catch {
     /* optional */
@@ -2492,7 +2529,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     return;
   }
   try {
-    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const detail = await consoleTaskClient.fetchTaskDetail(taskId);
     const latestOwner = consoleTaskOwnerConversationId(taskId);
     if (latestOwner && latestOwner !== currentConsoleConversationId()) return;
     const task = detail?.task ?? detail ?? null;
@@ -2724,8 +2761,8 @@ async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
   const target = approval.proposed_target ?? approval.workflow_id ?? approvalLike.workflow_id ?? "";
   const preview = approval.preview_text ?? approval.summary ?? approvalLike.summary ?? "请先确认后再执行。";
   try {
-    if (typeof window.ucaShell?.showPopupCard !== "function") return;
-    await window.ucaShell.showPopupCard({
+    if (typeof consoleShellClient?.showPopupCard !== "function") return;
+    await consoleShellClient.showPopupCard({
       kind: "approval",
       approvalId,
       taskId: taskId ?? approval.metadata?.task_id ?? approvalLike.task_id ?? null,
@@ -2749,11 +2786,11 @@ function surfaceNewWorkspaceApprovals(approvals = []) {
 }
 
 async function approveApproval(approvalId, options = {}) {
-  if (typeof window.ucaShell?.approveApproval !== "function") {
+  if (typeof consoleShellClient?.approveApproval !== "function") {
     throw new Error("Desktop approval bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.approveApproval({
+    await consoleShellClient.approveApproval({
       approvalId,
       overrides: options.overrides ?? null
     }),
@@ -2762,11 +2799,11 @@ async function approveApproval(approvalId, options = {}) {
 }
 
 async function rejectApproval(approvalId, options = {}) {
-  if (typeof window.ucaShell?.rejectApproval !== "function") {
+  if (typeof consoleShellClient?.rejectApproval !== "function") {
     throw new Error("Desktop approval bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.rejectApproval({
+    await consoleShellClient.rejectApproval({
       approvalId,
       reason: options.reason ?? ""
     }),
@@ -2839,7 +2876,7 @@ function fireScheduleRunCompletionNotice(task = {}) {
   const copy = buildScheduleRunCompletionCopy(task);
   let popupShown = false;
   try {
-    window.ucaShell?.showPopupCard?.({
+    consoleShellClient?.showPopupCard?.({
       kind: copy.kind,
       taskId,
       title: copy.title,
@@ -2855,7 +2892,7 @@ function fireScheduleRunCompletionNotice(task = {}) {
 
   if (!popupShown) {
     try {
-      window.ucaShell?.notify?.({
+      consoleShellClient?.notify?.({
         kind: copy.kind,
         taskId,
         title: copy.title,
@@ -2884,7 +2921,7 @@ async function settleScheduleRunTask(taskId) {
   if (!taskId) return;
   closeScheduleRunTaskWatcher(taskId);
   try {
-    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const detail = await consoleTaskClient.fetchTaskDetail(taskId);
     const task = detail?.task ?? detail ?? null;
     const events = detail?.events ?? [];
     if (!task) return;
@@ -3057,19 +3094,19 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
 
 async function openConversationArtifactPath(filePath) {
   if (!filePath) return;
-  if (typeof window.ucaShell?.openPath !== "function") {
+  if (typeof consoleShellClient?.openPath !== "function") {
     showConsoleToast("Open path bridge unavailable.", { kind: "err" });
     return;
   }
-  const result = await window.ucaShell.openPath(filePath);
+  const result = await consoleShellClient.openPath(filePath);
   if (result) showConsoleToast(`打开失败：${result}`, { kind: "err" });
 }
 
 async function revealConversationArtifactPath(filePath) {
   if (!filePath) return;
   try {
-    if (typeof window.ucaShell?.showItemInFolder === "function") {
-      await window.ucaShell.showItemInFolder(filePath);
+    if (typeof consoleShellClient?.showItemInFolder === "function") {
+      await consoleShellClient.showItemInFolder(filePath);
       return;
     }
   } catch { /* fallback to open */ }
@@ -4285,19 +4322,19 @@ function renderSkillTestResult(target, result) {
 
 async function openSkillPath(entryPath) {
   if (!entryPath) return;
-  if (typeof window.ucaShell?.openPath !== "function") {
+  if (typeof consoleShellClient?.openPath !== "function") {
     showConsoleToast("Open path bridge unavailable.", { kind: "err" });
     return;
   }
-  const result = await window.ucaShell.openPath(entryPath);
+  const result = await consoleShellClient.openPath(entryPath);
   if (result) showConsoleToast(`打开失败：${result}`, { kind: "err" });
 }
 
 async function revealSkillPath(entryPath) {
   if (!entryPath) return;
   try {
-    if (typeof window.ucaShell?.showItemInFolder === "function") {
-      await window.ucaShell.showItemInFolder(entryPath);
+    if (typeof consoleShellClient?.showItemInFolder === "function") {
+      await consoleShellClient.showItemInFolder(entryPath);
       return;
     }
   } catch { /* fallback to openPath */ }
@@ -4683,11 +4720,11 @@ function navigateToConnectorsPanel(panelId = "") {
 }
 
 async function updateOnboardingSuggestionViaShell(id, status) {
-  if (typeof window.ucaShell?.updateOnboardingSuggestion !== "function") {
+  if (typeof consoleShellClient?.updateOnboardingSuggestion !== "function") {
     throw new Error("Desktop onboarding bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateOnboardingSuggestion({ id, status }),
+    await consoleShellClient.updateOnboardingSuggestion({ id, status }),
     "Could not update onboarding suggestion."
   );
 }
@@ -5669,7 +5706,7 @@ async function loadArtifactPreviewText(artifactPath) {
   if (!artifactPath) return { text: "Select an artifact to preview.", kind: "empty" };
   if (isImageArtifactPath(artifactPath)) {
     try {
-      const dataUrl = await window.ucaShell.readFileAsDataUrl(artifactPath, imageMimeFor(artifactPath));
+      const dataUrl = await consoleShellClient.readFileAsDataUrl(artifactPath, imageMimeFor(artifactPath));
       return { text: "", kind: "image", dataUrl };
     } catch (error) {
       return { text: `Image preview failed: ${error?.message ?? error}`, kind: "error" };
@@ -5679,7 +5716,7 @@ async function loadArtifactPreviewText(artifactPath) {
     return { text: "This file type can't be previewed inline — use Open to view it externally.", kind: "external" };
   }
   try {
-    const raw = await window.ucaShell.readTextFile(artifactPath, 4000);
+    const raw = await consoleShellClient.readTextFile(artifactPath, 4000);
     const content = normalisePreviewText(raw).slice(0, 3000);
     return { text: content || "(file is empty)", kind: "ok" };
   } catch (error) {
@@ -5802,26 +5839,26 @@ function renderTaskArtifacts(detail) {
       // through to a native "open with" call.
       const p = btn.dataset.artifactPath;
       if (window.livePreview?.openForFile?.({ filePath: p })) return;
-      await window.ucaShell.openPath(p);
+      await consoleShellClient.openPath(p);
     });
   }
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-reveal]")) {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
       try {
-        if (typeof window.ucaShell.showItemInFolder === "function") {
-          await window.ucaShell.showItemInFolder(btn.dataset.artifactPath);
+        if (typeof consoleShellClient.showItemInFolder === "function") {
+          await consoleShellClient.showItemInFolder(btn.dataset.artifactPath);
         } else {
-          await window.ucaShell.openPath(btn.dataset.artifactPath);
+          await consoleShellClient.openPath(btn.dataset.artifactPath);
         }
       }
-      catch { await window.ucaShell.openPath(btn.dataset.artifactPath); }
+      catch { await consoleShellClient.openPath(btn.dataset.artifactPath); }
     });
   }
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-copy]")) {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      await window.ucaShell.writeClipboardText(btn.dataset.artifactPath);
+      await consoleShellClient.writeClipboardText(btn.dataset.artifactPath);
     });
   }
 
@@ -5857,7 +5894,7 @@ async function loadAllArtifacts() {
   const recent = completed.slice(0, 30);
   await Promise.all(recent.map(async (taskSummary) => {
     try {
-      const detail = await fetchJson(`/task/${taskSummary.task_id}`);
+      const detail = await consoleTaskClient.fetchTaskDetail(taskSummary.task_id);
       const artifacts = detail?.artifacts ?? [];
       for (const art of artifacts) {
         collected.push({
@@ -5911,7 +5948,7 @@ async function selectFileArtifact(filePath) {
 
   if (isPreviewableArtifactPath(filePath)) {
     try {
-      const raw = await window.ucaShell.readTextFile(filePath, 12_000);
+      const raw = await consoleShellClient.readTextFile(filePath, 12_000);
       filesPreviewBody.textContent = raw || "(empty file)";
       filesPreviewBody.classList.remove("muted");
     } catch (error) {
@@ -5932,18 +5969,18 @@ filesFilterInput?.addEventListener("input", (event) => {
 filesRefreshBtn?.addEventListener("click", () => void loadAllArtifacts());
 
 filesOpenBtn?.addEventListener("click", async () => {
-  if (filesSelectedPath) await window.ucaShell.openPath(filesSelectedPath);
+  if (filesSelectedPath) await consoleShellClient.openPath(filesSelectedPath);
 });
 
 filesRevealBtn?.addEventListener("click", async () => {
   if (!filesSelectedPath) return;
   const dir = dirnameOf(filesSelectedPath);
-  if (dir) await window.ucaShell.openPath(dir);
+  if (dir) await consoleShellClient.openPath(dir);
 });
 
 filesCopyPathBtn?.addEventListener("click", async () => {
   if (!filesSelectedPath) return;
-  await window.ucaShell.writeClipboardText(filesSelectedPath);
+  await consoleShellClient.writeClipboardText(filesSelectedPath);
   filesPreviewLabel.textContent = "Path copied to clipboard";
   setTimeout(() => {
     if (filesSelectedPath) filesPreviewLabel.textContent = `Preview · ${basenameOf(filesSelectedPath)}`;
@@ -6064,8 +6101,8 @@ async function copySelectedTaskContextDebugJson(button) {
   button.disabled = true;
   try {
     const payload = JSON.stringify(compiledContext, null, 2);
-    if (typeof window.ucaShell?.writeClipboardText === "function") {
-      await window.ucaShell.writeClipboardText(payload);
+    if (typeof consoleShellClient?.writeClipboardText === "function") {
+      await consoleShellClient.writeClipboardText(payload);
     } else {
       await navigator.clipboard?.writeText?.(payload);
     }
@@ -6291,8 +6328,8 @@ function renderTaskDetail(detail) {
       const previous = btn.textContent;
       btn.disabled = true;
       try {
-        if (typeof window.ucaShell?.writeClipboardText === "function") {
-          await window.ucaShell.writeClipboardText(traceJson);
+        if (typeof consoleShellClient?.writeClipboardText === "function") {
+          await consoleShellClient.writeClipboardText(traceJson);
         } else {
           await navigator.clipboard?.writeText?.(traceJson);
         }
@@ -6314,8 +6351,8 @@ function renderTaskDetail(detail) {
       const previous = btn.textContent;
       btn.disabled = true;
       try {
-        if (typeof window.ucaShell?.writeClipboardText === "function") {
-          await window.ucaShell.writeClipboardText(reversibilityJson);
+        if (typeof consoleShellClient?.writeClipboardText === "function") {
+          await consoleShellClient.writeClipboardText(reversibilityJson);
         } else {
           await navigator.clipboard?.writeText?.(reversibilityJson);
         }
@@ -6354,7 +6391,7 @@ function renderTaskDetail(detail) {
       }
     });
   }
-  wireEvidenceSourceActions(taskDetailSummary, window.ucaShell);
+  wireEvidenceSourceActions(taskDetailSummary, consoleShellClient);
   renderTaskContextDebug(detail);
   const events = detail.events ?? [];
   if (events.length > 0) {
@@ -6415,7 +6452,7 @@ async function refreshTaskDetail({ showLoading = false } = {}) {
     `;
   }
   try {
-    const detail = await fetchJson(`/task/${encodeURIComponent(selectedTaskId)}`);
+    const detail = await consoleTaskClient.fetchTaskDetail(selectedTaskId);
     if (v !== state.detailVersion) return;
     selectedTaskEventController.ensure(selectedTaskId);
     if (shouldRenderWorkspaceSlice(`task.detail.${selectedTaskId}`, detail, {
@@ -6940,7 +6977,7 @@ function renderSchedules() {
         watchScheduleRunTask(result?.task ?? null);
         if (result?.status === "pending_approval") {
           try {
-            window.ucaShell?.showPopupCard?.({
+            consoleShellClient?.showPopupCard?.({
               kind: "approval",
               approvalId: result?.approval?.approval_id ?? result?.approval?.approvalId ?? null,
               taskId: result?.task?.task_id ?? null,
@@ -7551,7 +7588,7 @@ async function renderFailedTasks() {
     listEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
   }
   try {
-    const resp = await fetchJson("/tasks/failed");
+    const resp = await consoleTaskClient.fetchFailedTasks();
     const items = resp.failed ?? [];
     if (items.length === 0) {
       setHtmlIfChanged(listEl, `<div class="muted" style="font-size:12px;">最近没有失败任务。</div>`);
@@ -7574,7 +7611,7 @@ async function renderFailedTasks() {
         viewerEl.style.display = "block";
         viewerEl.textContent = `加载 ${taskId} 事件流…`;
         try {
-          const log = await fetchJson(`/task/${encodeURIComponent(taskId)}/log`);
+          const log = await consoleTaskClient.fetchTaskLog(taskId);
           const events = log.events ?? [];
           if (events.length === 0) {
             viewerEl.textContent = `任务 ${taskId} 无持久化事件（早于 Phase 11 或事件已清理）。`;
@@ -7627,7 +7664,7 @@ async function renderTrashList() {
   if (trashState && !trashList.innerHTML.trim()) trashState.textContent = "Loading Trash...";
   try {
     const [tasksPayload, notesPayload] = await Promise.all([
-      fetchJson("/tasks?deleted=only"),
+      consoleTaskClient.fetchDeletedTasks(),
       fetchJson("/notes?deleted=only")
     ]);
     const taskItems = (tasksPayload.tasks ?? []).map((task) => ({
@@ -7700,11 +7737,11 @@ async function updateSecurityConfig(patch, label) {
   state.updatingSecurity = true;
   renderPrivacy();
   try {
-    if (typeof window.ucaShell?.updateSecurityState !== "function") {
+    if (typeof consoleShellClient?.updateSecurityState !== "function") {
       throw new Error("Desktop security settings bridge unavailable.");
     }
     const payload = assertShellResult(
-      await window.ucaShell.updateSecurityState(patch),
+      await consoleShellClient.updateSecurityState(patch),
       "Could not update security settings."
     );
     state.workspace.security = payload.security ?? state.workspace.security;
@@ -7896,8 +7933,8 @@ async function refreshWorkspace(options = {}) {
   const mode = options.mode ?? "full";
   refreshWorkspaceInFlight = (async () => {
     try {
-      const shell = typeof window.ucaShell?.getShellStatus === "function"
-        ? await window.ucaShell.getShellStatus()
+      const shell = typeof consoleShellClient?.getShellStatus === "function"
+        ? await consoleShellClient.getShellStatus()
         : { serviceBaseUrl: state.serviceBaseUrl };
       state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
       const activeTabId = currentConsoleTabId();
@@ -7906,7 +7943,7 @@ async function refreshWorkspace(options = {}) {
       const previous = state.workspace ?? {};
       const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
         fetchJsonWithFallback("/health", previous.health ?? {}, "health"),
-        fetchJsonWithFallback("/tasks", { tasks: previous.tasks ?? [] }, "tasks"),
+        fetchClientJsonWithFallback(() => consoleTaskClient.fetchTasks(), { tasks: previous.tasks ?? [] }, "tasks"),
         fetchJsonWithFallback("/approvals", { approvals: previous.approvals ?? [] }, "approvals"),
         fetchJsonWithFallback("/schedules", { schedules: previous.schedules ?? [] }, "schedules"),
         fetchJsonWithFallback("/templates", { templates: previous.templates ?? [] }, "templates"),
@@ -8073,7 +8110,7 @@ document.addEventListener("keydown", (event) => {
 });
 
 refreshButton.addEventListener("click", () => void refreshWorkspace());
-openOverlayButton.addEventListener("click", async () => await window.ucaShell.showWindow("overlay"));
+openOverlayButton.addEventListener("click", async () => await consoleShellClient.showWindow("overlay"));
 
 /* ── Desktop location chip ──────────────────────────────────────────────
  * Hooks the Windows-side geolocator (System.Device.Location via PowerShell
@@ -8146,8 +8183,8 @@ locationButton?.addEventListener("click", async (event) => {
     } else {
       const reason = r?.reason ?? "unknown";
       locationButton.title = describeLocationReason(reason);
-      if (reason === "denied" && window.ucaShell?.openExternal) {
-        window.ucaShell.openExternal("ms-settings:privacy-location").catch(() => {});
+      if (reason === "denied" && consoleShellClient?.openExternal) {
+        consoleShellClient.openExternal("ms-settings:privacy-location").catch(() => {});
       }
     }
   } catch (err) {
@@ -8419,13 +8456,13 @@ projectAttachFilesBtn?.addEventListener("click", async () => {
     showConsoleToast("Select a project before adding files.", { kind: "info" });
     return;
   }
-  if (typeof window.ucaShell?.pickProjectFiles !== "function") {
+  if (typeof consoleShellClient?.pickProjectFiles !== "function") {
     showConsoleToast("Desktop file picker is unavailable.", { kind: "error" });
     return;
   }
   try {
     projectAttachFilesBtn.disabled = true;
-    const picked = await window.ucaShell.pickProjectFiles();
+    const picked = await consoleShellClient.pickProjectFiles();
     const paths = Array.isArray(picked?.paths) ? picked.paths.filter(Boolean) : [];
     if (picked?.canceled || paths.length === 0) return;
     showConsoleToast("Indexing selected project files...", { kind: "info" });
@@ -8585,18 +8622,18 @@ deleteTaskButton?.addEventListener("click", async () => {
 });
 
 openTaskArtifactButton.addEventListener("click", async () => {
-  if (state.selectedTaskArtifactPath) await window.ucaShell.openPath(state.selectedTaskArtifactPath);
+  if (state.selectedTaskArtifactPath) await consoleShellClient.openPath(state.selectedTaskArtifactPath);
 });
 
 copyTaskArtifactPathButton.addEventListener("click", async () => {
-  if (state.selectedTaskArtifactPath) await window.ucaShell.writeClipboardText(state.selectedTaskArtifactPath);
+  if (state.selectedTaskArtifactPath) await consoleShellClient.writeClipboardText(state.selectedTaskArtifactPath);
 });
 
 useTaskArtifactContextButton.addEventListener("click", async () => {
   if (!state.selectedTaskArtifactPath) return;
   if (isPreviewableArtifactPath(state.selectedTaskArtifactPath)) {
     try {
-      const raw = await window.ucaShell.readTextFile(state.selectedTaskArtifactPath, 4000);
+      const raw = await consoleShellClient.readTextFile(state.selectedTaskArtifactPath, 4000);
       commandInput.value = normalisePreviewText(raw).slice(0, 2400);
     } catch {
       commandInput.value = `Process this file: ${state.selectedTaskArtifactPath}`;
@@ -8660,11 +8697,11 @@ budgetForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   budgetState.textContent = "Updating...";
   try {
-    if (typeof window.ucaShell?.updateBudget !== "function") {
+    if (typeof consoleShellClient?.updateBudget !== "function") {
       throw new Error("Desktop budget bridge unavailable.");
     }
     await assertShellResult(
-      await window.ucaShell.updateBudget({ limits: { monthly_usd_limit: Number(monthlyBudgetInput.value || 0) } }),
+      await consoleShellClient.updateBudget({ limits: { monthly_usd_limit: Number(monthlyBudgetInput.value || 0) } }),
       "Could not update budget."
     );
     budgetState.textContent = "Updated";
@@ -8905,8 +8942,8 @@ skillGitHubInstallBtn?.addEventListener("click", async () => {
   skillGitHubInstallBtn.textContent = "安装中…";
   if (skillGitHubInstallState) skillGitHubInstallState.textContent = "正在 git clone…";
   try {
-    const response = await fetch(`${state.serviceBaseUrl}/skills/install/github`, desktopJsonOptions("POST", { url }));
-    const data = await response.json().catch(() => ({}));
+    const response = await consoleSkillsClient.installFromGitHub(url);
+    const data = response.payload ?? {};
     if (data?.ok) {
       if (skillGitHubInstallState) {
         skillGitHubInstallState.textContent = `已安装：${data.descriptor?.heading ?? data.repo} → ${data.rootPath}`;
@@ -9070,20 +9107,20 @@ async function planMcpInstallSource() {
 }
 
 async function runMcpInstallSource() {
-  if (typeof window.ucaShell?.runMcpInstall !== "function") {
+  if (typeof consoleShellClient?.runMcpInstall !== "function") {
     throw new Error("Desktop install bridge unavailable.");
   }
-  return window.ucaShell.runMcpInstall({
+  return consoleShellClient.runMcpInstall({
     source: mcpInstallSource?.value?.trim() ?? "",
     id: mcpServerId?.value?.trim() ?? ""
   });
 }
 
 async function previewMcpInstallCandidate() {
-  if (typeof window.ucaShell?.previewMcpInstall !== "function") {
+  if (typeof consoleShellClient?.previewMcpInstall !== "function") {
     throw new Error("Desktop preview bridge unavailable.");
   }
-  return window.ucaShell.previewMcpInstall({
+  return consoleShellClient.previewMcpInstall({
     packageDir: mcpInstallPackageDir?.value?.trim() ?? "",
     id: mcpServerId?.value?.trim() ?? ""
   });
@@ -9097,230 +9134,230 @@ function assertShellResult(result, fallback) {
 }
 
 async function createSchedule(payload) {
-  if (typeof window.ucaShell?.createSchedule !== "function") {
+  if (typeof consoleShellClient?.createSchedule !== "function") {
     throw new Error("Desktop schedule bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.createSchedule(payload),
+    await consoleShellClient.createSchedule(payload),
     "Could not create schedule."
   );
 }
 
 async function updateSchedule(scheduleId, patch) {
-  if (typeof window.ucaShell?.updateSchedule !== "function") {
+  if (typeof consoleShellClient?.updateSchedule !== "function") {
     throw new Error("Desktop schedule bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateSchedule({ scheduleId, patch }),
+    await consoleShellClient.updateSchedule({ scheduleId, patch }),
     "Could not update schedule."
   );
 }
 
 async function deleteSchedule(scheduleId) {
-  if (typeof window.ucaShell?.deleteSchedule !== "function") {
+  if (typeof consoleShellClient?.deleteSchedule !== "function") {
     throw new Error("Desktop schedule bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteSchedule(scheduleId),
+    await consoleShellClient.deleteSchedule(scheduleId),
     "Could not delete schedule."
   );
 }
 
 async function runScheduleNow(scheduleId, triggerPayload = {}) {
-  if (typeof window.ucaShell?.runSchedule !== "function") {
+  if (typeof consoleShellClient?.runSchedule !== "function") {
     throw new Error("Desktop schedule bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.runSchedule({ scheduleId, triggerPayload }),
+    await consoleShellClient.runSchedule({ scheduleId, triggerPayload }),
     "Could not run schedule."
   );
 }
 
 async function saveTemplateViaShell(template) {
-  if (typeof window.ucaShell?.saveTemplate !== "function") {
+  if (typeof consoleShellClient?.saveTemplate !== "function") {
     throw new Error("Desktop template bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveTemplate({ template }),
+    await consoleShellClient.saveTemplate({ template }),
     "Could not save template."
   );
 }
 
 async function importTemplateViaShell(raw) {
-  if (typeof window.ucaShell?.importTemplate !== "function") {
+  if (typeof consoleShellClient?.importTemplate !== "function") {
     throw new Error("Desktop template bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.importTemplate({ raw }),
+    await consoleShellClient.importTemplate({ raw }),
     "Could not import template."
   );
 }
 
 async function deleteTemplateViaShell(templateId) {
-  if (typeof window.ucaShell?.deleteTemplate !== "function") {
+  if (typeof consoleShellClient?.deleteTemplate !== "function") {
     throw new Error("Desktop template bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteTemplate(templateId),
+    await consoleShellClient.deleteTemplate(templateId),
     "Could not delete template."
   );
 }
 
 async function resumeDagExecutionViaShell(executionId) {
-  if (typeof window.ucaShell?.resumeDagExecution !== "function") {
+  if (typeof consoleShellClient?.resumeDagExecution !== "function") {
     throw new Error("Desktop DAG bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.resumeDagExecution(executionId),
+    await consoleShellClient.resumeDagExecution(executionId),
     "Could not resume DAG execution."
   );
 }
 
 async function saveProviderViaShell(provider) {
-  if (typeof window.ucaShell?.saveProvider !== "function") {
+  if (typeof consoleShellClient?.saveProvider !== "function") {
     throw new Error("Desktop provider config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveProvider(provider),
+    await consoleShellClient.saveProvider(provider),
     "Could not save provider."
   );
 }
 
 async function deleteProviderViaShell(providerId) {
-  if (typeof window.ucaShell?.deleteProvider !== "function") {
+  if (typeof consoleShellClient?.deleteProvider !== "function") {
     throw new Error("Desktop provider config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteProvider(providerId),
+    await consoleShellClient.deleteProvider(providerId),
     "Could not delete provider."
   );
 }
 
 async function saveCodeCliAdapterViaShell(adapter) {
-  if (typeof window.ucaShell?.saveCodeCliAdapter !== "function") {
+  if (typeof consoleShellClient?.saveCodeCliAdapter !== "function") {
     throw new Error("Desktop Code CLI adapter bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveCodeCliAdapter(adapter),
+    await consoleShellClient.saveCodeCliAdapter(adapter),
     "Could not save Code CLI adapter."
   );
 }
 
 async function deleteCodeCliAdapterViaShell(adapterId) {
-  if (typeof window.ucaShell?.deleteCodeCliAdapter !== "function") {
+  if (typeof consoleShellClient?.deleteCodeCliAdapter !== "function") {
     throw new Error("Desktop Code CLI adapter bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteCodeCliAdapter(adapterId),
+    await consoleShellClient.deleteCodeCliAdapter(adapterId),
     "Could not delete Code CLI adapter."
   );
 }
 
 async function saveSkillRegistryViaShell(registry) {
-  if (typeof window.ucaShell?.saveSkillRegistry !== "function") {
+  if (typeof consoleShellClient?.saveSkillRegistry !== "function") {
     throw new Error("Desktop skill registry bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveSkillRegistry(registry),
+    await consoleShellClient.saveSkillRegistry(registry),
     "Could not save skill registry."
   );
 }
 
 async function deleteSkillRegistryViaShell(registryId) {
-  if (typeof window.ucaShell?.deleteSkillRegistry !== "function") {
+  if (typeof consoleShellClient?.deleteSkillRegistry !== "function") {
     throw new Error("Desktop skill registry bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteSkillRegistry(registryId),
+    await consoleShellClient.deleteSkillRegistry(registryId),
     "Could not delete skill registry."
   );
 }
 
 async function updateSkillStateViaShell(payload) {
-  if (typeof window.ucaShell?.updateSkillState !== "function") {
+  if (typeof consoleShellClient?.updateSkillState !== "function") {
     throw new Error("Desktop skill state bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateSkillState(payload),
+    await consoleShellClient.updateSkillState(payload),
     "Could not update skill state."
   );
 }
 
 async function writeSkillMarkdownViaShell(entryPath, markdown) {
-  if (typeof window.ucaShell?.writeSkillMarkdown !== "function") {
+  if (typeof consoleShellClient?.writeSkillMarkdown !== "function") {
     throw new Error("Desktop skill editor bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.writeSkillMarkdown({ entryPath, markdown }),
+    await consoleShellClient.writeSkillMarkdown({ entryPath, markdown }),
     "Could not save skill markdown."
   );
 }
 
 async function readSkillMarkdownViaShell(entryPath) {
-  if (typeof window.ucaShell?.readSkillMarkdown !== "function") {
+  if (typeof consoleShellClient?.readSkillMarkdown !== "function") {
     throw new Error("Desktop skill editor bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.readSkillMarkdown({ entryPath }),
+    await consoleShellClient.readSkillMarkdown({ entryPath }),
     "Could not read skill markdown."
   );
 }
 
 async function createSkillViaShell(payload = {}) {
-  if (typeof window.ucaShell?.createSkill !== "function") {
+  if (typeof consoleShellClient?.createSkill !== "function") {
     throw new Error("Desktop skill lifecycle bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.createSkill(payload),
+    await consoleShellClient.createSkill(payload),
     "Could not create skill."
   );
 }
 
 async function duplicateSkillViaShell(entryPath) {
-  if (typeof window.ucaShell?.duplicateSkill !== "function") {
+  if (typeof consoleShellClient?.duplicateSkill !== "function") {
     throw new Error("Desktop skill lifecycle bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.duplicateSkill({ entryPath }),
+    await consoleShellClient.duplicateSkill({ entryPath }),
     "Could not duplicate skill."
   );
 }
 
 async function deleteSkillViaShell(entryPath) {
-  if (typeof window.ucaShell?.deleteSkill !== "function") {
+  if (typeof consoleShellClient?.deleteSkill !== "function") {
     throw new Error("Desktop skill lifecycle bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteSkill({ entryPath }),
+    await consoleShellClient.deleteSkill({ entryPath }),
     "Could not delete skill."
   );
 }
 
 async function rollbackSkillViaShell(entryPath, historyId = "") {
-  if (typeof window.ucaShell?.rollbackSkill !== "function") {
+  if (typeof consoleShellClient?.rollbackSkill !== "function") {
     throw new Error("Desktop skill lifecycle bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.rollbackSkill({ entryPath, historyId }),
+    await consoleShellClient.rollbackSkill({ entryPath, historyId }),
     "Could not rollback skill."
   );
 }
 
 async function listSkillHistoryViaShell(entryPath) {
-  if (typeof window.ucaShell?.listSkillHistory !== "function") {
+  if (typeof consoleShellClient?.listSkillHistory !== "function") {
     throw new Error("Desktop skill history bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.listSkillHistory({ entryPath }),
+    await consoleShellClient.listSkillHistory({ entryPath }),
     "Could not list skill history."
   );
 }
 
 async function testSkillViaShell(payload = {}) {
-  if (typeof window.ucaShell?.testSkill !== "function") {
+  if (typeof consoleShellClient?.testSkill !== "function") {
     throw new Error("Desktop skill test bridge unavailable.");
   }
-  const result = await window.ucaShell.testSkill(payload);
+  const result = await consoleShellClient.testSkill(payload);
   if (result?.error) {
     throw new Error(result.message ?? result.error ?? "Could not test skill.");
   }
@@ -9354,190 +9391,190 @@ async function refreshSkillHistoryOptions(entryPath) {
 }
 
 async function updateRoutingConfigViaShell(routing) {
-  if (typeof window.ucaShell?.updateRoutingConfig !== "function") {
+  if (typeof consoleShellClient?.updateRoutingConfig !== "function") {
     throw new Error("Desktop routing config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateRoutingConfig(routing),
+    await consoleShellClient.updateRoutingConfig(routing),
     "Could not save routing config."
   );
 }
 
 async function updateOutputConfigViaShell(output) {
-  if (typeof window.ucaShell?.updateOutputConfig !== "function") {
+  if (typeof consoleShellClient?.updateOutputConfig !== "function") {
     throw new Error("Desktop output config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateOutputConfig(output),
+    await consoleShellClient.updateOutputConfig(output),
     "Could not save output config."
   );
 }
 
 async function updateFeatureConfigViaShell(features) {
-  if (typeof window.ucaShell?.updateFeatureConfig !== "function") {
+  if (typeof consoleShellClient?.updateFeatureConfig !== "function") {
     throw new Error("Desktop feature config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateFeatureConfig(features),
+    await consoleShellClient.updateFeatureConfig(features),
     "Could not save feature config."
   );
 }
 
 async function exportBundleViaShell(options = {}) {
-  if (typeof window.ucaShell?.exportBundle !== "function") {
+  if (typeof consoleShellClient?.exportBundle !== "function") {
     throw new Error("Desktop export bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.exportBundle(options),
+    await consoleShellClient.exportBundle(options),
     "Could not export data bundle."
   );
 }
 
 async function diagnosticBundleViaShell(options = {}) {
-  if (typeof window.ucaShell?.diagnosticBundle !== "function") {
+  if (typeof consoleShellClient?.diagnosticBundle !== "function") {
     throw new Error("Desktop diagnostics bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.diagnosticBundle(options),
+    await consoleShellClient.diagnosticBundle(options),
     "Could not build diagnostics bundle."
   );
 }
 
 async function updateEmailSettingsViaShell(settings) {
-  if (typeof window.ucaShell?.updateEmailSettings !== "function") {
+  if (typeof consoleShellClient?.updateEmailSettings !== "function") {
     throw new Error("Desktop email settings bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.updateEmailSettings(settings),
+    await consoleShellClient.updateEmailSettings(settings),
     "Could not save email settings."
   );
 }
 
 async function saveEmailAccountViaShell(account) {
-  if (typeof window.ucaShell?.saveEmailAccount !== "function") {
+  if (typeof consoleShellClient?.saveEmailAccount !== "function") {
     throw new Error("Desktop email account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveEmailAccount(account),
+    await consoleShellClient.saveEmailAccount(account),
     "Could not save email account."
   );
 }
 
 async function deleteEmailAccountViaShell(accountId) {
-  if (typeof window.ucaShell?.deleteEmailAccount !== "function") {
+  if (typeof consoleShellClient?.deleteEmailAccount !== "function") {
     throw new Error("Desktop email account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteEmailAccount(accountId),
+    await consoleShellClient.deleteEmailAccount(accountId),
     "Could not delete email account."
   );
 }
 
 async function checkEmailDigestViaShell(payload = {}) {
-  if (typeof window.ucaShell?.checkEmailDigest !== "function") {
+  if (typeof consoleShellClient?.checkEmailDigest !== "function") {
     throw new Error("Desktop email digest bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.checkEmailDigest(payload),
+    await consoleShellClient.checkEmailDigest(payload),
     "Could not run email digest check."
   );
 }
 
 async function saveNotesViaShell(notes) {
-  if (typeof window.ucaShell?.saveNotes !== "function") {
+  if (typeof consoleShellClient?.saveNotes !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveNotes(notes),
+    await consoleShellClient.saveNotes(notes),
     "Could not save notes."
   );
 }
 
 async function upsertNoteViaShell(note) {
-  if (typeof window.ucaShell?.upsertNote !== "function") {
+  if (typeof consoleShellClient?.upsertNote !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.upsertNote(note),
+    await consoleShellClient.upsertNote(note),
     "Could not save note."
   );
 }
 
 async function deleteNoteViaShell(noteId) {
-  if (typeof window.ucaShell?.deleteNote !== "function") {
+  if (typeof consoleShellClient?.deleteNote !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteNote(noteId),
+    await consoleShellClient.deleteNote(noteId),
     "Could not delete note."
   );
 }
 
 async function restoreNoteViaShell(noteId) {
-  if (typeof window.ucaShell?.restoreNote !== "function") {
+  if (typeof consoleShellClient?.restoreNote !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.restoreNote(noteId),
+    await consoleShellClient.restoreNote(noteId),
     "Could not restore note."
   );
 }
 
 async function appendNoteChipViaShell(payload) {
-  if (typeof window.ucaShell?.appendNoteChip !== "function") {
+  if (typeof consoleShellClient?.appendNoteChip !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.appendNoteChip(payload),
+    await consoleShellClient.appendNoteChip(payload),
     "Could not append note chip."
   );
 }
 
 async function saveProjectStoreViaShell(store) {
-  if (typeof window.ucaShell?.saveProjectStore !== "function") {
+  if (typeof consoleShellClient?.saveProjectStore !== "function") {
     throw new Error("Desktop project store bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveProjectStore(store),
+    await consoleShellClient.saveProjectStore(store),
     "Could not save project store."
   );
 }
 
 async function attachProjectFilesViaShell(payload) {
-  if (typeof window.ucaShell?.attachProjectFiles !== "function") {
+  if (typeof consoleShellClient?.attachProjectFiles !== "function") {
     throw new Error("Desktop project file bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.attachProjectFiles(payload ?? {}),
+    await consoleShellClient.attachProjectFiles(payload ?? {}),
     "Could not attach project files."
   );
 }
 
 async function removeProjectFileIndexViaShell(payload) {
-  if (typeof window.ucaShell?.removeProjectFileIndex !== "function") {
+  if (typeof consoleShellClient?.removeProjectFileIndex !== "function") {
     throw new Error("Desktop project file index bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.removeProjectFileIndex(payload ?? {}),
+    await consoleShellClient.removeProjectFileIndex(payload ?? {}),
     "Could not remove project file index."
   );
 }
 
 async function clearPreviewCacheViaShell() {
-  if (typeof window.ucaShell?.clearPreviewCache !== "function") {
+  if (typeof consoleShellClient?.clearPreviewCache !== "function") {
     throw new Error("Desktop preview cache bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.clearPreviewCache(),
+    await consoleShellClient.clearPreviewCache(),
     "Could not clear preview cache."
   );
 }
 
 async function setupOfficeAddinsViaShell(payload) {
-  if (typeof window.ucaShell?.setupOfficeAddins !== "function") {
+  if (typeof consoleShellClient?.setupOfficeAddins !== "function") {
     throw new Error("Desktop Office add-in setup bridge unavailable.");
   }
-  const result = await window.ucaShell.setupOfficeAddins(payload ?? {});
+  const result = await consoleShellClient.setupOfficeAddins(payload ?? {});
   if (result?.ok === false && result?.error) {
     throw new Error(result.message ?? result.error ?? "Could not configure Office add-ins.");
   }
@@ -9545,168 +9582,168 @@ async function setupOfficeAddinsViaShell(payload) {
 }
 
 async function updateEchoWakeProfileViaShell(profile) {
-  if (typeof window.ucaShell?.setEchoWakeProfile !== "function") {
+  if (typeof consoleShellClient?.setEchoWakeProfile !== "function") {
     throw new Error("Desktop Echo wake profile bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.setEchoWakeProfile(profile ?? {}),
+    await consoleShellClient.setEchoWakeProfile(profile ?? {}),
     "Could not save Echo wake profile."
   );
 }
 
 async function renameConnectedAccountViaShell(accountId, displayName) {
-  if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
+  if (typeof consoleShellClient?.renameConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.renameConnectedAccount(accountId, displayName),
+    await consoleShellClient.renameConnectedAccount(accountId, displayName),
     "Could not rename connected account."
   );
 }
 
 async function setConnectedAccountDefaultViaShell(accountId, purpose) {
-  if (typeof window.ucaShell?.setConnectedAccountDefault !== "function") {
+  if (typeof consoleShellClient?.setConnectedAccountDefault !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.setConnectedAccountDefault(accountId, purpose),
+    await consoleShellClient.setConnectedAccountDefault(accountId, purpose),
     "Could not update connected account default."
   );
 }
 
 async function disconnectConnectedAccountViaShell(accountId) {
-  if (typeof window.ucaShell?.disconnectConnectedAccount !== "function") {
+  if (typeof consoleShellClient?.disconnectConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.disconnectConnectedAccount(accountId),
+    await consoleShellClient.disconnectConnectedAccount(accountId),
     "Could not disconnect connected account."
   );
 }
 
 async function disconnectConnectorAccountViaShell(type) {
-  if (typeof window.ucaShell?.disconnectConnectorAccount !== "function") {
+  if (typeof consoleShellClient?.disconnectConnectorAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.disconnectConnectorAccount(type),
+    await consoleShellClient.disconnectConnectorAccount(type),
     "Could not disconnect connector account."
   );
 }
 
 async function saveConnectorAccountConfigViaShell(type, config) {
-  if (typeof window.ucaShell?.saveConnectorAccountConfig !== "function") {
+  if (typeof consoleShellClient?.saveConnectorAccountConfig !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveConnectorAccountConfig(type, config),
+    await consoleShellClient.saveConnectorAccountConfig(type, config),
     "Could not save connector account config."
   );
 }
 
 async function cancelTaskViaShell(taskId, options = {}) {
-  if (typeof window.ucaShell?.cancelTask !== "function") {
+  if (typeof consoleShellClient?.cancelTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.cancelTask(taskId, { force: options.force === true }),
+    await consoleShellClient.cancelTask(taskId, { force: options.force === true }),
     "Could not cancel task."
   );
 }
 
 async function retryTaskViaShell(taskId, options = {}) {
-  if (typeof window.ucaShell?.retryTask !== "function") {
+  if (typeof consoleShellClient?.retryTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.retryTask(taskId, options),
+    await consoleShellClient.retryTask(taskId, options),
     "Could not retry task."
   );
 }
 
 async function deleteTaskViaShell(taskId) {
-  if (typeof window.ucaShell?.deleteTask !== "function") {
+  if (typeof consoleShellClient?.deleteTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteTask(taskId),
+    await consoleShellClient.deleteTask(taskId),
     "Could not delete task."
   );
 }
 
 async function restoreTaskViaShell(taskId) {
-  if (typeof window.ucaShell?.restoreTask !== "function") {
+  if (typeof consoleShellClient?.restoreTask !== "function") {
     throw new Error("Desktop task restore bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.restoreTask(taskId),
+    await consoleShellClient.restoreTask(taskId),
     "Could not restore task."
   );
 }
 
 async function restoreFileCheckpointViaShell(taskId, checkpointId) {
-  if (typeof window.ucaShell?.restoreFileCheckpoint !== "function") {
+  if (typeof consoleShellClient?.restoreFileCheckpoint !== "function") {
     throw new Error("Desktop file recovery bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.restoreFileCheckpoint(taskId, checkpointId),
+    await consoleShellClient.restoreFileCheckpoint(taskId, checkpointId),
     "Could not restore file checkpoint."
   );
 }
 
 async function saveMcpServer(server) {
-  if (typeof window.ucaShell?.saveMcpServer !== "function") {
+  if (typeof consoleShellClient?.saveMcpServer !== "function") {
     throw new Error("Desktop MCP config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveMcpServer(server),
+    await consoleShellClient.saveMcpServer(server),
     "Could not save MCP server."
   );
 }
 
 async function deleteMcpServer(id) {
-  if (typeof window.ucaShell?.deleteMcpServer !== "function") {
+  if (typeof consoleShellClient?.deleteMcpServer !== "function") {
     throw new Error("Desktop MCP config bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.deleteMcpServer(id),
+    await consoleShellClient.deleteMcpServer(id),
     "Could not delete MCP server."
   );
 }
 
 async function testMcpServer(id) {
-  if (typeof window.ucaShell?.testMcpServer !== "function") {
+  if (typeof consoleShellClient?.testMcpServer !== "function") {
     throw new Error("Desktop MCP test bridge unavailable.");
   }
-  return await window.ucaShell.testMcpServer(id);
+  return await consoleShellClient.testMcpServer(id);
 }
 
 async function importMcpDraft(payload) {
-  if (typeof window.ucaShell?.importMcpDraft !== "function") {
+  if (typeof consoleShellClient?.importMcpDraft !== "function") {
     throw new Error("Desktop MCP draft bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.importMcpDraft(payload),
+    await consoleShellClient.importMcpDraft(payload),
     "Could not import MCP draft."
   );
 }
 
 async function toggleMcpServer(id, enabled) {
-  if (typeof window.ucaShell?.toggleMcpServer !== "function") {
+  if (typeof consoleShellClient?.toggleMcpServer !== "function") {
     throw new Error("Desktop MCP runtime bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.toggleMcpServer({ id, enabled }),
+    await consoleShellClient.toggleMcpServer({ id, enabled }),
     "Could not update MCP server."
   );
 }
 
 async function saveMcpServerConfig({ id, key, value, values, references }) {
-  if (typeof window.ucaShell?.saveMcpServerConfig !== "function") {
+  if (typeof consoleShellClient?.saveMcpServerConfig !== "function") {
     throw new Error("Desktop MCP runtime bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveMcpServerConfig({ id, key, value, values, references }),
+    await consoleShellClient.saveMcpServerConfig({ id, key, value, values, references }),
     "Could not save MCP server config."
   );
 }
@@ -10193,14 +10230,14 @@ echoDiagnosticsRefreshBtn?.addEventListener("click", () => {
 });
 
 echoEnrollmentStartBtn?.addEventListener("click", async () => {
-  if (typeof window.ucaShell?.startWakeEnrollment !== "function") {
+  if (typeof consoleShellClient?.startWakeEnrollment !== "function") {
     if (echoWakeState) echoWakeState.textContent = "Wake enrollment is only available in the desktop shell.";
     return;
   }
   if (echoEnrollmentStartBtn) echoEnrollmentStartBtn.disabled = true;
   if (echoWakeState) echoWakeState.textContent = "Starting wake sample recording...";
   try {
-    const result = await window.ucaShell.startWakeEnrollment();
+    const result = await consoleShellClient.startWakeEnrollment();
     if (!result?.ok) throw new Error(result?.message || result?.reason || "Could not start wake enrollment.");
     if (echoWakeState) echoWakeState.textContent = "Follow the Echo bubbles to record 3 wake samples.";
     setTimeout(() => { if (echoWakeState) echoWakeState.textContent = ""; }, 4200);
@@ -10214,19 +10251,19 @@ echoEnrollmentStartBtn?.addEventListener("click", async () => {
 // load custom providers + task routing on startup
 loadProvidersAndRouting();
 
-window.ucaShell.onShortcutTriggered((payload) => {
+consoleShellClient.onShortcutTriggered((payload) => {
   submitState.textContent = `Shortcut: ${payload.shortcutId}`;
 });
 
-window.ucaShell.onShellReady(() => void refreshWorkspace());
+consoleShellClient.onShellReady(() => void refreshWorkspace());
 
-window.ucaShell?.onPopupCardResolved?.((payload) => {
+consoleShellClient?.onPopupCardResolved?.((payload) => {
   if (payload?.kind === "approval") {
     void refreshWorkspace();
   }
 });
 
-window.ucaShell.onWindowFocused((payload) => {
+consoleShellClient.onWindowFocused((payload) => {
   if (payload.windowId === "console") void refreshWorkspace({ mode: "background" });
 });
 
@@ -10345,8 +10382,8 @@ consolePreviewOpenExternalBtn?.addEventListener("click", async () => {
   closeInlinePreview();
   if (!path) return;
   try {
-    if (typeof window.ucaShell?.openPath === "function") {
-      await window.ucaShell.openPath(path);
+    if (typeof consoleShellClient?.openPath === "function") {
+      await consoleShellClient.openPath(path);
     }
   } catch { /* ignore */ }
 });
@@ -10563,7 +10600,7 @@ function renderConnectorsMcpServers(servers) {
   connectorsMcpList.querySelectorAll("[data-plugin-guide]").forEach((button) => {
     button.addEventListener("click", () => {
       const url = button.dataset.pluginGuide;
-      if (url) void window.ucaShell?.openExternal?.(url);
+      if (url) void consoleShellClient?.openExternal?.(url);
     });
   });
 
@@ -10865,35 +10902,35 @@ document.querySelector("#conversationsShowArchived")?.addEventListener("change",
 
 async function loadConnectorsTab() {
   try {
-    const [accountsResp, mcpResp, mcpDraftsResp, settingsResp, acResp, connectedResp] = await Promise.all([
-      fetch(`${state.serviceBaseUrl}/config/email/accounts`),
-      fetch(`${state.serviceBaseUrl}/ai/mcp`),
-      fetch(`${state.serviceBaseUrl}/config/mcp/drafts`),
-      fetch(`${state.serviceBaseUrl}/config/email/settings`),
-      fetch(`${state.serviceBaseUrl}/connectors/accounts`),
-      fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`)
-    ]);
+    const {
+      accountsResp,
+      mcpResp,
+      mcpDraftsResp,
+      settingsResp,
+      accountConnectorsResp,
+      connectedResp
+    } = await consoleConnectorsClient.loadConnectorsTabData();
     if (accountsResp.ok) {
-      const { accounts } = await accountsResp.json();
+      const { accounts } = accountsResp.payload;
       renderConnEmailAccounts(accounts);
     }
     if (mcpResp.ok) {
-      const data = await mcpResp.json();
+      const data = mcpResp.payload;
       renderConnectorsMcpServers(data.servers ?? []);
     }
     if (mcpDraftsResp.ok) {
-      const data = await mcpDraftsResp.json();
+      const data = mcpDraftsResp.payload;
       renderMcpDrafts(data.drafts ?? []);
     }
     if (settingsResp.ok) {
-      const { settings } = await settingsResp.json();
+      const { settings } = settingsResp.payload;
       if (connDigestEnabled) connDigestEnabled.checked = settings.enabled !== false;
     }
-    if (acResp.ok) {
-      const { connectors } = await acResp.json();
+    if (accountConnectorsResp.ok) {
+      const { connectors } = accountConnectorsResp.payload;
       let connectedAccounts = [];
       if (connectedResp.ok) {
-        const connected = await connectedResp.json();
+        const connected = connectedResp.payload;
         connectedAccounts = connected.accounts ?? [];
       }
       renderAccountConnectors(connectors ?? [], connectedAccounts);
@@ -10936,8 +10973,8 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
     // ── Config panel (shown when user clicks "配置") ──
     if (_acConfigOpen[type]) {
       try {
-        const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/config`);
-        if (r.ok) cfgData = await r.json();
+        const r = await consoleConnectorsClient.fetchAccountConnectorConfig(type);
+        if (r.ok) cfgData = r.payload;
       } catch { /* ignore */ }
       // UCA-127: config panel attaches as a sibling row below the conn-row
       // (full-width), so the row stays one line even when configuring.
@@ -10988,7 +11025,7 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
   list.querySelectorAll("[data-external-url]").forEach((a) => {
     a.addEventListener("click", (e) => {
       e.preventDefault();
-      window.ucaShell?.openExternal?.(a.dataset.externalUrl);
+      consoleShellClient?.openExternal?.(a.dataset.externalUrl);
     });
   });
   // UCA-126: [data-ac-res] wiring retired with the resource-strip.
@@ -11093,24 +11130,22 @@ async function handleConnectedAccountDisconnect(accountId) {
 
 async function handleConnectedAccountReauth(accountId) {
   if (!accountId) return;
-  const r = await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}/reauth/start`, {
-    method: "POST"
-  });
-  const data = await r.json().catch(() => ({}));
+  const r = await consoleConnectorsClient.startConnectedAccountReauth(accountId);
+  const data = r.payload ?? {};
   if (!r.ok) {
     alert(data.message ?? data.error ?? "启动重新授权失败。");
     return;
   }
   if (data.authUrl) {
-    if (window.ucaShell?.openExternal) await window.ucaShell.openExternal(data.authUrl);
+    if (consoleShellClient?.openExternal) await consoleShellClient.openExternal(data.authUrl);
     else window.open(data.authUrl, "_blank");
   }
 }
 
 async function handleAccountConnect(type) {
   try {
-    const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/auth/start`, { method: "POST" });
-    const data = await r.json();
+    const r = await consoleConnectorsClient.startAccountAuth(type);
+    const data = r.payload;
     if (!r.ok) {
       alert(data.message ?? data.error ?? "启动授权失败，请先配置 Client ID。");
       _acConfigOpen[type] = true;
@@ -11118,8 +11153,8 @@ async function handleAccountConnect(type) {
       return;
     }
     // Open the OAuth URL in the system browser
-    if (window.ucaShell?.openExternal) {
-      await window.ucaShell.openExternal(data.authUrl);
+    if (consoleShellClient?.openExternal) {
+      await consoleShellClient.openExternal(data.authUrl);
     } else {
       window.open(data.authUrl, "_blank");
     }
@@ -11131,9 +11166,9 @@ async function handleAccountConnect(type) {
       tries++;
       if (tries > 60) { clearInterval(poll); void loadConnectorsTab(); return; }
       try {
-        const sr = await fetch(`${state.serviceBaseUrl}/connectors/accounts`);
+        const sr = await consoleConnectorsClient.listAccountConnectors();
         if (!sr.ok) return;
-        const { connectors } = await sr.json();
+        const { connectors } = sr.payload;
         const c = connectors.find((x) => x.type === type);
         if (c?.connected) { clearInterval(poll); void loadConnectorsTab(); }
       } catch { /* retry */ }
@@ -11209,33 +11244,7 @@ async function loadInboxTab({ force = false } = {}) {
   if (!freshEnough) {
     if (!_inboxState.accountsPromise) {
       _inboxState.accountsPromise = (async () => {
-        const accounts = [];
-        const [oauthResult, imapResult] = await Promise.allSettled([
-          fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`),
-          fetch(`${state.serviceBaseUrl}/config/email/accounts`)
-        ]);
-        if (oauthResult.status === "fulfilled" && oauthResult.value.ok) {
-          const data = await oauthResult.value.json();
-          for (const acc of data.accounts ?? []) {
-            accounts.push({ ...acc, _kind: "oauth" });
-          }
-        }
-        if (imapResult.status === "fulfilled" && imapResult.value.ok) {
-          const data = await imapResult.value.json();
-          for (const acc of data.accounts ?? []) {
-            accounts.push({
-              id: `email:${acc.id}`,
-              provider: acc.provider ?? "imap",
-              email: acc.email,
-              displayName: acc.displayName ?? acc.email ?? acc.id,
-              tokenStatus: "active",
-              imapHost: acc.imapHost,
-              _kind: "imap",
-              _rawId: acc.id
-            });
-          }
-        }
-        _inboxState.accounts = accounts;
+        _inboxState.accounts = await consoleConnectorsClient.loadInboxAccounts();
         _inboxState.accountsLoadedAt = Date.now();
       })().finally(() => {
         _inboxState.accountsPromise = null;
@@ -11332,9 +11341,9 @@ async function renderInboxContent() {
           const oauthSupportsFullBody = account._kind !== "imap" && (account.provider === "google" || account.provider === "microsoft");
           if (willExpand && oauthSupportsFullBody && !_inboxState.fullBodyCache.has(id)) {
             try {
-              const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${account.provider}/messages/${encodeURIComponent(id)}`);
+              const r = await consoleConnectorsClient.fetchOAuthMessageBody(account.provider, id);
               if (!r.ok) return;
-              const payload = await r.json();
+              const payload = r.payload;
               if (payload.status !== "success" || !payload.data) return;
               if (payload.data.bodyText) _inboxState.fullBodyCache.set(id, payload.data.bodyText);
               if (payload.data.bodyHtml) _inboxState.htmlBodyCache.set(id, payload.data.bodyHtml);
@@ -11347,42 +11356,29 @@ async function renderInboxContent() {
     content.querySelectorAll("[data-external-url]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
         ev.preventDefault();
-        if (btn.dataset.externalUrl) window.ucaShell?.openExternal?.(btn.dataset.externalUrl);
+        if (btn.dataset.externalUrl) consoleShellClient?.openExternal?.(btn.dataset.externalUrl);
       });
     });
   }
 
   content.innerHTML = `<p class="inbox-empty">加载中…</p>`;
   try {
-    let url;
-    if (isImap) {
-      // IMAP: only mail is supported. The backend endpoint returns either
-      // { messages } on success or { messages: [], reason } on a known
-      // soft failure (missing credentials / connection refused).
-      const refresh = _inboxState.forceNext ? "&refresh=1" : "";
-      _inboxState.forceNext = false;
-      url = `${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(account._rawId)}/messages?limit=30${refresh}`;
-    } else {
-      const provider = account.provider;
-      if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
-      else if (_inboxState.activeTab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/emails?limit=30`;
-      else url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/calendar?limit=30`;
-    }
-
-    const cacheKey = `${account.id}:${_inboxState.activeTab}:${url}`;
-    const cached = _inboxState.forceNext ? null : _inboxState.resourceCache.get(cacheKey);
+    const refreshResource = _inboxState.forceNext;
+    _inboxState.forceNext = false;
+    const resource = consoleConnectorsClient.describeInboxResource({
+      account,
+      activeTab: _inboxState.activeTab,
+      refresh: refreshResource
+    });
+    const cached = refreshResource ? null : _inboxState.resourceCache.get(resource.cacheKey);
     if (cached && (Date.now() - cached.ts) < INBOX_RESOURCE_TTL_MS) {
       renderInboxPayload(cached.data);
       return;
     }
 
-    const r = await fetch(url);
-    let data = null;
-    try {
-      data = await r.json();
-    } catch {
-      data = null;
-    }
+    const r = await consoleConnectorsClient.fetchInboxResource(resource);
+    const cacheKey = r.cacheKey;
+    const data = r.payload;
     if (!r.ok) {
       const detail = data?.message || data?.error || data?.reason || `加载失败 (${r.status})`;
       content.innerHTML = `<p class="inbox-empty">${escapeHtml(detail)}</p>`;
@@ -11445,7 +11441,7 @@ function renderEmailSetupGuide(provider, preset) {
   `;
   guide.querySelector("[data-email-setup-url]")?.addEventListener("click", (event) => {
     const url = event.currentTarget.dataset.emailSetupUrl;
-    if (url) void window.ucaShell?.openExternal?.(url);
+    if (url) void consoleShellClient?.openExternal?.(url);
   });
 }
 
@@ -11725,7 +11721,7 @@ const consoleChatAttachmentsController = createConsoleChatAttachmentsController(
   attachmentsEl: consoleChatAttachments,
   dropShell: document.querySelector(".console-chat-shell"),
   dropZone: document.querySelector("#consoleChatDropZone"),
-  shell: window.ucaShell,
+  shell: consoleShellClient,
   escapeHtml,
   isImagePath: isImageArtifactPath,
   imageMimeFor
@@ -11783,11 +11779,11 @@ consoleChatNoteBtn?.addEventListener("click", () => {
   });
 });
 consoleChatVoiceBtn?.addEventListener("click", () => {
-  if (typeof window.ucaShell?.openOverlayVoice !== "function") {
+  if (typeof consoleShellClient?.openOverlayVoice !== "function") {
     showConsoleToast("按 Ctrl+Shift+V 开启语音", { kind: "info" });
     return;
   }
-  window.ucaShell.openOverlayVoice({ mode: "voice", autoStart: true })
+  consoleShellClient.openOverlayVoice({ mode: "voice", autoStart: true })
     .catch(() => showConsoleToast("按 Ctrl+Shift+V 开启语音", { kind: "info" }));
 });
 
@@ -12273,6 +12269,12 @@ function initQuickNotes() {
     try { return (window.__lingxyRuntimeBaseUrl) || document.querySelector("html")?.dataset?.runtimeUrl || null; }
     catch { return null; }
   })() ?? (typeof state === "object" && state?.serviceBaseUrl) ?? "http://127.0.0.1:4310";
+  const notesRuntimeClient = createConsoleNotesRuntimeClient({
+    notesHttpClient: createRuntimeHttpClient({ getBaseUrl: () => runtimeBaseUrl }),
+    chatHttpClient: createRuntimeHttpClient({
+      getBaseUrl: () => (typeof state === "object" && state?.serviceBaseUrl) || runtimeBaseUrl
+    })
+  });
 
   // ── Server-side notes sync (authoritative store) ──────────────────────
   // The runtime JSON store is authoritative. localStorage is now only a
@@ -12280,10 +12282,7 @@ function initQuickNotes() {
   // older console snapshot.
   async function fetchNotesFromServer() {
     try {
-      const resp = await fetch(`${runtimeBaseUrl}/notes`);
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      return Array.isArray(data?.notes) ? data.notes : null;
+      return await notesRuntimeClient.fetchNotes();
     } catch { return null; }
   }
   async function seedNotesToServer(notes) {
@@ -13058,8 +13057,8 @@ function initQuickNotes() {
   function toastNote(msg) {
     // Reuse the global shell notification if available, otherwise fall
     // back to an inline chat log line.
-    if (window.ucaShell?.notify) {
-      try { window.ucaShell.notify({ title: "Notes", body: msg, kind: "info", autoHideMs: 2500 }); return; } catch { /* ignore */ }
+    if (consoleShellClient?.notify) {
+      try { consoleShellClient.notify({ title: "Notes", body: msg, kind: "info", autoHideMs: 2500 }); return; } catch { /* ignore */ }
     }
     console.info("[notes]", msg);
   }
@@ -13122,18 +13121,7 @@ function initQuickNotes() {
   }
 
   async function tryRuntimeChat(prompt) {
-    // state.serviceBaseUrl is the outer console.js global (captured via
-    // closure); runtimeBaseUrl is the pre-shadow fallback we stored above.
-    const baseUrl = (typeof state === "object" && state?.serviceBaseUrl) || runtimeBaseUrl;
-    const url = baseUrl ? `${baseUrl}/chat/complete` : "/chat/complete";
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ messages: [{ role: "user", content: prompt }] })
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    return data.text ?? data.message ?? data.content ?? JSON.stringify(data).slice(0, 400);
+    return notesRuntimeClient.completeChat(prompt);
   }
 
   // ── Voice note capture ────────────────────────────────────────────────
@@ -13142,13 +13130,13 @@ function initQuickNotes() {
   });
 
   async function openOverlayForNoteVoice() {
-    if (typeof window.ucaShell?.openOverlayVoice !== "function") {
+    if (typeof consoleShellClient?.openOverlayVoice !== "function") {
       toastNote("Voice notes are available from the global Ctrl+Shift+N shortcut.");
       return;
     }
     voiceBtn?.classList.add("is-active");
     try {
-      const result = await window.ucaShell.openOverlayVoice({ mode: "note", autoStart: true });
+      const result = await consoleShellClient.openOverlayVoice({ mode: "note", autoStart: true });
       if (!result?.ok) {
         toastNote("Could not open the voice note recorder.");
       }

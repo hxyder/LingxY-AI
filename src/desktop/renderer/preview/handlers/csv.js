@@ -16,10 +16,9 @@
     extensions: [".csv", ".tsv"],
     priority: 20,
     async render(container, ctx) {
-      if (!window.ucaShell?.readTextFile) {
-        throw new Error("ucaShell.readTextFile 未挂载");
-      }
-      const text = await window.ucaShell.readTextFile(ctx.filePath, 512 * 1024);
+      const shellClient = window.previewShellClient ?? window.createPreviewShellClient?.();
+      if (!shellClient) throw new Error("preview shell client unavailable");
+      const text = await shellClient.readTextFile(ctx.filePath, 512 * 1024);
       const delimiter = ctx.filePath.toLowerCase().endsWith(".tsv") ? "\t" : ",";
       const rows = parseCsv(text || "", delimiter);
       const truncated = rows.length > MAX_LOCAL_ROWS;

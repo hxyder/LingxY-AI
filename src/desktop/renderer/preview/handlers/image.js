@@ -22,12 +22,11 @@
     extensions: Object.keys(MIME_BY_EXT),
     priority: 20,
     async render(container, { filePath }) {
-      if (!window.ucaShell?.readFileAsDataUrl) {
-        throw new Error("ucaShell.readFileAsDataUrl 未挂载");
-      }
+      const shellClient = window.previewShellClient ?? window.createPreviewShellClient?.();
+      if (!shellClient) throw new Error("preview shell client unavailable");
       const ext = "." + (filePath.split(".").pop() || "").toLowerCase();
       const mime = MIME_BY_EXT[ext] ?? "application/octet-stream";
-      const dataUrl = await window.ucaShell.readFileAsDataUrl(filePath, mime);
+      const dataUrl = await shellClient.readFileAsDataUrl(filePath, mime);
       container.innerHTML = "";
       const img = document.createElement("img");
       img.src = dataUrl;

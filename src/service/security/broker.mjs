@@ -6,7 +6,7 @@ import { redactText, unredactText } from "./rules/pii_redaction.mjs";
 import { createKillSwitchController } from "./kill-switch.mjs";
 import { createScreenShareMonitor } from "./screen-share-monitor.mjs";
 import { appendAuditLog } from "./audit-log.mjs";
-import { evaluatePrivacySandboxToolPolicy } from "./privacy-sandbox-policy.mjs";
+import { evaluatePrivacySandboxToolPolicy } from "../../shared/privacy-sandbox-policy.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 

@@ -7,7 +7,7 @@ import {
   desktopActorForSender,
   desktopActorForWindowId
 } from "../src/desktop/tray/desktop-actor.mjs";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 const bootstrap = buildDesktopShellBootstrapState();
 const overlay = createOverlayViewModel();
@@ -71,6 +71,14 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 }
 
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
+const desktopSettings = readFileSync(new URL("../src/desktop/tray/desktop-settings.mjs", import.meta.url), "utf8");
+const desktopWindowBounds = readFileSync(new URL("../src/desktop/tray/desktop-window-bounds.mjs", import.meta.url), "utf8");
+const ipcModuleDir = new URL("../src/desktop/tray/ipc/", import.meta.url);
+const ipcModules = readdirSync(ipcModuleDir, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
+  .map((entry) => readFileSync(new URL(entry.name, ipcModuleDir), "utf8"))
+  .join("\n");
+const mainProcessIpc = `${electronMain}\n${ipcModules}`;
 if (!electronMain.includes("createPersistentRuntime")
     || !electronMain.includes("ensureEmbeddedServiceRuntime")
     || !electronMain.includes("embedded_runtime_start_failed")) {
@@ -86,39 +94,39 @@ if (!/export const DOCK_SIZE_PX = 48/.test(dockGeometry)
   throw new Error("Dock geometry helper must own fixed size, edge snap, and normalization.");
 }
 
-if (!/dock:\s*\{\s*minWidth:\s*DOCK_SIZE_PX,\s*minHeight:\s*DOCK_SIZE_PX,\s*maxWidth:\s*DOCK_SIZE_PX,\s*maxHeight:\s*DOCK_SIZE_PX\s*\}/.test(electronMain)) {
+if (!/dock:\s*\{\s*minWidth:\s*DOCK_SIZE_PX,\s*minHeight:\s*DOCK_SIZE_PX,\s*maxWidth:\s*DOCK_SIZE_PX,\s*maxHeight:\s*DOCK_SIZE_PX\s*\}/.test(desktopSettings)) {
   throw new Error("Dock bounds clamp must keep the BrowserWindow fixed at 48x48.");
 }
 
-if (!electronMain.includes("function lockWindowRendererZoom")
-    || !electronMain.includes("setZoomFactor?.(1)")
-    || !electronMain.includes("setVisualZoomLevelLimits?.(1, 1)")
+if (!desktopWindowBounds.includes("export function lockWindowRendererZoom")
+    || !desktopWindowBounds.includes("setZoomFactor?.(1)")
+    || !desktopWindowBounds.includes("setVisualZoomLevelLimits?.(1, 1)")
     || !electronMain.includes('"zoom-changed"')) {
   throw new Error("Dock renderer zoom must be locked to prevent tiny-window scrollbars.");
 }
 
 if (!electronMain.includes('"dom-ready"')
-    || !/DOCK_HUD_SCROLL_LOCK_CSS[\s\S]{0,220}position:\s*fixed\s*!important/.test(electronMain)
-    || !/canvas#orbCanvas[\s\S]{0,160}width:\s*100%\s*!important/.test(electronMain)) {
+    || !/DOCK_HUD_SCROLL_LOCK_CSS[\s\S]{0,220}position:\s*fixed\s*!important/.test(desktopWindowBounds)
+    || !/canvas#orbCanvas[\s\S]{0,160}width:\s*100%\s*!important/.test(desktopWindowBounds)) {
   throw new Error("Dock scroll lock must be injected early and force viewport-sized HUD content.");
 }
 
-if (!/windowId === DOCK_WINDOW_ID[\s\S]{0,640}normalizeDockBounds\(tentativeDockBounds, dockDisplay/.test(electronMain)
-    || !/width:\s*Number\.isFinite\(bounds\.width\)\s*\?\s*Math\.round\(bounds\.width\)\s*:\s*DOCK_SIZE_PX/.test(electronMain)
-    || !/snap:\s*options\.mode === "move"/.test(electronMain)) {
+if (!/windowId === dockWindowId[\s\S]{0,640}normalizeDockBounds\(tentativeDockBounds, dockDisplay/.test(desktopWindowBounds)
+    || !/width:\s*Number\.isFinite\(bounds\.width\)\s*\?\s*Math\.round\(bounds\.width\)\s*:\s*DOCK_SIZE_PX/.test(desktopWindowBounds)
+    || !/snap:\s*options\.mode === "move"/.test(desktopWindowBounds)) {
   throw new Error("Dock move bounds must use the shared geometry helper and snap to display edges.");
 }
 
-if (!/if \(windowId === DOCK_WINDOW_ID\) return true;/.test(electronMain)) {
+if (!/if \(windowId === "dock"\) return true;/.test(desktopSettings)) {
   throw new Error("Dock always-on-top must not be disabled by stale window preferences.");
 }
 
-if (!/if \(windowId === DOCK_WINDOW_ID\) \{[\s\S]{0,180}enforceDockWindowInvariants\(target\)/.test(electronMain)) {
+if (!/if \(windowId === DOCK_WINDOW_ID\) \{[\s\S]{0,180}enforceDockWindowInvariants\(target\)/.test(mainProcessIpc)) {
   throw new Error("Dock resize IPC must repair invariants instead of resizing the fixed HUD.");
 }
 
-if (!/const dockBounds = getManagedWindowBounds\(DOCK_WINDOW_ID, dockWin\)/.test(electronMain)
-    || /const dockBounds = dockWin\.getBounds\(\)/.test(electronMain)) {
+if (!/const dockBounds = getManagedWindowBounds\(DOCK_WINDOW_ID, dockWin\)/.test(mainProcessIpc)
+    || /const dockBounds = dockWin\.getBounds\(\)/.test(mainProcessIpc)) {
   throw new Error("Echo bubble must anchor to dock content bounds, not outer BrowserWindow bounds.");
 }
 

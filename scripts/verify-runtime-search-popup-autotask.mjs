@@ -85,7 +85,11 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 // 3. Dock must not reintroduce the old 2-minute cutoff.
 {
   const dock = read("src/desktop/renderer/dock.js");
-  assert.match(dock, /\/tasks\/summary\?limit=40/, "dock should poll lightweight summary endpoint");
+  const runtimeTaskClient = read("src/desktop/renderer/shared/runtime-task-client.mjs");
+  assert.match(dock, /dockTaskClient\.fetchTaskSummaries\(\{\s*limit:\s*40\s*\}\)/,
+    "dock should poll lightweight summary endpoint through the shared task client");
+  assert.match(runtimeTaskClient, /\/tasks\/summary\?limit=/,
+    "shared task client must preserve the lightweight summary endpoint contract");
   assert.doesNotMatch(dock, /2\s*\*\s*60\s*\*\s*1000/, "dock must not hide active tasks after two minutes");
 }
 

@@ -42,7 +42,7 @@ function estimateCardHeight(payload) {
   return Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, estimated));
 }
 
-export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolveServiceBaseUrl, createBrandedBrowserWindow }) {
+export function createPopupCardManager({ BrowserWindow, screen, resolveServiceBaseUrl, createBrandedBrowserWindow }) {
   // Brand-icon wiring is mandatory: callers must pass
   //   createBrandedBrowserWindow(BrowserWindow, options) → BrowserWindow
   // so popup cards inherit the canonical taskbar/title icon. Round-3
@@ -235,23 +235,6 @@ export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolve
     return { ok: true, card: { cardId, kind: entry.kind, payload: entry.payload, action: entry.settledAction, meta: payload } };
   }
 
-  function registerIpcHandlers({ onResolve } = {}) {
-    ipcMain.handle(IPC_CHANNELS.popupCardShow, (_event, payload = {}) => showCard(payload));
-    ipcMain.handle(IPC_CHANNELS.popupCardClose, (_event, cardId, options = {}) => {
-      return closeCard(cardId, options?.reason ?? "user");
-    });
-    ipcMain.handle(IPC_CHANNELS.popupCardTogglePin, (_event, cardId, pinned) => togglePin(cardId, pinned));
-    ipcMain.handle(IPC_CHANNELS.popupCardResize, (_event, cardId, height) => resizeCard(cardId, height));
-    ipcMain.handle(IPC_CHANNELS.popupCardResolve, async (_event, cardId, meta = {}) => {
-      const info = resolveCard(cardId, meta);
-      if (!info.ok) return { ok: false };
-      if (typeof onResolve === "function") {
-        try { await onResolve(info.card); } catch { /* ignore — main logs */ }
-      }
-      return { ok: true };
-    });
-  }
-
   function shutdown() {
     for (const cardId of [...cards.keys()]) closeCard(cardId, "shutdown");
   }
@@ -260,7 +243,8 @@ export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolve
     showCard,
     closeCard,
     togglePin,
-    registerIpcHandlers,
+    resizeCard,
+    resolveCard,
     shutdown,
     listCards: () => [...cards.values()].map((entry) => ({
       cardId: entry.cardId,

@@ -54,7 +54,7 @@ function measureAndResize() {
   const needed = Math.ceil(headH + bodyH + actionsH + 20); // +20 = body top/bottom padding + breathing
   if (Math.abs(needed - state.lastReportedHeight) < 4) return;
   state.lastReportedHeight = needed;
-  try { window.ucaShell?.resizePopupCard?.(state.cardId, needed); } catch { /* ignore */ }
+  try { window.popupCardShellClient?.resizePopupCard?.(state.cardId, needed); } catch { /* ignore */ }
 }
 
 // Observe size changes for dynamic content (e.g. approval cards whose
@@ -167,7 +167,7 @@ async function closeCard(reason) {
   clearAutoHide();
   cardEl.classList.remove("show");
   try {
-    await window.ucaShell?.closePopupCard?.(state.cardId, { reason: reason ?? "user" });
+    await window.popupCardShellClient?.closePopupCard?.(state.cardId, { reason: reason ?? "user" });
   } catch { /* ignore */ }
 }
 
@@ -177,7 +177,7 @@ async function resolveCard(action, extra = {}) {
   clearAutoHide();
   setButtonsDisabled(true);
   try {
-    await window.ucaShell?.resolvePopupCard?.(state.cardId, { action, ...extra });
+    await window.popupCardShellClient?.resolvePopupCard?.(state.cardId, { action, ...extra });
   } catch { /* swallow — main will close the window */ }
   cardEl.classList.remove("show");
   setTimeout(() => closeCard("resolved"), 200);
@@ -505,15 +505,15 @@ function defaultTitleFor(kind) {
 
 async function openTaskDetail(taskId, payload = null) {
   if (payload?.openWindow) {
-    await window.ucaShell?.showWindow?.(payload.openWindow);
+    await window.popupCardShellClient?.showWindow?.(payload.openWindow);
     closeCard("opened_detail");
     return;
   }
   if (!taskId) {
-    await window.ucaShell?.showWindow?.("console");
+    await window.popupCardShellClient?.showWindow?.("console");
     return;
   }
-  await window.ucaShell?.navigateConsole?.({ tab: "tasks", taskId });
+  await window.popupCardShellClient?.navigateConsole?.({ tab: "tasks", taskId });
   closeCard("opened_detail");
 }
 
@@ -523,7 +523,7 @@ pinBtn.addEventListener("click", () => {
   if (state.pinned) {
     clearAutoHide();
   }
-  window.ucaShell?.togglePopupCardPin?.(state.cardId, state.pinned);
+  window.popupCardShellClient?.togglePopupCardPin?.(state.cardId, state.pinned);
 });
 
 closeBtn.addEventListener("click", () => closeCard("user"));
@@ -548,7 +548,7 @@ bodyEl.addEventListener("scroll", () => {
   }, 1800);
 }, { passive: true });
 
-window.ucaShell?.onPopupCardInit?.((payload) => {
+window.popupCardShellClient?.onPopupCardInit?.((payload) => {
   if (!payload) return;
   if (payload.cardId && payload.cardId !== state.cardId) return;
   applyInit(payload);

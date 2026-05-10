@@ -1,5 +1,5 @@
 import { t } from "../../../shared/i18n/index.mjs";
-import { buildProviderSetupStatus } from "../../../service/ai/onboarding/provider-setup-status.mjs";
+import { buildProviderSetupStatus } from "../../../shared/provider-setup-status.mjs";
 
 function inferLlmStatus({ codeCliAdapters = [], providers = [], locale = "zh-CN" } = {}) {
   const providerSetup = buildProviderSetupStatus({ providers, codeCliAdapters, locale });

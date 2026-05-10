@@ -75,6 +75,9 @@ assert.ok(
 
 // ── 3. electron-main wiring ─────────────────────────────────────────
 const electronMainSrc = read("src/desktop/tray/electron-main.mjs");
+const desktopNotificationsSrc = read("src/desktop/tray/desktop-notifications.mjs");
+const updaterIpcSrc = read("src/desktop/tray/ipc/register-updater-ipc.mjs");
+const mainProcessIpcSrc = `${electronMainSrc}\n${updaterIpcSrc}`;
 assert.ok(
   /import\s*{\s*createAutoUpdater[^}]*}\s*from\s*"\.\/auto-updater\.mjs"/.test(electronMainSrc),
   "electron-main.mjs must import createAutoUpdater from ./auto-updater.mjs"
@@ -99,15 +102,15 @@ assert.ok(
   "electron-main.mjs auto-updater notify handler should reach safeNotify"
 );
 assert.ok(
-  /async function safeNotify/.test(electronMainSrc)
-    && /function showDesktopNotification/.test(electronMainSrc),
-  "electron-main.mjs must define safeNotify as the real popup-card/native notification bridge, not just call an undefined symbol"
+  /async function safeNotify/.test(desktopNotificationsSrc)
+    && /function showDesktopNotification/.test(desktopNotificationsSrc),
+  "desktop-notifications.mjs must define safeNotify as the real popup-card/native notification bridge, not just call an undefined symbol"
 );
 assert.ok(
-  /async function notifyAutoUpdater/.test(electronMainSrc)
-    && /actionKey:\s*"updater:settings"/.test(electronMainSrc)
-    && /actionKey:\s*"updater:apply"/.test(electronMainSrc),
-  "electron-main.mjs updater notifications must expose real popup-card actions for settings/apply"
+  /async function notifyAutoUpdater/.test(desktopNotificationsSrc)
+    && /actionKey:\s*"updater:settings"/.test(desktopNotificationsSrc)
+    && /actionKey:\s*"updater:apply"/.test(desktopNotificationsSrc),
+  "desktop-notifications.mjs updater notifications must expose real popup-card actions for settings/apply"
 );
 const popupCardSrc = read("src/desktop/renderer/popup-card.js");
 assert.ok(
@@ -125,8 +128,8 @@ for (const channel of [
 ]) {
   const re = new RegExp(`ipcMain\\.handle\\(IPC_CHANNELS\\.${channel}`);
   assert.ok(
-    re.test(electronMainSrc),
-    `electron-main.mjs must register ipcMain.handle(IPC_CHANNELS.${channel}, ...) so Settings UI can read/control updater state`
+    re.test(mainProcessIpcSrc),
+    `main-process IPC modules must register ipcMain.handle(IPC_CHANNELS.${channel}, ...) so Settings UI can read/control updater state`
   );
 }
 // First-run consent flow exists

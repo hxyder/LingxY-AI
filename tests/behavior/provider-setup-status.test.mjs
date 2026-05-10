@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { buildFirstRunWizardViewModel } from "../../src/desktop/console/first_run_wizard/view-model.mjs";
 import { buildCapabilityChecklist } from "../../src/desktop/renderer/capability-checklist.mjs";
-import { buildProviderSetupStatus } from "../../src/service/ai/onboarding/provider-setup-status.mjs";
+import { buildProviderSetupStatus } from "../../src/shared/provider-setup-status.mjs";
 
 test("provider setup status blocks fresh installs with common provider templates", () => {
   const status = buildProviderSetupStatus({

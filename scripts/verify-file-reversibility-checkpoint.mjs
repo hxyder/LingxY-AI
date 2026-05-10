@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
 
 import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 
@@ -10,6 +11,11 @@ const taskRoutes = readFileSync("src/service/core/http-routes/task-routes.mjs", 
 const manifest = readFileSync("src/desktop/shared/manifest.mjs", "utf8");
 const preload = readFileSync("src/desktop/renderer/preload.cjs", "utf8");
 const main = readFileSync("src/desktop/tray/electron-main.mjs", "utf8");
+const ipcModules = readdirSync("src/desktop/tray/ipc", { withFileTypes: true })
+  .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
+  .map((entry) => readFileSync(path.join("src/desktop/tray/ipc", entry.name), "utf8"))
+  .join("\n");
+const mainProcessIpc = `${main}\n${ipcModules}`;
 const renderer = readFileSync("src/desktop/renderer/console-task-detail.mjs", "utf8");
 const consoleJs = readFileSync("src/desktop/renderer/console.js", "utf8");
 const behavior = readFileSync("tests/behavior/file-reversibility-checkpoint.test.mjs", "utf8");
@@ -35,14 +41,14 @@ assert.match(taskRoutes, /requireDesktopActor/u, "checkpoint recovery endpoint m
 assert.match(taskRoutes, /collectFileReversibilityCheckpoints\(events\)/u, "checkpoint recovery endpoint must verify checkpoint id against task events");
 assert.match(manifest, /taskFileRecoveryRestore/u, "desktop manifest must include file recovery IPC channel");
 assert.match(preload, /restoreFileCheckpoint\(taskId,\s*checkpointId\)/u, "preload must expose file checkpoint restore bridge");
-assert.match(main, /taskFileRecoveryRestore/u, "main process must handle file checkpoint restore IPC");
+assert.match(mainProcessIpc, /taskFileRecoveryRestore/u, "main process must handle file checkpoint restore IPC");
 assert.match(renderer, /renderFileReversibilityPanel/u, "task detail should render file recovery checkpoints");
 assert.match(renderer, /data-file-reversibility-copy="1"/u, "file recovery panel should expose copy/export");
 assert.match(renderer, /data-file-reversibility-restore/u, "file recovery panel should expose one-click restore");
 assert.match(consoleJs, /renderFileReversibilityPanel\(detail\.events \?\? \[\]\)/u, "console task detail should include file recovery panel");
 assert.match(consoleJs, /writeClipboardText\(reversibilityJson\)/u, "console should wire recovery export to clipboard");
 assert.match(consoleJs, /restoreFileCheckpointViaShell/u, "console should restore checkpoints through the desktop shell bridge");
-assert.match(consoleJs, /window\.ucaShell\.restoreFileCheckpoint/u, "console restore must use preload bridge");
+assert.match(consoleJs, /consoleShellClient\.restoreFileCheckpoint/u, "console restore must use preload bridge through the shell client");
 
 assert.match(behavior, /delete_created_file/u, "behavior test must cover new-file reverse metadata");
 assert.match(behavior, /restore_file/u, "behavior test must cover restore checkpoint metadata");

@@ -2,6 +2,7 @@ import {
   TOOL_DISPLAY_LABELS,
   formatToolDisplayName
 } from "./tool-display.mjs";
+import { createRuntimeHttpClient } from "./shared/runtime-http-client.mjs";
 
 const TOOL_INVOCATION_PREFIXES = Object.freeze(buildKnownToolInvocationPrefixes());
 
@@ -518,10 +519,11 @@ export function subscribeTaskEvents(serviceBaseUrl, taskId, {
 } = {}) {
   const controller = new AbortController();
   const baseUrl = serviceBaseUrl.replace(/\/+$/, "");
+  const httpClient = createRuntimeHttpClient({ getBaseUrl: () => baseUrl });
 
   const promise = (async () => {
     const search = since ? `?since=${encodeURIComponent(since)}` : "";
-    const response = await fetch(`${baseUrl}/task/${encodeURIComponent(taskId)}/events${search}`, {
+    const response = await httpClient.fetchResponse(`/task/${encodeURIComponent(taskId)}/events${search}`, {
       headers: {
         Accept: "text/event-stream"
       },

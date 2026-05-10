@@ -8,12 +8,36 @@ import {
   matchesWake,
   normalizeForMatch
 } from "../../shared/echo-wake-match.mjs";
+import {
+  createEchoRuntimeClient
+} from "./shared/echo-runtime-client.mjs";
+import {
+  createRuntimeHttpClient
+} from "./shared/runtime-http-client.mjs";
+import {
+  createRuntimeTaskClient
+} from "./shared/runtime-task-client.mjs";
+import {
+  createDockShellClient
+} from "./dock-shell-client.mjs";
 
 const dockButton = document.querySelector("#dockButton");
 const clipBadge = document.querySelector("#clipBadge");
 const taskBadge = document.querySelector("#taskBadge");
 const recordingBadge = document.querySelector("#recordingBadge");
 const serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
+const dockRuntimeHttpClient = createRuntimeHttpClient({
+  getBaseUrl: () => serviceBaseUrl
+});
+const dockEchoClient = createEchoRuntimeClient({
+  httpClient: dockRuntimeHttpClient
+});
+const dockTaskClient = createRuntimeTaskClient({
+  httpClient: createRuntimeHttpClient({
+    getBaseUrl: () => "http://127.0.0.1:4310"
+  })
+});
+const dockShellClient = createDockShellClient();
 let dragDepth = 0;
 let clipboardReadyTimer = null;
 let noteRecordingActive = false;
@@ -48,7 +72,7 @@ function setDockMouseIgnoring(ignore) {
   const next = Boolean(ignore);
   if (dockMouseIgnoring === next) return;
   dockMouseIgnoring = next;
-  window.ucaShell?.setIgnoreMouseEvents?.("dock", next, { forward: true });
+  dockShellClient.setIgnoreMouseEvents("dock", next, { forward: true });
 }
 
 function syncDockMouseRegion(event) {
@@ -66,10 +90,7 @@ dockButton.addEventListener("mouseleave", (event) => syncDockMouseRegion(event))
 window.addEventListener("blur", () => setDockMouseIgnoring(false));
 
 async function detectEchoKeywordViaShell(blob) {
-  if (typeof window.ucaShell?.detectEchoKeyword !== "function") {
-    throw new Error("Desktop Echo KWS bridge unavailable.");
-  }
-  return await window.ucaShell.detectEchoKeyword({
+  return await dockShellClient.detectEchoKeyword({
     audio: await blob.arrayBuffer(),
     mimeType: blob.type || "audio/webm",
     keywords: echoWakeProfile.phrases
@@ -77,10 +98,7 @@ async function detectEchoKeywordViaShell(blob) {
 }
 
 async function enrollEchoKeywordViaShell(blob, { sample, session } = {}) {
-  if (typeof window.ucaShell?.enrollEchoKeyword !== "function") {
-    throw new Error("Desktop Echo enrollment bridge unavailable.");
-  }
-  return await window.ucaShell.enrollEchoKeyword({
+  return await dockShellClient.enrollEchoKeyword({
     audio: await blob.arrayBuffer(),
     mimeType: blob.type || "audio/webm",
     sample,
@@ -99,8 +117,8 @@ function applyNoteRecordingState(payload = {}) {
   window.__orbApi?.recording?.(noteRecordingActive);
 }
 
-window.ucaShell.onNoteRecordingState?.(applyNoteRecordingState);
-window.ucaShell.getNoteRecordingState?.().then(applyNoteRecordingState).catch(() => {});
+dockShellClient.onNoteRecordingState(applyNoteRecordingState);
+dockShellClient.getNoteRecordingState()?.then(applyNoteRecordingState).catch(() => {});
 
 // Self-heal: if the dock thinks a note/voice recording is still active but
 // no IPC heartbeat has arrived for 15s, assume the overlay died or forgot
@@ -238,7 +256,7 @@ async function onWakeDetected(kind, transcript = "", options = {}) {
     // so the user gets feedback that the wake was heard but throttled.
     console.debug("[echo] wake ignored — within re-wake cooldown");
     try {
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: "🎙 刚刚已唤醒，请直接说指令",
         kind: "info",
         durationMs: 1200
@@ -260,14 +278,14 @@ async function onWakeDetected(kind, transcript = "", options = {}) {
   // the user otherwise gets no UI cue that we're now listening for their
   // command. We chain them so the confirmation flashes first, then the
   // guidance stays on screen through the rest of the session window.
-  window.ucaShell?.showEchoBubble?.({
+  dockShellClient.showEchoBubble({
     text: kind === "note" ? "🎙 开始录音…" : "🎙 已唤醒",
     kind: "wake",
     durationMs: 1200
   });
   setTimeout(() => {
     if (!echoPausedForSession) return;
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: options.guidanceText || (kind === "note"
         ? "🎙 正在录音… 按 Enter 结束并总结"
         : "🎙 请说出指令，停顿后自动发送；Enter 立即发送"),
@@ -277,7 +295,7 @@ async function onWakeDetected(kind, transcript = "", options = {}) {
   }, 1100);
   window.__orbApi?.echoListening?.(true);
   try {
-    await window.ucaShell?.sendEchoWake?.({
+    await dockShellClient.sendEchoWake({
       kind,
       transcript,
       preserveContext: Boolean(options.preserveContext)
@@ -294,7 +312,7 @@ async function onWakeDetected(kind, transcript = "", options = {}) {
     echoRestartTimer = null;
     echoPausedForSession = false;
     window.__orbApi?.echoListening?.(false);
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: "Echo 会话超时，已恢复监听。再次说「linxi」可重新唤醒",
       kind: "info",
       durationMs: 2400
@@ -353,9 +371,9 @@ async function isEchoLocalKwsReady({ force = false } = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 2500);
   try {
-    const resp = await fetch(`${serviceBaseUrl}/echo/kws/status`, { signal: controller.signal });
+    const resp = await dockEchoClient.fetchKwsStatus({ signal: controller.signal });
     if (!resp.ok) throw new Error(`status ${resp.status}`);
-    echoLocalKwsStatus = await resp.json();
+    echoLocalKwsStatus = resp.payload;
     echoLocalKwsStatusAt = Date.now();
     console.info("[echo] local KWS status:", echoLocalKwsStatus);
     return Boolean(echoLocalKwsStatus?.ok);
@@ -380,7 +398,7 @@ async function startEchoRecognizer() {
     // of a session — subsequent restarts (from session-end, watchdog, etc.)
     // stay quiet.
     if (echoResumeAttempt === 0) {
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: "Echo: 本地 sherpa-onnx 唤醒词引擎已就绪",
         kind: "info", durationMs: 2200
       });
@@ -389,7 +407,7 @@ async function startEchoRecognizer() {
     return;
   }
   if (echoResumeAttempt === 0) {
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: "Echo: Web Speech 在线识别（本地 KWS 未配置）",
       kind: "info", durationMs: 2200
     });
@@ -402,7 +420,7 @@ function startEchoWebSpeechRecognizer() {
   console.info("[echo] startEchoWebSpeechRecognizer — SpeechRecognition available?", Boolean(Ctor));
   if (!Ctor) {
     console.info("[echo] no local KWS and no Web Speech; Echo cannot listen");
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: "Echo 语音引擎不可用：请安装 sherpa-onnx 或启用 Web Speech",
       kind: "error",
       durationMs: 3600
@@ -461,7 +479,7 @@ function startEchoWebSpeechRecognizer() {
       if (code === "aborted" || code === "no-speech") {
         setTimeout(() => { if (echoEnabled && !echoUsingFallback && !echoPausedForSession) startEchoRecognizer(); }, 400);
       } else if (code === "not-allowed" || code === "audio-capture") {
-        window.ucaShell?.showEchoBubble?.({
+        dockShellClient.showEchoBubble({
           text: "❌ 麦克风权限被拒，Echo 无法启动",
           kind: "error", durationMs: 3000
         });
@@ -643,7 +661,7 @@ async function startEchoFallback() {
           ) {
             echoKwsLastHintAt = now;
             echoKwsAttemptsSinceMatch = 0;
-            window.ucaShell?.showEchoBubble?.({
+            dockShellClient.showEchoBubble({
               text: "👂 听到你在说话但没匹配唤醒词，试试：linxi（林西）/ 大声点 / 靠近麦克风",
               kind: "info",
               durationMs: 3600
@@ -658,7 +676,7 @@ async function startEchoFallback() {
     }, ECHO_LOCAL_KWS_POLL_MS);
   } catch (err) {
     console.warn("[echo] local KWS mic failed:", err?.name, err?.message ?? err);
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: `❌ 无法启动麦克风：${err?.message ?? err}`,
       kind: "error", durationMs: 3000
     });
@@ -714,7 +732,7 @@ function applyEchoState(enabled) {
     if (echoResumeTimer) { clearTimeout(echoResumeTimer); echoResumeTimer = null; }
     stopEchoRecognizer();
     window.__orbApi?.echoListening?.(false);
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: "Echo 模式已关闭",
       kind: "info",
       durationMs: 1600
@@ -725,11 +743,11 @@ function applyEchoState(enabled) {
 // Bootstrap: read current settings, listen for changes.
 (async () => {
   try {
-    const settings = await window.ucaShell?.getSettings?.();
+    const settings = await dockShellClient.getSettings();
     applyEchoSettings(settings ?? {});
   } catch { /* ignore */ }
 })();
-window.ucaShell?.onSettingsChanged?.((settings) => {
+dockShellClient.onSettingsChanged((settings) => {
   applyEchoSettings(settings ?? {});
 });
 
@@ -780,7 +798,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
   const wasEnabled = echoEnabled;
   if (wasEnabled) stopEchoRecognizer();
   try {
-    window.ucaShell?.showEchoBubble?.({
+    dockShellClient.showEchoBubble({
       text: `🎤 录入唤醒词：听到「开始」后大声清晰念「${getWakeDisplayName()}」`,
       kind: "info",
       durationMs: 3200
@@ -806,13 +824,13 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       const retryHint = transcriptRetries > 0
         ? `（重试 ${transcriptRetries}/${MAX_TRANSCRIPT_RETRIES_PER_SAMPLE}）`
         : "";
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: `第 ${i}/${samples} 次 — 准备…${retryHint}`,
         kind: "info",
         durationMs: 1200
       });
       await new Promise((r) => setTimeout(r, countdownMs));
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: `🎙 开始！请念「${getWakeDisplayName()}」`,
         kind: "wake",
         durationMs: 2500
@@ -822,7 +840,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         blob = await recordSingleSample({ durationMs: 2500 });
       } catch (err) {
         console.warn("[echo] enrollment record failed:", err);
-        window.ucaShell?.showEchoBubble?.({
+        dockShellClient.showEchoBubble({
           text: `❌ 录音失败：${err?.message ?? err}`,
           kind: "error", durationMs: 2800
         });
@@ -836,14 +854,14 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         });
       } catch (err) {
         console.warn("[echo] enrollment upload failed:", err);
-        window.ucaShell?.showEchoBubble?.({
+        dockShellClient.showEchoBubble({
           text: `❌ 上传失败：${err?.message ?? err}`,
           kind: "error", durationMs: 2800
         });
         return;
       }
       if (!result?.ok) {
-        window.ucaShell?.showEchoBubble?.({
+        dockShellClient.showEchoBubble({
           text: `⚠ 第 ${i} 次保存失败（${result?.reason ?? "unknown"}），请重说`,
           kind: "error", durationMs: 3200
         });
@@ -897,7 +915,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         const corrective = transcriptHasContent
           ? `❌ 听到「${transcript}」不是「${getWakeDisplayName()}」`
           : `⚠ 没听清，请靠近麦克风、放慢语速`;
-        window.ucaShell?.showEchoBubble?.({
+        dockShellClient.showEchoBubble({
           text: `${corrective}，请重念（${transcriptRetries}/${MAX_TRANSCRIPT_RETRIES_PER_SAMPLE}）`,
           kind: "error",
           durationMs: 3600
@@ -939,7 +957,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       const kwsText = kwsSelfCheck.matched
         ? `KWS 命中「${kwsSelfCheck.keyword || getWakeDisplayName()}」`
         : "KWS 未命中";
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: `第 ${i}/${samples} 次：${heardText} · ${kwsText}`,
         kind: kwsSelfCheck.matched ? "info" : "error",
         durationMs: 1800
@@ -957,7 +975,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       const total = finalEnrollment.sampleCount ?? saved.length;
       const required = finalEnrollment.requiredMatches ?? 2;
       const enabled = Boolean(finalEnrollment.enabled);
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: enabled
           ? (matched >= required
             ? `✅ 录入有效 · KWS 自检命中 ${matched}/${total}`
@@ -970,7 +988,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       echoLocalKwsStatus = null;
       echoLocalKwsStatusAt = 0;
     } else {
-      window.ucaShell?.showEchoBubble?.({
+      dockShellClient.showEchoBubble({
         text: "未采集到可用样本，请重试",
         kind: "error", durationMs: 2400
       });
@@ -981,20 +999,20 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
   }
 }
 
-window.ucaShell?.onStartWakeEnrollment?.(() => {
+dockShellClient.onStartWakeEnrollment(() => {
   void runWakeEnrollment();
 });
 
 // Overlay signals the end of an echo-triggered voice/note session. Resume
 // wake-word listening right away instead of waiting for the 20s fallback.
-window.ucaShell?.onEchoSessionEnd?.(() => {
+dockShellClient.onEchoSessionEnd(() => {
   if (echoRestartTimer) { clearTimeout(echoRestartTimer); echoRestartTimer = null; }
   echoPausedForSession = false;
   window.__orbApi?.echoListening?.(false);
   scheduleEchoResume({ delayMs: ECHO_RESUME_DELAY_MS, announce: true });
 });
 
-window.ucaShell?.onEchoShortcutWake?.((payload = {}) => {
+dockShellClient.onEchoShortcutWake((payload = {}) => {
   if (!echoEnabled) return;
   void onWakeDetected(payload.kind === "note" ? "note" : "voice", payload.transcript || "shortcut");
 });
@@ -1016,7 +1034,7 @@ setInterval(() => {
 window.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   console.info("[echo] contextmenu → requesting native dock menu");
-  window.ucaShell?.showDockMenu?.();
+  dockShellClient.showDockMenu();
 });
 
 // Keyboard escape hatch for toggling Echo: Ctrl+Shift+L inside the dock
@@ -1026,15 +1044,15 @@ window.addEventListener("keydown", async (event) => {
   const meta = event.ctrlKey || event.metaKey;
   if (meta && event.shiftKey && event.key.toLowerCase() === "l") {
     event.preventDefault();
-    const current = await window.ucaShell?.getSettings?.();
+    const current = await dockShellClient.getSettings();
     const next = !current?.echoMode;
     console.info("[echo] keyboard toggle →", next);
-    await window.ucaShell?.setEchoMode?.(next);
+    await dockShellClient.setEchoMode(next);
   }
 });
 
 /* ── clipboard change indicator ── */
-window.ucaShell.onClipboardChanged((payload) => {
+dockShellClient.onClipboardChanged((payload) => {
   dockButton.classList.add("clipboard-ready");
   clipBadge.textContent = payload.preview ?? "Copied";
   window.__orbApi?.pulse();
@@ -1071,8 +1089,7 @@ function schedulePoll(delay) {
 
 async function pollTaskState() {
   try {
-    const resp = await fetch("http://127.0.0.1:4310/tasks/summary?limit=40");
-    const data = await resp.json();
+    const data = await dockTaskClient.fetchTaskSummaries({ limit: 40 });
     const tasks = data.active ?? data.tasks ?? [];
 
     // Track oldest active task's age so the orb can switch from "thinking"
@@ -1150,7 +1167,7 @@ dockButton.addEventListener("pointermove", (e) => {
     dragMoved = true;
   }
   if (dx !== 0 || dy !== 0) {
-    void window.ucaShell.moveWindowBy("dock", dx, dy);
+    void dockShellClient.moveWindowBy("dock", dx, dy);
   }
 });
 
@@ -1165,21 +1182,21 @@ dockButton.addEventListener("click", () => {
   if (clickTimer) {
     clearTimeout(clickTimer);
     clickTimer = null;
-    window.ucaShell.showWindow("console");
+    dockShellClient.showWindow("console");
     return;
   }
   clickTimer = setTimeout(async () => {
     clickTimer = null;
     dockButton.classList.remove("clipboard-ready");
     clearTimeout(clipboardReadyTimer);
-    await window.ucaShell.showWindow("overlay");
+    await dockShellClient.showWindow("overlay");
   }, 260);
 });
 
 /* ── file drop support ── */
 function collectFilePaths(event) {
   const files = [...(event.dataTransfer?.files ?? [])];
-  return window.ucaShell.resolveDroppedFilePaths(files);
+  return dockShellClient.resolveDroppedFilePaths(files);
 }
 
 function hasFilePayload(event) {
@@ -1230,14 +1247,14 @@ function announceDroppedFiles(result = {}) {
     : 0;
   dockButton?.focus?.({ preventScroll: true });
   if (isEchoReceipt) {
-    void window.ucaShell?.showEchoBubble?.({
+    void dockShellClient.showEchoBubble({
       text: `已收到 ${fileCount} 个文件。按 V 直接说话，或点击 dock 打开对话框`,
       kind: "info",
       durationMs: Number(result.voiceContinueTtlMs) || DOCK_DROP_VOICE_READY_MS
     });
     return;
   }
-  void window.ucaShell.notify({
+  void dockShellClient.notify({
     title: "LingxY",
     body: `Received ${fileCount} file(s). Opening chat.`
   });
@@ -1251,10 +1268,10 @@ async function handleDrop(event) {
   window.__orbApi?.pulse();
   const filePaths = collectFilePaths(event);
   if (filePaths.length === 0) {
-    await window.ucaShell.notify({ title: "LingxY", body: "No files detected." });
+    await dockShellClient.notify({ title: "LingxY", body: "No files detected." });
     return;
   }
-  const result = await window.ucaShell.submitDroppedFiles(filePaths);
+  const result = await dockShellClient.submitDroppedFiles(filePaths);
   if (result?.accepted) {
     announceDroppedFiles(result);
   }

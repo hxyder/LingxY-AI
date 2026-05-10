@@ -883,7 +883,7 @@
            third inline composer here just duplicated them. The
            #taskComposer / #commandInput / #submitState elements below
            are kept in a hidden form so any existing JS submissions
-           still work via window.ucaShell if needed. -->
+           still work through the renderer shell client if needed. -->
       <form id="taskComposer" class="composer-bar" hidden aria-hidden="true" style="display:none;">
         <textarea id="commandInput" rows="1"></textarea>
         <button type="submit" class="btn btn-primary">Submit</button>
@@ -2699,6 +2699,7 @@
     <script src="./preview/handlers/image.js"></script>
     <script src="./preview/handlers/pdf.js"></script>
     <script src="./preview/streaming.js"></script>
+    <script src="./live-preview-shell-client.js"></script>
     <script src="./live-preview.js"></script>
     <script type="module" src="./console.js"></script>
   </body>

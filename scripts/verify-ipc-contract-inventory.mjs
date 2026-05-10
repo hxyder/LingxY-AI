@@ -1,10 +1,19 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { IPC_CHANNELS } from "../src/desktop/shared/manifest.mjs";
 
 const root = process.cwd();
 const docPath = path.join(root, "docs/architecture/ipc-contract-inventory.md");
+// Phase 2A locks current handler/send/invoke/listener counts as a contract snapshot.
+// In Phase 2B, if IPC handlers move into modules, scan electron-main.mjs plus those
+// modules. The invariant is channel contract stability, not handler file location.
 const mainPath = path.join(root, "src/desktop/tray/electron-main.mjs");
+const ipcModuleRoot = path.join(root, "src/desktop/tray/ipc");
+const mainIpcHelperPaths = [
+  path.join(root, "src/desktop/tray/desktop-window-messages.mjs"),
+  path.join(root, "src/desktop/tray/desktop-dock-menu.mjs"),
+  path.join(root, "src/desktop/tray/desktop-clipboard-watcher.mjs")
+];
 const preloadPath = path.join(root, "src/desktop/renderer/preload.cjs");
 
 const expectedChannels = [
@@ -141,6 +150,30 @@ const expectedHardcodedMainHandlers = [
   "uca:unregister-ctrl-enter"
 ];
 
+const expectedExtractedIpcModules = [
+  "src/desktop/tray/ipc/register-admin-ipc.mjs",
+  "src/desktop/tray/ipc/register-approval-ipc.mjs",
+  "src/desktop/tray/ipc/register-audio-service-ipc.mjs",
+  "src/desktop/tray/ipc/register-connected-account-ipc.mjs",
+  "src/desktop/tray/ipc/register-diagnostics-ipc.mjs",
+  "src/desktop/tray/ipc/register-email-ipc.mjs",
+  "src/desktop/tray/ipc/register-mcp-ipc.mjs",
+  "src/desktop/tray/ipc/register-notes-project-ipc.mjs",
+  "src/desktop/tray/ipc/register-office-ipc.mjs",
+  "src/desktop/tray/ipc/register-pdf-ipc.mjs",
+  "src/desktop/tray/ipc/register-popup-card-ipc.mjs",
+  "src/desktop/tray/ipc/register-preview-ipc.mjs",
+  "src/desktop/tray/ipc/register-provider-config-ipc.mjs",
+  "src/desktop/tray/ipc/register-runtime-config-ipc.mjs",
+  "src/desktop/tray/ipc/register-scheduler-ipc.mjs",
+  "src/desktop/tray/ipc/register-shell-local-ipc.mjs",
+  "src/desktop/tray/ipc/register-shell-open-url-ipc.mjs",
+  "src/desktop/tray/ipc/register-shell-window-ipc.mjs",
+  "src/desktop/tray/ipc/register-skill-ipc.mjs",
+  "src/desktop/tray/ipc/register-task-ipc.mjs",
+  "src/desktop/tray/ipc/register-updater-ipc.mjs"
+];
+
 function fail(message) {
   console.error(`[ipc-inventory] ${message}`);
   process.exitCode = 1;
@@ -158,22 +191,56 @@ function sortedUnique(values) {
   return [...new Set(values)].sort();
 }
 
+function walkJsFiles(dir, files = []) {
+  if (!existsSync(dir)) return files;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      walkJsFiles(fullPath, files);
+    } else if (/\.(?:mjs|js|cjs)$/.test(entry.name) && statSync(fullPath).isFile()) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
 const channels = sortedUnique(Object.values(IPC_CHANNELS));
 assert(JSON.stringify(channels) === JSON.stringify(expectedChannels), "IPC_CHANNELS snapshot changed; update inventory intentionally.");
 
 const doc = existsSync(docPath) ? readFileSync(docPath, "utf8") : "";
 assert(doc.includes("IPC channel count: 115"), "IPC inventory missing channel count");
 assert(doc.includes("src/desktop/shared/manifest.mjs"), "IPC inventory missing manifest source");
+for (const modulePath of expectedExtractedIpcModules) {
+  assert(doc.includes(modulePath), `IPC inventory missing extracted IPC module ${modulePath}`);
+}
 
 const main = readFileSync(mainPath, "utf8");
+const ipcModuleFiles = walkJsFiles(ipcModuleRoot);
+const actualExtractedIpcModules = ipcModuleFiles
+  .map((filePath) => path.relative(root, filePath).replace(/\\/g, "/"))
+  .sort();
+assert(
+  JSON.stringify(actualExtractedIpcModules) === JSON.stringify(expectedExtractedIpcModules),
+  "extracted IPC module snapshot changed; update inventory intentionally."
+);
+for (const filePath of ipcModuleFiles) {
+  const source = readFileSync(filePath, "utf8");
+  const relativePath = path.relative(root, filePath).replace(/\\/g, "/");
+  assert(
+    !/(?:from\s+|import\(\s*)["'](?:\.\.\/)+service\//.test(source) && !/["']src\/service\//.test(source),
+    `${relativePath} must not import service modules directly; inject service bridge helpers from electron-main.mjs.`
+  );
+}
+const mainProcessSources = [mainPath, ...mainIpcHelperPaths, ...ipcModuleFiles].map((filePath) => readFileSync(filePath, "utf8"));
+const mainProcess = mainProcessSources.join("\n");
 const preload = readFileSync(preloadPath, "utf8");
 
-assert(count(main, /ipcMain\.handle\(/g) === 107, "main ipcMain.handle count changed");
-assert(count(main, /\.\w*send\(/g) === 28, "main send reference count changed");
+assert(count(mainProcess, /ipcMain\.handle\(/g) === 112, "main-process ipcMain.handle count changed");
+assert(count(mainProcess, /\.\w*send\(/g) === 28, "main-process send reference count changed");
 assert(count(preload, /ipcRenderer\.invoke\(/g) === 108, "preload invoke count changed");
 assert(count(preload, /ipcRenderer\.on\(/g) === 22, "preload listener count changed");
 
-const hardcodedMainHandlers = sortedUnique([...main.matchAll(/ipcMain\.handle\(\s*["']([^"']+)["']/g)].map((match) => match[1]));
+const hardcodedMainHandlers = sortedUnique([...mainProcess.matchAll(/ipcMain\.handle\(\s*["']([^"']+)["']/g)].map((match) => match[1]));
 assert(
   JSON.stringify(hardcodedMainHandlers) === JSON.stringify(expectedHardcodedMainHandlers),
   "hard-coded main IPC handler snapshot changed; update inventory intentionally."

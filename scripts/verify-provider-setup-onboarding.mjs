@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { buildProviderSetupStatus } from "../src/service/ai/onboarding/provider-setup-status.mjs";
+import { buildProviderSetupStatus } from "../src/shared/provider-setup-status.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -13,7 +13,7 @@ function read(relativePath) {
   return readFileSync(path.join(repoRoot, relativePath), "utf8");
 }
 
-const setupService = read("src/service/ai/onboarding/provider-setup-status.mjs");
+const setupContract = read("src/shared/provider-setup-status.mjs");
 const providerRoutes = read("src/service/core/http-routes/config-provider-routes.mjs");
 const firstRunWizard = read("src/desktop/console/first_run_wizard/view-model.mjs");
 const checklist = read("src/desktop/renderer/capability-checklist.mjs");
@@ -22,17 +22,17 @@ const behaviorTest = read("tests/behavior/provider-setup-status.test.mjs");
 const plan = read("FUNCTION_AUDIT_AND_UPGRADE_PLAN.md");
 
 assert.match(
-  setupService,
+  setupContract,
   /BUILTIN_API_TEMPLATES/u,
   "provider setup should expose common provider templates instead of hardcoding one vendor"
 );
 assert.match(
-  setupService,
+  setupContract,
   /providerConfigurationReason/u,
   "provider setup should classify missing API key / command recovery reasons"
 );
 assert.match(
-  setupService,
+  setupContract,
   /does not|never echoes|never echo|secret value/u,
   "provider setup implementation should explicitly avoid echoing provider secrets"
 );

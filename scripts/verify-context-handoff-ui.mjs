@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -8,6 +8,16 @@ const repoRoot = path.resolve(__dirname, "..");
 
 async function read(relativePath) {
   return readFile(path.join(repoRoot, relativePath), "utf8");
+}
+
+async function readDesktopTrayIpcModules() {
+  const ipcDir = path.join(repoRoot, "src/desktop/tray/ipc");
+  const entries = await readdir(ipcDir, { withFileTypes: true });
+  return Promise.all(
+    entries
+      .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
+      .map((entry) => readFile(path.join(ipcDir, entry.name), "utf8"))
+  );
 }
 
 const packageJson = JSON.parse(await read("package.json"));
@@ -38,7 +48,12 @@ assert.equal(preload.includes("onContextReceived"), true);
 assert.equal(preload.includes("resolveDroppedFilePaths"), true);
 assert.equal(preload.includes("submitDroppedFiles"), true);
 
-const mainProcess = await read("src/desktop/tray/electron-main.mjs");
+const mainProcess = [
+  await read("src/desktop/tray/electron-main.mjs"),
+  await read("src/desktop/tray/desktop-launch-args.mjs"),
+  await read("src/desktop/tray/desktop-handoff-watcher.mjs"),
+  ...(await readDesktopTrayIpcModules())
+].join("\n");
 const windowsPipeServer = await read("src/service/core/windows-pipe-server.mjs");
 assert.equal(mainProcess.includes("requestSingleInstanceLock"), true);
 assert.equal(mainProcess.includes("--uca-handoff-file"), true);

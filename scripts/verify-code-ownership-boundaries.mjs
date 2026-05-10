@@ -43,6 +43,16 @@ function resolveRelativeImport(fromFile, specifier) {
   return candidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile()) ?? base;
 }
 
+function normalizeForCompare(filePath) {
+  const resolved = path.resolve(filePath);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+}
+
+function isWithin(candidate, parent) {
+  const relative = path.relative(parent, candidate);
+  return relative === "" || (relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 function importSpecifiers(source) {
   const imports = [];
   for (const match of source.matchAll(/\bimport\s+(?:[^'"]+\s+from\s+)?["']([^"']+)["']/g)) imports.push(match[1]);
@@ -57,7 +67,10 @@ const doc = existsSync(docPath) ? readFileSync(docPath, "utf8") : "";
 for (const required of [
   "src/desktop/tray/**",
   "src/desktop/renderer/**",
+  "src/desktop/console/**",
+  "src/desktop/overlay/**",
   "src/service/core/**",
+  "src/service/executors/**",
   "src/service/action_tools/**",
   "src/shared/**",
   "src/desktop/tray/electron-main.mjs",
@@ -66,7 +79,8 @@ for (const required of [
   "src/service/action_tools/tools/index.mjs",
   "src/service/core/http-server.mjs",
   "src/service/core/context-submission.mjs",
-  "src/service/core/agent-loop.mjs"
+  "src/service/executors/tool_using/agent-loop.mjs",
+  "src/service/executors/agentic/planner.mjs"
 ]) {
   assert(doc.includes(required), `ownership map missing required path: ${required}`);
 }
@@ -74,6 +88,17 @@ for (const required of [
 const sharedRoot = path.join(root, "src/shared");
 const serviceRoot = path.join(root, "src/service");
 const desktopRoot = path.join(root, "src/desktop");
+const desktopUiRoots = [
+  path.join(root, "src/desktop/renderer"),
+  path.join(root, "src/desktop/console"),
+  path.join(root, "src/desktop/overlay")
+];
+const allowedDesktopServiceImports = new Map([
+  [
+    normalizeForCompare(path.join(root, "src/desktop/console/runtime-client.mjs")),
+    new Set([normalizeForCompare(path.join(root, "src/service/cost/pricing.mjs"))])
+  ]
+]);
 
 for (const file of walkFiles(sharedRoot)) {
   const source = readFileSync(file, "utf8");
@@ -81,18 +106,24 @@ for (const file of walkFiles(sharedRoot)) {
     assert(specifier !== "electron", `${path.relative(root, file)} imports electron`);
     const resolved = resolveRelativeImport(file, specifier);
     if (!resolved) continue;
-    assert(!resolved.startsWith(serviceRoot), `${path.relative(root, file)} imports service runtime: ${specifier}`);
-    assert(!resolved.startsWith(desktopRoot), `${path.relative(root, file)} imports desktop runtime: ${specifier}`);
+    assert(!isWithin(resolved, serviceRoot), `${path.relative(root, file)} imports service runtime: ${specifier}`);
+    assert(!isWithin(resolved, desktopRoot), `${path.relative(root, file)} imports desktop runtime: ${specifier}`);
   }
 }
 
-const rendererRoot = path.join(root, "src/desktop/renderer");
-for (const file of walkFiles(rendererRoot)) {
-  const source = readFileSync(file, "utf8");
-  for (const specifier of importSpecifiers(source)) {
-    const resolved = resolveRelativeImport(file, specifier);
-    if (!resolved) continue;
-    assert(!resolved.startsWith(serviceRoot), `${path.relative(root, file)} imports service runtime: ${specifier}`);
+for (const desktopUiRoot of desktopUiRoots) {
+  for (const file of walkFiles(desktopUiRoot)) {
+    const source = readFileSync(file, "utf8");
+    for (const specifier of importSpecifiers(source)) {
+      const resolved = resolveRelativeImport(file, specifier);
+      if (!resolved) continue;
+      const allowedImports = allowedDesktopServiceImports.get(normalizeForCompare(file));
+      const isAllowed = allowedImports?.has(normalizeForCompare(resolved)) === true;
+      assert(
+        isAllowed || !isWithin(resolved, serviceRoot),
+        `${path.relative(root, file)} imports service runtime: ${specifier}`
+      );
+    }
   }
 }
 

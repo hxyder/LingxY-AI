@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { buildFirstRunWizardViewModel } from "../../src/desktop/console/first_run_wizard/view-model.mjs";
-import { buildProviderSetupStatus } from "../../src/service/ai/onboarding/provider-setup-status.mjs";
 import { dictionaryForLocale, normalizeLocale, t } from "../../src/shared/i18n/index.mjs";
+import { buildProviderSetupStatus } from "../../src/shared/provider-setup-status.mjs";
 
 test("shared i18n lookup normalizes locale aliases and interpolates variables", () => {
   assert.equal(normalizeLocale("zh"), "zh-CN");

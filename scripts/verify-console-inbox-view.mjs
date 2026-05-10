@@ -4,12 +4,14 @@ import { CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const viewPath = "src/desktop/renderer/console-inbox-view.mjs";
 const consolePath = "src/desktop/renderer/console.js";
+const connectorsClientPath = "src/desktop/renderer/console/console-connectors-client.mjs";
 const packagePath = "package.json";
 
 assert.ok(existsSync(viewPath), "console inbox pure view module must exist");
 
 const viewSource = readFileSync(viewPath, "utf8");
 const consoleSource = readFileSync(consolePath, "utf8");
+const connectorsClientSource = readFileSync(connectorsClientPath, "utf8");
 const packageSource = readFileSync(packagePath, "utf8");
 const pkg = JSON.parse(packageSource);
 
@@ -135,7 +137,8 @@ assert.ok(!consoleSource.includes(`class="inbox-item"`), "console.js must not ke
 assert.ok(consoleSource.includes("_inboxState"), "console.js must keep inbox state");
 assert.ok(consoleSource.includes("async function loadInboxTab"), "console.js must keep loadInboxTab controller");
 assert.ok(consoleSource.includes("resourceCache"), "console.js must keep resource cache");
-assert.ok(consoleSource.includes("/messages/${encodeURIComponent(id)}"), "console.js must keep full-body fetch");
+assert.ok(consoleSource.includes("fetchOAuthMessageBody"), "console.js must keep full-body fetch binding");
+assert.ok(connectorsClientSource.includes("/messages/${encodeURIComponent(messageId)}"), "connectors client must keep full-body fetch endpoint");
 assert.ok(consoleSource.includes("openExternal"), "console.js must keep external open binding");
 
 assert.equal(pkg.scripts["verify:console-inbox-view"], "node scripts/verify-console-inbox-view.mjs");

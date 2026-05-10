@@ -16,10 +16,9 @@
   async function getPdfjs() {
     if (!pdfjsPromise) {
       pdfjsPromise = (async () => {
-        if (!window.ucaShell?.getPdfWorkerUrl) {
-          throw new Error("ucaShell.getPdfWorkerUrl 未挂载（preload）");
-        }
-        const { mainUrl, workerUrl } = await window.ucaShell.getPdfWorkerUrl();
+        const shellClient = window.previewShellClient ?? window.createPreviewShellClient?.();
+        if (!shellClient) throw new Error("preview shell client unavailable");
+        const { mainUrl, workerUrl } = await shellClient.getPdfWorkerUrl();
         // Dynamic import from an absolute file:// URL — works in both
         // dev (running from source) and packaged builds.
         const mod = await import(/* @vite-ignore */ mainUrl);

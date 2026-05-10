@@ -27,6 +27,18 @@ import {
   formatRelativeTime
 } from "./shared-ui.mjs";
 import {
+  createRuntimeHttpClient
+} from "./shared/runtime-http-client.mjs";
+import {
+  createRuntimeTaskClient
+} from "./shared/runtime-task-client.mjs";
+import {
+  createRendererShellClient
+} from "./shared/shell-client.mjs";
+import {
+  createEchoRuntimeClient
+} from "./shared/echo-runtime-client.mjs";
+import {
   hasStructuredChatBlocks,
   renderChatMessageBlocksHtml
 } from "./chat-blocks.mjs";
@@ -171,6 +183,17 @@ const bubbleAreaPin = createBottomPinController(bubbleArea, {
 
 /* ── state ── */
 let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
+const overlayRuntimeHttpClient = createRuntimeHttpClient({
+  getBaseUrl: () => serviceBaseUrl
+});
+const overlayTaskClient = createRuntimeTaskClient({
+  httpClient: overlayRuntimeHttpClient
+});
+const overlayShellClient = createRendererShellClient();
+const overlayEchoClient = createEchoRuntimeClient({
+  httpClient: overlayRuntimeHttpClient,
+  actor: "desktop_overlay"
+});
 let activeTaskId = null;
 let lastTask = null;
 let pendingFileSelection = null;
@@ -224,20 +247,13 @@ async function postEchoSpeak(text) {
   const trimmed = String(text ?? "").trim();
   if (!trimmed) return;
   try {
-    await fetch(`${serviceBaseUrl}/echo/speak`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-uca-actor": "desktop_overlay" },
-      body: JSON.stringify({ text: trimmed })
-    });
+    await overlayEchoClient.speak(trimmed);
   } catch { /* ignore — speech is best-effort */ }
 }
 
 async function postEchoSpeakCancel() {
   try {
-    await fetch(`${serviceBaseUrl}/echo/speak/cancel`, {
-      method: "POST",
-      headers: { "x-uca-actor": "desktop_overlay" }
-    });
+    await overlayEchoClient.cancelSpeak();
   } catch { /* ignore */ }
 }
 
@@ -272,7 +288,7 @@ function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, open
   const fullBody = Array.isArray(body) ? body.filter(Boolean).join("\n") : String(body ?? "");
   const echoTask = isEchoTask(taskId);
   try {
-    window.ucaShell?.notify?.({
+    overlayShellClient?.notify?.({
       kind: "success",
       taskId,
       conversationId: taskOwnerConversationId(taskConversationMap, taskId) ?? conversationState?.id ?? null,
@@ -365,7 +381,7 @@ function showEchoResultHudOnce(taskId, { text = "", title = "任务完成", kind
   if (!hudText) return;
   echoResultHudTaskIds.add(taskId);
   try {
-    void window.ucaShell?.showEchoBubble?.({
+    void overlayShellClient?.showEchoBubble?.({
       text: hudText,
       kind,
       durationMs
@@ -380,7 +396,7 @@ function finishEchoTaskSurface(taskId) {
 
 async function maybeRevealOverlay({ markEngaged = false } = {}) {
   if (suppressOverlayAutoReveal) return false;
-  await window.ucaShell?.showWindow?.("overlay");
+  await overlayShellClient?.showWindow?.("overlay");
   if (markEngaged) markUserEngaged();
   return true;
 }
@@ -447,9 +463,9 @@ function bindWindowDeltaHandle(element, mode = "move") {
     lastY = event.screenY;
     if (dx === 0 && dy === 0) return;
     if (mode === "resize") {
-      void window.ucaShell?.resizeWindowBy?.("overlay", dx, dy);
+      void overlayShellClient?.resizeWindowBy?.("overlay", dx, dy);
     } else {
-      void window.ucaShell?.moveWindowBy?.("overlay", dx, dy);
+      void overlayShellClient?.moveWindowBy?.("overlay", dx, dy);
     }
   };
 
@@ -1172,7 +1188,7 @@ function extractLocalImagePaths(text = "") {
 
 function attachLocalImagePreviews(bubble, sourceText = "") {
   const paths = extractLocalImagePaths(sourceText);
-  if (!paths.length || !window.ucaShell?.readFileAsDataUrl) return;
+  if (!paths.length || !overlayShellClient?.readFileAsDataUrl) return;
   for (const filePath of paths.slice(0, 4)) {
     const link = document.createElement("a");
     link.href = "#";
@@ -1181,10 +1197,10 @@ function attachLocalImagePreviews(bubble, sourceText = "") {
     link.textContent = "正在加载图片预览...";
     link.addEventListener("click", (event) => {
       event.preventDefault();
-      void window.ucaShell?.openPath?.(filePath);
+      void overlayShellClient?.openPath?.(filePath);
     });
     bubble.appendChild(link);
-    window.ucaShell.readFileAsDataUrl(filePath, imageMimeForPath(filePath))
+    overlayShellClient.readFileAsDataUrl(filePath, imageMimeForPath(filePath))
       .then((dataUrl) => {
         const img = document.createElement("img");
         img.className = "md-image";
@@ -1431,8 +1447,8 @@ function addBubble(role, content, options) {
           e.preventDefault();
           const url = anchor.dataset.openUrl;
           if (url) {
-            window.ucaShell?.openUrl?.(url, { ask: true, source: "overlay_chat" })
-              ?? window.ucaShell?.openExternal?.(url)
+            overlayShellClient?.openUrl?.(url, { ask: true, source: "overlay_chat" })
+              ?? overlayShellClient?.openExternal?.(url)
               ?? window.open(url, "_blank");
           }
         });
@@ -1444,7 +1460,7 @@ function addBubble(role, content, options) {
           if (!codeEl) return;
           const code = codeEl.textContent ?? "";
           try {
-            await window.ucaShell?.writeClipboardText?.(code);
+            await overlayShellClient?.writeClipboardText?.(code);
             btn.textContent = "已复制";
             setTimeout(() => { btn.textContent = "复制"; }, 1400);
           } catch { /* ignore */ }
@@ -2020,8 +2036,8 @@ function bindToolStepToggle(stepEl) {
     const outcome = stepEl.querySelector(".step-outcome")?.textContent ?? "";
     if (!outcome) return;
     try {
-      if (window.ucaShell?.writeClipboardText) {
-        await window.ucaShell.writeClipboardText(outcome);
+      if (overlayShellClient?.writeClipboardText) {
+        await overlayShellClient.writeClipboardText(outcome);
       } else {
         await navigator.clipboard?.writeText?.(outcome);
       }
@@ -2381,7 +2397,7 @@ function showToast(title, body, artifactPath) {
   lastArtifactPath = artifactPath ?? null;
   if (popKeptOpen) return; // overlay already open; the conversation bubble is enough.
   try {
-    window.ucaShell?.showPopupCard?.({
+    overlayShellClient?.showPopupCard?.({
       kind: "success",
       title,
       lines: body ? [body] : [],
@@ -2430,11 +2446,11 @@ function assertShellResult(result, fallback) {
 }
 
 async function approveApproval(approvalId, options = {}) {
-  if (typeof window.ucaShell?.approveApproval !== "function") {
+  if (typeof overlayShellClient?.approveApproval !== "function") {
     throw new Error("Desktop approval bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.approveApproval({
+    await overlayShellClient.approveApproval({
       approvalId,
       overrides: options.overrides ?? null
     }),
@@ -2443,11 +2459,11 @@ async function approveApproval(approvalId, options = {}) {
 }
 
 async function rejectApproval(approvalId, options = {}) {
-  if (typeof window.ucaShell?.rejectApproval !== "function") {
+  if (typeof overlayShellClient?.rejectApproval !== "function") {
     throw new Error("Desktop approval bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.rejectApproval({
+    await overlayShellClient.rejectApproval({
       approvalId,
       reason: options.reason ?? ""
     }),
@@ -2456,71 +2472,71 @@ async function rejectApproval(approvalId, options = {}) {
 }
 
 async function createScheduleViaShell(payload) {
-  if (typeof window.ucaShell?.createSchedule !== "function") {
+  if (typeof overlayShellClient?.createSchedule !== "function") {
     throw new Error("Desktop schedule bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.createSchedule(payload),
+    await overlayShellClient.createSchedule(payload),
     "Could not create schedule."
   );
 }
 
 async function saveTemplateViaShell(template) {
-  if (typeof window.ucaShell?.saveTemplate !== "function") {
+  if (typeof overlayShellClient?.saveTemplate !== "function") {
     throw new Error("Desktop template bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveTemplate({ template }),
+    await overlayShellClient.saveTemplate({ template }),
     "Could not save template."
   );
 }
 
 async function saveAutoSkillViaShell(proposal) {
-  if (typeof window.ucaShell?.saveAutoSkill !== "function") {
+  if (typeof overlayShellClient?.saveAutoSkill !== "function") {
     throw new Error("Desktop skill save bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveAutoSkill(proposal),
+    await overlayShellClient.saveAutoSkill(proposal),
     "Could not save this skill."
   );
 }
 
 async function appendNoteChipViaShell(payload) {
-  if (typeof window.ucaShell?.appendNoteChip !== "function") {
+  if (typeof overlayShellClient?.appendNoteChip !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.appendNoteChip(payload),
+    await overlayShellClient.appendNoteChip(payload),
     "Could not append note chip."
   );
 }
 
 async function saveProjectStoreViaShell(store) {
-  if (typeof window.ucaShell?.saveProjectStore !== "function") {
+  if (typeof overlayShellClient?.saveProjectStore !== "function") {
     throw new Error("Desktop project store bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveProjectStore(store),
+    await overlayShellClient.saveProjectStore(store),
     "Could not save project store."
   );
 }
 
 async function cancelTaskViaShell(taskId, options = {}) {
-  if (typeof window.ucaShell?.cancelTask !== "function") {
+  if (typeof overlayShellClient?.cancelTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.cancelTask(taskId, { force: options.force === true }),
+    await overlayShellClient.cancelTask(taskId, { force: options.force === true }),
     "Could not cancel task."
   );
 }
 
 async function retryTaskViaShell(taskId, options = {}) {
-  if (typeof window.ucaShell?.retryTask !== "function") {
+  if (typeof overlayShellClient?.retryTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.retryTask(taskId, options),
+    await overlayShellClient.retryTask(taskId, options),
     "Could not retry task."
   );
 }
@@ -2538,8 +2554,8 @@ async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
   const target = approval.proposed_target ?? approval.workflow_id ?? approvalLike.workflow_id ?? "";
   const preview = approval.preview_text ?? approval.summary ?? approval.preview ?? approvalLike.summary ?? "工具调用需要您的确认";
   try {
-    if (typeof window.ucaShell?.showPopupCard !== "function") return;
-    const popupResult = await window.ucaShell.showPopupCard({
+    if (typeof overlayShellClient?.showPopupCard !== "function") return;
+    const popupResult = await overlayShellClient.showPopupCard({
       kind: "approval",
       approvalId,
       taskId: taskId ?? approval.metadata?.task_id ?? approvalLike.task_id ?? null,
@@ -2814,7 +2830,7 @@ function appendOverlayEvidenceSources(taskId, evidence) {
   const node = wrapper.firstElementChild;
   if (!node) return;
   addBubble("assistant", node, { taskId });
-  wireEvidenceSourceActions(node, window.ucaShell);
+  wireEvidenceSourceActions(node, overlayShellClient);
   renderedEvidenceSummaryTaskIds.add(key);
 }
 
@@ -2850,7 +2866,7 @@ async function renderInlineApproval(frame) {
     if (!popupCardId) return;
     approvalPopupCardIds.delete(approvalId);
     try {
-      await window.ucaShell?.closePopupCard?.(popupCardId, { reason: "resolved_inline" });
+      await overlayShellClient?.closePopupCard?.(popupCardId, { reason: "resolved_inline" });
     } catch { /* optional */ }
   }
 
@@ -3877,7 +3893,7 @@ async function refreshTaskSummaries(force = false) {
   const now = Date.now();
   if (!force && now - lastTaskSummaryRefresh < 4000) return taskSummaries;
   try {
-    const payload = await fetchJson("/tasks/summary?limit=120");
+    const payload = await overlayTaskClient.fetchTaskSummaries({ limit: 120 });
     taskSummaries = payload.recent ?? payload.tasks ?? [];
     lastTaskSummaryRefresh = now;
     repairAutomaticTaskConversations(taskSummaries);
@@ -4052,7 +4068,7 @@ async function surfaceAutomaticTaskResults(tasks = []) {
   for (const task of candidates.reverse()) {
     surfaced.add(task.task_id);
     try {
-      const detail = await fetchJson(`/task/${encodeURIComponent(task.task_id)}`);
+      const detail = await overlayTaskClient.fetchTaskDetail(task.task_id);
       if (canonicalConversationIdForTask(task, detail)) {
         ensureCanonicalAutomaticConversation({ task, detail });
         renderProjectPanel();
@@ -4081,7 +4097,7 @@ async function surfaceAutomaticTaskResults(tasks = []) {
 async function openTaskResultInOverlayConversation(taskId, fallback = {}) {
   if (!taskId) return false;
   try {
-    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const detail = await overlayTaskClient.fetchTaskDetail(taskId);
     const task = detail?.task ?? {};
     if (isAutomaticResultTask(task) && canonicalConversationIdForTask(task, detail)) {
       const conv = ensureCanonicalAutomaticConversation({ task, detail });
@@ -4254,7 +4270,7 @@ async function ensureCompositeHeader(task) {
   let parentTask = isParent ? task : null;
   if (!parentTask) {
     try {
-      const detail = await fetchJson(`/task/${encodeURIComponent(parentId)}`);
+      const detail = await overlayTaskClient.fetchTaskDetail(parentId);
       parentTask = detail.task ?? detail;
     } catch { /* ignore */ }
   }
@@ -4378,10 +4394,7 @@ function appendFormatInstruction(baseCommand) {
 }
 
 async function fetchJson(pathname, options = {}) {
-  const response = await fetch(`${serviceBaseUrl}${pathname}`, options);
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.message ?? payload.error ?? pathname);
-  return payload;
+  return overlayRuntimeHttpClient.fetchJson(pathname, options);
 }
 
 // UCA-181: overlay-side note picker. Fetches the runtime's notes list
@@ -4481,7 +4494,7 @@ async function openOverlayNotePicker(text, anchorEl) {
 
 async function refreshStatus() {
   try {
-    const shell = await window.ucaShell.getShellStatus();
+    const shell = await overlayShellClient.getShellStatus();
     serviceBaseUrl = shell.serviceBaseUrl ?? serviceBaseUrl;
     await fetchJson("/health");
   } catch {
@@ -4538,7 +4551,7 @@ async function refreshActiveTask() {
 
   try {
     ensureActiveTaskEventStream(activeTaskId);
-    const payload = await fetchJson(`/task/${activeTaskId}`);
+    const payload = await overlayTaskClient.fetchTaskDetail(activeTaskId);
     const task = {
       ...(payload.task ?? payload),
       artifacts: payload.artifacts ?? []
@@ -4604,7 +4617,7 @@ async function refreshActiveTask() {
       let previewText = "";
       if (isPreviewableArtifactPath(previewPath)) {
         try {
-          const rawText = await window.ucaShell.readTextFile(previewPath, 4000);
+          const rawText = await overlayShellClient.readTextFile(previewPath, 4000);
           previewText = normalisePreviewText(rawText).slice(0, 1200);
           lastArtifactPreview = previewText;
         } catch { /* ignore */ }
@@ -4631,7 +4644,7 @@ async function refreshActiveTask() {
         // UCA-049: surface which provider actually ran this task + warn if
         // the planner had to downgrade an unsupported "已完成" claim.
         try {
-          const detail = await fetchJson(`/task/${activeTaskId}`);
+          const detail = await overlayTaskClient.fetchTaskDetail(activeTaskId);
           appendProviderFooterBubble(extractTaskProviderInfo(detail.events ?? []));
         } catch { /* non-fatal — provider footer is informational */ }
         showToast(
@@ -4665,14 +4678,14 @@ async function refreshActiveTask() {
                 if (window.livePreview?.openForFile?.({ filePath: previewPath })) return;
                 // Fallback: open externally if the preview module is
                 // somehow missing (script load race).
-                void window.ucaShell?.openPath?.(previewPath);
+                void overlayShellClient?.openPath?.(previewPath);
               } },
             { label: "打开文件", onClick: async () => {
-                const err = await window.ucaShell.openPath(previewPath);
+                const err = await overlayShellClient.openPath(previewPath);
                 if (err) addSystemBubble(`无法打开文件：${err}`);
               } },
-            { label: "打开文件夹", onClick: () => window.ucaShell.showItemInFolder(previewPath) },
-            { label: "复制路径", onClick: () => window.ucaShell.writeClipboardText(previewPath) }
+            { label: "打开文件夹", onClick: () => overlayShellClient.showItemInFolder(previewPath) },
+            { label: "复制路径", onClick: () => overlayShellClient.writeClipboardText(previewPath) }
           ]
         });
 
@@ -4740,7 +4753,7 @@ async function refreshActiveTask() {
         let inlineText = lastArtifactPreview;
         let providerInfo = { descriptor: null, downgraded: false };
         try {
-          const detail = await fetchJson(`/task/${activeTaskId}`);
+          const detail = await overlayTaskClient.fetchTaskDetail(activeTaskId);
           const events = detail.events ?? [];
           providerInfo = extractTaskProviderInfo(events);
           if (!inlineText) {
@@ -4834,7 +4847,7 @@ async function refreshActiveTask() {
         lastEchoTaskId = task.task_id;
       }
       try {
-        window.ucaShell?.showPopupCard?.({
+        overlayShellClient?.showPopupCard?.({
           kind: "error",
           taskId: task.task_id,
           title: "任务失败",
@@ -5114,7 +5127,7 @@ async function submitTask() {
     timelineAddStep("任务已创建，正在执行…", "active");
 
     if (shouldSurfaceTaskPopupCards()) {
-      void window.ucaShell.notify?.({
+      void overlayShellClient.notify?.({
         title: "LingxY processing",
         body: "Task submitted. You'll be notified when it's done.",
         taskId: activeTaskId
@@ -5126,7 +5139,7 @@ async function submitTask() {
     // only auto-hide if the user explicitly requested file output
     if (selectedFormatInstruction) {
       setTimeout(() => {
-        window.ucaShell.hideWindow("overlay");
+        overlayShellClient.hideWindow("overlay");
       }, 600);
     }
   } catch (error) {
@@ -5318,9 +5331,9 @@ function buildBrowserContextCapture(browserContext = null, activeWindow = null) 
 
 async function resolveActiveWindowBrowserCapture() {
   let activeWindow = null;
-  if (typeof window.ucaShell?.getActiveWindowContext === "function") {
+  if (typeof overlayShellClient?.getActiveWindowContext === "function") {
     const payload = await timeoutWithFallback(
-      window.ucaShell.getActiveWindowContext({
+      overlayShellClient.getActiveWindowContext({
         includeSelection: false,
         excludeShellWindow: true,
         preferLastExternal: true,
@@ -5356,18 +5369,18 @@ function resolveActiveWindowFileSelection(commandText = "") {
 }
 
 async function captureActiveWindowHintForVoice({ captureMode = "voice_context" } = {}) {
-  if (typeof window.ucaShell?.getActiveWindowContext !== "function") return null;
+  if (typeof overlayShellClient?.getActiveWindowContext !== "function") return null;
   try {
     let clipboardBaseline = null;
     try {
-      clipboardBaseline = typeof window.ucaShell?.readClipboardText === "function"
-        ? await timeoutWithFallback(window.ucaShell.readClipboardText(), 250, null)
+      clipboardBaseline = typeof overlayShellClient?.readClipboardText === "function"
+        ? await timeoutWithFallback(overlayShellClient.readClipboardText(), 250, null)
         : null;
     } catch {
       clipboardBaseline = null;
     }
     const payload = await timeoutWithFallback(
-      window.ucaShell.getActiveWindowContext({
+      overlayShellClient.getActiveWindowContext({
         includeSelection: true,
         allowClipboardFallback: false,
         clipboardBaseline: typeof clipboardBaseline === "string" ? clipboardBaseline : null,
@@ -5509,7 +5522,7 @@ let lastLoadedClipboardText = "";
 async function loadClipboardIntoContext({ showBubble = false } = {}) {
   if (pendingFileSelection?.filePaths?.length || pendingCapture?.capture) return;
   try {
-    const clipText = (await window.ucaShell.readClipboardText()).trim();
+    const clipText = (await overlayShellClient.readClipboardText()).trim();
     if (clipText && clipText.length > 4 && clipText !== lastLoadedClipboardText) {
       lastLoadedClipboardText = clipText;
       pendingCapture = {
@@ -5691,7 +5704,7 @@ newProjectBtn?.addEventListener("click", () => {
 
 clipboardBtn.addEventListener("click", async () => {
   try {
-    const clipText = (await window.ucaShell.readClipboardText()).trim();
+    const clipText = (await overlayShellClient.readClipboardText()).trim();
     if (clipText) {
       // New context replaces any ongoing conversation (different topic).
       if (conversationState && !seedCaptureMatches(clipText)) {
@@ -5753,8 +5766,8 @@ async function checkFeatureGate(featureId) {
         optionButtons: [{
           label: "打开设置",
           onClick: () => {
-            window.ucaShell?.navigateConsole?.({ tabId: "settings", anchor: `features.${featureId}` });
-            window.ucaShell?.showWindow?.("console");
+            overlayShellClient?.navigateConsole?.({ tabId: "settings", anchor: `features.${featureId}` });
+            overlayShellClient?.showWindow?.("console");
           }
         }]
       });
@@ -5775,7 +5788,7 @@ async function runQuickAction(action) {
 
   if (!hasContext && preset.contextless?.autoLoadClipboard) {
     try {
-      const clipText = (await window.ucaShell.readClipboardText()).trim();
+      const clipText = (await overlayShellClient.readClipboardText()).trim();
       if (clipText) {
         pendingCapture = {
           sourceApp: "clipboard",
@@ -5872,7 +5885,7 @@ function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs =
   if (text === echoHudLastText && now - echoHudLastAt < throttleMs) return;
   echoHudLastText = text;
   echoHudLastAt = now;
-  void window.ucaShell?.showEchoBubble?.({ text, kind, durationMs });
+  void overlayShellClient?.showEchoBubble?.({ text, kind, durationMs });
 }
 
 function clearEchoVoiceAutoSubmit() {
@@ -6020,7 +6033,7 @@ function enterVoiceMode() {
   // that wasn't cleanly torn down can leave the red REC ring spinning
   // forever. Voice mode never owns note-recording state, so force it off
   // whenever we enter voice mode.
-  void window.ucaShell?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
+  void overlayShellClient?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
   voiceMode = true;
   document.body.classList.add("voice-mode");
   setVoiceCardMode("voice");
@@ -6084,7 +6097,7 @@ function schedulePopHide(ms = 3000) {
       setTimeout(() => {
         if (!popKeptOpen) {
           document.body.classList.remove("popping");
-          window.ucaShell.hideWindow("overlay");
+          overlayShellClient.hideWindow("overlay");
         }
       }, 320);
     }
@@ -6109,7 +6122,7 @@ bubbleArea?.addEventListener("click", (event) => {
   if (contextPath && bubbleArea.contains(contextPath)) {
     event.preventDefault();
     const filePath = contextPath.getAttribute("data-context-open-path");
-    if (filePath) void window.ucaShell?.openPath?.(filePath);
+    if (filePath) void overlayShellClient?.openPath?.(filePath);
     return;
   }
   const contextUrl = target?.closest?.("[data-context-open-url]");
@@ -6117,8 +6130,8 @@ bubbleArea?.addEventListener("click", (event) => {
     event.preventDefault();
     const url = contextUrl.getAttribute("data-context-open-url");
     if (url) {
-      window.ucaShell?.openUrl?.(url, { ask: true, source: "overlay_chat_context" })
-        ?? window.ucaShell?.openExternal?.(url)
+      overlayShellClient?.openUrl?.(url, { ask: true, source: "overlay_chat_context" })
+        ?? overlayShellClient?.openExternal?.(url)
         ?? window.open(url, "_blank");
     }
     return;
@@ -6141,7 +6154,7 @@ popCopyBtn?.addEventListener("click", async () => {
   const text = popBody?.textContent ?? "";
   if (text) {
     try {
-      await window.ucaShell.writeClipboardText(text);
+      await overlayShellClient.writeClipboardText(text);
       popLabel.textContent = "已复制";
     } catch {
       popLabel.textContent = "复制失败";
@@ -6758,7 +6771,7 @@ function resetVoiceState() {
   // Voice reset must never leave a stale note-recording indicator on the
   // dock. See enterVoiceMode() note above.
   if (!noteActive) {
-    void window.ucaShell?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
+    void overlayShellClient?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
   }
   resetVoiceTranscriptView(voiceTranscript);
 }
@@ -6870,7 +6883,7 @@ function closeVoicePanel({ submit = false } = {}) {
 
 voiceToggleBtn?.addEventListener("click", () => {
   if (noteActive) {
-    void window.ucaShell.hideWindow("overlay");
+    void overlayShellClient.hideWindow("overlay");
     return;
   }
   if (voiceRecording) stopVoiceRecognition({ discard: true });
@@ -6878,7 +6891,7 @@ voiceToggleBtn?.addEventListener("click", () => {
 });
 
 voiceMinimizeBtn?.addEventListener("click", () => {
-  void window.ucaShell.hideWindow("overlay");
+  void overlayShellClient.hideWindow("overlay");
 });
 
 /* ─── Voice-card drag & drop ──────────────────────────────────────────────
@@ -6968,7 +6981,7 @@ if (voiceCard) {
     voiceDragDepth = 0;
     setDrag(false);
     const files = [...(event.dataTransfer?.files ?? [])];
-    const filePaths = (window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [])
+    const filePaths = (overlayShellClient?.resolveDroppedFilePaths?.(files) ?? [])
       .filter((fp) => typeof fp === "string" && fp.length > 0);
     if (filePaths.length === 0) return;
     attachDroppedFilesToVoice(filePaths);
@@ -7040,7 +7053,7 @@ bubbleArea?.addEventListener("contextmenu", (event) => {
   const items = [
     { id: "copy", label: "复制", glyph: "⧉", onClick: async () => {
       try {
-        if (window.ucaShell?.writeClipboardText) await window.ucaShell.writeClipboardText(text);
+        if (overlayShellClient?.writeClipboardText) await overlayShellClient.writeClipboardText(text);
         else await navigator.clipboard?.writeText?.(text);
       } catch { /* ignore */ }
     }},
@@ -7102,7 +7115,7 @@ bubbleArea?.addEventListener("contextmenu", (event) => {
     // user sees a "Received N file(s)" bubble in chat.
     event.preventDefault();
     const files = [...(event.dataTransfer?.files ?? [])];
-    const filePaths = (window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [])
+    const filePaths = (overlayShellClient?.resolveDroppedFilePaths?.(files) ?? [])
       .filter((fp) => typeof fp === "string" && fp.length > 0);
     if (filePaths.length === 0) return;
     attachDroppedFilesToVoice(filePaths);
@@ -7179,7 +7192,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     if (noteActive) {
       event.preventDefault();
-      void window.ucaShell.hideWindow("overlay");
+      void overlayShellClient.hideWindow("overlay");
       return;
     }
     if (voiceMode) {
@@ -7244,7 +7257,7 @@ function noteSessionCanAcceptRecorderChunk(sessionId) {
 function publishNoteRecordingState(extra = {}) {
   const elapsedMs = noteActive && noteStartTime ? Date.now() - noteStartTime : 0;
   const { active: _ignoredActive, ...safeExtra } = extra ?? {};
-  void window.ucaShell?.setNoteRecordingState?.({
+  void overlayShellClient?.setNoteRecordingState?.({
     elapsedMs,
     elapsed: formatNoteElapsed(elapsedMs),
     hasMicTranscript: noteTranscripts.length > 0,
@@ -7374,7 +7387,7 @@ function timeoutWithFallback(promise, ms, fallbackValue = null) {
 function captureNoteSourceContext(sessionId = noteSessionId) {
   const capturePromise = (async () => {
     try {
-      const payload = await window.ucaShell?.getActiveWindowContext?.({
+      const payload = await overlayShellClient?.getActiveWindowContext?.({
         includeSelection: false,
         excludeShellWindow: true,
         preferLastExternal: true,
@@ -7496,7 +7509,7 @@ async function startNoteSysCapture() {
   // reliably captures WASAPI loopback (all system audio) on Windows.
   const sessionId = noteSessionId;
   const capturePromise = (async () => {
-    const sourceId = await window.ucaShell?.getDesktopAudioSource?.();
+    const sourceId = await overlayShellClient?.getDesktopAudioSource?.();
     if (!noteActive || sessionId !== noteSessionId) return;
     if (!sourceId) {
       noteSysTag?.classList.add("unavailable");
@@ -7728,10 +7741,10 @@ function exitNoteMode(options = {}) {
 }
 
 async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
-  if (typeof window.ucaShell?.transcribeNoteAudio !== "function") {
+  if (typeof overlayShellClient?.transcribeNoteAudio !== "function") {
     throw new Error("Desktop note transcription bridge unavailable.");
   }
-  const payload = await window.ucaShell.transcribeNoteAudio({
+  const payload = await overlayShellClient.transcribeNoteAudio({
     audio: await blob.arrayBuffer(),
     mimeType: blob.type || "audio/webm",
     lang: lang || "auto",
@@ -7753,7 +7766,7 @@ async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
 // server reports an error — the caller falls back to the non-streaming path.
 async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
   const FIRST_FRAME_TIMEOUT_MS = 30_000;
-  if (typeof window.ucaShell?.transcribeNoteAudioStreaming !== "function") {
+  if (typeof overlayShellClient?.transcribeNoteAudioStreaming !== "function") {
     console.warn("[voice] stream transcribe bridge unavailable");
     return { ok: false };
   }
@@ -7767,7 +7780,7 @@ async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
     firstFrameTimer = null;
   };
   try {
-    const streamPromise = window.ucaShell.transcribeNoteAudioStreaming({
+    const streamPromise = overlayShellClient.transcribeNoteAudioStreaming({
       audio: await blob.arrayBuffer(),
       mimeType: blob.type || "audio/webm",
       lang: lang || "auto",
@@ -7938,7 +7951,7 @@ ${sourceAssistRequirement}`;
 
     addBubble("assistant", "Processing in background...");
     if (shouldSurfaceTaskPopupCards()) {
-      void window.ucaShell.notify?.({
+      void overlayShellClient.notify?.({
         title: "LingxY processing",
         body: "录音笔记正在整理。",
         taskId: activeTaskId
@@ -8104,10 +8117,10 @@ noteFinishBtn?.addEventListener("click", async () => {
 
 settingsBtn?.addEventListener("click", async () => {
   try {
-    if (window.ucaShell.navigateConsole) {
-      await window.ucaShell.navigateConsole({ tabId: "settings" });
+    if (overlayShellClient.navigateConsole) {
+      await overlayShellClient.navigateConsole({ tabId: "settings" });
     } else {
-      await window.ucaShell.showWindow("console");
+      await overlayShellClient.showWindow("console");
     }
     addSystemBubble("已打开 Console 设置。");
   } catch (error) {
@@ -8438,7 +8451,7 @@ function requestOverlayDismiss() {
   closeAllPanels();
   conversationPhase = "idle";
   suppressOverlayAutoReveal = true;
-  void window.ucaShell.hideWindow("overlay");
+  void overlayShellClient.hideWindow("overlay");
 }
 
 async function submitComposerInput() {
@@ -8518,7 +8531,7 @@ async function handleUserSend() {
    SHELL EVENTS
    ═══════════════════════════════════════════════ */
 
-window.ucaShell.onShortcutTriggered((payload) => {
+overlayShellClient.onShortcutTriggered((payload) => {
   overlayShortcutSmokeEvents.push({
     shortcutId: payload?.shortcutId ?? null,
     accelerator: payload?.accelerator ?? null,
@@ -8559,7 +8572,7 @@ window.ucaShell.onShortcutTriggered((payload) => {
   }
 });
 
-window.ucaShell.onShellReady((payload) => {
+overlayShellClient.onShellReady((payload) => {
   if (payload.windowId === "overlay") {
     serviceBaseUrl = payload.serviceBaseUrl ?? serviceBaseUrl;
     refreshStatus();
@@ -8573,7 +8586,7 @@ window.ucaShell.onShellReady((payload) => {
 // When an approval is resolved from the floating popup card, the overlay's
 // inline twin (if any) is stale — mark it handled so the user doesn't
 // double-approve. We disable its buttons and overlay a status chip.
-window.ucaShell?.onPopupCardResolved?.(async (payload) => {
+overlayShellClient?.onPopupCardResolved?.(async (payload) => {
   if (!payload) return;
 
   // UCA-182 Phase 8: success-kind cards carry artifact actions. These
@@ -8605,13 +8618,13 @@ window.ucaShell?.onPopupCardResolved?.(async (payload) => {
     }
     if (action === "preview" && meta.artifactPath) {
       if (!window.livePreview?.openForFile?.({ filePath: meta.artifactPath, mime: meta.mime })) {
-        void window.ucaShell?.openPath?.(meta.artifactPath);
+        void overlayShellClient?.openPath?.(meta.artifactPath);
       }
     } else if (action === "reveal" && meta.artifactPath) {
-      try { window.ucaShell?.showItemInFolder?.(meta.artifactPath); } catch { /* ignore */ }
+      try { overlayShellClient?.showItemInFolder?.(meta.artifactPath); } catch { /* ignore */ }
     } else if (action === "copy") {
       const text = meta.inlinePreview || meta.artifactPath || "";
-      if (text) void window.ucaShell?.writeClipboardText?.(text);
+      if (text) void overlayShellClient?.writeClipboardText?.(text);
     } else if (action === "voice_continue") {
       const taskId = meta.taskId ?? payload.taskId;
       if (taskId) {
@@ -8639,7 +8652,7 @@ window.ucaShell?.onPopupCardResolved?.(async (payload) => {
   if (payload.kind === "error" && payload.action === "view_log") {
     const tid = payload.meta?.taskId ?? payload.taskId;
     if (tid) {
-      void window.ucaShell?.navigateConsole?.({ tab: "tasks", taskId: tid });
+      void overlayShellClient?.navigateConsole?.({ tab: "tasks", taskId: tid });
     }
     return;
   }
@@ -8692,7 +8705,7 @@ async function beginEchoSession() {
   echoCommandStartedAt = Date.now();
   echoCommandLastSpeechAt = 0;
   armEchoCommandHardLimit();
-  try { await window.ucaShell?.registerCtrlEnter?.("echo-session"); }
+  try { await overlayShellClient?.registerCtrlEnter?.("echo-session"); }
   catch (err) { console.warn("[echo] register Ctrl+Enter failed:", err); }
 }
 async function endEchoSession() {
@@ -8704,11 +8717,11 @@ async function endEchoSession() {
   echoHudLastAt = 0;
   echoCommandStartedAt = 0;
   echoCommandLastSpeechAt = 0;
-  try { await window.ucaShell?.unregisterCtrlEnter?.(); }
+  try { await overlayShellClient?.unregisterCtrlEnter?.(); }
   catch { /* ignore */ }
 }
 
-window.ucaShell?.onEchoWake?.(async (payload = {}) => {
+overlayShellClient?.onEchoWake?.(async (payload = {}) => {
   const kind = payload.kind === "note" ? "note" : "voice";
   // The wake word means the user is about to speak again — interrupt any
   // in-flight TTS so the assistant's reply does not talk over the user.
@@ -8773,7 +8786,7 @@ window.ucaShell?.onEchoWake?.(async (payload = {}) => {
 // Session-scoped Ctrl+Enter: global shortcut in main forwards here. In voice
 // mode it runs the same submit path as Enter; in note mode it finishes the
 // note (same as clicking 完成笔记). Either way, the session ends afterward.
-window.ucaShell?.onCtrlEnter?.(() => {
+overlayShellClient?.onCtrlEnter?.(() => {
   if (!echoSessionActive) return;
   if (noteActive || noteFinishInFlight) {
     void finishNote().finally(() => endEchoSession());
@@ -8787,7 +8800,7 @@ window.ucaShell?.onCtrlEnter?.(() => {
 // Main process notifies the overlay when the user has clicked outside
 // the application entirely. Run the same dismiss flow as the X button so
 // voice recording stops and inline panels fold before the window hides.
-window.ucaShell.onOverlayAutoHide?.(() => {
+overlayShellClient.onOverlayAutoHide?.(() => {
   // Recheck the focus contract on the renderer side too — if a sibling
   // window (popup-card, preview, etc.) raced past the main-process check
   // between the blur event and the deferred sample, we don't want to
@@ -8796,7 +8809,7 @@ window.ucaShell.onOverlayAutoHide?.(() => {
   requestOverlayDismiss();
 });
 
-window.ucaShell.onWindowFocused((payload) => {
+overlayShellClient.onWindowFocused((payload) => {
   if (payload.windowId === "overlay") {
     suppressOverlayAutoReveal = false;
     syncOverlayTheme(); // pick up any theme change made in the console
@@ -8822,7 +8835,7 @@ window.ucaShell.onWindowFocused((payload) => {
   }
 });
 
-window.ucaShell.onContextReceived((payload) => {
+overlayShellClient.onContextReceived((payload) => {
   if (payload.targetWindow === "overlay" || payload.source_app === "explorer.exe" || payload.capture) {
     applyShellHandoff(payload);
   }

@@ -29,10 +29,9 @@
     extensions: [...TEXT_EXT],
     priority: 20,
     async render(container, { filePath }) {
-      if (!window.ucaShell?.readTextFile) {
-        throw new Error("ucaShell.readTextFile 未挂载（preload）");
-      }
-      const raw = await window.ucaShell.readTextFile(filePath, 512 * 1024);
+      const shellClient = window.previewShellClient ?? window.createPreviewShellClient?.();
+      if (!shellClient) throw new Error("preview shell client unavailable");
+      const raw = await shellClient.readTextFile(filePath, 512 * 1024, "ucaShell.readTextFile 未挂载（preload）");
       container.innerHTML = `<pre class="lp-pre"></pre>`;
       container.querySelector("pre").textContent = raw ?? "";
     }

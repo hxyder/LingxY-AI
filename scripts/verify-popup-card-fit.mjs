@@ -19,8 +19,11 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const manifest = read("src/desktop/shared/manifest.mjs");
 const manager = read("src/desktop/tray/popup-card-manager.mjs");
+const popupCardIpc = read("src/desktop/tray/ipc/register-popup-card-ipc.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
+const cardHtml = read("src/desktop/renderer/popup-card.html");
 const cardJs = read("src/desktop/renderer/popup-card.js");
+const cardShellClient = read("src/desktop/renderer/popup-card-shell-client.js");
 const cardCss = read("src/desktop/renderer/popup-card.css");
 
 // Manifest channel for resize round-trip.
@@ -30,8 +33,10 @@ assert.match(manifest, /popupCardResize:\s*"uca:popup-card-resize"/,
 // Main-process handler resizes + reflows, with clamp to [MIN, MAX].
 assert.match(manager, /function resizeCard\(cardId, requestedHeight\)/,
   "popup-card-manager.mjs missing resizeCard() function");
-assert.match(manager, /ipcMain\.handle\(IPC_CHANNELS\.popupCardResize/,
-  "popup-card-manager.mjs must register the resize IPC handler");
+assert.doesNotMatch(manager, /ipcMain\.handle\(/,
+  "popup-card-manager.mjs must not own IPC handler registration");
+assert.match(popupCardIpc, /ipcMain\.handle\(IPC_CHANNELS\.popupCardResize/,
+  "register-popup-card-ipc.mjs must register the resize IPC handler");
 assert.match(manager, /Math\.min\(\s*CARD_HEIGHT_MAX/,
   "resizeCard must clamp to CARD_HEIGHT_MAX");
 assert.match(manager, /Math\.max\(\s*CARD_HEIGHT_MIN/,
@@ -55,10 +60,14 @@ assert.match(preload, /ipcRenderer\.invoke\("uca:popup-card-resize"/,
   "preload.cjs must forward resize to the main ipc channel");
 
 // Renderer measures content and reports actual height.
+assert.match(cardHtml, /popup-card-shell-client\.js/,
+  "popup-card.html must load the popup-card shell client");
 assert.match(cardJs, /function measureAndResize\(\)/,
   "popup-card.js missing measureAndResize()");
-assert.match(cardJs, /window\.ucaShell\?\.resizePopupCard\?\./,
-  "popup-card.js must call resizePopupCard through the shell bridge");
+assert.match(cardJs, /popupCardShellClient\?\.resizePopupCard\?\./,
+  "popup-card.js must call resizePopupCard through the popup-card shell client");
+assert.match(cardShellClient, /resizePopupCard/,
+  "popup-card-shell-client.js must expose resizePopupCard");
 assert.match(cardJs, /ResizeObserver/,
   "popup-card.js should use ResizeObserver to track dynamic content");
 

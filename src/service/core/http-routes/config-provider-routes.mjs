@@ -20,7 +20,7 @@ import {
   buildCapabilityGapSuggestions,
   mergeCapabilityGapSuggestions
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
-import { buildProviderSetupStatus } from "../../ai/onboarding/provider-setup-status.mjs";
+import { buildProviderSetupStatus } from "../../../shared/provider-setup-status.mjs";
 import {
   createEditableSkill,
   deleteEditableSkill,

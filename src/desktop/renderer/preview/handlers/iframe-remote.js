@@ -19,11 +19,9 @@
     extensions: [".docx", ".xlsx", ".pptx", ".pdf", ".html", ".htm", ".md", ".markdown"],
     priority: 5,
     async render(container, { filePath, runtimeBaseUrl }) {
-      const baseUrl = runtimeBaseUrl
-        || window.__lingxyRuntimeBaseUrl
-        || "http://127.0.0.1:4310";
-      const url = `${baseUrl}/file/render-preview-html?path=${encodeURIComponent(filePath)}`;
-      const resp = await fetch(url);
+      const previewClient = window.previewRuntimeClient ?? window.createPreviewRuntimeClient?.();
+      if (!previewClient) throw new Error("Preview runtime client unavailable.");
+      const { baseUrl, response: resp } = await previewClient.renderPreviewHtml({ filePath, runtimeBaseUrl });
       if (resp.redirected && resp.url.includes("/file/pdf")) {
         // PDF redirect — let the pdf handler take over if one exists;
         // otherwise fall through to the iframe which will render the

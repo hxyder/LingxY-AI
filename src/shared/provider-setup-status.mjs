@@ -1,9 +1,9 @@
-import { BUILTIN_API_TEMPLATES, detectProviderFamily } from "../../../shared/provider-catalog.mjs";
+import { BUILTIN_API_TEMPLATES, detectProviderFamily } from "./provider-catalog.mjs";
 import {
   isProviderConfiguredForUse,
   providerConfigurationReason
-} from "../../../shared/provider-configuration.mjs";
-import { t } from "../../../shared/i18n/index.mjs";
+} from "./provider-configuration.mjs";
+import { t } from "./i18n/index.mjs";
 
 export const PROVIDER_SETUP_STATUS_VERSION = 1;
 
@@ -85,8 +85,7 @@ function buildTemplate(template = {}, locale = "en-US") {
     providerFamily: detectProviderFamily(template),
     requiresApiKey,
     // Secret-free contract: setup status never echoes secret value fields.
-    // Locale strings may mention API keys, but the returned status must only
-    // carry recovery hints and secret references.
+    // Locale strings may mention API keys, but the returned status only carries recovery hints.
     authHint: template.kind === "ollama"
       ? t(locale, "providerSetup.ollamaAuthHint")
       : t(locale, "providerSetup.apiKeyAuthHint"),

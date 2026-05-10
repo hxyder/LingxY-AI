@@ -1,4 +1,4 @@
-import { buildPrivacySandboxSummary } from "../../../service/security/privacy-sandbox-policy.mjs";
+import { buildPrivacySandboxSummary } from "../../../shared/privacy-sandbox-policy.mjs";
 
 export function buildPrivacySettingsViewModel(securityConfig) {
   return {

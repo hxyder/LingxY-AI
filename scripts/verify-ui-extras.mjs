@@ -14,7 +14,7 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readCssWithImports } from "./lib/css-imports.mjs";
@@ -22,6 +22,9 @@ import { readCssWithImports } from "./lib/css-imports.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
+const readDesktopTrayIpcModules = () => readdirSync(path.join(root, "src/desktop/tray/ipc"), { withFileTypes: true })
+  .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
+  .map((entry) => readFileSync(path.join(root, "src/desktop/tray/ipc", entry.name), "utf8"));
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
@@ -29,6 +32,11 @@ const consoleFloatingUi = read("src/desktop/renderer/console-floating-ui.mjs");
 const consoleChatAttachments = read("src/desktop/renderer/console-chat-attachments.mjs");
 const consoleMcpView = read("src/desktop/renderer/console-mcp-view.mjs");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
+const runtimeTaskClient = read("src/desktop/renderer/shared/runtime-task-client.mjs");
+const consoleConnectorsClient = read("src/desktop/renderer/console/console-connectors-client.mjs");
+const consoleNotesRuntimeClient = read("src/desktop/renderer/console/console-notes-runtime-client.mjs");
+const consoleSkillsClient = read("src/desktop/renderer/console/console-skills-client.mjs");
+const echoRuntimeClient = read("src/desktop/renderer/shared/echo-runtime-client.mjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
 const capabilityChecklist = read("src/desktop/renderer/capability-checklist.mjs");
@@ -37,16 +45,37 @@ const toolDisplayView = read("src/desktop/renderer/tool-display.mjs");
 const currentContextIntent = read("src/shared/current-context-intent.mjs");
 const dockHtml = read("src/desktop/renderer/dock.html");
 const dockJs = read("src/desktop/renderer/dock.js");
+const dockShellClient = read("src/desktop/renderer/dock-shell-client.mjs");
 const dockGeometry = read("src/desktop/tray/dock-geometry.mjs");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
+const desktopDiagnostics = read("src/desktop/tray/desktop-diagnostics.mjs");
+const desktopSettings = read("src/desktop/tray/desktop-settings.mjs");
+const desktopWindowConfig = read("src/desktop/tray/desktop-window-config.mjs");
+const desktopWindowBounds = read("src/desktop/tray/desktop-window-bounds.mjs");
+const desktopOverlayPayloads = read("src/desktop/tray/desktop-overlay-payloads.mjs");
+const desktopNotifications = read("src/desktop/tray/desktop-notifications.mjs");
+const mainProcessIpc = [electronMain, ...readDesktopTrayIpcModules()].join("\n");
+const popupCardHtml = read("src/desktop/renderer/popup-card.html");
 const popupCardJs = read("src/desktop/renderer/popup-card.js");
+const popupCardShellClient = read("src/desktop/renderer/popup-card-shell-client.js");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const taskEventStream = read("src/desktop/renderer/task-event-stream.js");
 const livePreview = read("src/desktop/renderer/live-preview.js");
+const livePreviewShellClient = read("src/desktop/renderer/live-preview-shell-client.js");
+const echoBubbleHtml = read("src/desktop/renderer/echo-bubble.html");
+const echoBubbleJs = read("src/desktop/renderer/echo-bubble.js");
+const echoBubbleShellClient = read("src/desktop/renderer/echo-bubble-shell-client.js");
 const previewWindowHtml = read("src/desktop/renderer/preview-window.html");
 const previewWindowJs = read("src/desktop/renderer/preview-window.js");
+const previewShellClient = read("src/desktop/renderer/preview/shell-preview-client.js");
+const previewRuntimeClient = read("src/desktop/renderer/preview/runtime-preview-client.js");
+const iframeRemotePreviewHandler = read("src/desktop/renderer/preview/handlers/iframe-remote.js");
+const textPreviewHandler = read("src/desktop/renderer/preview/handlers/text.js");
+const csvPreviewHandler = read("src/desktop/renderer/preview/handlers/csv.js");
+const imagePreviewHandler = read("src/desktop/renderer/preview/handlers/image.js");
+const pdfPreviewHandler = read("src/desktop/renderer/preview/handlers/pdf.js");
 const previewStreaming = read("src/desktop/renderer/preview/streaming.js");
 const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
@@ -106,17 +135,17 @@ assert.ok(/title:\s*body\.title/.test(noteProjectConversationRoutes) || /body\.t
   "+note title: /notes/append-chip handler must forward title");
 assert.ok(/title\s*=\s*null\s*\}\s*\)/.test(notesStore) || /title\s*=\s*null/.test(notesStore),
   "+note title: notes-store appendChip must accept title arg");
-assert.ok(/saveNotesViaShell/.test(consoleJs) && /window\.ucaShell\.saveNotes/.test(consoleJs),
+assert.ok(/saveNotesViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveNotes/.test(consoleJs),
   "notes save: console must use desktop shell bridge");
-assert.ok(/upsertNoteViaShell/.test(consoleJs) && /window\.ucaShell\.upsertNote/.test(consoleJs),
+assert.ok(/upsertNoteViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.upsertNote/.test(consoleJs),
   "notes upsert: console must use desktop shell bridge");
-assert.ok(/deleteNoteViaShell/.test(consoleJs) && /window\.ucaShell\.deleteNote/.test(consoleJs),
+assert.ok(/deleteNoteViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteNote/.test(consoleJs),
   "notes delete: console must use desktop shell bridge");
-assert.ok(/restoreNoteViaShell/.test(consoleJs) && /window\.ucaShell\.restoreNote/.test(consoleJs),
+assert.ok(/restoreNoteViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.restoreNote/.test(consoleJs),
   "notes restore: console must use desktop shell bridge");
-assert.ok(/appendNoteChipViaShell/.test(consoleJs) && /window\.ucaShell\.appendNoteChip/.test(consoleJs),
+assert.ok(/appendNoteChipViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.appendNoteChip/.test(consoleJs),
   "notes append-chip: console must use desktop shell bridge");
-assert.ok(/appendNoteChipViaShell/.test(overlayJs) && /window\.ucaShell\.appendNoteChip/.test(overlayJs),
+assert.ok(/appendNoteChipViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.appendNoteChip/.test(overlayJs),
   "notes append-chip: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}method:\s*["'`]POST/.test(consoleJs),
   "notes append-chip: console must not POST /notes/append-chip directly via fetchJson");
@@ -124,13 +153,23 @@ assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}me
   "notes append-chip: overlay must not POST /notes/append-chip directly via fetchJson");
 assert.ok(!/fetch\(\s*`\$\{runtimeBaseUrl\}\/notes(?:\/(?:upsert|delete|restore|append-chip))?`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "notes editor: console must not POST notes mutation routes directly via fetch");
-assert.ok(/saveProjectStoreViaShell/.test(consoleJs) && /window\.ucaShell\.saveProjectStore/.test(consoleJs),
+assert.ok(/createConsoleNotesRuntimeClient/.test(consoleJs)
+    && /notesRuntimeClient\.fetchNotes/.test(consoleJs)
+    && /notesRuntimeClient\.completeChat/.test(consoleJs)
+    && /\/notes/.test(consoleNotesRuntimeClient)
+    && /\/chat\/complete/.test(consoleNotesRuntimeClient),
+  "notes runtime reads: console notes runtime request construction must stay in the notes runtime client");
+assert.ok(/createConsoleSkillsClient/.test(consoleJs)
+    && /consoleSkillsClient\.installFromGitHub/.test(consoleJs)
+    && /\/skills\/install\/github/.test(consoleSkillsClient),
+  "skills install: GitHub install request construction must stay in the skills client");
+assert.ok(/saveProjectStoreViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveProjectStore/.test(consoleJs),
   "project store: console must use desktop shell bridge for saves");
-assert.ok(/saveProjectStoreViaShell/.test(overlayJs) && /window\.ucaShell\.saveProjectStore/.test(overlayJs),
+assert.ok(/saveProjectStoreViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.saveProjectStore/.test(overlayJs),
   "project store: overlay must use desktop shell bridge for saves");
-assert.ok(/attachProjectFilesViaShell/.test(consoleJs) && /window\.ucaShell\.attachProjectFiles/.test(consoleJs),
+assert.ok(/attachProjectFilesViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.attachProjectFiles/.test(consoleJs),
   "project files: console must use desktop shell bridge for attach/index");
-assert.ok(/removeProjectFileIndexViaShell/.test(consoleJs) && /window\.ucaShell\.removeProjectFileIndex/.test(consoleJs),
+assert.ok(/removeProjectFileIndexViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.removeProjectFileIndex/.test(consoleJs),
   "project files: console must use desktop shell bridge for index removal");
 assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(consoleJs),
   "project files: console must expose an explicit picker before attach/index");
@@ -146,27 +185,37 @@ assert.ok(!/fetchJson\(\s*`\/projects\/[^`]+\/files\/attach`/.test(consoleJs),
   "project files: console must not POST project file attach route directly via fetchJson");
 assert.ok(!/fetchJson\(\s*`\/projects\/[^`]+\/files\/remove-index`/.test(consoleJs),
   "project files: console must not POST project file remove-index route directly via fetchJson");
-assert.ok(/clearPreviewCacheViaShell/.test(consoleJs) && /window\.ucaShell\.clearPreviewCache/.test(consoleJs),
+assert.ok(/clearPreviewCacheViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.clearPreviewCache/.test(consoleJs),
   "preview cache clear: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/preview\/cache\/clear["'`]\s*,\s*\{[\s\S]{0,120}method:\s*["'`]POST/.test(consoleJs),
   "preview cache clear: console must not POST /preview/cache/clear directly");
-assert.ok(/setupOfficeAddinsViaShell/.test(consoleJs) && /window\.ucaShell\.setupOfficeAddins/.test(consoleJs),
+assert.ok(/setupOfficeAddinsViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.setupOfficeAddins/.test(consoleJs),
   "office add-in setup: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/setup\/office-addins["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "office add-in setup: console must not POST /setup/office-addins directly");
-assert.ok(/detectEchoKeywordViaShell/.test(dockJs) && /window\.ucaShell\.detectEchoKeyword/.test(dockJs),
-  "echo KWS: dock must use desktop shell bridge");
-assert.ok(/enrollEchoKeywordViaShell/.test(dockJs) && /window\.ucaShell\.enrollEchoKeyword/.test(dockJs),
-  "echo enrollment: dock must use desktop shell bridge");
+assert.ok(/detectEchoKeywordViaShell/.test(dockJs)
+    && /dockShellClient\.detectEchoKeyword/.test(dockJs)
+    && /detectEchoKeyword/.test(dockShellClient),
+  "echo KWS: dock must use desktop shell client bridge");
+assert.ok(/enrollEchoKeywordViaShell/.test(dockJs)
+    && /dockShellClient\.enrollEchoKeyword/.test(dockJs)
+    && /enrollEchoKeyword/.test(dockShellClient),
+  "echo enrollment: dock must use desktop shell client bridge");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/kws`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(dockJs),
   "echo KWS: dock must not POST /echo/kws directly");
+assert.ok(/createEchoRuntimeClient/.test(dockJs)
+    && /createEchoRuntimeClient/.test(overlayJs)
+    && /\/echo\/speak/.test(echoRuntimeClient)
+    && /\/echo\/speak\/cancel/.test(echoRuntimeClient)
+    && /\/echo\/kws\/status/.test(echoRuntimeClient),
+  "echo runtime: overlay/dock echo request construction must stay in the echo runtime client");
 assert.ok(!/const\s+seed\s*=\s*pendingCapture\?\.capture\s*\?\?\s*conversationState\?\.seedCapture/.test(overlayJs),
   "overlay send: pendingCapture must not seed conversation before context resolver runs");
 assert.ok(/if\s*\(text\)\s*\{\s*ensureConversation\(null,\s*conversationState\?\.seedCommand\s*\?\?\s*text\);/.test(overlayJs),
   "overlay send: conversation should be created without pre-resolving pending context");
-assert.ok(!/await\s+window\.ucaShell\.notify\(\{\s*title:\s*"LingxY processing"/.test(overlayJs),
+assert.ok(!/await\s+(?:consoleShellClient|overlayShellClient)\.notify\(\{\s*title:\s*"LingxY processing"/.test(overlayJs),
   "overlay submit: task-submitted notification must not block the SSE/first-output path");
-assert.ok(/void\s+window\.ucaShell\.notify\?\.\(\{\s*title:\s*"LingxY processing"/.test(overlayJs),
+assert.ok(/void\s+(?:consoleShellClient|overlayShellClient)\.notify\?\.\(\{\s*title:\s*"LingxY processing"/.test(overlayJs),
   "overlay submit: task-submitted notification should be fire-and-forget");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs),
   "echo enrollment: dock must not POST /echo/enroll-keyword directly");
@@ -176,18 +225,18 @@ assert.ok(/body\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?overflo
   "dock: body must be fixed and non-scrollable");
 assert.ok(/contain:\s*layout\s+paint\s+style/.test(dockHtml) && /pointer-events:\s*none/.test(dockHtml),
   "dock: HUD content must be structurally contained and canvas must not expand the hit region");
-assert.ok(/function\s+setManagedWindowBounds/.test(electronMain) && /setContentBounds/.test(electronMain) && /getContentBounds/.test(electronMain),
+assert.ok(/function\s+setManagedWindowBounds/.test(desktopWindowBounds) && /setContentBounds/.test(desktopWindowBounds) && /getContentBounds/.test(desktopWindowBounds),
   "dock: main process must manage the fixed orb by content bounds");
 assert.ok(/DOCK_SIZE_PX = 48/.test(dockGeometry)
     && /DOCK_EDGE_SNAP_PX = 16/.test(dockGeometry)
     && /normalizeDockBounds/.test(dockGeometry),
   "dock: fixed HUD geometry must live in a shared pure helper");
 assert.ok(/width:\s*100vw/.test(dockHtml) && /height:\s*100vh/.test(dockHtml)
-    && /setZoomFactor\?\.\(1\)/.test(electronMain)
+    && /setZoomFactor\?\.\(1\)/.test(desktopWindowBounds)
     && /"zoom-changed"/.test(electronMain)
     && /"before-input-event"/.test(electronMain),
   "dock: renderer must be viewport-sized and zoom-locked to avoid HUD scrollbars");
-assert.ok(/insertCSS\(/.test(electronMain) && /overflow:\s*hidden\s*!important/.test(electronMain),
+assert.ok(/insertCSS\(/.test(desktopWindowBounds) && /overflow:\s*hidden\s*!important/.test(desktopWindowBounds),
   "dock: main process must inject a HUD scroll lock after renderer load");
 assert.ok(/resetDockScrollPosition/.test(dockJs) && /addEventListener\(["']wheel["'][\s\S]{0,160}preventDefault/.test(dockJs),
   "dock: renderer must prevent wheel/scroll drift in the tiny HUD window");
@@ -197,23 +246,23 @@ assert.ok(/addEventListener\(["']pointerdown["']/.test(dockJs)
   "dock: drag must use pointer capture so it remains responsive when the pointer leaves the tiny HUD");
 assert.ok(!/Math\.abs\(dx\)\s*>\s*3\s*\|\|\s*Math\.abs\(dy\)\s*>\s*3/.test(dockJs),
   "dock: drag movement must not require every move event to cross a per-frame threshold");
-assert.ok(/thickFrame:\s*false/.test(electronMain) && /screen\.on\(["']display-/.test(electronMain),
+assert.ok(/thickFrame:\s*false/.test(desktopWindowConfig) && /screen\.on\(["']display-/.test(electronMain),
   "dock: Windows HUD flags and display-change repair must be present");
-assert.ok(/if \(windowId === DOCK_WINDOW_ID\) return true;/.test(electronMain)
-    && /getManagedWindowBounds\(DOCK_WINDOW_ID, dockWin\)/.test(electronMain),
+assert.ok(/if \(windowId === "dock"\) return true;/.test(desktopSettings)
+    && /getManagedWindowBounds\(DOCK_WINDOW_ID, dockWin\)/.test(mainProcessIpc),
   "dock: always-on-top and nearby HUD anchoring must use dock invariants");
-assert.ok(/window\.ucaShell\.transcribeNoteAudio/.test(overlayJs),
+assert.ok(/(?:consoleShellClient|overlayShellClient)\.transcribeNoteAudio/.test(overlayJs),
   "note transcribe: overlay must use desktop shell bridge");
-assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),
+assert.ok(/(?:consoleShellClient|overlayShellClient)\.transcribeNoteAudioStreaming/.test(overlayJs),
   "note transcribe stream: overlay must use desktop shell streaming bridge");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/note\/transcribe/.test(overlayJs),
   "note transcribe: overlay must not POST /note/transcribe directly");
-assert.ok(/openOverlayVoice/.test(consoleJs) && /window\.ucaShell\.openOverlayVoice/.test(consoleJs),
+assert.ok(/openOverlayVoice/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.openOverlayVoice/.test(consoleJs),
   "console voice: chat composer must use desktop shell voice bridge");
 assert.ok(/openOverlayForNoteVoice/.test(consoleJs)
-    && /window\.ucaShell\.openOverlayVoice\(\{\s*mode:\s*"note",\s*autoStart:\s*true\s*\}\)/.test(consoleJs),
+    && /(?:consoleShellClient|overlayShellClient)\.openOverlayVoice\(\{\s*mode:\s*"note",\s*autoStart:\s*true\s*\}\)/.test(consoleJs),
   "console notes voice: notes button must use desktop shell note bridge");
-assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayVoice/.test(electronMain),
+assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayVoice/.test(mainProcessIpc),
   "voice bridge: main process must own openOverlayVoice routing");
 assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
@@ -241,6 +290,29 @@ assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,420}seenActions[\s\S
     && /function openOverlayAction/.test(popupCardJs)
     && /actionKey:\s*["']open_overlay["']/.test(popupCardJs),
   "popup-card actions must dedupe by stable semantic action keys and visible labels instead of repeating open-dialog actions");
+assert.ok(/popup-card-shell-client\.js/.test(popupCardHtml)
+    && /window\.ucaShell/.test(popupCardShellClient)
+    && /popupCardShellClient/.test(popupCardJs)
+    && !/window\.ucaShell/.test(popupCardJs),
+  "popup-card shell bridge calls must stay behind the popup-card shell client");
+assert.ok(/from\s+["']\.\/dock-shell-client\.mjs["']/.test(dockJs)
+    && /window\.ucaShell/.test(dockShellClient)
+    && /dockShellClient/.test(dockJs)
+    && !/window\.ucaShell/.test(dockJs),
+  "dock shell bridge calls must stay behind the dock shell client");
+assert.ok(/live-preview-shell-client\.js/.test(consoleHtml)
+    && /live-preview-shell-client\.js/.test(overlayHtml)
+    && /window\.ucaShell/.test(livePreviewShellClient)
+    && /livePreviewShellClient/.test(livePreview)
+    && !/window\.ucaShell/.test(livePreview),
+  "live-preview shell bridge calls must stay behind the live-preview shell client");
+assert.ok(/echo-bubble-shell-client\.js/.test(echoBubbleHtml)
+    && /window\.ucaShell/.test(echoBubbleShellClient)
+    && /echoBubbleShellClient/.test(echoBubbleJs)
+    && /echoBubbleShellClient/.test(echoBubbleHtml)
+    && !/window\.ucaShell/.test(echoBubbleJs)
+    && !/window\.ucaShell/.test(echoBubbleHtml),
+  "echo-bubble shell bridge calls must stay behind the echo-bubble shell client");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
   "voice language: overlay voice input must default to simplified Chinese with English words preserved");
 assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),
@@ -285,27 +357,27 @@ assert.ok(/\/config\/mcp\/install\/plan/.test(consoleJs),
   "mcp install plan: console must call dry-run plan endpoint");
 assert.ok(/applyMcpInstallPlanToForm/.test(consoleJs) && /Install is not executed here/.test(consoleJs),
   "mcp install plan: plan must populate packageDir without executing install");
-assert.ok(/runMcpInstallSource/.test(consoleJs) && /window\.ucaShell\.runMcpInstall/.test(consoleJs),
+assert.ok(/runMcpInstallSource/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.runMcpInstall/.test(consoleJs),
   "mcp install run: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/install\/run/.test(consoleJs),
   "mcp install run: console must not call execution route directly");
 assert.ok(/Installed\. Review fields before saving/.test(consoleJs),
   "mcp install run: install result must still require review before saving");
-assert.ok(/previewMcpInstallCandidate/.test(consoleJs) && /window\.ucaShell\.previewMcpInstall/.test(consoleJs),
+assert.ok(/previewMcpInstallCandidate/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.previewMcpInstall/.test(consoleJs),
   "mcp install preview: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/install\/preview/.test(consoleJs),
   "mcp install preview: console must not call file-reading preview route directly");
 assert.ok(/applyMcpInstallPreviewToForm/.test(consoleJs) && /Review fields before saving/.test(consoleJs),
   "mcp install preview: preview must fill manual form and require review before saving");
-assert.ok(/saveMcpServer/.test(consoleJs) && /window\.ucaShell\.saveMcpServer/.test(consoleJs),
+assert.ok(/saveMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveMcpServer/.test(consoleJs),
   "mcp config save: console must use desktop shell bridge");
-assert.ok(/deleteMcpServer/.test(consoleJs) && /window\.ucaShell\.deleteMcpServer/.test(consoleJs),
+assert.ok(/deleteMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteMcpServer/.test(consoleJs),
   "mcp config delete: console must use desktop shell bridge");
-assert.ok(/testMcpServer/.test(consoleJs) && /window\.ucaShell\.testMcpServer/.test(consoleJs),
+assert.ok(/testMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.testMcpServer/.test(consoleJs),
   "mcp runtime test: console must use desktop shell bridge");
-assert.ok(/toggleMcpServer/.test(consoleJs) && /window\.ucaShell\.toggleMcpServer/.test(consoleJs),
+assert.ok(/toggleMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.toggleMcpServer/.test(consoleJs),
   "mcp runtime toggle: console must use desktop shell bridge");
-assert.ok(/saveMcpServerConfig/.test(consoleJs) && /window\.ucaShell\.saveMcpServerConfig/.test(consoleJs),
+assert.ok(/saveMcpServerConfig/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveMcpServerConfig/.test(consoleJs),
   "mcp runtime config: console must use desktop shell bridge");
 assert.ok(/请先测试，再启用/.test(consoleJs),
   "mcp runtime config: saving config must not silently enable the server");
@@ -313,13 +385,13 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/servers/.test(consoleJs),
   "mcp config save: console must not call /config/mcp/servers directly");
 assert.ok(!/fetch\(`\$\{state\.serviceBaseUrl\}\/ai\/mcp\/\$\{encodeURIComponent\(id\)\}\/(?:toggle|config)/.test(consoleJs),
   "mcp runtime mutation: console must not call /ai/mcp/:id/toggle or /config directly");
-assert.ok(/approveApproval/.test(consoleJs) && /window\.ucaShell\.approveApproval/.test(consoleJs),
+assert.ok(/approveApproval/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.approveApproval/.test(consoleJs),
   "approval approve: console must use desktop shell bridge");
-assert.ok(/rejectApproval/.test(consoleJs) && /window\.ucaShell\.rejectApproval/.test(consoleJs),
+assert.ok(/rejectApproval/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.rejectApproval/.test(consoleJs),
   "approval reject: console must use desktop shell bridge");
-assert.ok(/approveApproval/.test(overlayJs) && /window\.ucaShell\.approveApproval/.test(overlayJs),
+assert.ok(/approveApproval/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.approveApproval/.test(overlayJs),
   "approval approve: overlay must use desktop shell bridge");
-assert.ok(/rejectApproval/.test(overlayJs) && /window\.ucaShell\.rejectApproval/.test(overlayJs),
+assert.ok(/rejectApproval/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.rejectApproval/.test(overlayJs),
   "approval reject: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:approve|reject)/.test(consoleJs),
   "approval mutation: console must not call approval mutation routes directly");
@@ -333,7 +405,7 @@ assert.ok(/data-skill-delete/.test(consoleJs),
   "skills: discovered editable skill cards must expose a delete action");
 assert.ok(/renderSkillValidation/.test(consoleJs) && /skill\.errors/.test(consoleJs),
   "skills: console must render descriptor validation errors");
-assert.ok(/window\.ucaShell\.openPath/.test(consoleJs) && /window\.ucaShell\?\.showItemInFolder/.test(consoleJs),
+assert.ok(/(?:consoleShellClient|overlayShellClient)\.openPath/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\?\.showItemInFolder/.test(consoleJs),
   "skills: console skill file actions must use the desktop shell bridge");
 assert.ok(/renderEvidenceSourcesHtml/.test(evidenceSourcesView) && /extractEvidenceSummaryFromTaskDetail/.test(evidenceSourcesView),
   "task detail: evidence source renderer must live in the shared renderer helper");
@@ -452,9 +524,9 @@ assert.ok(/attachedProjectFilePaths/.test(consoleJs) && /projectArtifacts\.lengt
   "projects: Files count must include durable attached project files");
 assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),
   "projects: project artifact list must avoid unnecessary innerHTML churn");
-assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
+assert.ok(/updateSecurityState/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateSecurityState/.test(consoleJs),
   "security settings: console must use desktop shell bridge");
-assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),
+assert.ok(/updateBudget/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateBudget/.test(consoleJs),
   "budget settings: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/security\/state["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "security settings: console must not POST /security/state directly");
@@ -464,14 +536,28 @@ assert.ok(/id="dataExportPanel"/.test(consoleHtml) && /id="exportBundleBtn"/.tes
   "data export: settings panel and export button missing");
 assert.ok(/id="diagnosticBundleBtn"/.test(consoleHtml),
   "diagnostics: diagnostic bundle button missing");
-assert.ok(/exportBundleViaShell/.test(consoleJs) && /window\.ucaShell\.exportBundle/.test(consoleJs),
+assert.ok(/exportBundleViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.exportBundle/.test(consoleJs),
   "data export: console must use desktop shell bridge");
-assert.ok(/diagnosticBundleViaShell/.test(consoleJs) && /window\.ucaShell\.diagnosticBundle/.test(consoleJs),
+assert.ok(/diagnosticBundleViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.diagnosticBundle/.test(consoleJs),
   "diagnostics: console must use desktop shell bridge");
 assert.ok(/id="trashList"/.test(consoleHtml) && /id="trashRefreshBtn"/.test(consoleHtml),
   "trash: settings data panel must expose a Trash restore list");
-assert.ok(/fetchJson\("\/tasks\?deleted=only"\)/.test(consoleJs) && /fetchJson\("\/notes\?deleted=only"\)/.test(consoleJs),
+assert.ok(/fetchDeletedTasks/.test(consoleJs)
+    && /\/tasks\?deleted=only/.test(runtimeTaskClient)
+    && /fetchJson\("\/notes\?deleted=only"\)/.test(consoleJs),
   "trash: console must read deleted tasks and notes explicitly");
+assert.ok(/fetchTaskSummaries/.test(overlayJs)
+    && /fetchTaskDetail/.test(overlayJs)
+    && /\/tasks\/summary\?limit=/.test(runtimeTaskClient)
+    && /\/task\/\$\{encodeURIComponent\(taskId\)\}/.test(runtimeTaskClient),
+  "overlay tasks: task read request construction must stay in the shared runtime task client");
+assert.ok(/loadConnectorsTabData/.test(consoleJs)
+    && /loadInboxAccounts/.test(consoleJs)
+    && /fetchInboxResource/.test(consoleJs)
+    && /\/connectors\/connected-accounts/.test(consoleConnectorsClient)
+    && /\/config\/email\/accounts/.test(consoleConnectorsClient)
+    && /\/connectors\/accounts\/\$\{provider\}\/messages/.test(consoleConnectorsClient),
+  "connectors/inbox: console must keep connector request construction in the connectors client");
 assert.ok(/data-trash-restore-task/.test(consoleJs) && /restoreTaskViaShell/.test(consoleJs),
   "trash: task restore must use desktop shell bridge");
 assert.ok(/data-trash-restore-note/.test(consoleJs) && /restoreNoteViaShell/.test(consoleJs),
@@ -565,15 +651,15 @@ assert.ok(/conversationId: taskOwnerConversationId\(taskConversationMap, taskId\
     && /pendingContinuationConversationId/.test(overlayJs)
     && /conversationId: payload\?\.conversationId/.test(popupCardJs),
   "echo result cards: popup-card continuations must preserve the originating conversation id");
-assert.ok(/function normalizeBatchEntry\(payload\)[\s\S]{0,260}conversationId: payload\.conversationId \?\? null/.test(electronMain)
-    && /conversationId: only\.conversationId \?\? null/.test(electronMain)
+assert.ok(/function normalizeBatchEntry\(payload\)[\s\S]{0,260}conversationId: payload\.conversationId \?\? null/.test(desktopNotifications)
+    && /conversationId: only\.conversationId \?\? null/.test(desktopNotifications)
     && /conversationId: card\.payload\?\.conversationId \?\? card\.meta\?\.conversationId/.test(electronMain),
   "echo result cards: notification batching and resolve broadcasts must not drop conversationId");
-assert.ok(/lines\.length <= limit[\s\S]{0,180}more line\(s\)\. Open the conversation for the full result/.test(electronMain),
+assert.ok(/lines\.length <= limit[\s\S]{0,180}more line\(s\)\. Open the conversation for the full result/.test(desktopNotifications),
   "popup result cards: long bodies must disclose truncation instead of silently hiding content");
-assert.ok(/payload\.allowLongBody === true && payload\.forcePopup === true[\s\S]{0,80}return lines/.test(electronMain)
-    && /\(payload\.forcePopup === true && payload\.allowLongBody === true\)/.test(electronMain)
-    && /forcePopup: only\.forcePopup/.test(electronMain),
+assert.ok(/payload\.allowLongBody === true && payload\.forcePopup === true[\s\S]{0,80}return lines/.test(desktopNotifications)
+    && /\(payload\.forcePopup === true && payload\.allowLongBody === true\)/.test(desktopNotifications)
+    && /forcePopup: only\.forcePopup/.test(desktopNotifications),
   "echo result cards: forcePopup long-body cards must render the full body instead of batch-truncated preview lines");
 assert.ok(/appendTurn\("assistant", memorySnippet\);[\s\S]{0,120}if \(!isEchoTask\(task\.task_id\)\) \{[\s\S]{0,100}maybeRevealOverlay\(\{ markEngaged: true \}\)/.test(overlayJs),
   "echo artifact completion: generated files from Echo tasks must not force-open the overlay");
@@ -605,11 +691,11 @@ assert.ok(/id="echoDiagnosticsPanel"/.test(consoleHtml)
   "echo mode: Console settings must expose non-hot-path diagnostics and wake enrollment controls");
 assert.ok(/void refreshDesktopLocationChip\(\);[\s\S]{0,80}setTimeout\(\(\) => \{ void refreshDesktopLocationChip\(\); \}, 9_000\);[\s\S]{0,100}setInterval\(\(\) => \{ void refreshDesktopLocationChip\(\); \}, 30 \* 60 \* 1000\);/.test(consoleJs),
   "location: Console must re-sync after startup background refresh and then refresh periodically");
-assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(electronMain),
+assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(mainProcessIpc),
   "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
-assert.ok(/surface:\s*settings\?\.echoMode \? "echo_receipt" : "overlay"/.test(electronMain)
-    && /const ECHO_DOCK_DROP_VOICE_READY_MS = 30_000;/.test(electronMain)
-    && /voiceContinueTtlMs:\s*settings\?\.echoMode \? ECHO_DOCK_DROP_VOICE_READY_MS : 0/.test(electronMain)
+assert.ok(/surface:\s*settings\?\.echoMode \? "echo_receipt" : "overlay"/.test(mainProcessIpc)
+    && /const ECHO_DOCK_DROP_VOICE_READY_MS = 30_000;/.test(desktopOverlayPayloads)
+    && /voiceContinueTtlMs:\s*settings\?\.echoMode \? ECHO_DOCK_DROP_VOICE_READY_MS : 0/.test(mainProcessIpc)
     && !/announceDroppedFiles[\s\S]{0,700}showWindow\?\.\("overlay"\)/.test(read("src/desktop/renderer/dock.js")),
   "dock file drop: main owns mode policy; dock only renders the returned receipt surface");
 assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overlayJs)
@@ -653,27 +739,29 @@ assert.ok(/diagnosticBundle\(payload\)/.test(consolePreload) && /ipcRenderer\.in
   "diagnostics: preload bridge missing");
 assert.ok(/addEventListener\?\.\("error"/.test(consolePreload) && /addEventListener\?\.\("unhandledrejection"/.test(consolePreload),
   "diagnostics: preload must capture renderer errors locally");
-assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.exportBundle/.test(electronMain) && /\/export\/bundle/.test(electronMain),
+assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.exportBundle/.test(mainProcessIpc) && /\/export\/bundle/.test(mainProcessIpc),
   "data export: electron main handler must call /export/bundle");
-assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.diagnosticBundle/.test(electronMain) && /\/diagnostics\/bundle/.test(electronMain),
+assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.diagnosticBundle/.test(mainProcessIpc) && /\/diagnostics\/bundle/.test(mainProcessIpc),
   "diagnostics: electron main handler must call /diagnostics/bundle");
-assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.rendererErrorReport/.test(electronMain) && /desktop-errors\.jsonl/.test(electronMain),
+assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.rendererErrorReport/.test(mainProcessIpc)
+    && /appendDesktopDiagnosticError/.test(mainProcessIpc)
+    && /desktop-errors\.jsonl/.test(desktopDiagnostics),
   "diagnostics: electron main must persist renderer error reports locally");
-assert.ok(/crashReporter\.start\(\{[\s\S]{0,220}uploadToServer:\s*false/.test(electronMain),
+assert.ok(/crashReporter\.start\(\{[\s\S]{0,220}uploadToServer:\s*false/.test(desktopDiagnostics),
   "diagnostics: crashReporter must be local-only");
 assert.ok(!/fetchJson\(\s*["'`]\/export\/bundle["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "data export: console must not POST /export/bundle directly");
 assert.ok(!/fetchJson\(\s*["'`]\/diagnostics\/bundle["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "diagnostics: console must not POST /diagnostics/bundle directly");
-assert.ok(/createSchedule/.test(consoleJs) && /window\.ucaShell\.createSchedule/.test(consoleJs),
+assert.ok(/createSchedule/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.createSchedule/.test(consoleJs),
   "scheduler create: console must use desktop shell bridge");
-assert.ok(/updateSchedule/.test(consoleJs) && /window\.ucaShell\.updateSchedule/.test(consoleJs),
+assert.ok(/updateSchedule/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateSchedule/.test(consoleJs),
   "scheduler update: console must use desktop shell bridge");
-assert.ok(/deleteSchedule/.test(consoleJs) && /window\.ucaShell\.deleteSchedule/.test(consoleJs),
+assert.ok(/deleteSchedule/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteSchedule/.test(consoleJs),
   "scheduler delete: console must use desktop shell bridge");
-assert.ok(/runScheduleNow/.test(consoleJs) && /window\.ucaShell\.runSchedule/.test(consoleJs),
+assert.ok(/runScheduleNow/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.runSchedule/.test(consoleJs),
   "scheduler run-now: console must use desktop shell bridge");
-assert.ok(/createScheduleViaShell/.test(overlayJs) && /window\.ucaShell\.createSchedule/.test(overlayJs),
+assert.ok(/createScheduleViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.createSchedule/.test(overlayJs),
   "scheduler create: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/schedules["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "scheduler create: console must not POST /schedules directly");
@@ -683,15 +771,15 @@ assert.ok(!/fetchJson\(\s*`\/schedules\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s
   "scheduler mutation: console must not PATCH/DELETE /schedules/:id directly");
 assert.ok(!/fetchJson\(\s*`\/schedules\/\$\{encodeURIComponent\([^)]*\)\}\/runs`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "scheduler run-now: console must not POST /schedules/:id/runs directly");
-assert.ok(/saveTemplateViaShell/.test(consoleJs) && /window\.ucaShell\.saveTemplate/.test(consoleJs),
+assert.ok(/saveTemplateViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveTemplate/.test(consoleJs),
   "template save: console must use desktop shell bridge");
-assert.ok(/importTemplateViaShell/.test(consoleJs) && /window\.ucaShell\.importTemplate/.test(consoleJs),
+assert.ok(/importTemplateViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.importTemplate/.test(consoleJs),
   "template import: console must use desktop shell bridge");
-assert.ok(/deleteTemplateViaShell/.test(consoleJs) && /window\.ucaShell\.deleteTemplate/.test(consoleJs),
+assert.ok(/deleteTemplateViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteTemplate/.test(consoleJs),
   "template delete: console must use desktop shell bridge");
-assert.ok(/resumeDagExecutionViaShell/.test(consoleJs) && /window\.ucaShell\.resumeDagExecution/.test(consoleJs),
+assert.ok(/resumeDagExecutionViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.resumeDagExecution/.test(consoleJs),
   "DAG resume: console must use desktop shell bridge");
-assert.ok(/saveTemplateViaShell/.test(overlayJs) && /window\.ucaShell\.saveTemplate/.test(overlayJs),
+assert.ok(/saveTemplateViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.saveTemplate/.test(overlayJs),
   "template save: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/templates["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "template save: console must not POST /templates directly");
@@ -703,27 +791,27 @@ assert.ok(!/fetchJson\(\s*`\/templates\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s
   "template delete: console must not DELETE /templates/:id directly");
 assert.ok(!/fetchJson\(\s*`\/dag\/executions\/\$\{encodeURIComponent\([^)]*\)\}\/resume`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "DAG resume: console must not POST /dag/executions/:id/resume directly");
-assert.ok(/saveProviderViaShell/.test(consoleJs) && /window\.ucaShell\.saveProvider/.test(consoleJs),
+assert.ok(/saveProviderViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveProvider/.test(consoleJs),
   "provider save: console must use desktop shell bridge");
-assert.ok(/deleteProviderViaShell/.test(consoleJs) && /window\.ucaShell\.deleteProvider/.test(consoleJs),
+assert.ok(/deleteProviderViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteProvider/.test(consoleJs),
   "provider delete: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/providers["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "provider save: console must not POST /config/providers directly");
 assert.ok(!/fetchJson\(\s*`\/config\/providers\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "provider delete: console must not DELETE /config/providers/:id directly");
-assert.ok(/saveCodeCliAdapterViaShell/.test(consoleJs) && /window\.ucaShell\.saveCodeCliAdapter/.test(consoleJs),
+assert.ok(/saveCodeCliAdapterViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveCodeCliAdapter/.test(consoleJs),
   "Code CLI adapter save: console must use desktop shell bridge");
-assert.ok(/deleteCodeCliAdapterViaShell/.test(consoleJs) && /window\.ucaShell\.deleteCodeCliAdapter/.test(consoleJs),
+assert.ok(/deleteCodeCliAdapterViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteCodeCliAdapter/.test(consoleJs),
   "Code CLI adapter delete: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/code-cli\/adapters["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "Code CLI adapter save: console must not POST /config/code-cli/adapters directly");
 assert.ok(!/fetchJson\(\s*`\/config\/code-cli\/adapters\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "Code CLI adapter delete: console must not DELETE /config/code-cli/adapters/:id directly");
-assert.ok(/saveSkillRegistryViaShell/.test(consoleJs) && /window\.ucaShell\.saveSkillRegistry/.test(consoleJs),
+assert.ok(/saveSkillRegistryViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveSkillRegistry/.test(consoleJs),
   "skill registry save: console must use desktop shell bridge");
-assert.ok(/deleteSkillRegistryViaShell/.test(consoleJs) && /window\.ucaShell\.deleteSkillRegistry/.test(consoleJs),
+assert.ok(/deleteSkillRegistryViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteSkillRegistry/.test(consoleJs),
   "skill registry delete: console must use desktop shell bridge");
-assert.ok(/updateSkillStateViaShell/.test(consoleJs) && /window\.ucaShell\.updateSkillState/.test(consoleJs),
+assert.ok(/updateSkillStateViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateSkillState/.test(consoleJs),
   "skill state toggle: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/skills\/registries["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "skill registry save: console must not POST /config/skills/registries directly");
@@ -731,11 +819,11 @@ assert.ok(!/fetchJson\(\s*`\/config\/skills\/registries\/\$\{encodeURIComponent\
   "skill registry delete: console must not DELETE /config/skills/registries/:id directly");
 assert.ok(/data-skill-state-registry/.test(consoleJs) && /Use this/.test(consoleJs) && /Stop/.test(consoleJs),
   "skill state toggle: discovered skill cards must expose Use this/Stop controls");
-assert.ok(/updateRoutingConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateRoutingConfig/.test(consoleJs),
+assert.ok(/updateRoutingConfigViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateRoutingConfig/.test(consoleJs),
   "routing config: console must use desktop shell bridge");
-assert.ok(/updateOutputConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateOutputConfig/.test(consoleJs),
+assert.ok(/updateOutputConfigViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateOutputConfig/.test(consoleJs),
   "output config: console must use desktop shell bridge");
-assert.ok(/updateFeatureConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateFeatureConfig/.test(consoleJs),
+assert.ok(/updateFeatureConfigViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateFeatureConfig/.test(consoleJs),
   "feature config: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/routing["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "routing config: console must not POST /config/routing directly");
@@ -743,13 +831,13 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/output["'`]\s*,\s*\{\s*method:\s*["'`]P
   "output config: console must not POST /config/output directly");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/features["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "feature config: console must not POST /config/features directly");
-assert.ok(/updateEmailSettingsViaShell/.test(consoleJs) && /window\.ucaShell\.updateEmailSettings/.test(consoleJs),
+assert.ok(/updateEmailSettingsViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateEmailSettings/.test(consoleJs),
   "email settings: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/email\/settings["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "email settings: console must not POST /config/email/settings directly");
-assert.ok(/saveEmailAccountViaShell/.test(consoleJs) && /window\.ucaShell\.saveEmailAccount/.test(consoleJs),
+assert.ok(/saveEmailAccountViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveEmailAccount/.test(consoleJs),
   "email account save: console must use desktop shell bridge");
-assert.ok(/deleteEmailAccountViaShell/.test(consoleJs) && /window\.ucaShell\.deleteEmailAccount/.test(consoleJs),
+assert.ok(/deleteEmailAccountViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteEmailAccount/.test(consoleJs),
   "email account delete: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/email\/accounts["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "email account save: console must not POST /config/email/accounts directly via fetchJson");
@@ -759,7 +847,7 @@ assert.ok(!/fetchJson\(\s*`\/config\/email\/accounts\/\$\{encodeURIComponent\([^
   "email account delete: console must not DELETE /config/email/accounts/:id directly via fetchJson");
 assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/config\/email\/accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "email account delete: console must not DELETE /config/email/accounts/:id directly via fetch");
-assert.ok(/checkEmailDigestViaShell/.test(consoleJs) && /window\.ucaShell\.checkEmailDigest/.test(consoleJs),
+assert.ok(/checkEmailDigestViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.checkEmailDigest/.test(consoleJs),
   "email digest check: console must use desktop shell bridge");
 assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/email\/digest\/check`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "email digest check: console must not POST /email/digest/check directly");
@@ -783,21 +871,21 @@ assert.ok(!/skillRegistryState\.textContent\s*=\s*["'`]Looks valid/.test(console
 assert.ok(/showFieldError\s*\(/.test(consoleJs) && /clearFieldErrors\s*\(/.test(consoleJs),
   "preflight field errors: console must render inline field errors");
 assert.ok(/\.field-error\b/.test(sharedCss), "preflight field errors: .field-error CSS missing");
-assert.ok(/writeSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.writeSkillMarkdown/.test(consoleJs),
+assert.ok(/writeSkillMarkdownViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.writeSkillMarkdown/.test(consoleJs),
   "skill editor write: console must use desktop shell bridge");
-assert.ok(/readSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.readSkillMarkdown/.test(consoleJs),
+assert.ok(/readSkillMarkdownViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.readSkillMarkdown/.test(consoleJs),
   "skill editor read: console must use desktop shell bridge");
-assert.ok(/createSkillViaShell/.test(consoleJs) && /window\.ucaShell\.createSkill/.test(consoleJs),
+assert.ok(/createSkillViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.createSkill/.test(consoleJs),
   "skill lifecycle create: console must use desktop shell bridge");
-assert.ok(/duplicateSkillViaShell/.test(consoleJs) && /window\.ucaShell\.duplicateSkill/.test(consoleJs),
+assert.ok(/duplicateSkillViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.duplicateSkill/.test(consoleJs),
   "skill lifecycle duplicate: console must use desktop shell bridge");
-assert.ok(/deleteSkillViaShell/.test(consoleJs) && /window\.ucaShell\.deleteSkill/.test(consoleJs),
+assert.ok(/deleteSkillViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteSkill/.test(consoleJs),
   "skill lifecycle delete: console must use desktop shell bridge");
-assert.ok(/rollbackSkillViaShell/.test(consoleJs) && /window\.ucaShell\.rollbackSkill/.test(consoleJs),
+assert.ok(/rollbackSkillViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.rollbackSkill/.test(consoleJs),
   "skill lifecycle rollback: console must use desktop shell bridge");
-assert.ok(/listSkillHistoryViaShell/.test(consoleJs) && /window\.ucaShell\.listSkillHistory/.test(consoleJs),
+assert.ok(/listSkillHistoryViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.listSkillHistory/.test(consoleJs),
   "skill lifecycle history: console must use desktop shell bridge");
-assert.ok(/testSkillViaShell/.test(consoleJs) && /window\.ucaShell\.testSkill/.test(consoleJs),
+assert.ok(/testSkillViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.testSkill/.test(consoleJs),
   "skill lifecycle test: console must use desktop shell bridge");
 assert.ok(/id="skillCreateBtn"/.test(consoleHtml)
     && /id="skillEditRollbackBtn"/.test(consoleHtml)
@@ -814,7 +902,7 @@ assert.ok(!/fetchJson\(\s*[`'"]\/skills\/read\b/.test(consoleJs),
   "skill editor read: console must not GET /skills/read directly");
 assert.ok(!/fetchJson\(\s*[`'"]\/skills\/(?:create|duplicate|delete|rollback|history|test)\b/.test(consoleJs),
   "skill lifecycle: console must not call skill lifecycle routes directly");
-assert.ok(/saveAutoSkillViaShell/.test(overlayJs) && /window\.ucaShell\.saveAutoSkill/.test(overlayJs),
+assert.ok(/saveAutoSkillViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.saveAutoSkill/.test(overlayJs),
   "auto skill save: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/save["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(overlayJs),
   "auto skill save: overlay must not POST /skills/save directly");
@@ -898,15 +986,15 @@ assert.ok(/consoleChatActiveTaskId/.test(consoleJs),
   "stop button: console must track consoleChatActiveTaskId");
 assert.ok(/btn-stop\b/.test(consoleJs) && /\.btn\.btn-stop/.test(sharedCss),
   "stop button: console btn-stop class wiring missing");
-assert.ok(/cancelTaskViaShell/.test(consoleJs) && /window\.ucaShell\.cancelTask/.test(consoleJs),
+assert.ok(/cancelTaskViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.cancelTask/.test(consoleJs),
   "task cancel: console must use desktop shell bridge");
-assert.ok(/retryTaskViaShell/.test(consoleJs) && /window\.ucaShell\.retryTask/.test(consoleJs),
+assert.ok(/retryTaskViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.retryTask/.test(consoleJs),
   "task retry: console must use desktop shell bridge");
-assert.ok(/deleteTaskViaShell/.test(consoleJs) && /window\.ucaShell\.deleteTask/.test(consoleJs),
+assert.ok(/deleteTaskViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteTask/.test(consoleJs),
   "task delete: console must use desktop shell bridge");
-assert.ok(/cancelTaskViaShell/.test(overlayJs) && /window\.ucaShell\.cancelTask/.test(overlayJs),
+assert.ok(/cancelTaskViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.cancelTask/.test(overlayJs),
   "task cancel: overlay must use desktop shell bridge");
-assert.ok(/retryTaskViaShell/.test(overlayJs) && /window\.ucaShell\.retryTask/.test(overlayJs),
+assert.ok(/retryTaskViaShell/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\.retryTask/.test(overlayJs),
   "task retry: overlay must use desktop shell bridge");
 const taskControlSources = `${consoleJs}\n${overlayJs}`;
 assert.ok(!/fetchJson\(\s*`\/task\/\$\{[^}]+\}\/cancel`\s*,\s*\{[\s\S]{0,220}method:\s*["'`]POST/.test(taskControlSources),
@@ -941,12 +1029,12 @@ assert.ok(/openConversationArtifactPath/.test(consoleJs) && /revealConversationA
   "conversation context: console file chips must use shell open/reveal bridges");
 assert.ok(!/window\.livePreview\.openForFile\s*=\s*function\s+consoleOpenForFile/.test(consoleJs),
   "conversation context: console must not override file preview into the cramped inline pane");
-assert.ok(/async function openConversationArtifactPath[\s\S]{0,360}window\.ucaShell\?\.openPath/.test(consoleJs)
+assert.ok(/async function openConversationArtifactPath[\s\S]{0,360}(?:consoleShellClient|overlayShellClient)\?\.openPath/.test(consoleJs)
     && !/async function openConversationArtifactPath[\s\S]{0,220}livePreview\?\.openForFile/.test(consoleJs),
   "conversation context: clicking file chips must open the real OS-associated file instead of fake inline preview");
 assert.ok(/data-context-open-path/.test(overlayJs),
   "conversation context: overlay message file chips must be openable");
-assert.ok(/contextOpenPath/.test(overlayJs) && /window\.ucaShell\?\.openPath/.test(overlayJs),
+assert.ok(/contextOpenPath/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\?\.openPath/.test(overlayJs),
   "conversation context: overlay file chips must use the shell open bridge");
 
 // ── Connector edit (rename) ────────────────────────────────────────────
@@ -954,15 +1042,15 @@ assert.ok(/data-connected-edit/.test(consoleJs),
   "connector edit: data-connected-edit button missing on connected cards");
 assert.ok(/function handleConnectedAccountEdit/.test(consoleJs),
   "connector edit: handler missing");
-assert.ok(/renameConnectedAccountViaShell/.test(consoleJs) && /window\.ucaShell\.renameConnectedAccount/.test(consoleJs),
+assert.ok(/renameConnectedAccountViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.renameConnectedAccount/.test(consoleJs),
   "connector edit: console must use desktop shell bridge");
-assert.ok(/setConnectedAccountDefaultViaShell/.test(consoleJs) && /window\.ucaShell\.setConnectedAccountDefault/.test(consoleJs),
+assert.ok(/setConnectedAccountDefaultViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.setConnectedAccountDefault/.test(consoleJs),
   "connector default: console must use desktop shell bridge");
-assert.ok(/disconnectConnectedAccountViaShell/.test(consoleJs) && /window\.ucaShell\.disconnectConnectedAccount/.test(consoleJs),
+assert.ok(/disconnectConnectedAccountViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.disconnectConnectedAccount/.test(consoleJs),
   "connected account disconnect: console must use desktop shell bridge");
-assert.ok(/disconnectConnectorAccountViaShell/.test(consoleJs) && /window\.ucaShell\.disconnectConnectorAccount/.test(consoleJs),
+assert.ok(/disconnectConnectorAccountViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.disconnectConnectorAccount/.test(consoleJs),
   "connector account disconnect: console must use desktop shell bridge");
-assert.ok(/saveConnectorAccountConfigViaShell/.test(consoleJs) && /window\.ucaShell\.saveConnectorAccountConfig/.test(consoleJs),
+assert.ok(/saveConnectorAccountConfigViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveConnectorAccountConfig/.test(consoleJs),
   "connector account config: console must use desktop shell bridge");
 assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/connectors\/connected-accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]PATCH/.test(consoleJs),
   "connector edit: console must not PATCH /connectors/connected-accounts/:id directly");
@@ -1014,6 +1102,28 @@ assert.ok(/TIMELINE_PHASES|setTimelinePhase/.test(overlayJs),
 // ── Step counter suffix ────────────────────────────────────────────────
 assert.ok(/function formatStepSuffix/.test(read("src/desktop/renderer/task-event-stream.js")),
   "step counter: formatStepSuffix() missing in task-event-stream");
+assert.ok(/createRuntimeHttpClient/.test(taskEventStream)
+    && /fetchResponse/.test(taskEventStream)
+    && !/\bfetch\s*\(/.test(taskEventStream),
+  "task event stream: SSE request construction must use the shared runtime HTTP client");
+assert.ok(/preview\/runtime-preview-client\.js/.test(previewWindowHtml)
+    && /previewClient\.renderPreviewHtml/.test(iframeRemotePreviewHandler)
+    && /\/file\/render-preview-html/.test(previewRuntimeClient)
+    && !/\bfetch\s*\(/.test(iframeRemotePreviewHandler),
+  "preview iframe remote: request construction must stay in the preview runtime client");
+assert.ok(/preview\/shell-preview-client\.js/.test(previewWindowHtml)
+    && /window\.ucaShell/.test(previewShellClient)
+    && /previewShellClient/.test(previewWindowJs)
+    && /previewShellClient/.test(textPreviewHandler)
+    && /previewShellClient/.test(csvPreviewHandler)
+    && /previewShellClient/.test(imagePreviewHandler)
+    && /previewShellClient/.test(pdfPreviewHandler)
+    && !/window\.ucaShell/.test(previewWindowJs)
+    && !/window\.ucaShell/.test(textPreviewHandler)
+    && !/window\.ucaShell/.test(csvPreviewHandler)
+    && !/window\.ucaShell/.test(imagePreviewHandler)
+    && !/window\.ucaShell/.test(pdfPreviewHandler),
+  "preview shell bridge calls must stay behind the preview shell client");
 
 // ── Step copy on row ───────────────────────────────────────────────────
 assert.ok(/\.bubble\.step\s+\.step-copy/.test(overlayHtml),

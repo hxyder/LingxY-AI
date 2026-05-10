@@ -38,6 +38,10 @@ assert.doesNotMatch(consoleJs, /["']\/history\/file-content/,
 
 assert.match(indexPanel, /new URLSearchParams\(\{\s*limit:\s*"200"\s*\}\)/,
   "Index panel must list indexed file-content records through the admin route");
+assert.match(indexPanel, /createRuntimeHttpClient/,
+  "Index panel runtime request construction must use the shared runtime HTTP client");
+assert.doesNotMatch(indexPanel, /\bfetch\s*\(/,
+  "Index panel must not own direct fetch calls");
 assert.match(indexPanel, /params\.set\("project_id",\s*projectId\)/,
   "Index panel must pass project_id when a project or global scope is selected");
 assert.match(indexPanel, /getProjects\s*=\s*\(\)\s*=>\s*\[\]/,

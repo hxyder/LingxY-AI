@@ -6,21 +6,12 @@ const rendererRoot = path.join(root, "src/desktop/renderer");
 const docPath = path.join(root, "docs/architecture/ipc-contract-inventory.md");
 
 const expectedCallSites = {
-  "src/desktop/renderer/console-file-content-index-panel.mjs": { fetchCount: 1, shellCount: 0 },
-  "src/desktop/renderer/console.js": { fetchCount: 18, shellCount: 209 },
-  "src/desktop/renderer/conversation-cache.mjs": { fetchCount: 1, shellCount: 0 },
-  "src/desktop/renderer/dock.js": { fetchCount: 2, shellCount: 46 },
-  "src/desktop/renderer/echo-bubble.js": { fetchCount: 0, shellCount: 1 },
-  "src/desktop/renderer/live-preview.js": { fetchCount: 0, shellCount: 1 },
-  "src/desktop/renderer/overlay.js": { fetchCount: 4, shellCount: 97 },
-  "src/desktop/renderer/popup-card.js": { fetchCount: 0, shellCount: 8 },
-  "src/desktop/renderer/preview-window.js": { fetchCount: 0, shellCount: 5 },
-  "src/desktop/renderer/preview/handlers/csv.js": { fetchCount: 0, shellCount: 2 },
-  "src/desktop/renderer/preview/handlers/iframe-remote.js": { fetchCount: 1, shellCount: 0 },
-  "src/desktop/renderer/preview/handlers/image.js": { fetchCount: 0, shellCount: 2 },
-  "src/desktop/renderer/preview/handlers/pdf.js": { fetchCount: 0, shellCount: 2 },
-  "src/desktop/renderer/preview/handlers/text.js": { fetchCount: 0, shellCount: 2 },
-  "src/desktop/renderer/task-event-stream.js": { fetchCount: 1, shellCount: 0 }
+  "src/desktop/renderer/dock-shell-client.mjs": { fetchCount: 0, shellCount: 1 },
+  "src/desktop/renderer/echo-bubble-shell-client.js": { fetchCount: 0, shellCount: 1 },
+  "src/desktop/renderer/live-preview-shell-client.js": { fetchCount: 0, shellCount: 1 },
+  "src/desktop/renderer/popup-card-shell-client.js": { fetchCount: 0, shellCount: 1 },
+  "src/desktop/renderer/preview/shell-preview-client.js": { fetchCount: 0, shellCount: 1 },
+  "src/desktop/renderer/shared/shell-client.mjs": { fetchCount: 0, shellCount: 1 }
 };
 
 function fail(message) {
@@ -48,6 +39,67 @@ function countMatches(text, pattern) {
   return (text.match(pattern) ?? []).length;
 }
 
+function stripJsComments(source) {
+  let out = "";
+  let i = 0;
+  let state = "code";
+  while (i < source.length) {
+    const ch = source[i];
+    const next = source[i + 1];
+
+    if (state === "lineComment") {
+      if (ch === "\n") {
+        out += ch;
+        state = "code";
+      }
+      i++;
+      continue;
+    }
+    if (state === "blockComment") {
+      if (ch === "*" && next === "/") {
+        i += 2;
+        state = "code";
+        continue;
+      }
+      if (ch === "\n") out += ch;
+      i++;
+      continue;
+    }
+    if (state === "single" || state === "double" || state === "template") {
+      out += ch;
+      if (ch === "\\") {
+        if (i + 1 < source.length) out += source[i + 1];
+        i += 2;
+        continue;
+      }
+      if ((state === "single" && ch === "'")
+          || (state === "double" && ch === "\"")
+          || (state === "template" && ch === "`")) {
+        state = "code";
+      }
+      i++;
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      state = "lineComment";
+      i += 2;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      state = "blockComment";
+      i += 2;
+      continue;
+    }
+    if (ch === "'") state = "single";
+    else if (ch === "\"") state = "double";
+    else if (ch === "`") state = "template";
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
 function stableJson(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return JSON.stringify(value);
   const ordered = {};
@@ -58,9 +110,10 @@ function stableJson(value) {
 const actual = {};
 for (const file of walkFiles(rendererRoot)) {
   const source = readFileSync(file, "utf8");
+  const code = stripJsComments(source);
   const rel = path.relative(root, file).replace(/\\/g, "/");
-  const fetchCount = countMatches(source, /\bfetch\s*\(/g);
-  const shellCount = countMatches(source, /window\.ucaShell/g);
+  const fetchCount = countMatches(code, /\bfetch\s*\(/g);
+  const shellCount = countMatches(code, /window\.ucaShell/g);
   if (fetchCount || shellCount) actual[rel] = { fetchCount, shellCount };
 }
 
@@ -70,13 +123,13 @@ const totals = Object.values(actual).reduce((acc, entry) => ({
   fetchCount: acc.fetchCount + entry.fetchCount,
   shellCount: acc.shellCount + entry.shellCount
 }), { fetchCount: 0, shellCount: 0 });
-assert(totals.fetchCount === 28, "renderer direct fetch count changed");
-assert(totals.shellCount === 375, "renderer window.ucaShell reference count changed");
+assert(totals.fetchCount === 0, "renderer direct fetch count changed");
+assert(totals.shellCount === 6, "renderer window.ucaShell reference count changed");
 
 const doc = existsSync(docPath) ? readFileSync(docPath, "utf8") : "";
 assert(doc.includes("Renderer Direct Runtime Call Snapshot"), "IPC inventory missing renderer direct runtime call snapshot");
-assert(doc.includes("Direct renderer `fetch(` references: 28"), "IPC inventory missing renderer fetch total");
-assert(doc.includes("Direct renderer `window.ucaShell` references: 375"), "IPC inventory missing renderer shell total");
+assert(doc.includes("Direct renderer `fetch(` code references: 0"), "IPC inventory missing renderer fetch total");
+assert(doc.includes("Direct renderer `window.ucaShell` references: 6"), "IPC inventory missing renderer shell total");
 
 if (!process.exitCode) {
   console.log("[renderer-runtime-calls] renderer direct runtime call snapshot verified.");

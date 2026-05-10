@@ -38,7 +38,7 @@ const ROOT = path.resolve(__dirname, "..");
     "overlay.js must not query #toastTitle");
   assert.ok(!js.includes('document.querySelector("#toastOpenBtn")'),
     "overlay.js must not query #toastOpenBtn");
-  assert.ok(js.includes("window.ucaShell?.showPopupCard"),
+  assert.ok(js.includes("overlayShellClient?.showPopupCard"),
     "showToast() must delegate to showPopupCard");
   for (const action of ["preview", "reveal", "copy", "continue", "open_overlay"]) {
     assert.ok(js.includes(`"${action}"`),
@@ -69,13 +69,14 @@ const ROOT = path.resolve(__dirname, "..");
   assert.ok(!manifest.match(/id:\s*WINDOW_IDS\.notification,\s*title/),
     "manifest must not register the notification BrowserWindow");
   const main = await readFile(path.join(ROOT, "src/desktop/tray/electron-main.mjs"), "utf8");
+  const desktopNotifications = await readFile(path.join(ROOT, "src/desktop/tray/desktop-notifications.mjs"), "utf8");
   assert.ok(!main.includes('windowDef.id === "notification"'),
     "electron-main must not special-case the notification window id");
-  assert.ok(main.includes("registeredPopupCardManager.showCard"),
+  assert.ok(desktopNotifications.includes("popupCardManager.showCard"),
     "showDesktopNotification must route through the popup-card manager");
-  assert.ok(main.includes('payload.kind === "success" && uiOpen'),
+  assert.ok(desktopNotifications.includes('payload.kind === "success" && uiOpen'),
     "success popup cards must be suppressed while overlay/console are visible");
-  assert.ok(main.includes('reason: "primary_ui_visible"'),
+  assert.ok(desktopNotifications.includes('reason: "primary_ui_visible"'),
     "suppressed success cards must return a primary_ui_visible reason");
   assert.ok(main.includes("meta: card.meta ?? null"),
     "popup-card resolve broadcast must forward meta to overlay");

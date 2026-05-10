@@ -6,9 +6,9 @@ import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 import {
   buildPrivacySandboxSummary,
   evaluatePrivacySandboxToolPolicy
-} from "../src/service/security/privacy-sandbox-policy.mjs";
+} from "../src/shared/privacy-sandbox-policy.mjs";
 
-const policy = readFileSync("src/service/security/privacy-sandbox-policy.mjs", "utf8");
+const policy = readFileSync("src/shared/privacy-sandbox-policy.mjs", "utf8");
 const broker = readFileSync("src/service/security/broker.mjs", "utf8");
 const defaults = readFileSync("src/service/security/rules/defaults.json", "utf8");
 const privacyVm = readFileSync("src/desktop/console/privacy_settings/view-model.mjs", "utf8");

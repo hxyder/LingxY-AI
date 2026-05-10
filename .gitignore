@@ -68,3 +68,4 @@ scripts/real-llm-test/mock-shadow.jsonl
 !/README.md
 !/SECURITY.md
 !/THIRD_PARTY_LICENSES.md
+start-claude-deepseek.ps1

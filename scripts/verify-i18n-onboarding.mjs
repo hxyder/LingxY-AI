@@ -7,7 +7,7 @@ import { dictionaryForLocale, t } from "../src/shared/i18n/index.mjs";
 
 const i18n = readFileSync("src/shared/i18n/index.mjs", "utf8");
 const firstRun = readFileSync("src/desktop/console/first_run_wizard/view-model.mjs", "utf8");
-const providerSetup = readFileSync("src/service/ai/onboarding/provider-setup-status.mjs", "utf8");
+const providerSetup = readFileSync("src/shared/provider-setup-status.mjs", "utf8");
 const behavior = readFileSync("tests/behavior/i18n-onboarding.test.mjs", "utf8");
 
 assert.match(i18n, /SUPPORTED_LOCALES/u, "shared i18n module must declare supported locales");

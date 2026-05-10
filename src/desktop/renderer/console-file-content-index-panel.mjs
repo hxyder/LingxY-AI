@@ -1,4 +1,5 @@
 import { escapeHtml, formatDateTime } from "./shared-ui.mjs";
+import { createRuntimeHttpClient } from "./shared/runtime-http-client.mjs";
 import {
   DEFAULT_PROJECT_ID,
   setProjectAttachedFilePath
@@ -78,23 +79,24 @@ export function createFileContentIndexPanel({
   let records = [];
   let loaded = false;
   let loading = false;
+  const httpClient = createRuntimeHttpClient({
+    getBaseUrl: () => {
+      const baseUrl = getServiceBaseUrl?.();
+      if (!baseUrl) throw new Error("Runtime service is not ready.");
+      return baseUrl;
+    }
+  });
 
   function setState(message = "") {
     if (stateEl) stateEl.textContent = message;
   }
 
   async function request(pathname, options = {}) {
-    const baseUrl = getServiceBaseUrl?.();
-    if (!baseUrl) throw new Error("Runtime service is not ready.");
     const headers = {
       ...(options.headers ?? {}),
       [ACTOR_HEADER]: "desktop_console"
     };
-    const response = await fetch(`${baseUrl}${pathname}`, { ...options, headers });
-    const text = await response.text();
-    const payload = text ? JSON.parse(text) : {};
-    if (!response.ok) throw new Error(payload.message ?? payload.error ?? pathname);
-    return payload;
+    return httpClient.fetchJson(pathname, { ...options, headers });
   }
 
   function selectedScopeValue() {

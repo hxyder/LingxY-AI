@@ -410,19 +410,19 @@
 
   // --- Button wiring --------------------------------------------------
   closeBtn.addEventListener("click", () => {
-    window.ucaShell?.closePreviewWindow?.();
+    window.previewShellClient?.closePreviewWindow?.();
   });
   pinBtn.addEventListener("click", () => {
     state.pinned = !state.pinned;
     pinBtn.style.background = state.pinned ? "var(--accent-soft, rgba(37,99,235,.14))" : "transparent";
     pinBtn.style.color = state.pinned ? "var(--accent-strong, #1d4ed8)" : "var(--muted)";
-    window.ucaShell?.setPreviewWindowAlwaysOnTop?.(state.pinned);
+    window.previewShellClient?.setPreviewWindowAlwaysOnTop?.(state.pinned);
   });
 
   // --- IPC wiring -----------------------------------------------------
-  window.ucaShell?.onPreviewWindowInit?.(applyInit);
-  window.ucaShell?.onPreviewWindowDelta?.(applyDelta);
-  window.ucaShell?.onPreviewWindowCommitted?.(applyCommit);
+  window.previewShellClient?.onPreviewWindowInit?.(applyInit);
+  window.previewShellClient?.onPreviewWindowDelta?.(applyDelta);
+  window.previewShellClient?.onPreviewWindowCommitted?.(applyCommit);
 
   // Resolve the runtime base url for handlers that fetch /file/pdf etc.
   // The URL query string carries ?serviceBaseUrl=... when the window
