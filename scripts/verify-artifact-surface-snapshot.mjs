@@ -75,6 +75,26 @@ if (outlineKindsMatch) {
   );
 }
 
+// Phase 2E.0: artifact boundary call-site inventory must be documented
+const callSiteCategories = [
+  "Kind Inference",
+  "Path Inference",
+  "Registration",
+  "Preview / Open / Reveal",
+  "Lineage",
+  "Transform",
+  "Fallback",
+  "Extract"
+];
+for (const category of callSiteCategories) {
+  assert(doc.includes(`### ${category}`) || doc.includes(`${category}`),
+    `artifact inventory missing call-site section: ${category}`);
+}
+assert(doc.includes("Phase 2E Consolidation Priorities"),
+  "artifact inventory must document Phase 2E consolidation priorities");
+assert(doc.includes("Path Inference (heaviest category)"),
+  "artifact inventory must identify path inference as the heaviest category");
+
 if (!process.exitCode) {
   console.log("[artifact-surface] artifact surface snapshot verified.");
 }

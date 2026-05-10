@@ -50,6 +50,100 @@ Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 - Background extraction must stay off the Electron main process and renderer.
 - Preview rendering surfaces must not become artifact source-of-truth storage.
 
+## Artifact Boundary Call Sites (Phase 2E.0 Inventory, 2026-05-10)
+
+### 1. Kind Inference
+
+| File | Role |
+|------|------|
+| `src/service/action_tools/tools/index.mjs` | `OUTLINE_KINDS`, `KIND_EXTENSIONS`, `artifactKindFromTarget` |
+| `src/service/core/store/artifact-metadata.mjs` | `inferArtifactKind` |
+| `src/service/core/artifact-action-contract.mjs` | `artifactRegistrationOptionsForPath` |
+| `src/service/core/policy/success-contract-validator.mjs` | `artifact_kind` validation |
+| `src/service/executors/agentic/planner.mjs` | `artifact_kind` usage |
+| `src/service/executors/tool_using/planner-mode.mjs` | `artifact_kind` usage |
+| `src/service/executors/tool_using/phase-gate.mjs` | `artifact_kind` usage |
+
+~8 files, ~25 lines. Kind inference is spread across tools and executors.
+
+### 2. Path Inference (heaviest category)
+
+| File | Role |
+|------|------|
+| `src/service/action_tools/tools/index.mjs` | `resolveOutputDirForTool`, `ensureOutputDir`, `resolveSandboxedTarget` |
+| `src/service/core/artifact-action-contract.mjs` | Path validation |
+| `src/service/store/artifact-store.mjs` | `inspectArtifactPath` |
+| `src/service/core/action-tool-submission.mjs` | `persistArtifacts` |
+| `src/service/core/browser-submission.mjs` | `outputDir`, `artifact_paths` |
+| `src/service/core/context-submission.mjs` | `outputDir`, `artifact_paths` |
+| `src/service/executors/tool_using/agent-loop.mjs` | `artifact_paths` extraction |
+| `src/service/executors/agentic/planner.mjs` | `outputDir`, `artifactPaths` |
+| `src/service/core/http-routes/task-routes.mjs` | `artifactPathFromValue` |
+| `src/service/core/policy/success-contract-validator.mjs` | `artifactPathsFromEntry`, `artifactPathMatchesKind` |
+| `src/service/core/task-runtime/conversation-lifecycle.mjs` | `isPrimaryArtifactPath` |
+| `src/service/executors/kimi/output-format.mjs` | `outputDir` |
+
+~25 files, 200+ lines. Heaviest category; paths are inferred in multiple layers.
+
+### 3. Registration
+
+| File | Role |
+|------|------|
+| `src/service/store/artifact-store.mjs` | `registerArtifact` |
+| `src/service/action_tools/tools/index.mjs` | `REGISTER_ARTIFACT_TOOL` |
+| `src/service/core/action-tool-submission.mjs` | `persistArtifacts` caller |
+| `src/service/core/browser-submission.mjs` | 4x `registerArtifact` calls |
+| `src/service/core/context-submission.mjs` | 2x `registerArtifact` calls |
+| `src/service/core/file-submission.mjs` | 1x call |
+| `src/service/core/image-submission.mjs` | 1x call |
+| `src/service/core/task-spec.mjs` | Registration reference |
+
+~16 files, ~30 lines. Registration is spread across submission pipeline.
+
+### 4. Preview / Open / Reveal
+
+| File | Role |
+|------|------|
+| `src/service/action_tools/tools/os-app-tools.mjs` | `REVEAL_IN_EXPLORER_TOOL` |
+| `src/service/executors/tool_using/tool-surface.mjs` | `DIRECT_FILE_OPEN_TOOL_IDS` |
+
+~5 files, ~8 lines. Lightest category; mostly tool-surface gating.
+
+### 5. Lineage ✅ Well-factored
+
+Dedicated service: `src/service/core/artifact-lineage/artifact-lineage-service.mjs`
+Used by: `runtime-services.mjs` (wiring), `sqlite-schema.mjs` (storage), `artifact-transform-service.mjs` (transform lineage).
+
+### 6. Transform ✅ Well-factored
+
+Dedicated service: `src/service/core/artifact-transforms/artifact-transform-service.mjs`
+Used by: `runtime-services.mjs` (wiring).
+
+### 7. Fallback
+
+| File | Role |
+|------|------|
+| `src/service/core/artifact-fallback-policy.mjs` | Dedicated policy module |
+| `src/service/core/browser-submission.mjs` | Import only |
+| `src/service/core/context-submission.mjs` | Import only |
+
+~3 files. Fallback policy is factored but sparsely referenced.
+
+### 8. Extract ✅ Well-factored
+
+Dedicated service: `src/service/core/artifact-extracts/artifact-extract-service.mjs`
+Background lane: `src/service/core/artifact-extracts/artifact-extract-background-lane.mjs`
+Worker: `src/service/workers/artifact-extract-worker.mjs`
+
+### Phase 2E Consolidation Priorities
+
+1. **Path inference** (highest duplication) — consolidate `resolveOutputDirForTool`/`ensureOutputDir`/`resolveSandboxedTarget` into a service-owned artifact path helper; reduce duplicated inference across agent-loop, planner, and submission pipelines.
+2. **Registration** — consolidate `registerArtifact` call sites behind a single service-owned helper; the 8+ calls in submission pipeline should go through one facade.
+3. **Kind inference** — `artifactKindFromTarget` in tools/index.mjs duplicates logic from `inferArtifactKind` in artifact-metadata.mjs; consolidate into the metadata module.
+4. **Lineage, Transform, Extract** — already well-factored with dedicated services; no immediate consolidation needed.
+5. **Preview/Open/Reveal** — already thin; no immediate consolidation needed.
+6. **Fallback** — dedicated module exists but is sparsely referenced; ensure callers consistently use it.
+
 ## Verification
 
 Run:
@@ -58,4 +152,4 @@ Run:
 node scripts/verify-artifact-surface-snapshot.mjs
 ```
 
-The verifier checks documented artifact owner paths, artifact-producing tool ids, current artifact kinds, and document-outline quality kinds.
+The verifier checks documented artifact owner paths, artifact-producing tool ids, current artifact kinds, document-outline quality kinds, and Phase 2E.0 call-site inventory sections.
