@@ -79,3 +79,21 @@ Remaining review note:
 
 - `app.on("activate")` / `app.on("before-quit")` handlers remain in electron-main.mjs — they touch too many internal states to extract cleanly without disproportionate ceremony
 - Recurring tray badge / morning digest timers (6 lines) — extraction ceremony outweighs benefit
+
+## Codex Review: Phase 2C Completion Claim
+
+Review date: 2026-05-10.
+
+Conclusion:
+- Phase 2C's main renderer-boundary goal is effectively achieved in code: executable renderer `fetch(` references are locked at 0, and direct `window.ucaShell` references are down to the 6 dedicated shell client modules.
+- Do not start Phase 2D product source moves yet. There is one stale verifier issue that must be fixed first.
+
+Blocking cleanup before 2D source work:
+- `node scripts/verify-audio-entrypoints.mjs` fails with `main process missing audio bridge: setPermissionRequestHandler`.
+- Root cause: the verifier still scans only `electron-main.mjs` / `desktop-window-actions.mjs` for permission-handler text, but Phase 2B moved that code to `src/desktop/tray/desktop-permission-handler.mjs`.
+- Fix the verifier to scan the current owner set, then rerun the audio verifier, renderer direct-runtime verifier, `check:fast`, and GUI smoke.
+
+2D direction after cleanup:
+- Open Phase 2D with `2D.0` inventory/verifier work only.
+- The next framework target is `src/service/action_tools/tools/index.mjs`, but do not immediately move tool families.
+- First lock tool id order, confirmation-gated ids, external aggregation, and old-owner text assertions.
