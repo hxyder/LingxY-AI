@@ -203,3 +203,98 @@ Execution order:
 - Continue current Phase 2D tool-family extraction.
 - Add `CAP-0` and `REPO-0` docs/verifier-only inventory phases before broad physical moves.
 - Every later directory migration must have owner docs, compatibility barrels if needed, cleanup verifiers, and no stale old-owner assertions.
+
+## Codex Review: 2D.1 Fix + 2D.2 OS/App File Tools
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `7c6ed09` — removes duplicate `openWithDefaultHandler` from `browser-web-tools.mjs`.
+- `06d55cf` — extracts `OPEN_FILE_TOOL`, `REVEAL_IN_EXPLORER_TOOL`, and `FILE_OP_TOOL` into `src/service/action_tools/tools/os-app-tools.mjs`.
+
+Accepted:
+- The 2D.1 blocker is fixed in product code: `openWithDefaultHandler` now has one function owner at `src/service/action_tools/tools/open-with-default-handler.mjs`.
+- Browser/web tools and OS/app file tools both import the shared helper instead of carrying separate copies.
+- The 2D.2 product move is behavior-light and keeps tool ids, registry count/order, confirmation gating, and runtime behavior stable.
+
+Scope correction:
+- Treat `06d55cf` as `Phase 2D.2a`, not full 2D.2 completion.
+- Remaining OS/clipboard/notification tools still in `tools/index.mjs` include `COPY_TO_CLIPBOARD_TOOL`, `READ_CLIPBOARD_TOOL`, `NOTIFY_TOOL`, and `TAKE_SCREENSHOT_TOOL`.
+- Keep `LAUNCH_APP_TOOL` deferred for now because its Windows/Python launcher path and GUI expectations are higher risk.
+- `FILE_OP_TOOL` was moved even though the first 2D.2 outline focused on open/reveal/clipboard/notify. This is acceptable because it is simple and passed verification, but later file-write extraction must account for its new owner.
+
+Verifier gap before 2D.3:
+- `scripts/verify-tool-registry-snapshot.mjs` still locks ids/count/order but does not yet enforce source ownership.
+- Before marking 2D.2 complete or starting 2D.3, add reverse owner assertions that:
+  - only `open-with-default-handler.mjs` defines `function openWithDefaultHandler`;
+  - `browser-web-tools.mjs` and `os-app-tools.mjs` import that shared helper;
+  - `tools/index.mjs` no longer defines extracted browser/web or OS/app file tool bodies except imports and `BUILTIN_ACTION_TOOLS` aggregation.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/os-app-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/browser-web-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/action_tools/tools/open-with-default-handler.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-open-url-surface-gating.mjs`: passed.
+- `node scripts/verify-web-search-link-contract.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `npm run check:fast`: passed 65/65, behavior tests 986/986.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Do not open Phase 2D.3 yet.
+- Next DeepSeek step should be `2D.2b`: add source-owner verifier assertions and finish the remaining low/medium-risk OS/clipboard/notification extraction, or explicitly split the plan so 2D.2a is closed and 2D.2b is the blocking follow-up.
+
+## Codex Review: 2D.2b + 2D.3 Scheduler Extraction
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `6c886af` — extracts `COPY_TO_CLIPBOARD_TOOL` and `NOTIFY_TOOL` into `src/service/action_tools/tools/os-app-tools.mjs`.
+- `bc98971` — extracts scheduler tools into `src/service/action_tools/tools/scheduler-tools.mjs`.
+
+Accepted behavior:
+- Tool ids, `BUILTIN_ACTION_TOOLS` order/count, confirmation-gated ids, and action-tool smoke checks remain stable.
+- Scheduler behavior appears preserved: create/list/delete/pause moved together with `getSchedulerRuntime`, and the scheduled-fire anti-reschedule guard stayed with `CREATE_SCHEDULED_TASK_TOOL`.
+- `COPY_TO_CLIPBOARD_TOOL` and `NOTIFY_TOOL` now live with the OS/app file tools, which is directionally correct for the current `action_tools` layout.
+
+Process issue:
+- The previous Codex review required source-owner verifier assertions before opening 2D.3. DeepSeek did not update `scripts/verify-tool-registry-snapshot.mjs` or add a focused owner verifier in `6c886af`.
+- 2D.3 therefore ran with behavior verification but without the requested old-owner regression guard.
+
+Scope correction:
+- Do not claim full 2D.2 completion yet. `READ_CLIPBOARD_TOOL` remains a `NOOP_TOOLS` reference in `index.mjs`, and `TAKE_SCREENSHOT_TOOL` still remains in `index.mjs`.
+- Do not claim Phase 2D ownership cleanup complete. `scripts/verify-tool-registry-snapshot.mjs` still checks registry ids/count/order and family headings, but it does not enforce extracted-source ownership.
+
+Required before Phase 2D.4:
+- Add verifier assertions for extracted owners:
+  - `browser-web-tools.mjs` owns browser/web/search/translation tool bodies.
+  - `os-app-tools.mjs` owns `OPEN_FILE_TOOL`, `REVEAL_IN_EXPLORER_TOOL`, `FILE_OP_TOOL`, `COPY_TO_CLIPBOARD_TOOL`, and `NOTIFY_TOOL`.
+  - `scheduler-tools.mjs` owns scheduler tool bodies and `getSchedulerRuntime`.
+  - `tools/index.mjs` only imports those extracted owners and aggregates them in `BUILTIN_ACTION_TOOLS`.
+  - only `open-with-default-handler.mjs` defines `function openWithDefaultHandler`.
+- Update `docs/architecture/tool-registry-inventory.md` to reflect the current owner files after 2D.2b and 2D.3.
+- Keep `LAUNCH_APP_TOOL`, `READ_CLIPBOARD_TOOL`, and `TAKE_SCREENSHOT_TOOL` explicitly deferred with named reasons if they are not moved in the next cleanup.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/os-app-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/scheduler-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `npm run check:fast`: passed 65/65, behavior tests 986/986.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Current product behavior is acceptable.
+- Do not proceed to Phase 2D.4 yet.
+- Next step must be a verifier/inventory cleanup phase for 2D extracted owner boundaries, then rerun `check:fast` and desktop GUI smoke.

@@ -139,10 +139,79 @@ for (const tool of BUILTIN_ACTION_TOOLS) {
   assert(typeof tool.id === "string" && tool.id.length > 0, `tool missing id`);
   assert(typeof tool.name === "string", `tool ${tool.id} missing name`);
 }
-// No duplicate tool constant names would be detectable at import time
-// (duplicate exports are parse errors in ESM). This is a structural
-// invariant of the module system, not an extra assertion.
+// Phase 2D source-ownership assertions (Codex 2D.2b/2D.3 review):
+// extracted tool bodies must live only in their owner modules, and
+// index.mjs must only import + aggregate, not redefine them.
+
+const openHandlerSrc = read("src/service/action_tools/tools/open-with-default-handler.mjs");
+assert(openHandlerSrc.includes("async function openWithDefaultHandler"),
+  "only open-with-default-handler.mjs may define openWithDefaultHandler");
+
+const browserWebSrc = read("src/service/action_tools/tools/browser-web-tools.mjs");
+assert(browserWebSrc.includes("import { openWithDefaultHandler } from"),
+  "browser-web-tools.mjs must import openWithDefaultHandler from the shared module");
+assert(!browserWebSrc.includes("function openWithDefaultHandler"),
+  "browser-web-tools.mjs must NOT define its own openWithDefaultHandler");
+for (const tool of ["OPEN_URL_TOOL", "WEB_SEARCH_TOOL", "TRANSLATE_TEXT_TOOL", "WEB_SEARCH_FETCH_TOOL", "FETCH_URL_CONTENT_TOOL"]) {
+  assert(browserWebSrc.includes(`export const ${tool}`),
+    `browser-web-tools.mjs must own ${tool}`);
+}
+
+const osAppSrc = read("src/service/action_tools/tools/os-app-tools.mjs");
+assert(osAppSrc.includes("import { openWithDefaultHandler } from"),
+  "os-app-tools.mjs must import openWithDefaultHandler from the shared module");
+assert(!osAppSrc.includes("function openWithDefaultHandler"),
+  "os-app-tools.mjs must NOT define its own openWithDefaultHandler");
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
+  assert(osAppSrc.includes(`export const ${tool}`),
+    `os-app-tools.mjs must own ${tool}`);
+}
+
+const schedulerSrc = read("src/service/action_tools/tools/scheduler-tools.mjs");
+assert(schedulerSrc.includes("function getSchedulerRuntime"),
+  "scheduler-tools.mjs must own getSchedulerRuntime");
+for (const tool of ["CREATE_SCHEDULED_TASK_TOOL", "LIST_SCHEDULED_TASKS_TOOL", "DELETE_SCHEDULED_TASK_TOOL", "PAUSE_SCHEDULED_TASK_TOOL"]) {
+  assert(schedulerSrc.includes(`export const ${tool}`),
+    `scheduler-tools.mjs must own ${tool}`);
+}
+
+const indexSrc = read("src/service/action_tools/tools/index.mjs");
+// index.mjs must import the extracted modules
+assert(indexSrc.includes("from \"./browser-web-tools.mjs\""),
+  "index.mjs must import browser-web-tools.mjs");
+assert(indexSrc.includes("from \"./os-app-tools.mjs\""),
+  "index.mjs must import os-app-tools.mjs");
+assert(indexSrc.includes("from \"./scheduler-tools.mjs\""),
+  "index.mjs must import scheduler-tools.mjs");
+// index.mjs must NOT redefine extracted tool bodies
+for (const tool of ["OPEN_URL_TOOL", "WEB_SEARCH_TOOL", "TRANSLATE_TEXT_TOOL", "WEB_SEARCH_FETCH_TOOL", "FETCH_URL_CONTENT_TOOL"]) {
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must NOT redefine ${tool} (owned by browser-web-tools.mjs)`);
+}
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must NOT redefine ${tool} (owned by os-app-tools.mjs)`);
+}
+for (const tool of ["CREATE_SCHEDULED_TASK_TOOL", "LIST_SCHEDULED_TASKS_TOOL", "DELETE_SCHEDULED_TASK_TOOL", "PAUSE_SCHEDULED_TASK_TOOL"]) {
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must NOT redefine ${tool} (owned by scheduler-tools.mjs)`);
+}
+assert(!indexSrc.includes("function getSchedulerRuntime"),
+  "index.mjs must NOT redefine getSchedulerRuntime (owned by scheduler-tools.mjs)");
+assert(!indexSrc.includes("function openWithDefaultHandler"),
+  "index.mjs must NOT redefine openWithDefaultHandler (owned by open-with-default-handler.mjs)");
+// Deferred tools still in index.mjs must still be present
+for (const tool of ["LAUNCH_APP_TOOL", "TAKE_SCREENSHOT_TOOL"]) {
+  assert(indexSrc.includes(`export const ${tool}`),
+    `index.mjs must still own deferred ${tool}`);
+}
+assert(indexSrc.includes("READ_CLIPBOARD_TOOL"),
+  "index.mjs must still own deferred READ_CLIPBOARD_TOOL (NOOP_TOOLS reference)");
+
+function read(relativePath) {
+  return readFileSync(path.join(root, relativePath), "utf8");
+}
 
 if (!process.exitCode) {
-  console.log("[tool-registry] built-in tool registry snapshot verified.");
+  console.log("[tool-registry] built-in tool registry snapshot and source ownership verified.");
 }
