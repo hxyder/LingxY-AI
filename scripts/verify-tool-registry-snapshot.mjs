@@ -4,6 +4,7 @@ import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mj
 
 const root = process.cwd();
 const docPath = path.join(root, "docs/architecture/tool-registry-inventory.md");
+const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
 const expectedIds = [
   "open_url",
@@ -162,9 +163,18 @@ assert(osAppSrc.includes("import { openWithDefaultHandler } from"),
   "os-app-tools.mjs must import openWithDefaultHandler from the shared module");
 assert(!osAppSrc.includes("function openWithDefaultHandler"),
   "os-app-tools.mjs must NOT define its own openWithDefaultHandler");
-for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL", "COMPOSE_EMAIL_TOOL"]) {
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
   assert(osAppSrc.includes(`export const ${tool}`),
     `os-app-tools.mjs must own ${tool}`);
+}
+
+// Phase 2D.5: email-tools ownership (domain-correct owner, not mixed into os-app-tools)
+const emailSrc = read("src/service/action_tools/tools/email-tools.mjs");
+assert(emailSrc.includes("import { openWithDefaultHandler } from"),
+  "email-tools.mjs must import openWithDefaultHandler from the shared module");
+for (const tool of ["COMPOSE_EMAIL_TOOL"]) {
+  assert(emailSrc.includes(`export const ${tool}`),
+    `email-tools.mjs must own ${tool}`);
 }
 
 const schedulerSrc = read("src/service/action_tools/tools/scheduler-tools.mjs");
@@ -183,12 +193,18 @@ assert(indexSrc.includes("from \"./os-app-tools.mjs\""),
   "index.mjs must import os-app-tools.mjs");
 assert(indexSrc.includes("from \"./scheduler-tools.mjs\""),
   "index.mjs must import scheduler-tools.mjs");
+assert(indexSrc.includes("from \"./email-tools.mjs\""),
+  "index.mjs must import email-tools.mjs");
 // index.mjs must NOT redefine extracted tool bodies
+for (const tool of ["COMPOSE_EMAIL_TOOL"]) {
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must NOT redefine ${tool} (owned by email-tools.mjs)`);
+}
 for (const tool of ["OPEN_URL_TOOL", "WEB_SEARCH_TOOL", "TRANSLATE_TEXT_TOOL", "WEB_SEARCH_FETCH_TOOL", "FETCH_URL_CONTENT_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by browser-web-tools.mjs)`);
 }
-for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL", "COMPOSE_EMAIL_TOOL"]) {
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by os-app-tools.mjs)`);
 }
@@ -219,10 +235,6 @@ for (const tool of ["LAUNCH_APP_TOOL", "TAKE_SCREENSHOT_TOOL"]) {
 }
 assert(indexSrc.includes("READ_CLIPBOARD_TOOL"),
   "index.mjs must still own deferred READ_CLIPBOARD_TOOL (NOOP_TOOLS reference)");
-
-function read(relativePath) {
-  return readFileSync(path.join(root, relativePath), "utf8");
-}
 
 if (!process.exitCode) {
   console.log("[tool-registry] built-in tool registry snapshot and source ownership verified.");

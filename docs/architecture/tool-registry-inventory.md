@@ -33,7 +33,8 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 | Family | Source module | Tool IDs |
 |--------|---------------|----------|
 | Browser / Web / Search / Translation | `tools/browser-web-tools.mjs` (~280 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `translate_text` |
-| OS / App / File / Clipboard / Notify / Email | `tools/os-app-tools.mjs` (~220 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify`, `compose_email` |
+| OS / App / File / Clipboard / Notify | `tools/os-app-tools.mjs` (~175 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify` |
+| Email | `tools/email-tools.mjs` (~50 lines) | `compose_email` |
 | Scheduler | `tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
 | File Stat / Verify | `tools/file-read-tools.mjs` (~80 lines) | `stat_file`, `verify_file_exists` |
 | Shared OS helper | `tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
