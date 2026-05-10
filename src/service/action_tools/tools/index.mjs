@@ -1868,65 +1868,7 @@ export const RENDER_SVG_TOOL = {
     }
   }
 };
-
-/* ------------------------------------------------------------------------ */
-/* UCA-053: File Discovery & Artifact Verification tools                     */
-/* ------------------------------------------------------------------------ */
-
-// Resolve the default output directory from ctx (runtime config or fallback)
-function resolveDefaultOutputDir(ctx) {
-  const configuredDir = ctx?.runtime?.configStore?.load?.()?.output?.defaultDir;
-  if (configuredDir && typeof configuredDir === "string" && configuredDir.trim()) return configuredDir.trim();
-  return ctx?.outputDir ?? path.join(os.homedir(), "Documents", "UCA");
-}
-
-// The artifact manifest lives at <defaultOutputDir>/.uca-manifest.json
-async function readManifest(outputDir) {
-  const manifestPath = path.join(outputDir, ".uca-manifest.json");
-  try {
-    const raw = await readFile(manifestPath, "utf8");
-    return JSON.parse(raw);
-  } catch {
-    return [];
-  }
-}
-
-async function writeManifest(outputDir, entries) {
-  const manifestPath = path.join(outputDir, ".uca-manifest.json");
-  await mkdir(outputDir, { recursive: true });
-  await writeFile(manifestPath, JSON.stringify(entries, null, 2) + "\n", "utf8");
-}
-
-// Simple glob-to-regex converter (supports * and ** only).
-// `**/foo` should match both `foo` in the base dir and `a/b/foo` deeper down,
-// so we treat a leading `**/` as an optional recursive prefix instead of a
-// mandatory path segment. This keeps agent-loop file enumeration prompts from
-// exploding on common patterns like `**/*6236605264*`.
-function globToRegex(pattern) {
-  const normalized = String(pattern ?? "").replace(/\\/g, "/");
-  const braceGroups = [];
-  const withBraceTokens = normalized.replace(/\{([^{}]+)\}/g, (_match, body) => {
-    const alternatives = String(body).split(",").map((item) => item.trim()).filter(Boolean);
-    if (alternatives.length === 0) return "";
-    const index = braceGroups.push(alternatives) - 1;
-    return `__BRACE_${index}__`;
-  });
-  const escaped = withBraceTokens.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  let converted = escaped
-    .replace(/\*\*\//g, "__GLOBSTAR_DIR__")
-    .replace(/\*\*/g, "__GLOBSTAR__")
-    .replace(/\*/g, "[^/\\\\]*")
-    .replace(/__GLOBSTAR_DIR__/g, "(?:.*[/\\\\])?")
-    .replace(/__GLOBSTAR__/g, ".*");
-  for (const [index, alternatives] of braceGroups.entries()) {
-    const escapedAlternatives = alternatives.map((item) => item.replace(/[.+^${}()|[\]\\]/g, "\\$&"));
-    converted = converted.replace(
-      new RegExp(`__BRACE_${index}__`, "g"),
-      `(?:${escapedAlternatives.join("|")})`
-    );
-  }
-  return new RegExp(`^${converted}$`, "i");
-}
+import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "./file-manifest-helpers.mjs";
 
 const FILE_KIND_EXTS = {
   pptx: [".pptx"],
