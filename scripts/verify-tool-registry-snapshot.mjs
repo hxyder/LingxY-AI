@@ -162,7 +162,7 @@ assert(osAppSrc.includes("import { openWithDefaultHandler } from"),
   "os-app-tools.mjs must import openWithDefaultHandler from the shared module");
 assert(!osAppSrc.includes("function openWithDefaultHandler"),
   "os-app-tools.mjs must NOT define its own openWithDefaultHandler");
-for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL", "COMPOSE_EMAIL_TOOL"]) {
   assert(osAppSrc.includes(`export const ${tool}`),
     `os-app-tools.mjs must own ${tool}`);
 }
@@ -188,7 +188,7 @@ for (const tool of ["OPEN_URL_TOOL", "WEB_SEARCH_TOOL", "TRANSLATE_TEXT_TOOL", "
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by browser-web-tools.mjs)`);
 }
-for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL", "COMPOSE_EMAIL_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by os-app-tools.mjs)`);
 }

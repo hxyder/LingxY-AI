@@ -33,7 +33,7 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 | Family | Source module | Tool IDs |
 |--------|---------------|----------|
 | Browser / Web / Search / Translation | `tools/browser-web-tools.mjs` (~280 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `translate_text` |
-| OS / App / File / Clipboard / Notify | `tools/os-app-tools.mjs` (~175 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify` |
+| OS / App / File / Clipboard / Notify / Email | `tools/os-app-tools.mjs` (~220 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify`, `compose_email` |
 | Scheduler | `tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
 | File Stat / Verify | `tools/file-read-tools.mjs` (~80 lines) | `stat_file`, `verify_file_exists` |
 | Shared OS helper | `tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
@@ -47,7 +47,6 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 | File Discovery / Read / Index | `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact`, `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` | ~1040 | medium |
 | GUI Automation | `gui_find_element`, `gui_click`, `gui_type_text` | ~240 | high (OS integration) |
 | Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
-| Email | `compose_email`, `send_email_smtp` | ~100 | low |
 
 ### Deferred (still in `tools/index.mjs`, explicit reasons)
 
@@ -56,6 +55,7 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 | `LAUNCH_APP_TOOL` | Depends on 200+ lines of Windows/Python launcher helpers |
 | `TAKE_SCREENSHOT_TOOL` | Depends on `ensureOutputDir`/`resolveOutputDirForTool` helpers in index.mjs |
 | `READ_CLIPBOARD_TOOL` | References `NOOP_TOOLS` array in index.mjs |
+| `SEND_EMAIL_SMTP_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 
 ### External families (aggregated into `BUILTIN_ACTION_TOOLS`)
 
@@ -78,7 +78,7 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 6. Document / Artifact / Diagram / SVG Generation (higher risk, artifact-producing)
 7. GUI Automation (higher risk, OS integration)
 8. Capability Creator (higher risk, confirmation-gated)
-9. Email (keep inline or extract last)
+9. Email ✅ Phase 2D.5 (compose_email extracted; send_email_smtp deferred - NOOP_TOOLS)
 
 Do not move: `write_file`, `edit_file`, `run_script`, `generate_document`, `register_artifact`, `gui_*`.
 

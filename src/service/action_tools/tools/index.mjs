@@ -14,7 +14,7 @@ import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "..
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "./browser-web-tools.mjs";
-import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL } from "./os-app-tools.mjs";
+import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL, COMPOSE_EMAIL_TOOL } from "./os-app-tools.mjs";
 import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "./scheduler-tools.mjs";
 import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL } from "./file-read-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
@@ -447,41 +447,6 @@ const NOOP_TOOLS = TOOL_DEFINITIONS
 // On Windows we use PowerShell Start-Process which correctly handles `&` and `?`
 // in URLs (cmd.exe `start` does not — it interprets `&` as a command separator).
 import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
-
-export const COMPOSE_EMAIL_TOOL = {
-  ...TOOL_DEFINITIONS.find((t) => t.id === "compose_email"),
-  async execute(args = {}) {
-    // Normalize `to` — accept string or array
-    let toList = [];
-    if (Array.isArray(args.to)) toList = args.to;
-    else if (typeof args.to === "string" && args.to.trim()) toList = [args.to.trim()];
-
-    let ccList = [];
-    if (Array.isArray(args.cc)) ccList = args.cc;
-    else if (typeof args.cc === "string" && args.cc.trim()) ccList = [args.cc.trim()];
-
-    const subject = args.subject ?? "";
-    const body = args.body ?? "";
-
-    // Build mailto URI — Outlook/Mail apps will open with prefilled draft
-    const params = [];
-    if (subject) params.push(`subject=${encodeURIComponent(subject)}`);
-    if (body) params.push(`body=${encodeURIComponent(body)}`);
-    if (ccList.length > 0) params.push(`cc=${encodeURIComponent(ccList.join(","))}`);
-    const mailto = `mailto:${toList.join(",")}${params.length > 0 ? "?" + params.join("&") : ""}`;
-
-    try {
-      await openWithDefaultHandler(mailto);
-      const recipients = toList.length > 0 ? toList.join(", ") : "(no recipient)";
-      return createActionResult({
-        success: true,
-        observation: `Opened email draft to ${recipients}${subject ? ` with subject "${subject}"` : ""}.`
-      });
-    } catch (error) {
-      return createActionResult({ success: false, observation: `Failed to open email draft: ${error.message}` });
-    }
-  }
-};
 
 export const SEND_EMAIL_SMTP_TOOL = NOOP_TOOLS.find((tool) => tool.id === "send_email_smtp");
 
