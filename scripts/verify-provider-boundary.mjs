@@ -125,6 +125,20 @@ for (const caller of ["audio-routes.mjs", "config-provider-routes.mjs", "runnabl
   assert(doc.includes(caller), `provider boundary plan must document ${caller}`);
 }
 
+// ── 8. Phase 2G.2: hot-reload contract — config must be re-read on every call ──
+// The resolver deliberately re-reads the config file on each resolveProviderForTask
+// call so that provider changes in the Settings UI take effect without a restart.
+// Any future in-memory cache must preserve this hot-reload semantic.
+assert(resolverSrc.includes("Re-read on every call") ||
+  resolverSrc.includes("no in-memory cache"),
+  "provider-resolver must document the hot-reload contract (re-read config each call)");
+
+// ── 9. loadConfig must use readFileSync, not a cached variable ──
+assert(resolverSrc.includes("readFileSync"),
+  "provider-resolver must use readFileSync for config (hot-reload requires disk read)");
+assert(!resolverSrc.match(/let\s+cachedConfig|const\s+cachedConfig|var\s+cachedConfig/),
+  "provider-resolver must not cache config in a module-level variable (would break hot-reload)");
+
 if (!process.exitCode) {
   console.log("[provider-boundary] provider boundary contracts verified");
 }

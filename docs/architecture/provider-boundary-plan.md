@@ -71,7 +71,12 @@ No modules bypass `provider-adapter.mjs` for direct provider HTTP calls.
   the approved out-of-pipeline callers. `src/service/extractors/file-ingest.mjs`
   references provider-resolver only in a comment (not a runtime call).
 - Provider config/secrets must not be read synchronously on hot paths.
-- Cached provider config resolver is a candidate for Phase 2G.2.
+- Config re-read on every call is intentional: switching providers in the UI
+  takes effect on the next submitted task without a service restart (hot-reload).
+  Phase 2G.2: this contract is verifier-locked; any future cache must preserve
+  hot-reload semantics or be explicitly gated.
+- Cached provider config resolver is deferred — the current hot-reload design
+  is a documented contract, not accidental I/O overhead.
 
 ## Verification
 
