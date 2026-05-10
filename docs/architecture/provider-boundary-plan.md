@@ -30,8 +30,14 @@ All call sites go through `resolveProviderForTask` from `provider-resolver.mjs`:
 | Image submission | `src/service/core/image-submission.mjs` | Static |
 | DAG streaming planner | `src/service/dag/streaming-planner.mjs` | Dynamic |
 | DAG planner | `src/service/dag/planner.mjs` | Dynamic |
+| Runnable executor | `src/service/core/planning/runnable-executor.mjs` | Static |
+| Audio HTTP routes | `src/service/core/http-routes/audio-routes.mjs` | Static |
+| Config provider routes | `src/service/core/http-routes/config-provider-routes.mjs` | Static |
+| Semantic router (intent) | `src/service/core/intent/semantic-router.mjs` | Static |
 
-~13 call sites. All go through the same `resolveProviderForTask` function.
+| File ingest | `src/service/extractors/file-ingest.mjs` | Static (comment reference) |
+
+~18 call sites. All go through the same `resolveProviderForTask` function.
 
 ## Provider Adapter Call Sites
 
@@ -60,8 +66,9 @@ No modules bypass `provider-adapter.mjs` for direct provider HTTP calls.
   provider resolution paths may be created outside this module.
 - `provider-adapter.mjs` is the single provider call boundary. No new
   direct provider HTTP/streaming calls may be created outside this module.
-- `semantic.mjs` dynamic import of provider-resolver is the only approved
-  resolution exception; any new exceptions must be documented here.
+- `src/service/embeddings/semantic.mjs` and `src/service/core/intent/semantic-router.mjs`
+  are the approved provider-resolution callers outside the executor/submission pipeline;
+  any new exceptions must be documented here.
 - Provider config/secrets must not be read synchronously on hot paths.
 - Cached provider config resolver is a candidate for Phase 2G.2.
 

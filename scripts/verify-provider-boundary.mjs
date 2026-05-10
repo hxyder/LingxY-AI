@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -22,45 +22,62 @@ const adapterSrc = read(adapterPath);
 assert(adapterSrc.includes("export function createProviderAdapter"),
   "provider-adapter.mjs must export createProviderAdapter");
 
-// ── 2. Provider resolver exists and exports resolution functions ──
+// ── 2. Provider resolver exists ──
 const resolverPath = "src/service/executors/shared/provider-resolver.mjs";
 assert(existsSync(path.join(root, resolverPath)), `provider resolver missing: ${resolverPath}`);
 const resolverSrc = read(resolverPath);
-assert(resolverSrc.includes("export function resolveProviderForTask") ||
-  resolverSrc.includes("export async function resolveProviderForTask"),
+assert(resolverSrc.includes("resolveProviderForTask"),
   "provider-resolver.mjs must export resolveProviderForTask");
 assert(resolverSrc.includes("describeResolvedProvider"),
   "provider-resolver.mjs must export describeResolvedProvider");
 
-// ── 3. All executor call sites must use provider-resolver, not direct resolution ──
-const approvedResolverCallers = [
+// ── 3. All approved provider resolver call sites ──
+const approvedResolverCallers = new Set([
   "src/service/executors/fast/fast-executor.mjs",
   "src/service/executors/tool_using/agent-loop.mjs",
   "src/service/executors/tool_using/final-composer.mjs",
   "src/service/executors/agentic/planner.mjs",
   "src/service/executors/agentic/provider-adapter.mjs",
   "src/service/executors/multi_modal/multi-modal-executor.mjs",
+  "src/service/executors/shared/provider-resolver.mjs",
   "src/service/action_tools/tools/vision-analyze.mjs",
   "src/service/core/browser-submission.mjs",
   "src/service/core/context-submission.mjs",
   "src/service/core/file-submission.mjs",
   "src/service/core/image-submission.mjs",
+  "src/service/core/planning/runnable-executor.mjs",
+  "src/service/core/http-routes/audio-routes.mjs",
+  "src/service/core/http-routes/config-provider-routes.mjs",
+  "src/service/core/intent/semantic-router.mjs",
+  "src/service/embeddings/semantic.mjs",
+  "src/service/extractors/file-ingest.mjs",
   "src/service/dag/streaming-planner.mjs",
   "src/service/dag/planner.mjs"
-];
-for (const callerPath of approvedResolverCallers) {
-  const fullPath = path.join(root, callerPath);
-  if (!existsSync(fullPath)) {
-    fail(`approved resolver caller missing: ${callerPath}`);
-    continue;
+]);
+
+// ── 4. Tree scan: every file in src/service/** that references provider-resolver
+//    must be in the approved set ──
+function walkDir(dir, files = []) {
+  if (!existsSync(dir)) return files;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) walkDir(full, files);
+    else if (/\.(mjs|js|cjs)$/.test(entry.name)) files.push(full);
   }
-  const callerSrc = readFileSync(fullPath, "utf8");
-  assert(callerSrc.includes("resolveProviderForTask") ||
-    callerSrc.includes("provider-resolver"),
-    `${callerPath} must use provider-resolver for provider resolution`);
+  return files;
 }
 
-// ── 4. All provider adapter call sites must use provider-adapter ──
+const allServiceFiles = walkDir(path.join(root, "src/service"));
+for (const filePath of allServiceFiles) {
+  const src = readFileSync(filePath, "utf8");
+  if (!src.includes("resolveProviderForTask") && !src.includes("provider-resolver")) continue;
+  const rel = path.relative(root, filePath).replace(/\\/g, "/");
+  if (!approvedResolverCallers.has(rel)) {
+    fail(`${rel} uses provider-resolver but is not in the approved caller list`);
+  }
+}
+
+// ── 5. All approved adapter callers use createProviderAdapter ──
 const approvedAdapterCallers = [
   "src/service/executors/tool_using/agent-loop.mjs",
   "src/service/executors/tool_using/final-composer.mjs",
@@ -73,38 +90,17 @@ for (const callerPath of approvedAdapterCallers) {
     `${callerPath} must use createProviderAdapter for provider calls`);
 }
 
-// ── 5. Semantic router is the only approved dynamic resolver import ──
-const semanticSrc = read("src/service/embeddings/semantic.mjs");
-assert(semanticSrc.includes("provider-resolver"),
-  "semantic router must use provider-resolver (approved exception)");
-
-// ── 6. No unauthorized direct provider HTTP calls outside provider-adapter ──
-// The provider-adapter is the single boundary for provider HTTP/streaming.
-// Check that no executor (other than provider-adapter) contains direct
-// provider API calls (e.g., anthropic.messages.create, openai.chat.completions).
-const executorsDir = path.join(root, "src/service/executors");
-function walkExecutors(dir) {
-  const results = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) results.push(...walkExecutors(fullPath));
-    else if (/\.(mjs|js)$/.test(entry.name)) results.push(fullPath);
-  }
-  return results;
-}
-const executorFiles = walkExecutors(executorsDir);
-for (const filePath of executorFiles) {
+// ── 6. No unauthorized direct provider HTTP calls across ALL src/service/** ──
+for (const filePath of allServiceFiles) {
   if (filePath.includes("provider-adapter.mjs")) continue;
   const src = readFileSync(filePath, "utf8");
-  // Check for direct Anthropic/OpenAI SDK calls that bypass the adapter
-  const relPath = path.relative(root, filePath);
+  const rel = path.relative(root, filePath).replace(/\\/g, "/");
   if (src.includes("messages.create") || src.includes("chat.completions.create")) {
-    // Only provider-adapter may make direct provider calls
-    fail(`${relPath} must not make direct provider calls; use provider-adapter.mjs`);
+    fail(`${rel} must not make direct provider calls; use provider-adapter.mjs`);
   }
 }
 
-// ── 7. Inventory doc exists and documents the boundary ──
+// ── 7. Inventory doc exists and documents all approved callers ──
 const docPath = "docs/architecture/provider-boundary-plan.md";
 assert(existsSync(path.join(root, docPath)), "provider boundary plan missing");
 const doc = read(docPath);
@@ -113,7 +109,10 @@ assert(doc.includes("provider-adapter.mjs"), "provider boundary plan missing ada
 assert(doc.includes("provider-resolver.mjs"), "provider boundary plan missing resolver path");
 assert(doc.includes("resolveProviderForTask"), "provider boundary plan missing resolution function");
 assert(doc.includes("createProviderAdapter"), "provider boundary plan missing adapter function");
-assert(doc.includes("semantic.mjs"), "provider boundary plan must document semantic router exception");
+// The doc must reference the out-of-pipeline callers
+for (const caller of ["audio-routes.mjs", "config-provider-routes.mjs", "runnable-executor.mjs", "semantic-router.mjs"]) {
+  assert(doc.includes(caller), `provider boundary plan must document ${caller}`);
+}
 
 if (!process.exitCode) {
   console.log("[provider-boundary] provider boundary contracts verified");

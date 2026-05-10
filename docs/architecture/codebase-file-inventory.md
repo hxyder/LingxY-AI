@@ -287,4 +287,4 @@ No dedicated `src/service/workers/` directory currently exists.
 | preload | `src/desktop/renderer/preload.cjs` |
 | renderer | `src/desktop/renderer/`; `src/desktop/console/`; `src/desktop/overlay/` |
 | service | `src/service/` |
-| worker | No dedicated worker directory; worker-like code is in `src/service/extractors/`, `src/service/audio/`, `src/service/core/external-call.mjs`, `src/service/action_tools/tools/index.mjs`, helper/native projects, and scripts |
+- **Worker/heavy** — `src/service/workers/` exists with `artifact-extract-worker.mjs` (verifier-locked in Phase 2F.1). Background lane under `src/service/core/artifact-extracts/`. Audio/extraction code also lives in `src/service/extractors/` and `src/service/audio/`. Helper/native projects and scripts handle OS-integration work.
