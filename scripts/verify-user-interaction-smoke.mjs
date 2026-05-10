@@ -16,7 +16,7 @@ const checklist = read(checklistPath);
 const functionalMatrix = read("docs/release/functional_acceptance_matrix.md");
 const releaseReadiness = read("scripts/verify-release-readiness.mjs");
 const releaseConfig = read("tools/release/release-config.json");
-const desktopGuiSmoke = read("src/desktop/tray/electron-main.mjs");
+const desktopGuiSmoke = read("src/desktop/tray/desktop-gui-smoke-runner.mjs");
 const electronGuiSmokeScript = read("scripts/run-electron-gui-smoke.mjs");
 const pkg = JSON.parse(read("package.json"));
 

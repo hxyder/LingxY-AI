@@ -18,6 +18,7 @@ const translate = read("src/service/executors/translate/translate-executor.mjs")
 const kimi = read("src/service/executors/kimi/kimi-cli-executor.mjs");
 const codeCliBridge = read("src/service/executors/agentic/code-cli-bridge.mjs");
 const desktopMain = read("src/desktop/tray/electron-main.mjs");
+const smokeRunner = read("src/desktop/tray/desktop-gui-smoke-runner.mjs");
 const interactionSmoke = read("scripts/verify-user-interaction-smoke.mjs");
 
 assert.match(fast, /async \*execute\(task,\s*\{\s*signal\s*\}\s*=\s*\{\}\)/u,
@@ -83,8 +84,8 @@ for (const checkName of [
   "console_stop_button_cancel",
   "console_task_detail_cancel"
 ]) {
-  assert.equal(desktopMain.includes(checkName), true,
-    `desktop GUI smoke must include ${checkName}`);
+  assert.equal(smokeRunner.includes(checkName), true,
+    `desktop GUI smoke runner must include ${checkName}`);
   assert.equal(interactionSmoke.includes(checkName), true,
     `user interaction smoke must guard ${checkName}`);
 }

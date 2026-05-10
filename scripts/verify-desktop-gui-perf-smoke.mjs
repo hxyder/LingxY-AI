@@ -8,6 +8,7 @@ function read(path) {
 const contract = read("scripts/gui-smoke-perf-contract.mjs");
 const runner = read("scripts/run-electron-gui-smoke.mjs");
 const main = read("src/desktop/tray/electron-main.mjs");
+const smokeRunner = read("src/desktop/tray/desktop-gui-smoke-runner.mjs");
 const tests = read("tests/behavior/desktop-gui-perf-smoke.test.mjs");
 const packageJson = read("package.json");
 const manifest = read("scripts/check-manifest.mjs");
@@ -42,14 +43,29 @@ assert.match(runner, /summarizeDesktopGuiSmokePerf/,
 
 assert.match(main, /DESKTOP_GUI_SMOKE_PROCESS_STARTED_AT/,
   "Electron main must measure smoke timing from process start");
-assert.match(main, /buildPerfReport/,
-  "Electron main must build a structured smoke perf report");
-assert.match(main, /firstWindowReadyMs/,
-  "Electron main must report first-window readiness");
-assert.match(main, /writeDesktopGuiSmokeResult\(\{\s*ok:\s*true,\s*checks,\s*perf:/,
+assert.match(smokeRunner, /buildPerfReport/,
+  "desktop-gui-smoke-runner must build a structured smoke perf report");
+assert.match(smokeRunner, /firstWindowReadyMs/,
+  "desktop-gui-smoke-runner must report first-window readiness");
+assert.match(smokeRunner, /writeDesktopGuiSmokeResult\(\{\s*ok:\s*true,\s*checks,\s*perf:/,
   "successful GUI smoke result must include perf");
-assert.match(main, /ok:\s*false[\s\S]{0,180}perf:\s*buildPerfReport\(\)/,
+assert.match(smokeRunner, /ok:\s*false[\s\S]{0,180}perf:\s*buildPerfReport\(\)/,
   "failed GUI smoke result must include partial perf for diagnostics");
+// Reverse assertions: electron-main.mjs must NOT own migrated smoke
+// helpers directly (Codex 2B.47 round-1: prevent parallel ownership).
+assert.doesNotMatch(main, /function writeDesktopGuiSmokeResult/,
+  "electron-main.mjs must NOT define writeDesktopGuiSmokeResult (moved to desktop-gui-smoke-runner.mjs)");
+assert.doesNotMatch(main, /function waitForDesktopGuiSmoke/,
+  "electron-main.mjs must NOT define waitForDesktopGuiSmoke (moved to desktop-gui-smoke-runner.mjs)");
+assert.doesNotMatch(main, /function runDesktopGuiSmoke/,
+  "electron-main.mjs must NOT define runDesktopGuiSmoke (moved to desktop-gui-smoke-runner.mjs)");
+// The outer failure path calls writeDesktopGuiSmokeResult (destructured
+// from the factory) so unexpected runner rejections produce a
+// machine-readable LINGXY_GUI_SMOKE_RESULT payload.
+assert.match(main, /runDesktopGuiSmoke\(\)\.catch\(\s*\(\s*error\s*\)\s*=>\s*\{[\s\S]{0,120}writeDesktopGuiSmokeResult\(/,
+  "electron-main.mjs outer smoke catch must call writeDesktopGuiSmokeResult on unexpected rejection");
+assert.match(smokeRunner, /LINGXY_GUI_SMOKE_RESULT/,
+  "desktop-gui-smoke-runner must emit LINGXY_GUI_SMOKE_RESULT for smoke results");
 
 assert.match(tests, /accepts bounded smoke metrics/,
   "behavior tests must cover bounded perf pass");

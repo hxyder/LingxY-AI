@@ -108,7 +108,7 @@ const usageEvents = [
 {
   const consoleJs = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
   const overlayJs = readFileSync(new URL("../src/desktop/renderer/overlay.js", import.meta.url), "utf8");
-  const desktopMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
+  const smokeRunner = readFileSync(new URL("../src/desktop/tray/desktop-gui-smoke-runner.mjs", import.meta.url), "utf8");
   const sharedCss = readFileSync(new URL("../src/desktop/renderer/shared-tasks.css", import.meta.url), "utf8");
   assert.match(consoleJs, /renderLlmUsagePanel\(detail\.events \?\? \[\]\)/);
   assert.match(consoleJs, /\$\{llmUsageBlock\}/);
@@ -116,7 +116,7 @@ const usageEvents = [
   assert.match(overlayJs, /function renderOverlayLlmUsageTimeline\(frame\)/);
   assert.match(overlayJs, /event === "llm_usage"[\s\S]{0,120}renderOverlayLlmUsageTimeline\(frame\)/);
   assert.match(overlayJs, /runLlmUsageTimeline/);
-  assert.match(desktopMain, /overlay_llm_usage_timeline/);
+  assert.match(smokeRunner, /overlay_llm_usage_timeline/);
   assert.match(sharedCss, /\.llm-usage-panel/);
   assert.match(sharedCss, /\.llm-segment-row/);
   assert.equal(renderTaskKvGrid({ tokens: "10" }).includes(">Tokens<"), true);
