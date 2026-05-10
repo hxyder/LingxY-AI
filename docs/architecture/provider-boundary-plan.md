@@ -57,9 +57,9 @@ All call sites go through `createProviderAdapter` from `provider-adapter.mjs`:
 
 ## Direct Provider Calls (Exceptions)
 
-The semantic router (`src/service/embeddings/semantic.mjs`) dynamically imports
-`provider-resolver.mjs` at line 30 for price-based model routing. This is the
-only module that uses provider resolution outside the executor/submission pipeline.
+The semantic routers (`src/service/embeddings/semantic.mjs` and
+`src/service/core/intent/semantic-router.mjs`) are the approved provider
+resolution callers outside the executor/submission pipeline.
 
 No modules bypass `provider-adapter.mjs` for direct provider HTTP calls.
 
