@@ -44,7 +44,7 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 |--------|----------|----------------|------|
 | File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects) |
 | Document / Artifact / Diagram / SVG | `generate_document`, `render_diagram`, `render_svg` | ~680 | high (artifact-producing) |
-| File Discovery / Read / Index | `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact`, `stat_file`, `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `verify_file_exists`, `register_artifact`, `resolve_output_path` | ~1120 | medium |
+| File Discovery / Read / Index | `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact`, `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` | ~1040 | medium |
 | GUI Automation | `gui_find_element`, `gui_click`, `gui_type_text` | ~240 | high (OS integration) |
 | Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
 | Email | `compose_email`, `send_email_smtp` | ~100 | low |
