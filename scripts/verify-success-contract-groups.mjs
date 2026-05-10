@@ -196,6 +196,19 @@ async function run() {
     const out = validateSuccessContract(spec, []);
     assert.equal(out.satisfied, true);
   });
+  it("tool-name: required edit_file is enforced for transform/update flows", () => {
+    const spec = makeSpec({ names: ["edit_file"] });
+    const missing = validateSuccessContract(spec, [
+      { type: "tool_result", tool: "generate_document", success: true, artifact_paths: ["E:/out.pptx"] }
+    ]);
+    assert.equal(missing.satisfied, false);
+    assert.equal(missing.violations[0].kind, "edit_file_required_not_called");
+
+    const satisfied = validateSuccessContract(spec, [
+      { type: "tool_result", tool: "edit_file", success: true, artifact_paths: ["E:/source.pptx"] }
+    ]);
+    assert.equal(satisfied.satisfied, true);
+  });
 
   // ── 8. createTaskSpec stamps the group when canonical=required ────────
   it("e2e: explicit external request stamps required_policy_groups only", () => {

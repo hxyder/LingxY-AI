@@ -1,0 +1,100 @@
+export function createDesktopWindowActions({
+  windows,
+  DESKTOP_SHELL_MANIFEST,
+  DOCK_WINDOW_ID,
+  getWindowPreferences,
+  setManagedWindowBounds,
+  resolveWindowBounds,
+  enforceDockWindowInvariants,
+  applyWindowPresentation,
+  enqueueWindowMessage,
+  IPC_CHANNELS
+} = {}) {
+  if (!(windows instanceof Map)) {
+    throw new TypeError("createDesktopWindowActions requires windows Map.");
+  }
+  if (!DESKTOP_SHELL_MANIFEST?.windows) {
+    throw new TypeError("createDesktopWindowActions requires DESKTOP_SHELL_MANIFEST with .windows.");
+  }
+  if (typeof applyWindowPresentation !== "function") {
+    throw new TypeError("createDesktopWindowActions requires applyWindowPresentation.");
+  }
+
+  function showWindow(windowId) {
+    const target = windows.get(windowId);
+    if (!target) {
+      return false;
+    }
+    if (target.isMinimized()) {
+      target.restore();
+    }
+    const windowDef = DESKTOP_SHELL_MANIFEST.windows.find((candidate) => candidate.id === windowId);
+    if (windowDef && !getWindowPreferences(windowId)?.bounds) {
+      setManagedWindowBounds(windowId, target, resolveWindowBounds(windowDef, target));
+    }
+    if (windowId === DOCK_WINDOW_ID) {
+      enforceDockWindowInvariants(target);
+    }
+    applyWindowPresentation(windowId, target);
+    target.show();
+    try { target.moveTop(); } catch { /* ignore */ }
+    target.focus();
+    // Keep the dock orb above all other UCA windows so it remains draggable
+    // even when the overlay is open on top.
+    if (windowId !== "dock") {
+      const dock = windows.get("dock");
+      if (dock && dock.isVisible()) {
+        dock.setAlwaysOnTop(true, "screen-saver");
+        dock.showInactive();
+        dock.moveTop();
+      }
+    }
+    return true;
+  }
+
+  function hideWindow(windowId) {
+    const target = windows.get(windowId);
+    if (!target) {
+      return false;
+    }
+    target.hide();
+    return true;
+  }
+
+  function openOverlayVoice(payload = {}) {
+    const mode = payload?.mode === "note" ? "note" : "voice";
+    const shortcutId = mode === "note" ? "note-wake" : "voice-wake";
+    const shown = showWindow("overlay");
+    enqueueWindowMessage("overlay", IPC_CHANNELS.shortcutTriggered, {
+      shortcutId,
+      accelerator: mode === "note" ? "Ctrl+Shift+N" : "Ctrl+Shift+V",
+      source: "shell_bridge",
+      mode,
+      autoStart: payload?.autoStart !== false,
+      preserveContext: Boolean(payload?.preserveContext)
+    });
+    return {
+      ok: Boolean(shown),
+      mode,
+      shortcutId
+    };
+  }
+
+  function sendEchoShortcutWake(kind = "voice") {
+    const payload = {
+      kind,
+      transcript: "shortcut",
+      source: "shortcut",
+      triggeredAt: Date.now()
+    };
+    const dock = windows.get("dock");
+    if (dock && !dock.webContents?.isDestroyed?.()) {
+      dock.webContents.send("uca:echo-shortcut-wake", payload);
+      return true;
+    }
+    enqueueWindowMessage("overlay", "uca:echo-wake", payload);
+    return false;
+  }
+
+  return { showWindow, hideWindow, openOverlayVoice, sendEchoShortcutWake };
+}

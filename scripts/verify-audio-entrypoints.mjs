@@ -18,6 +18,7 @@ const audioView = read("src/desktop/renderer/overlay-audio-view.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
 const main = [
   read("src/desktop/tray/electron-main.mjs"),
+  read("src/desktop/tray/desktop-window-actions.mjs"),
   ...readDesktopTrayIpcModules()
 ].join("\n");
 const manifest = read("src/desktop/shared/manifest.mjs");

@@ -377,4 +377,39 @@ assert.match(desktopClipboardWatcher, /let lastClipboardText = ""/,
 assert.match(desktopClipboardWatcher, /intervalMs = 800/,
   "desktop-clipboard-watcher.mjs must preserve the existing clipboard poll cadence");
 
+const desktopWindowLifecycle = readFileSync(
+  path.join(repoRoot, "src", "desktop", "tray", "desktop-window-lifecycle.mjs"),
+  "utf8"
+);
+assert.doesNotMatch(electronMain, /browserWindow\.on\(["']close["'],/,
+  "electron-main.mjs must not own window lifecycle close handler");
+assert.doesNotMatch(electronMain, /browserWindow\.on\(["']focus["'],/,
+  "electron-main.mjs must not own window lifecycle focus handler");
+assert.doesNotMatch(electronMain, /browserWindow\.on\(["']closed["'],/,
+  "electron-main.mjs must not own window lifecycle closed handler");
+assert.doesNotMatch(electronMain, /let boundsPersistTimer = null/,
+  "electron-main.mjs must not own window bounds persist debounce timer");
+assert.doesNotMatch(electronMain, /scheduleBoundsPersist/,
+  "electron-main.mjs must not own window bounds persist schedule");
+assert.doesNotMatch(electronMain, /did-fail-load/,
+  "electron-main.mjs must not own window lifecycle did-fail-load handler");
+assert.match(desktopWindowLifecycle, /export function installWindowLifecycleHandlers\(/,
+  "desktop-window-lifecycle.mjs must own window lifecycle handler installation");
+assert.match(desktopWindowLifecycle, /browserWindow\.on\(["']close["'],/,
+  "desktop-window-lifecycle.mjs must own close->hide handler");
+assert.match(desktopWindowLifecycle, /browserWindow\.on\(["']focus["'],/,
+  "desktop-window-lifecycle.mjs must own focus->shellWindowFocused handler");
+assert.match(desktopWindowLifecycle, /browserWindow\.on\(["']closed["'],/,
+  "desktop-window-lifecycle.mjs must own closed->cleanup handler");
+assert.match(desktopWindowLifecycle, /let boundsPersistTimer = null/,
+  "desktop-window-lifecycle.mjs must own bounds persist debounce state");
+assert.match(desktopWindowLifecycle, /scheduleBoundsPersist/,
+  "desktop-window-lifecycle.mjs must own bounds persist schedule");
+assert.match(desktopWindowLifecycle, /did-finish-load/,
+  "desktop-window-lifecycle.mjs must own did-finish-load handler");
+assert.match(desktopWindowLifecycle, /did-fail-load/,
+  "desktop-window-lifecycle.mjs must own did-fail-load handler");
+assert.match(desktopWindowLifecycle, /windowDef\.locksRendererZoom/,
+  "desktop-window-lifecycle.mjs must own zoom-lock handler install");
+
 console.log("[verify-main-process-blocking] Electron main/tray blocking guard verified");

@@ -97,9 +97,18 @@ assert.ok(
   /notify:\s*async\s*\(\s*\{\s*kind,\s*payload\s*\}\s*\)\s*=>/.test(electronMainSrc),
   "electron-main.mjs must wire createAutoUpdater notify to a brand-aware handler (popup-card / safeNotify)"
 );
+// Auto-updater notify chain: electron-main.mjs createAutoUpdater({ notify })
+// → notifyAutoUpdater({ kind, payload }) → desktop-notifications.mjs safeNotify.
+// The shortcut router also calls safeNotify (presenter-mode toggle), but that
+// is a separate code path — only the notifyAutoUpdater → safeNotify edge
+// satisfies the auto-updater invariant.
 assert.ok(
-  /safeNotify\(/.test(electronMainSrc),
-  "electron-main.mjs auto-updater notify handler should reach safeNotify"
+  /notifyAutoUpdater\(\s*\{\s*kind,\s*payload\s*\}\s*\)/.test(electronMainSrc),
+  "electron-main.mjs auto-updater notify callback must call notifyAutoUpdater({ kind, payload })"
+);
+assert.ok(
+  /async function notifyAutoUpdater[\s\S]{0,600}safeNotify\(/.test(desktopNotificationsSrc),
+  "desktop-notifications.mjs notifyAutoUpdater must call safeNotify for branded update notifications"
 );
 assert.ok(
   /async function safeNotify/.test(desktopNotificationsSrc)

@@ -34,6 +34,11 @@ import {
   resolveWindowOptions
 } from "./desktop-window-config.mjs";
 import { createDesktopWindowBounds } from "./desktop-window-bounds.mjs";
+import { installWindowLifecycleHandlers } from "./desktop-window-lifecycle.mjs";
+import { createDesktopWindowActions } from "./desktop-window-actions.mjs";
+import { createShortcutRouter } from "./desktop-shortcut-router.mjs";
+import { createLinkBrowserWindowManager } from "./desktop-link-browser-window.mjs";
+import { createPreviewWindowManager } from "./desktop-preview-window-manager.mjs";
 import {
   buildOverlayPayloadFromFiles,
   ECHO_DOCK_DROP_VOICE_READY_MS
@@ -137,11 +142,6 @@ export function createElectronShellRuntime({
   let noteRecordingState = { active: false };
   let registeredPopupCardManager = null;
   let dockDisplayRepairInstalled = false;
-  // UCA-182 Phase 14: dedicated preview BrowserWindow anchored to the
-  // right edge of the primary display. Created lazily on first show
-  // so apps that never preview a file don't pay the memory cost.
-  let previewWindow = null;
-  let previewWindowPinned = false;
   const linkBrowserWindows = new Set();
   let openLinkBrowserForSmoke = null;
   let openPreviewWindowForSmoke = null;
@@ -216,6 +216,24 @@ export function createElectronShellRuntime({
     getWindowPreferences,
     getWindowSizeLimits
   });
+  const {
+    showWindow,
+    hideWindow,
+    openOverlayVoice,
+    sendEchoShortcutWake
+  } = createDesktopWindowActions({
+    windows,
+    DESKTOP_SHELL_MANIFEST,
+    DOCK_WINDOW_ID,
+    getWindowPreferences,
+    setManagedWindowBounds,
+    resolveWindowBounds,
+    enforceDockWindowInvariants,
+    applyWindowPresentation,
+    enqueueWindowMessage,
+    IPC_CHANNELS
+  });
+
   const {
     showDockContextMenu
   } = createDockContextMenuController({
@@ -394,109 +412,20 @@ export function createElectronShellRuntime({
       }
       lockWindowRendererZoom(windowDef, browserWindow);
       applyWindowPresentation(windowDef.id, browserWindow);
-      browserWindow.on("close", (event) => {
-        if (!quitting) {
-          event.preventDefault();
-          browserWindow.hide();
-        }
+      installWindowLifecycleHandlers({
+        browserWindow, windowDef,
+        quitting: () => quitting,
+        DOCK_WINDOW_ID, IPC_CHANNELS,
+        readyWindows, windows,
+        resolvedServiceBaseUrl: () => resolvedServiceBaseUrl,
+        getNoteRecordingState: () => noteRecordingState,
+        BrowserWindow,
+        getManagedWindowBounds, lockWindowRendererZoom,
+        installDockHudScrollLock, enforceDockWindowInvariants,
+        persistWindowPreferences, clearWindowMessages, flushWindowMessages,
+        safeError, safeWarn
       });
-      browserWindow.on("focus", () => {
-        browserWindow.webContents.send(IPC_CHANNELS.shellWindowFocused, {
-          windowId: windowDef.id
-        });
-      });
-      // Overlay click-outside behaviour: when the overlay loses focus AND
-      // the user has truly left the application (no other internal window
-      // took focus — popup-card / preview / settings / dock are all
-      // BrowserWindow instances and would show up in getFocusedWindow),
-      // ask the renderer to run its dismiss flow. Defer one tick so the
-      // OS can finish moving focus before we sample it.
-      if (windowDef.id === "overlay") {
-        browserWindow.on("blur", () => {
-          setTimeout(() => {
-            if (browserWindow.isDestroyed()) return;
-            if (!browserWindow.isVisible()) return;
-            // null → no LingxY window has focus → user is in another app.
-            // Non-null → a sibling internal window (popup-card etc.) took
-            // focus, so leave the overlay open underneath.
-            if (BrowserWindow.getFocusedWindow() != null) return;
-            try {
-              browserWindow.webContents.send(IPC_CHANNELS.overlayAutoHide, {});
-            } catch (error) {
-              safeWarn("[overlay] auto-hide IPC send failed:", error?.message ?? error);
-            }
-          }, 80);
-        });
-      }
-      browserWindow.on("closed", () => {
-        readyWindows.delete(windowDef.id);
-        clearWindowMessages(windowDef.id);
-        windows.delete(windowDef.id);
-      });
-      let boundsPersistTimer = null;
-      const scheduleBoundsPersist = () => {
-        if (!["overlay", "console", "dock"].includes(windowDef.id)) return;
-        if (boundsPersistTimer) clearTimeout(boundsPersistTimer);
-        boundsPersistTimer = setTimeout(() => {
-          if (browserWindow.isDestroyed()) return;
-          persistWindowPreferences(windowDef.id, { bounds: getManagedWindowBounds(windowDef.id, browserWindow) });
-        }, 180);
-      };
-      browserWindow.on("move", scheduleBoundsPersist);
-      browserWindow.on("resize", () => {
-        if (windowDef.id === DOCK_WINDOW_ID) {
-          enforceDockWindowInvariants(browserWindow);
-        }
-        scheduleBoundsPersist();
-      });
-      if (windowDef.locksRendererZoom) {
-        browserWindow.webContents.on("zoom-changed", (event) => {
-          event.preventDefault?.();
-          lockWindowRendererZoom(windowDef, browserWindow);
-        });
-        browserWindow.webContents.on("before-input-event", (event, input = {}) => {
-          if (input.type !== "keyDown") return;
-          const meta = Boolean(input.control || input.meta);
-          const key = `${input.key ?? ""}`.toLowerCase();
-          const code = `${input.code ?? ""}`;
-          const isZoomKey = ["+", "=", "-", "0"].includes(key)
-            || code === "NumpadAdd"
-            || code === "NumpadSubtract";
-          if (meta && isZoomKey) {
-            event.preventDefault?.();
-            lockWindowRendererZoom(windowDef, browserWindow);
-          }
-        });
-      }
-      if (windowDef.id === DOCK_WINDOW_ID) {
-        browserWindow.webContents.on("dom-ready", () => {
-          installDockHudScrollLock(browserWindow);
-          enforceDockWindowInvariants(browserWindow);
-        });
-      }
-      browserWindow.webContents.on("did-finish-load", () => {
-        lockWindowRendererZoom(windowDef, browserWindow);
-        readyWindows.add(windowDef.id);
-        if (windowDef.id === DOCK_WINDOW_ID) {
-          installDockHudScrollLock(browserWindow);
-          enforceDockWindowInvariants(browserWindow);
-        }
-        browserWindow.webContents.send(IPC_CHANNELS.shellReady, {
-          windowId: windowDef.id,
-          route: windowDef.route,
-          serviceBaseUrl: resolvedServiceBaseUrl
-        });
-        if (windowDef.id === "dock") {
-          browserWindow.webContents.send("uca:note-recording-state", noteRecordingState);
-        }
-        flushWindowMessages(windowDef.id);
-      });
-      // UCA-050: surface renderer load failures so they're not silent
-      browserWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
-        if (errorCode !== -3) { // -3 = ERR_ABORTED (normal on hide/navigate)
-          safeError(`[LingxY] Window "${windowDef.id}" failed to load: ${errorDescription} (${errorCode})`);
-        }
-      });
+
       browserWindow.loadURL(buildWindowUrl(windowDef, resolvedServiceBaseUrl));
       windows.set(windowDef.id, browserWindow);
     }
@@ -520,301 +449,31 @@ export function createElectronShellRuntime({
     screen.on("display-removed", () => repairDockWindowForDisplayChange("display-removed"));
   }
 
-  function showWindow(windowId) {
-    const target = windows.get(windowId);
-    if (!target) {
-      return false;
-    }
-    if (target.isMinimized()) {
-      target.restore();
-    }
-    const windowDef = DESKTOP_SHELL_MANIFEST.windows.find((candidate) => candidate.id === windowId);
-    if (windowDef && !getWindowPreferences(windowId)?.bounds) {
-      setManagedWindowBounds(windowId, target, resolveWindowBounds(windowDef, target));
-    }
-    if (windowId === DOCK_WINDOW_ID) {
-      enforceDockWindowInvariants(target);
-    }
-    applyWindowPresentation(windowId, target);
-    target.show();
-    try { target.moveTop(); } catch { /* ignore */ }
-    target.focus();
-    // Keep the dock orb above all other UCA windows so it remains draggable
-    // even when the overlay is open on top.
-    if (windowId !== "dock") {
-      const dock = windows.get("dock");
-      if (dock && dock.isVisible()) {
-        dock.setAlwaysOnTop(true, "screen-saver");
-        dock.showInactive();
-        dock.moveTop();
-      }
-    }
-    return true;
-  }
-
-  function hideWindow(windowId) {
-    const target = windows.get(windowId);
-    if (!target) {
-      return false;
-    }
-    target.hide();
-    return true;
-  }
-
-  function openOverlayVoice(payload = {}) {
-    const mode = payload?.mode === "note" ? "note" : "voice";
-    const shortcutId = mode === "note" ? "note-wake" : "voice-wake";
-    const shown = showWindow("overlay");
-    enqueueWindowMessage("overlay", IPC_CHANNELS.shortcutTriggered, {
-      shortcutId,
-      accelerator: mode === "note" ? "Ctrl+Shift+N" : "Ctrl+Shift+V",
-      source: "shell_bridge",
-      mode,
-      autoStart: payload?.autoStart !== false,
-      preserveContext: Boolean(payload?.preserveContext)
-    });
-    return {
-      ok: Boolean(shown),
-      mode,
-      shortcutId
-    };
-  }
-
-  function sendEchoShortcutWake(kind = "voice") {
-    const payload = {
-      kind,
-      transcript: "shortcut",
-      source: "shortcut",
-      triggeredAt: Date.now()
-    };
-    const dock = windows.get("dock");
-    if (dock && !dock.webContents?.isDestroyed?.()) {
-      dock.webContents.send("uca:echo-shortcut-wake", payload);
-      return true;
-    }
-    enqueueWindowMessage("overlay", "uca:echo-wake", payload);
-    return false;
-  }
+  const { buildShortcutHandler } = createShortcutRouter({
+    showWindow,
+    sendEchoShortcutWake,
+    captureActiveWindowContext,
+    buildShellContextPayload,
+    getCaptureInFlight: () => captureInFlight,
+    setCaptureInFlight: (val) => { captureInFlight = val; },
+    clipboard,
+    enqueueWindowMessage,
+    IPC_CHANNELS,
+    windows,
+    loadSettings,
+    resolvedServiceBaseUrl: () => resolvedServiceBaseUrl,
+    requestDesktopServiceJson,
+    execFileAsync,
+    desktopScriptPath,
+    screenshotCapturePath,
+    safeError,
+    appendDesktopDiagnosticError,
+    safeNotify
+  });
 
   function registerShortcuts() {
     for (const shortcut of DESKTOP_SHELL_MANIFEST.shortcuts) {
-      const shortcutHandler = () => {
-        const payload = {
-          shortcutId: shortcut.id,
-          accelerator: shortcut.accelerator
-        };
-
-        if (shortcut.id === "toggle-overlay") {
-          // Clean open — no auto-capture. Earlier behaviour ran a PowerShell
-          // selection capture that could mojibake non-ASCII text in stdout
-          // and confused users who just wanted an empty input. We still keep
-          // the active browser/file window as a lightweight hint so the
-          // renderer can answer "summarize this page/video" once the user asks.
-          captureActiveWindowContext({ includeSelection: false }).then((ctx) => {
-            const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
-            if (!hasActiveWindow) return;
-            const shellPayload = buildShellContextPayload({
-              context: ctx,
-              sourceApp: ctx.processName ?? ctx.activeWindow?.process ?? "unknown",
-              captureMode: "hotkey_preview"
-            });
-            enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
-          }).catch(() => {});
-          showWindow("overlay");
-          for (const bw of windows.values()) {
-            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-          }
-          return;
-        }
-
-        if (shortcut.id === "voice-wake") {
-          captureActiveWindowContext({ includeSelection: false }).catch(() => {});
-          void loadSettings().then((settings) => {
-            if (settings?.echoMode) {
-              sendEchoShortcutWake("voice");
-              return;
-            }
-            // Open overlay and immediately start voice input.
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-          });
-          return;
-        }
-
-        if (shortcut.id === "note-wake") {
-          captureActiveWindowContext({ includeSelection: false }).catch(() => {});
-          void loadSettings().then((settings) => {
-            if (settings?.echoMode) {
-              sendEchoShortcutWake("note");
-              return;
-            }
-            // Open overlay and immediately start voice-note recording (dual channel:
-            // mic + system audio). Same wiring as voice-wake; overlay decides mode.
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-          });
-          return;
-        }
-
-        if (shortcut.id === "capture-and-ask") {
-          // Explicit "grab whatever the user is looking at" hotkey. Files
-          // pass through cleanly; selected text only attaches when it
-          // round-trips through stdout without encoding loss. UCA-047 also
-          // runs the active-window-probe in parallel to add URL / document
-          // path hints so the overlay can offer "analyse this page" /
-          // "summarise this document" quick-actions even when there's no
-          // clipboard selection.
-          //
-          // UCA-050: guard against rapid double-press racing two concurrent
-          // captureActiveWindowContext() promises that could each try to
-          // enqueue a different context payload to the overlay.
-          if (captureInFlight) {
-            return;
-          }
-          captureInFlight = true;
-          // Snapshot clipboard synchronously right now — before any async work
-          // that might shift focus or delay the SimulateCopy execution. This
-          // lets us detect whether SimulateCopy completed late (Add-Type JIT
-          // on first run can take 500–2000ms, so the clipboard update may
-          // arrive after the PowerShell script's own read but before we show
-          // the overlay).
-          const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
-          captureActiveWindowContext({
-            allowClipboardFallback: false,
-            clipboardBaseline: hotKeyClipboardSnapshot
-          }).then((ctx) => {
-            // If the in-script clipboard read missed the SimulateCopy result
-            // (timing race on first run), check whether the clipboard changed
-            // since the hotkey fired and adopt the new value.
-            if (!ctx.selectedText) {
-              const postClipboard = clipboard.readText() ?? "";
-              const postTrimmed = postClipboard.trim();
-              const preTrimmed = hotKeyClipboardSnapshot.trim();
-              if (postTrimmed.length > 2 && postTrimmed !== preTrimmed) {
-                ctx.selectedText = postTrimmed;
-              }
-            }
-
-            const hasFiles = ctx.filePaths.length > 0;
-            const hasText = Boolean(ctx.selectedText);
-            const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
-
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-
-            if (hasFiles || hasText || hasActiveWindow) {
-              const shellPayload = buildShellContextPayload({
-                context: ctx,
-                sourceApp: ctx.processName ?? ctx.activeWindow?.process ?? "unknown",
-                captureMode: "hotkey_capture"
-              });
-              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
-            }
-          }).catch(() => {
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-          }).finally(() => {
-            captureInFlight = false;
-          });
-          return;
-        }
-
-        if (shortcut.id === "capture-screenshot") {
-          const screenshotScriptPath = desktopScriptPath("capture-screenshot.ps1");
-          const screenshotPath = screenshotCapturePath();
-
-          execFileAsync("powershell", [
-            "-NoProfile", "-ExecutionPolicy", "Bypass",
-            "-File", screenshotScriptPath,
-            "-OutputPath", screenshotPath
-          ], { encoding: "utf8", timeout: 8000 }).then(({ stdout }) => {
-            let result;
-            try { result = JSON.parse(stdout.trim()); } catch { result = { ok: false }; }
-            if (result.ok) {
-              showWindow("overlay");
-              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
-                targetWindow: "overlay",
-                source_app: "uca.screenshot",
-                capture_mode: "hotkey_capture",
-                file_paths: [screenshotPath]
-              });
-            } else {
-              safeError("[LingxY] capture-screenshot: PowerShell returned ok=false", result);
-              showWindow("overlay");
-              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
-                targetWindow: "overlay",
-                source_app: "uca.screenshot",
-                capture_mode: "hotkey_capture",
-                error: result.error ?? "截图失败，未生成图片。"
-              });
-            }
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-          }).catch((err) => {
-            safeError("[LingxY] capture-screenshot: PowerShell failed", err?.message ?? err);
-            showWindow("overlay");
-            enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
-              targetWindow: "overlay",
-              source_app: "uca.screenshot",
-              capture_mode: "hotkey_capture",
-              error: err?.message ?? "截图失败，未生成图片。"
-            });
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-          });
-          return;
-        }
-
-        if (shortcut.id === "open-console") {
-          showWindow("console");
-        }
-        if (shortcut.id === "toggle-presenter-mode") {
-          // R-feedback 2026-05-07: shortcut was registered in
-          // manifest.mjs but no handler — accelerator did nothing.
-          // Toggle via the runtime config endpoint so other surfaces
-          // (Console security panel, broker) stay in sync. Best-effort
-          // — failure logs to diagnostics, doesn't bubble.
-          (async () => {
-            try {
-              const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
-              const current = await requestDesktopServiceJson({
-                base, method: "GET", actor: "shortcut", pathname: "/security/state"
-              }).catch(() => null);
-              const currentPresenter = current?.security?.presenter_mode === true;
-              const next = !currentPresenter;
-              await requestDesktopServiceJson({
-                base, method: "POST", actor: "shortcut",
-                pathname: "/security/state",
-                body: { presenter_mode: next }
-              });
-              await safeNotify({
-                title: next ? "Presenter Mode 已开启" : "Presenter Mode 已关闭",
-                body: next
-                  ? "已隐藏 dock / overlay / popup card。再次按 Ctrl+Alt+P 关闭。"
-                  : "桌面浮窗已恢复。",
-                taskId: `presenter:${next ? "on" : "off"}`,
-                dedupeKey: "presenter-mode-toggle",
-                allowContinue: false
-              });
-            } catch (err) {
-              void appendDesktopDiagnosticError("presenter_mode_toggle_failed", err, {});
-            }
-          })();
-        }
-        for (const browserWindow of windows.values()) {
-          browserWindow.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-        }
-      };
+      const shortcutHandler = buildShortcutHandler(shortcut);
       registeredShortcutHandlers.set(shortcut.id, shortcutHandler);
       const registered = globalShortcut.register(shortcut.accelerator, shortcutHandler);
       if (!registered) {
@@ -1928,127 +1587,24 @@ export function createElectronShellRuntime({
         }
       }, 5000).unref?.();
 
-      // UCA-182 Phase 14: preview window lifecycle. Created on demand,
-      // positioned as a real, movable review window rather than a narrow
-      // side sliver so generated documents can be inspected comfortably.
-      // We keep the window between uses (hide, not destroy) so the
-      // next preview can paint without reloading the HTML + scripts.
-      function computePreviewBounds() {
-        const { workArea } = screen.getPrimaryDisplay();
-        const width = Math.max(980, Math.min(Math.round(workArea.width * 0.76), 1500));
-        const height = Math.max(640, Math.min(Math.round(workArea.height * 0.84), 1040));
-        const x = workArea.x + Math.max(0, Math.round((workArea.width - width) / 2));
-        const y = workArea.y + Math.max(0, Math.round((workArea.height - height) / 2));
-        return { x, y, width, height };
-      }
-      function ensurePreviewWindow() {
-        if (previewWindow && !previewWindow.isDestroyed()) return previewWindow;
-        const bounds = computePreviewBounds();
-        const baseUrl = resolvedServiceBaseUrl ?? "";
-        const url = buildRendererFileUrl("preview-window.html")
-          + `?serviceBaseUrl=${encodeURIComponent(baseUrl)}`;
-        previewWindow = brandIcons.createBrandedBrowserWindow(BrowserWindow, {
-          ...bounds,
-          show: false,
-          frame: false,
-          transparent: false,
-          alwaysOnTop: false,
-          resizable: true,
-          movable: true,
-          skipTaskbar: false,
-          title: "LingxY Preview",
-          backgroundColor: "#ffffff",
-          webPreferences: {
-            sandbox: false,
-            contextIsolation: true,
-            preload: PRELOAD_PATH
-          }
-        });
-        previewWindow.on("close", (event) => {
-          // Hide instead of destroy so state survives across opens.
-          // `quitting` is the module-scoped flag set in the before-quit
-          // handler so we don't keep blocking the app shutdown.
-          if (!quitting) {
-            event.preventDefault();
-            previewWindow.hide();
-          }
-        });
-        previewWindow.on("closed", () => { previewWindow = null; });
-        previewWindow.loadURL(url);
-        return previewWindow;
-      }
-      function showPreviewWindowIfHidden() {
-        const win = ensurePreviewWindow();
-        if (!win.isVisible()) {
-          // Re-compute bounds in case the user moved to a different
-          // display since last open.
-          try { win.setBounds(computePreviewBounds()); } catch { /* ignore */ }
-          win.showInactive();
-        } else {
-          try { win.moveTop(); } catch { /* ignore */ }
-        }
-        return win;
-      }
-      // Deliver to the preview window with loading-aware queueing.
-      // Problem this fixes: after showPreviewWindowIfHidden() the window
-      // is isVisible() = true but DOM scripts haven't run yet; any
-      // webContents.send() lands on a window without event listeners and
-      // the message is lost. We buffer by channel until did-finish-load
-      // fires, and for delta frames we coalesce (only keep the latest
-      // payload — partial_json is already cumulative).
-      const previewPendingByChannel = new Map();
-      let previewFlushBound = false;
-      function flushPreviewPending() {
-        if (!previewWindow || previewWindow.isDestroyed()) {
-          previewPendingByChannel.clear();
-          return;
-        }
-        for (const [channel, payload] of previewPendingByChannel) {
-          try { previewWindow.webContents.send(channel, payload); } catch { /* ignore */ }
-        }
-        previewPendingByChannel.clear();
-      }
-      function sendToPreview(channel, payload, { coalesce = false } = {}) {
-        const win = showPreviewWindowIfHidden();
-        if (win.webContents.isLoading()) {
-          // Buffer. For delta (coalesce), replace any prior frame on
-          // the same channel so we only deliver the latest.
-          if (coalesce) {
-            previewPendingByChannel.set(channel, payload);
-          } else if (previewPendingByChannel.has(channel)) {
-            // For non-delta frames we still overwrite by channel; the
-            // latest init / committed is what the window cares about.
-            previewPendingByChannel.set(channel, payload);
-          } else {
-            previewPendingByChannel.set(channel, payload);
-          }
-          if (!previewFlushBound) {
-            previewFlushBound = true;
-            win.webContents.once("did-finish-load", () => {
-              previewFlushBound = false;
-              flushPreviewPending();
-            });
-          }
-          return;
-        }
-        try { win.webContents.send(channel, payload); } catch { /* ignore */ }
-      }
+      const previewWindowManager = createPreviewWindowManager({
+        BrowserWindow,
+        brandIcons,
+        buildRendererFileUrl,
+        PRELOAD_PATH,
+        resolvedServiceBaseUrl: () => resolvedServiceBaseUrl ?? "",
+        quitting: () => quitting,
+      });
+
+      const { sendToPreview, getPreviewWindow, hidePreviewWindow, setPreviewWindowPinned } = previewWindowManager;
 
       const previewIpc = registerPreviewIpc({
         ipcMain,
         IPC_CHANNELS,
         sendToPreview,
-        getPreviewWindow: () => previewWindow,
-        hidePreviewWindow: () => {
-          if (previewWindow && !previewWindow.isDestroyed()) previewWindow.hide();
-        },
-        setPreviewWindowPinned: (flag) => {
-          previewWindowPinned = Boolean(flag);
-          if (previewWindow && !previewWindow.isDestroyed()) {
-            try { previewWindow.setAlwaysOnTop(previewWindowPinned, "screen-saver"); } catch { /* ignore */ }
-          }
-          return previewWindowPinned;
-        }
+        getPreviewWindow,
+        hidePreviewWindow,
+        setPreviewWindowPinned,
       });
       openPreviewWindowForSmoke = previewIpc.openPreviewWindowForSmoke;
 
@@ -2062,274 +1618,19 @@ export function createElectronShellRuntime({
         }
       }
 
-      // Persistence key for the LingxY Browser window. All link-browser
-      // windows share this single bounds entry — opening multiple
-      // popups in quick succession is fine; the LAST close wins for
-      // position memory. (Per-URL persistence would cluster on first
-      // visits and feel random; one stable position matches user
-      // intent: "open my reading panel where I left it".)
-      const LINK_BROWSER_PREF_ID = "link_browser";
-
-      function readLinkBrowserBounds() {
-        const prefs = getCachedSettings()?.windowPreferences?.[LINK_BROWSER_PREF_ID] ?? {};
-        const persisted = prefs.bounds;
-        if (
-          persisted
-          && Number.isFinite(persisted.x)
-          && Number.isFinite(persisted.y)
-          && Number.isFinite(persisted.width)
-          && Number.isFinite(persisted.height)
-          && persisted.width >= 480
-          && persisted.height >= 360
-        ) {
-          // Codex round-1: pick the display nearest the persisted bounds
-          // (multi-monitor); only fall back to primary if matching fails.
-          // First clamp size to the target work area, THEN clamp x/y so
-          // the WHOLE window fits — the previous "200x150 visible" rule
-          // could leave the window mostly off-screen.
-          const targetDisplay = screen.getDisplayMatching?.({
-            x: persisted.x,
-            y: persisted.y,
-            width: persisted.width,
-            height: persisted.height
-          }) ?? screen.getPrimaryDisplay();
-          const wa = targetDisplay.workArea;
-          const width = Math.min(persisted.width, wa.width);
-          const height = Math.min(persisted.height, wa.height);
-          return {
-            width,
-            height,
-            x: Math.max(wa.x, Math.min(persisted.x, wa.x + wa.width - width)),
-            y: Math.max(wa.y, Math.min(persisted.y, wa.y + wa.height - height))
-          };
-        }
-        const { workArea } = screen.getPrimaryDisplay();
-        const width = Math.max(920, Math.min(Math.round(workArea.width * 0.58), 1280));
-        const height = Math.max(620, Math.min(workArea.height - 48, 900));
-        return {
-          width,
-          height,
-          x: workArea.x + Math.max(12, Math.round((workArea.width - width) / 2)),
-          y: workArea.y + 24
-        };
-      }
-
-      function showLinkBrowserWindow(url) {
-        const initialBounds = readLinkBrowserBounds();
-        const win = brandIcons.createBrandedBrowserWindow(BrowserWindow, {
-          ...initialBounds,
-          show: false,
-          frame: true,
-          resizable: true,
-          movable: true,
-          minimizable: true,
-          maximizable: true,
-          closable: true,
-          alwaysOnTop: false,
-          skipTaskbar: false,
-          title: "LingxY Browser",
-          backgroundColor: "#ffffff",
-          webPreferences: {
-            sandbox: true,
-            contextIsolation: true,
-            nodeIntegration: false,
-            webSecurity: true
-          }
-        });
-        linkBrowserWindows.add(win);
-        win.on("closed", () => linkBrowserWindows.delete(win));
-        function closeLinkBrowserWindow() {
-          if (!win.isDestroyed?.()) {
-            try { win.close(); } catch { /* ignore */ }
-          }
-        }
-        async function injectLinkBrowserCloseControl() {
-          if (win.isDestroyed?.() || win.webContents?.isDestroyed?.()) return;
-          try {
-            await win.webContents.executeJavaScript(`
-              (() => {
-                const hostId = "lingxy-link-browser-close-host";
-                document.getElementById(hostId)?.remove();
-                const host = document.createElement("div");
-                host.id = hostId;
-                host.style.position = "fixed";
-                host.style.top = "12px";
-                host.style.right = "12px";
-                host.style.zIndex = "2147483647";
-                host.style.pointerEvents = "auto";
-                const root = host.attachShadow({ mode: "closed" });
-                const style = document.createElement("style");
-                style.textContent = \`
-                  button {
-                    all: initial;
-                    box-sizing: border-box;
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 6px;
-                    min-height: 32px;
-                    padding: 0 10px;
-                    border-radius: 8px;
-                    border: 1px solid rgba(15, 23, 42, 0.18);
-                    background: rgba(255, 255, 255, 0.96);
-                    color: #111827;
-                    font: 600 12px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                    box-shadow: 0 8px 28px rgba(15, 23, 42, 0.22);
-                    cursor: pointer;
-                    user-select: none;
-                    -webkit-font-smoothing: antialiased;
-                  }
-                  button:hover { background: #f8fafc; border-color: rgba(15, 23, 42, 0.28); }
-                  button:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
-                  .mark {
-                    display: inline-grid;
-                    place-items: center;
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 50%;
-                    background: #111827;
-                    color: white;
-                    font-size: 14px;
-                    line-height: 18px;
-                  }
-                \`;
-                const button = document.createElement("button");
-                button.type = "button";
-                button.title = "关闭 LingxY 链接窗口";
-                button.setAttribute("aria-label", "关闭 LingxY 链接窗口");
-                button.innerHTML = '<span class="mark" aria-hidden="true">×</span><span>关闭</span>';
-                button.addEventListener("click", (event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  window.location.href = "lingxy://close-link-browser";
-                });
-                root.append(style, button);
-                document.documentElement.appendChild(host);
-              })();
-            `, true);
-          } catch { /* ignore pages that reject DOM injection */ }
-        }
-        win.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
-          const safeUrl = normalizeOpenableUrl(nextUrl);
-          if (safeUrl && /^https?:/i.test(safeUrl)) {
-            showLinkBrowserWindow(safeUrl);
-          } else if (safeUrl) {
-            void shell.openExternal(safeUrl);
-          }
-          return { action: "deny" };
-        });
-        win.webContents.on("will-navigate", (event, nextUrl) => {
-          if (String(nextUrl ?? "").startsWith("lingxy://close-link-browser")) {
-            event.preventDefault();
-            closeLinkBrowserWindow();
-            return;
-          }
-          const safeUrl = normalizeOpenableUrl(nextUrl);
-          if (!safeUrl) event.preventDefault();
-        });
-        win.webContents.on("before-input-event", (_event, input = {}) => {
-          if (input.type === "keyDown" && input.key === "Escape") {
-            closeLinkBrowserWindow();
-          }
-        });
-
-        // UX polish: window title reflects the live page title rather
-        // than the static "LingxY Browser" string. Falls back to the
-        // host name when the page hasn't set a title yet (or is in the
-        // middle of navigating). Keeps the "LingxY ·" prefix so the
-        // window is still recognisable as our browser in the taskbar.
-        function applyDynamicTitle() {
-          if (win.isDestroyed?.()) return;
-          let suffix = "";
-          try {
-            const pageTitle = (win.webContents.getTitle?.() ?? "").trim();
-            if (pageTitle) {
-              suffix = pageTitle;
-            } else {
-              const currentUrl = win.webContents.getURL?.() ?? "";
-              suffix = currentUrl ? new URL(currentUrl).hostname : "";
-            }
-          } catch { /* ignore */ }
-          try {
-            win.setTitle(suffix ? `LingxY · ${suffix}` : "LingxY Browser");
-          } catch { /* ignore */ }
-        }
-        win.webContents.on("page-title-updated", applyDynamicTitle);
-        win.webContents.on("did-navigate", applyDynamicTitle);
-        win.webContents.on("did-navigate", () => { void injectLinkBrowserCloseControl(); });
-        win.webContents.on("did-finish-load", () => {
-          applyDynamicTitle();
-          void injectLinkBrowserCloseControl();
-        });
-
-        // Persist bounds whenever the user moves or resizes the window
-        // so the next open lands where they left it. True trailing-edge
-        // debounce: every resize/move event RESETS the timer so only
-        // the final bounds get written. Codex round-1 caught the
-        // earlier `if (persistTimer) return` shape — that was a
-        // leading-edge throttle which dropped the user's final position
-        // when they closed the window before the throttle period
-        // elapsed.
-        let persistTimer = null;
-        function flushPersistNow() {
-          if (persistTimer) clearTimeout(persistTimer);
-          persistTimer = null;
-          if (win.isDestroyed?.()) return;
-          try {
-            const bounds = win.getBounds();
-            persistWindowPreferences(LINK_BROWSER_PREF_ID, { bounds });
-          } catch { /* ignore */ }
-        }
-        function schedulePersist() {
-          if (persistTimer) clearTimeout(persistTimer);
-          persistTimer = setTimeout(() => {
-            persistTimer = null;
-            if (win.isDestroyed?.()) return;
-            try {
-              const bounds = win.getBounds();
-              persistWindowPreferences(LINK_BROWSER_PREF_ID, { bounds });
-            } catch { /* ignore */ }
-          }, 400);
-        }
-        win.on("resize", schedulePersist);
-        win.on("move", schedulePersist);
-        // `close` fires synchronously *before* the window is destroyed
-        // so getBounds() still works; `closed` fires after destroy.
-        // Flush any pending bounds write here so a fast close after a
-        // drag doesn't lose the final position.
-        win.on("close", flushPersistNow);
-        // Show + bring-to-front only after the page is loading, so the
-        // user sees a real navigation rather than a blank chrome flash.
-        // The dock is the only alwaysOnTop window in the app, but it is
-        // tiny (48x48) so the link browser still dominates the viewport.
-        // Codex review: ready-to-show is not guaranteed to fire on every
-        // load (paintWhenInitiallyHidden quirks, slow remote resources).
-        // Belt-and-braces with an 8 s fallback timer so the window is
-        // never left invisible without recourse.
-        let shownOnce = false;
-        const showOnce = () => {
-          if (shownOnce) return;
-          shownOnce = true;
-          try { win.show(); win.focus(); } catch { /* ignore */ }
-        };
-        win.once("ready-to-show", showOnce);
-        const fallbackShowTimer = setTimeout(showOnce, 8000);
-        win.on("closed", () => {
-          clearTimeout(fallbackShowTimer);
-          if (persistTimer) clearTimeout(persistTimer);
-        });
-        win.loadURL(url);
-        return { ok: true, mode: "lingxy_browser" };
-      }
+      const linkBrowserManager = createLinkBrowserWindowManager({
+        BrowserWindow,
+        screen,
+        shell,
+        createBrandedBrowserWindow: brandIcons.createBrandedBrowserWindow,
+        normalizeOpenableUrl,
+        getCachedSettings,
+        persistWindowPreferences,
+        linkBrowserWindows,
+        getRuntime: () => runtime
+      });
+      const { showLinkBrowserWindow, readLinkOpenPreference } = linkBrowserManager;
       openLinkBrowserForSmoke = showLinkBrowserWindow;
-
-      function readLinkOpenPreference() {
-        try {
-          const config = runtime?.configStore?.load?.() ?? {};
-          const mode = String(config?.ui?.linkOpenMode ?? "").trim().toLowerCase();
-          if (["system", "lingxy_browser", "ask"].includes(mode)) return mode;
-        } catch { /* fall through */ }
-        return "system";
-      }
 
       registerShellOpenUrlIpc({
         ipcMain,

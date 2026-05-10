@@ -124,9 +124,10 @@ assert.equal(preload.includes("readTextFile"), true);
 assert.equal(preload.includes("writeClipboardText"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
-assert.equal(mainProcess.includes("did-finish-load"), true);
-assert.equal(mainProcess.includes("browserWindow.on(\"focus\""), true);
-assert.equal(mainProcess.includes("webContents.send(IPC_CHANNELS.shellReady"), true);
+const desktopWindowLifecycle = await read("src/desktop/tray/desktop-window-lifecycle.mjs");
+assert.equal(desktopWindowLifecycle.includes("did-finish-load"), true);
+assert.equal(desktopWindowLifecycle.includes("browserWindow.on(\"focus\""), true);
+assert.equal(desktopWindowLifecycle.includes("webContents.send(IPC_CHANNELS.shellReady"), true);
 assert.equal(mainProcess.includes("startNotificationWatcher"), true);
 
 const scheduleParser = await read("src/desktop/renderer/schedule-parser.js");

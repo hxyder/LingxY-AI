@@ -46,6 +46,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const mockFixturePath = path.join(repoRoot, "tests", "fixtures", "mock-active-window-probe.mjs");
 const electronMainSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "electron-main.mjs"), "utf8");
+const shellLocalIpcSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "ipc", "register-shell-local-ipc.mjs"), "utf8");
+const shortcutRouterSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-shortcut-router.mjs"), "utf8");
+const mainWithIpcSource = `${electronMainSource}\n${shellLocalIpcSource}`;
+const mainWithShortcutRouterSource = `${electronMainSource}\n${shortcutRouterSource}`;
 
 /* ------------------------------------------------------------------------ */
 /* Parser unit tests                                                         */
@@ -182,19 +186,21 @@ async function runScenario(scenario, options = {}) {
   assert.equal(ctx.activeWindow.extra.reason, "address_bar_unreadable");
 }
 
-assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(electronMainSource),
+assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(mainWithShortcutRouterSource),
   "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
 {
-  const captureBlockStart = electronMainSource.indexOf('shortcut.id === "capture-and-ask"');
-  const revealIndex = electronMainSource.indexOf("captureInFlight = true;\n          revealOverlayForCapture();", captureBlockStart);
-  const captureIndex = electronMainSource.indexOf("captureActiveWindowContext({", captureBlockStart);
-  assert.ok(captureBlockStart >= 0 && revealIndex > captureBlockStart && captureIndex > revealIndex,
-    "capture-and-ask must reveal the overlay before slow active-window capture resolves");
+  const captureBlockStart = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
+  const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);
+  const guardIndex = guardIndexRaw >= 0 ? guardIndexRaw : mainWithShortcutRouterSource.indexOf("captureInFlight = true;", captureBlockStart);
+  const showIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', guardIndex >= 0 ? guardIndex : captureBlockStart);
+  const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", guardIndex >= 0 ? guardIndex : captureBlockStart);
+  assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && captureIndex > guardIndex && showIndex > captureIndex,
+    "capture-and-ask must guard re-entrance, start async capture, then reveal the overlay on resolution");
 }
 assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\s\S]{0,220}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,520}clipboardBaseline/.test(electronMainSource)
-  && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,520}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(electronMainSource),
-  "electron-main must forward clipboardBaseline through every active-window capture path");
+  && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,520}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(mainWithIpcSource),
+  "electron-main + shell-local-ipc must forward clipboardBaseline through every active-window capture path");
 
 {
   const ctx = await runScenario("office-word-com");

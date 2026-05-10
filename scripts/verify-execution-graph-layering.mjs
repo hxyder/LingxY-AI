@@ -67,9 +67,11 @@ assert.ok(taskEventEmitter.includes('"executor_first_visible_output"'),
   "task event emitter must record first visible output latency across streaming, inline, and artifact outputs");
 
 const main = await source("src/desktop/tray/electron-main.mjs");
-assert.ok(main.includes('reason: "primary_ui_visible"'),
+const desktopNotifications = await source("src/desktop/tray/desktop-notifications.mjs");
+assert.ok(desktopNotifications.includes('reason: "primary_ui_visible"'),
   "success notifications must be suppressible while primary UI is visible");
-assert.ok(main.includes("setIgnoreMouseEvents(Boolean(ignore)"),
+const ipcShellWindow = await source("src/desktop/tray/ipc/register-shell-window-ipc.mjs");
+assert.ok(ipcShellWindow.includes("setIgnoreMouseEvents(Boolean(ignore)"),
   "main process must expose dock click-through control");
 
 const manifest = await source("src/desktop/shared/manifest.mjs");

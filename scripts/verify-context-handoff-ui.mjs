@@ -52,6 +52,7 @@ const mainProcess = [
   await read("src/desktop/tray/electron-main.mjs"),
   await read("src/desktop/tray/desktop-launch-args.mjs"),
   await read("src/desktop/tray/desktop-handoff-watcher.mjs"),
+  await read("src/desktop/tray/desktop-shortcut-router.mjs"),
   ...(await readDesktopTrayIpcModules())
 ].join("\n");
 const windowsPipeServer = await read("src/service/core/windows-pipe-server.mjs");

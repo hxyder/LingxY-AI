@@ -52,6 +52,8 @@ const desktopDiagnostics = read("src/desktop/tray/desktop-diagnostics.mjs");
 const desktopSettings = read("src/desktop/tray/desktop-settings.mjs");
 const desktopWindowConfig = read("src/desktop/tray/desktop-window-config.mjs");
 const desktopWindowBounds = read("src/desktop/tray/desktop-window-bounds.mjs");
+const desktopWindowLifecycle = read("src/desktop/tray/desktop-window-lifecycle.mjs");
+const desktopWindowActions = read("src/desktop/tray/desktop-window-actions.mjs");
 const desktopOverlayPayloads = read("src/desktop/tray/desktop-overlay-payloads.mjs");
 const desktopNotifications = read("src/desktop/tray/desktop-notifications.mjs");
 const mainProcessIpc = [electronMain, ...readDesktopTrayIpcModules()].join("\n");
@@ -233,8 +235,8 @@ assert.ok(/DOCK_SIZE_PX = 48/.test(dockGeometry)
   "dock: fixed HUD geometry must live in a shared pure helper");
 assert.ok(/width:\s*100vw/.test(dockHtml) && /height:\s*100vh/.test(dockHtml)
     && /setZoomFactor\?\.\(1\)/.test(desktopWindowBounds)
-    && /"zoom-changed"/.test(electronMain)
-    && /"before-input-event"/.test(electronMain),
+    && /"zoom-changed"/.test(desktopWindowLifecycle)
+    && /"before-input-event"/.test(desktopWindowLifecycle),
   "dock: renderer must be viewport-sized and zoom-locked to avoid HUD scrollbars");
 assert.ok(/insertCSS\(/.test(desktopWindowBounds) && /overflow:\s*hidden\s*!important/.test(desktopWindowBounds),
   "dock: main process must inject a HUD scroll lock after renderer load");
@@ -262,8 +264,8 @@ assert.ok(/openOverlayVoice/.test(consoleJs) && /(?:consoleShellClient|overlaySh
 assert.ok(/openOverlayForNoteVoice/.test(consoleJs)
     && /(?:consoleShellClient|overlayShellClient)\.openOverlayVoice\(\{\s*mode:\s*"note",\s*autoStart:\s*true\s*\}\)/.test(consoleJs),
   "console notes voice: notes button must use desktop shell note bridge");
-assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayVoice/.test(mainProcessIpc),
-  "voice bridge: main process must own openOverlayVoice routing");
+assert.ok(/function openOverlayVoice\(/.test(desktopWindowActions) && /shellOpenOverlayVoice/.test(mainProcessIpc),
+  "voice bridge: desktop-window-actions must own openOverlayVoice routing");
 assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
 assert.ok(/if \(!isEchoTask\(taskId\) && !shouldSurfaceTaskPopupCards\(\)\) return;/.test(overlayJs),

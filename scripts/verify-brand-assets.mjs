@@ -249,6 +249,8 @@ assert.equal(
 
 // electron-main.mjs invariants
 const electronMainSrc = readFileSync(ELECTRON_MAIN_PATH, "utf8");
+const trayBadgeSrc = readFileSync(path.join(root, "src", "desktop", "tray", "desktop-tray-badge.mjs"), "utf8");
+const mainWithTrayBadgeSrc = `${electronMainSrc}\n${trayBadgeSrc}`;
 
 // (a) AUMID call present
 assert.ok(
@@ -341,7 +343,7 @@ assert.ok(
   "tray must be constructed via brandIcons.composeTrayIcon"
 );
 assert.ok(
-  /tray\.setImage\s*\(\s*brandIcons\.composeTrayIcon\(/.test(electronMainSrc),
+  /tray\.setImage\s*\(\s*brandIcons\.composeTrayIcon\(/.test(mainWithTrayBadgeSrc),
   "tray badge updates must go through brandIcons.composeTrayIcon"
 );
 

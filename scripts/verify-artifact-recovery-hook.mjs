@@ -285,7 +285,7 @@ function makeSuccessResult(finalText, transcript = []) {
       metadata: {}
     })
   });
-  const task = makeArtifactRequiredTask({ kind: "xlsx" });
+  const task = makeArtifactRequiredTask({ kind: "docx" });
   const result = makeSuccessResult("Tabular content.");
   const out = await finaliseWithArtifactContract(result, { runtime, task });
   check(
@@ -568,6 +568,52 @@ function makeSuccessResult(finalText, transcript = []) {
   check(
     "no artifact_required: no recovery applied",
     out.artifact_recovery === undefined
+  );
+}
+
+// ----------------------------------------------------------------------
+// 12. transform_existing_file requires edit_file. Deterministic recovery
+//     must not turn the assistant's final reply into a brand-new document.
+// ----------------------------------------------------------------------
+{
+  const captured = [];
+  const runtime = createStubRuntime({
+    generateImpl: async (args) => {
+      captured.push(args);
+      return {
+        success: true,
+        observation: "(stub) incorrectly generated a new file",
+        metadata: { tool_id: "generate_document", kind: args.kind, path: `/tmp/stub.${args.kind}` },
+        artifact_paths: [`/tmp/stub.${args.kind}`]
+      };
+    }
+  });
+  const task = {
+    task_id: "task_transform_existing_file",
+    user_command: "把刚才那个文件转成 PPT",
+    task_spec: {
+      goal: "transform_existing_file",
+      artifact: { required: true, kind: "pptx" },
+      success_contract: {
+        artifact_created: true,
+        required_tool_names: ["edit_file"],
+        required_policy_groups: ["artifact_generation"]
+      }
+    }
+  };
+  const result = makeSuccessResult("我已经帮你转换好了，内容如下：这是会话回复，不是源文件内容。");
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
+  check(
+    "transform_existing_file recovery: generate_document was not called",
+    captured.length === 0
+  );
+  check(
+    "transform_existing_file recovery: status = partial_success",
+    out.status === "partial_success"
+  );
+  check(
+    "transform_existing_file recovery: reason = transform_existing_file_requires_edit_file",
+    out.artifact_recovery?.reason === "transform_existing_file_requires_edit_file"
   );
 }
 

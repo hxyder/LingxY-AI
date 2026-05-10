@@ -73,18 +73,27 @@ const ROOT = path.resolve(__dirname, "..");
     "manifest.mjs WINDOW_IDS must register `preview`");
 }
 
-// --- 5. electron-main wires the window; preview IPC module owns handlers
+// --- 5. preview window manager owns creation/bounds; electron-main wires IPC
 {
   const src = await readFile(path.join(ROOT, "src/desktop/tray/electron-main.mjs"), "utf8");
+  const previewMgr = await readFile(path.join(ROOT, "src/desktop/tray/desktop-preview-window-manager.mjs"), "utf8");
   const previewIpc = await readFile(path.join(ROOT, "src/desktop/tray/ipc/register-preview-ipc.mjs"), "utf8");
-  assert.ok(src.includes("function computePreviewBounds"),
-    "electron-main must compute the right-edge bounds for the preview window");
-  assert.ok(src.includes("function ensurePreviewWindow"),
-    "electron-main must lazily create the preview BrowserWindow");
-  assert.ok(src.match(/workArea\.x \+ Math\.max\(0, Math\.round\(\(workArea\.width - width\) \/ 2\)\)/),
-    "electron-main must center the larger document preview window in the work area");
+  assert.ok(previewMgr.includes("function computePreviewBounds"),
+    "desktop-preview-window-manager must compute the right-edge bounds for the preview window");
+  assert.ok(previewMgr.includes("function ensurePreviewWindow"),
+    "desktop-preview-window-manager must lazily create the preview BrowserWindow");
+  assert.ok(previewMgr.match(/workArea\.x \+ Math\.max\(0, Math\.round\(\(workArea\.width - width\) \/ 2\)\)/),
+    "desktop-preview-window-manager must center the larger document preview window in the work area");
   assert.ok(src.includes("registerPreviewIpc"),
     "electron-main must register the preview IPC module");
+  // Negative assertions: electron-main must NOT own the moved composition
+  // primitives (Codex round-1: prevent parallel preview ownership).
+  assert.ok(!src.includes("function computePreviewBounds"),
+    "electron-main must NOT own computePreviewBounds (moved to desktop-preview-window-manager.mjs)");
+  assert.ok(!src.includes("function ensurePreviewWindow"),
+    "electron-main must NOT own ensurePreviewWindow (moved to desktop-preview-window-manager.mjs)");
+  assert.ok(!src.includes("previewPendingByChannel"),
+    "electron-main must NOT own previewPendingByChannel (moved to desktop-preview-window-manager.mjs)");
   assert.ok(previewIpc.includes("IPC_CHANNELS.previewWindowShow"),
     "preview IPC module must handle previewWindowShow");
   assert.ok(previewIpc.includes("IPC_CHANNELS.previewWindowAppendDelta"),

@@ -73,6 +73,7 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
 const desktopSettings = readFileSync(new URL("../src/desktop/tray/desktop-settings.mjs", import.meta.url), "utf8");
 const desktopWindowBounds = readFileSync(new URL("../src/desktop/tray/desktop-window-bounds.mjs", import.meta.url), "utf8");
+const desktopWindowLifecycle = readFileSync(new URL("../src/desktop/tray/desktop-window-lifecycle.mjs", import.meta.url), "utf8");
 const ipcModuleDir = new URL("../src/desktop/tray/ipc/", import.meta.url);
 const ipcModules = readdirSync(ipcModuleDir, { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
@@ -101,11 +102,11 @@ if (!/dock:\s*\{\s*minWidth:\s*DOCK_SIZE_PX,\s*minHeight:\s*DOCK_SIZE_PX,\s*maxW
 if (!desktopWindowBounds.includes("export function lockWindowRendererZoom")
     || !desktopWindowBounds.includes("setZoomFactor?.(1)")
     || !desktopWindowBounds.includes("setVisualZoomLevelLimits?.(1, 1)")
-    || !electronMain.includes('"zoom-changed"')) {
+    || !desktopWindowLifecycle.includes('"zoom-changed"')) {
   throw new Error("Dock renderer zoom must be locked to prevent tiny-window scrollbars.");
 }
 
-if (!electronMain.includes('"dom-ready"')
+if (!desktopWindowLifecycle.includes('"dom-ready"')
     || !/DOCK_HUD_SCROLL_LOCK_CSS[\s\S]{0,220}position:\s*fixed\s*!important/.test(desktopWindowBounds)
     || !/canvas#orbCanvas[\s\S]{0,160}width:\s*100%\s*!important/.test(desktopWindowBounds)) {
   throw new Error("Dock scroll lock must be injected early and force viewport-sized HUD content.");

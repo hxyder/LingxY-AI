@@ -10,6 +10,7 @@ const root = path.resolve(__dirname, "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 
 const electronMain = read("src/desktop/tray/electron-main.mjs");
+const linkBrowserModule = read("src/desktop/tray/desktop-link-browser-window.mjs");
 const shellOpenUrlIpc = read("src/desktop/tray/ipc/register-shell-open-url-ipc.mjs");
 const mainProcess = `${electronMain}\n${shellOpenUrlIpc}`;
 const overlayJs = read("src/desktop/renderer/overlay.js");
@@ -35,28 +36,28 @@ assert.match(
 );
 
 assert.match(
-  electronMain,
+  linkBrowserModule,
   /function showLinkBrowserWindow\(url\)[\s\S]{0,900}frame:\s*true[\s\S]{0,400}closable:\s*true/,
   "LingxY link browser windows must keep native window controls enabled"
 );
 
-assert.match(electronMain, /function injectLinkBrowserCloseControl\(\)/,
+assert.match(linkBrowserModule, /function injectLinkBrowserCloseControl\(\)/,
   "LingxY link browser close-control injector must exist");
-assert.match(electronMain, /lingxy-link-browser-close-host/,
+assert.match(linkBrowserModule, /lingxy-link-browser-close-host/,
   "LingxY link browser close control must have a stable host id");
-assert.match(electronMain, /setAttribute\("aria-label", "关闭 LingxY 链接窗口"\)/,
+assert.match(linkBrowserModule, /setAttribute\("aria-label", "关闭 LingxY 链接窗口"\)/,
   "LingxY link browser close control must be accessible");
-assert.match(electronMain, /window\.location\.href = "lingxy:\/\/close-link-browser"/,
+assert.match(linkBrowserModule, /window\.location\.href = "lingxy:\/\/close-link-browser"/,
   "LingxY link browser close control must call the main-process close URL");
 
 assert.match(
-  electronMain,
+  linkBrowserModule,
   /will-navigate[\s\S]{0,500}lingxy:\/\/close-link-browser[\s\S]{0,220}closeLinkBrowserWindow\(\)/,
   "LingxY link browser close control must be handled by main-process navigation guard"
 );
 
 assert.match(
-  electronMain,
+  linkBrowserModule,
   /before-input-event[\s\S]{0,220}input\.key === "Escape"[\s\S]{0,160}closeLinkBrowserWindow\(\)/,
   "LingxY link browser must support Escape as a close shortcut"
 );

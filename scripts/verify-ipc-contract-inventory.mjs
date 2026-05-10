@@ -11,8 +11,12 @@ const mainPath = path.join(root, "src/desktop/tray/electron-main.mjs");
 const ipcModuleRoot = path.join(root, "src/desktop/tray/ipc");
 const mainIpcHelperPaths = [
   path.join(root, "src/desktop/tray/desktop-window-messages.mjs"),
+  path.join(root, "src/desktop/tray/desktop-window-lifecycle.mjs"),
+  path.join(root, "src/desktop/tray/desktop-window-actions.mjs"),
+  path.join(root, "src/desktop/tray/desktop-shortcut-router.mjs"),
   path.join(root, "src/desktop/tray/desktop-dock-menu.mjs"),
-  path.join(root, "src/desktop/tray/desktop-clipboard-watcher.mjs")
+  path.join(root, "src/desktop/tray/desktop-clipboard-watcher.mjs"),
+  path.join(root, "src/desktop/tray/desktop-preview-window-manager.mjs")
 ];
 const preloadPath = path.join(root, "src/desktop/renderer/preload.cjs");
 
@@ -236,7 +240,7 @@ const mainProcess = mainProcessSources.join("\n");
 const preload = readFileSync(preloadPath, "utf8");
 
 assert(count(mainProcess, /ipcMain\.handle\(/g) === 112, "main-process ipcMain.handle count changed");
-assert(count(mainProcess, /\.\w*send\(/g) === 28, "main-process send reference count changed");
+assert(count(mainProcess, /\.\w*send\(/g) === 27, "main-process send reference count changed");
 assert(count(preload, /ipcRenderer\.invoke\(/g) === 108, "preload invoke count changed");
 assert(count(preload, /ipcRenderer\.on\(/g) === 22, "preload listener count changed");
 
