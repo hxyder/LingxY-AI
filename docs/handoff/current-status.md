@@ -2,9 +2,9 @@
 
 **Date:** 2026-05-10
 
-## Status: Phases 2B.42–2B.48 Submitted; Codex Review Requires One 2B.47 Follow-up
+## Status: Phases 2B.42–2B.48 Submitted; Codex Review Requires One Verifier Follow-up
 
-DeepSeek has committed the planned 2B.42-2B.48 extraction work. Codex review accepts the general extraction direction and the Phase 2B.48 permission-handler move, but Phase 2B must not be closed until the 2B.47 GUI smoke runner startup-order issue below is fixed and verified.
+DeepSeek has committed the planned 2B.42-2B.48 extraction work and the 2B.47 GUI smoke scheduling code fix. Codex review accepts the product-code fix, but Phase 2B should not be closed until the scheduling-order invariant is locked in a verifier.
 
 ## Completed Phases
 
@@ -35,7 +35,7 @@ DeepSeek has committed the planned 2B.42-2B.48 extraction work. Codex review acc
 ## Codex Review: Phases 2B.47-2B.48
 
 Review scope:
-- DeepSeek commits inspected: `15faf80`, `af684e3`, `e4c4d33`.
+- DeepSeek commits inspected: `15faf80`, `af684e3`, `e4c4d33`, `3ca2e05`.
 - Product source changed by DeepSeek, not by Codex in this review.
 - Codex only updated planning/handoff notes.
 
@@ -43,11 +43,12 @@ Accepted:
 - Phase 2B.48 `src/desktop/tray/desktop-permission-handler.mjs` is a focused Electron-main helper with explicit dependency injection.
 - The permission handler is installed before window creation, preserving the previous Web Speech/media permission behavior surface.
 - Phase 2B.47 now returns `writeDesktopGuiSmokeResult` from `createDesktopGuiSmokeRunner(...)`, so the previous dangling outer failure-path symbol has been addressed.
+- Commit `3ca2e05` moved the `LINGXY_ELECTRON_GUI_SMOKE` `setTimeout(() => runDesktopGuiSmoke(), 250)` registration after `createDesktopGuiSmokeRunner(...)`, resolving the temporal-dead-zone startup-order risk in product code.
 
-Required follow-up before Phase 2B closure or Phase 2C:
-- Move the `LINGXY_ELECTRON_GUI_SMOKE` `setTimeout(() => runDesktopGuiSmoke(), 250)` registration until after `const { runDesktopGuiSmoke, writeDesktopGuiSmokeResult } = createDesktopGuiSmokeRunner(...)` has executed.
-- Current code registers the timer before the runner is initialized, then performs additional startup work including dynamic `electron-updater` import. A slow import can let the timer fire while `runDesktopGuiSmoke` / `writeDesktopGuiSmokeResult` are still in the temporal dead zone. Normal GUI smoke passed on this machine, but the ordering is not a framework-safe invariant.
-- Add or strengthen a verifier comment/assertion so future edits preserve the invariant: GUI smoke scheduling must happen after runner creation and after all required smoke dependencies have been assigned.
+Required follow-up before Phase 2B closure:
+- Strengthen `scripts/verify-desktop-gui-perf-smoke.mjs` or `scripts/verify-main-process-blocking.mjs` so it asserts the invariant DeepSeek just fixed: `createDesktopGuiSmokeRunner(...)` must appear before the GUI smoke `setTimeout` registration in `electron-main.mjs`.
+- Keep the existing reverse checks that `electron-main.mjs` does not redefine internal smoke helpers and that the outer failure path still emits `LINGXY_GUI_SMOKE_RESULT`.
+- This is now a verifier/documentation blocker, not a product-source blocker. No additional runtime behavior change is required for this specific issue.
 
 Codex verification on 2026-05-10:
 - `node --check src/desktop/tray/electron-main.mjs`: passed.
@@ -63,6 +64,16 @@ Codex verification on 2026-05-10:
 - `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
 - `npm run check:fast`: passed 65/65.
 - `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+## Codex Review: 2B.47 Scheduling Fix (`3ca2e05`)
+
+Accepted:
+- The GUI smoke timer is now registered after the runner factory call, so both `runDesktopGuiSmoke` and `writeDesktopGuiSmokeResult` are initialized before the 250ms timer can fire.
+- The fix preserves the existing smoke check names, stdout prefix, failure payload shape, IPC surface, HTTP routes, tool ids, artifact kinds, provider ids, and storage schema.
+- Verification passed after the fix: `npm run check:fast` 65/65 and `npm run verify:desktop-gui-smoke` 44/44.
+
+Remaining review note:
+- DeepSeek did not update a verifier to lock the exact ordering. Phase 2B.49 should add that guard before marking Electron main decomposition complete.
 
 ## Deferred
 

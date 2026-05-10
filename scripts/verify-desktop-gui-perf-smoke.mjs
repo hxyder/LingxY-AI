@@ -66,7 +66,11 @@ assert.match(main, /runDesktopGuiSmoke\(\)\.catch\(\s*\(\s*error\s*\)\s*=>\s*\{[
   "electron-main.mjs outer smoke catch must call writeDesktopGuiSmokeResult on unexpected rejection");
 assert.match(smokeRunner, /LINGXY_GUI_SMOKE_RESULT/,
   "desktop-gui-smoke-runner must emit LINGXY_GUI_SMOKE_RESULT for smoke results");
-
+// Codex 2B.47 round-2: runner creation must appear before the GUI smoke
+// setTimeout registration. If the dynamic electron-updater import is slow
+// the timer could fire while runDesktopGuiSmoke is still in TDZ.
+assert.match(main, /createDesktopGuiSmokeRunner\([\s\S]*setTimeout\(\s*\(\)\s*=>\s*\{[\s\S]{0,80}runDesktopGuiSmoke\(\)/,
+  "electron-main.mjs must createDesktopGuiSmokeRunner before scheduling the GUI smoke setTimeout");
 assert.match(tests, /accepts bounded smoke metrics/,
   "behavior tests must cover bounded perf pass");
 assert.match(tests, /rejects missing and over-budget metrics/,
