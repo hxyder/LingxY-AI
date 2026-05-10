@@ -122,10 +122,16 @@ for (const filePath of [
     `${filePath} must call appendArtifact after registration`);
 }
 
-// registration options call sites in submission pipeline
-const browserSubSrc = readFileSync(path.join(root, "src/service/core/browser-submission.mjs"), "utf8");
-assert(browserSubSrc.includes("artifactRegistrationOptionsForPath"),
-  "browser-submission must use artifactRegistrationOptionsForPath for metadata-aware registration");
+// metadata-aware registration: both browser and context submission must use
+// artifactRegistrationOptionsForPath to preserve tool metadata on artifact records
+for (const filePath of [
+  "src/service/core/browser-submission.mjs",
+  "src/service/core/context-submission.mjs"
+]) {
+  const submissionSrc = readFileSync(path.join(root, filePath), "utf8");
+  assert(submissionSrc.includes("artifactRegistrationOptionsForPath"),
+    `${filePath} must use artifactRegistrationOptionsForPath for metadata-aware registration`);
+}
 
 if (!process.exitCode) {
   console.log("[artifact-surface] artifact surface snapshot verified.");
