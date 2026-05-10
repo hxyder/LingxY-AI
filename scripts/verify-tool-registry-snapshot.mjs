@@ -200,6 +200,18 @@ assert(!indexSrc.includes("function getSchedulerRuntime"),
   "index.mjs must NOT redefine getSchedulerRuntime (owned by scheduler-tools.mjs)");
 assert(!indexSrc.includes("function openWithDefaultHandler"),
   "index.mjs must NOT redefine openWithDefaultHandler (owned by open-with-default-handler.mjs)");
+
+// Phase 2D.4: file-read-tools ownership
+const fileReadSrc = read("src/service/action_tools/tools/file-read-tools.mjs");
+for (const tool of ["STAT_FILE_TOOL", "VERIFY_FILE_EXISTS_TOOL"]) {
+  assert(fileReadSrc.includes(`export const ${tool}`),
+    `file-read-tools.mjs must own ${tool}`);
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must NOT redefine ${tool} (owned by file-read-tools.mjs)`);
+}
+assert(indexSrc.includes("from \"./file-read-tools.mjs\""),
+  "index.mjs must import file-read-tools.mjs");
+
 // Deferred tools still in index.mjs must still be present
 for (const tool of ["LAUNCH_APP_TOOL", "TAKE_SCREENSHOT_TOOL"]) {
   assert(indexSrc.includes(`export const ${tool}`),
