@@ -97,3 +97,35 @@ Blocking cleanup before 2D source work:
 - Open Phase 2D with `2D.0` inventory/verifier work only.
 - The next framework target is `src/service/action_tools/tools/index.mjs`, but do not immediately move tool families.
 - First lock tool id order, confirmation-gated ids, external aggregation, and old-owner text assertions.
+
+## Codex Review: 2C Closure + 2D.0 Inventory
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `1c5274c` — adds `desktop-permission-handler.mjs` to `verify-audio-entrypoints.mjs`.
+- `28fa31c` — documents Phase 2D.0 tool registry family inventory and strengthens `verify-tool-registry-snapshot.mjs`.
+
+Accepted:
+- `verify-audio-entrypoints.mjs` now scans the current permission-handler owner, so the old owner text assertion is fixed.
+- Phase 2D.0 did not move product tool source. It only changed docs/verifier, which matches the required inventory-first discipline.
+- `verify-tool-registry-snapshot.mjs` now locks the actual 61-tool `BUILTIN_ACTION_TOOLS` count, frozen order, duplicate-id guard, and confirmation-gated ids.
+
+Codex cleanup:
+- Corrected stale `64 ids` text to `61 ids` in `docs/architecture/tool-registry-inventory.md` and `linxi_codebase_reorganization_execution_plan.md`.
+
+Verification rerun by Codex:
+- `node scripts/verify-audio-entrypoints.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-desktop-gui-perf-smoke.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `npm run check:fast`: passed 65/65.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Next allowed step:
+- Phase 2D.1 may start, but only the low-risk browser/web/search/translation family should move first.
+- Do not move `write_file`, `edit_file`, `run_script`, `generate_document`, `register_artifact`, GUI automation, or capability creator tools in the first extraction.
