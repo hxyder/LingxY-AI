@@ -37,7 +37,7 @@ Legend:
 
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `src/desktop/tray/electron-main.mjs` | Electron lifecycle, windows/tray/dock, IPC composition, settings/diagnostics/notification wiring, preview/popup, update, active-window capture, GUI smoke. | main | partial | Electron bindings, `createPersistentRuntime`, tray helpers, IPC modules, desktop service/diagnostics/settings/payload/window config/window-bounds/overlay-payload/window-message/dock-menu/tray-badge/clipboard-watcher/path/PowerShell/service-runtime/notification/notification-watcher/handoff-watcher/morning-digest/remote-feature/launch-arg/external-window/active-window-poll helpers. | high | Still large; IPC, service HTTP, diagnostics, settings, payload, window config, window bounds, overlay payload, window message queue, dock menu, tray badge, clipboard watcher, path, PowerShell, service-runtime, notification, watcher, morning digest, remote feature, launch-arg, external-window, and active-window-poll helper extraction are in progress. |
+| `src/desktop/tray/electron-main.mjs` | High-level shell composition: app lifecycle, window/watcher/updater/IPC wiring, GUI smoke scheduling. | main | no | Compose-only; delegates to extracted lifecycle/actions/shortcut/link-browser/preview/smoke-runner/permission-handler helpers + IPC modules. | medium | 2543 → 1072 lines (-58%). Phases 2B.42-2B.48: 7 helpers extracted, remaining is composition glue. |
 | `src/desktop/tray/bootstrap.mjs` | Validates desktop shell manifest and exposes bootstrap state. | main | no | `DESKTOP_SHELL_MANIFEST`, `IPC_CHANNELS`. | low | Small boundary helper. |
 | `src/desktop/tray/runtime-host.mjs` | Runtime host helper. | main/service boundary | no | Desktop runtime/service startup support. | medium | Boundary file. |
 | `src/desktop/tray/popup-card-manager.mjs` | Popup card BrowserWindow manager and popup IPC handlers. | main | no | Electron, `IPC_CHANNELS`. | medium | Main-owned UI shell logic; okay but should stay window/IPC scoped. |
@@ -68,6 +68,13 @@ Legend:
 | `src/desktop/tray/desktop-clipboard-watcher.mjs` | Clipboard polling, last-text tracking, and dock clipboard-change notification. | main | no | Electron clipboard injection, injected dock-window lookup. | medium | Keeps clipboard watcher timer/state out of `electron-main.mjs`; main still owns capture hotkey debounce and capture-to-clipboard synchronization call. |
 | `src/desktop/tray/desktop-actor.mjs` | Desktop actor resolution for IPC/HTTP guard headers. | main/shared | no | Window sender mapping. | medium | Security boundary helper. |
 | `src/desktop/tray/dock-geometry.mjs` | Dock sizing/bounds helpers. | main | no | Pure geometry. | low | Good small module. |
+| `src/desktop/tray/desktop-window-lifecycle.mjs` | BrowserWindow event handler installation (close, resize, move, focus, blur, etc.), bounds persistence schedule per window. | main | no | Injected BrowserWindow, windows/readyWindows Maps, settings, diagnostics calls. | medium | Phase 2B.42; replaces inline 103-line lifecycle block. |
+| `src/desktop/tray/desktop-window-actions.mjs` | Shell window actions: showWindow, hideWindow, openOverlayVoice, sendEchoShortcutWake. | main | no | Injected window Maps, bounds helpers, dock invariants, message queue. | medium | Phase 2B.43; replaces 4 inline function definitions. |
+| `src/desktop/tray/desktop-shortcut-router.mjs` | 7-way global shortcut handler factory (toggle-overlay, voice-wake, note-wake, capture-and-ask, screenshot, console, presenter-mode). | main | no | Injected showWindow, clipboard, windows, settings, service client, diagnostics. | medium | Phase 2B.44; replaces inline handler loop body. |
+| `src/desktop/tray/desktop-link-browser-window.mjs` | Link browser BrowserWindow construction, close-control injection, navigation guards, Escape close, bounds persistence, link-open preference reader. | main | no | Injected BrowserWindow, screen, shell, brandIcons, settings, runtime getter. | medium | Phase 2B.45; replaces inline link browser functions. |
+| `src/desktop/tray/desktop-preview-window-manager.mjs` | Preview BrowserWindow lifecycle: lazy creation, centered bounds, hide-not-destroy close, load-aware pending queue flush, pin state. | main | no | Injected BrowserWindow, screen, brandIcons, quitting getter, PRELOAD_PATH. | medium | Phase 2B.46; returns sendToPreview/getPreviewWindow/hidePreviewWindow/setPreviewWindowPinned. |
+| `src/desktop/tray/desktop-gui-smoke-runner.mjs` | Test-only 44-check GUI smoke sequence (785 lines) with factory injection of all shell dependencies. | main (test) | no | Injected showWindow, windows, shortcuts, electron APIs, smoke hooks, notification bridge. | low | Phase 2B.47; returns runDesktopGuiSmoke + writeDesktopGuiSmokeResult. |
+| `src/desktop/tray/desktop-permission-handler.mjs` | Web Speech API microphone permission handler installation (setPermissionRequestHandler + setPermissionCheckHandler). | main | no | Injected session, safeError. | low | Phase 2B.48; 35 lines, replaces inline 34-line block. |
 
 ## Preload
 
@@ -166,7 +173,7 @@ Legend:
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `src/service/action_tools/registry.mjs` | Action tool registry and `call()`. | service/tools | no | Tool definitions. | high | Central tool dispatch. |
-| `src/service/action_tools/tools/index.mjs` | Large built-in tool collection: open/search/file/doc/script/scheduler/GUI/capability. | service/tools | partial | FS, child process, document renderer, scheduler, artifact helpers. | high | Should split by tool family. |
+| `src/service/action_tools/tools/index.mjs` | Tool aggregator: imports 6 extracted tool families + owns remaining high-risk inline tools. | service/tools | no | Aggregates from browser-web-tools, os-app-tools, scheduler-tools, file-read-tools, email-tools, file-manifest-helpers, artifact-path-helper. | medium | 4105 → 3049 lines (-26%). Phase 2D.1-2D.6: low-risk families extracted; high-risk tools (write/edit/run/generate/render/gui/capability) remain inline. |
 | `src/service/action_tools/schemas/index.mjs` | Tool schemas. | service/shared | no | Tool registry/executors. | high | Must stay aligned with tool ids. |
 | `src/service/action_tools/tools/document-renderer.mjs` | DOCX/PPTX/XLSX/PDF/HTML preview rendering. | service/artifact | no | docx/exceljs/pptx/pdf/html helpers. | high | Correct layer but heavy; worker may be needed for large docs. |
 | `src/service/action_tools/tools/memory-tools.mjs` | Runtime memory/session task recall tools. | service/tools/context | no | Store/session/artifacts. | high | Important context surface. |
@@ -257,7 +264,15 @@ No dedicated `src/service/workers/` directory currently exists.
 | `src/desktop/renderer/console.js` | Renderer UI plus runtime client/workflow logic. |
 | `src/desktop/renderer/overlay.js` | Renderer UI plus context/task/approval/artifact logic. |
 | `src/desktop/renderer/preload.cjs` | Very broad bridge; source of cross-layer API coupling. |
-| `src/service/action_tools/tools/index.mjs` | Many unrelated tool families and artifact generation logic in one file. |
+| `src/service/action_tools/tools/index.mjs` | Now aggregator only: imports 6 extracted families + external modules. Low-risk decomposition complete (Phases 2D.1-2D.6). |
+| `src/service/action_tools/tools/browser-web-tools.mjs` | Browser/web/search/translation: 5 tools (open_url, web_search, web_search_fetch, fetch_url_content, translate_text). | service/tools | no | Phase 2D.1. |
+| `src/service/action_tools/tools/os-app-tools.mjs` | OS/app/clipboard/notify: 5 tools (open_file, reveal_in_explorer, file_op, copy_to_clipboard, notify). | service/tools | no | Phases 2D.2a-2D.2b. |
+| `src/service/action_tools/tools/scheduler-tools.mjs` | Scheduler: 4 tools (create, list, delete, pause scheduled tasks). | service/tools | no | Phase 2D.3. |
+| `src/service/action_tools/tools/file-read-tools.mjs` | File discovery/read/stat: 6 tools (stat_file, verify_file_exists, list_files, glob_files, find_recent_files, get_latest_artifact). | service/tools | no | Phases 2D.4-2D.6. |
+| `src/service/action_tools/tools/email-tools.mjs` | Email: 1 tool (compose_email). | service/tools | no | Phase 2D.5. |
+| `src/service/action_tools/tools/file-manifest-helpers.mjs` | Shared file manifest/path/glob helpers: resolveDefaultOutputDir, readManifest, writeManifest, globToRegex. | service/tools/shared | no | Phase 2D.6a. |
+| `src/service/action_tools/tools/open-with-default-handler.mjs` | Shared OS helper: openWithDefaultHandler (Windows/macOS/Linux). | service/tools/shared | no | Phase 2D.1. |
+| `src/service/core/artifact-path-helper.mjs` | Service-owned artifact path helpers: resolveOutputDirForTool, ensureOutputDir, configuredWritableArtifactRoots, resolveSandboxedTarget. | service/core | no | Phase 2E.1. Sandbox invariants verifier-locked. |
 | `src/service/core/context-submission.mjs` | Main orchestration hot path with several recall/fallback/provider branches. |
 | `src/service/executors/tool_using/agent-loop.mjs` | Tool loop, policy, provider, preview, finalization all mixed. |
 | `src/service/executors/agentic/planner.mjs` | Provider/tool orchestration and special paths mixed. |
