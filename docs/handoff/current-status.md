@@ -298,3 +298,225 @@ Decision:
 - Current product behavior is acceptable.
 - Do not proceed to Phase 2D.4 yet.
 - Next step must be a verifier/inventory cleanup phase for 2D extracted owner boundaries, then rerun `check:fast` and desktop GUI smoke.
+
+## Codex Review: 2D Owner Verifier + 2D.4 Stat/Verify Slice
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `9d4c67b` — adds source-owner assertions to `scripts/verify-tool-registry-snapshot.mjs` and updates `docs/architecture/tool-registry-inventory.md`.
+- `cc14717` — extracts `STAT_FILE_TOOL` and `VERIFY_FILE_EXISTS_TOOL` into `src/service/action_tools/tools/file-read-tools.mjs`.
+
+Accepted:
+- DeepSeek did add the missing owner verifier before the 2D.4 product move.
+- The verifier now locks current extracted owners for browser/web, OS/app, scheduler, file stat/verify, and the shared open handler.
+- The 2D.4 source move is a reasonable narrow first slice: `stat_file` and `verify_file_exists` are self-contained, low-risk file-read tools.
+- Direct source search confirms these moved tool bodies are currently only exported from `file-read-tools.mjs`.
+
+Issues to fix before continuing 2D.4:
+- `docs/architecture/tool-registry-inventory.md` now has an internal inconsistency: it adds `File Stat / Verify` as an extracted family but the inline `File Discovery / Read / Index` row still lists `stat_file` and `verify_file_exists`.
+- `npm run check:fast` did not produce a stable clean run during Codex review. Two full runs failed at `node scripts/verify-behavior-tests.mjs` with `# pass 985 / # fail 1`; direct reruns of `node scripts/verify-behavior-tests.mjs` passed `986/986`, so this may be intermittent, but it is still a release-gate blocker until reproduced cleanly or explained.
+
+Verifier improvement still recommended:
+- The new source-owner assertions are useful, but they mostly check named owner files and `index.mjs`. A future hardening pass should scan the full `src/service/action_tools/tools/**` tree for duplicate extracted tool body definitions, not only the expected old and new files.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/file-read-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `node scripts/verify-behavior-tests.mjs`: passed 986/986 when run directly after the failed `check:fast` runs.
+- `npm run check:fast`: failed twice at behavior-test aggregation with `# pass 985 / # fail 1`.
+
+Decision:
+- Do not continue deeper into 2D.4 yet.
+- Next step should fix the inventory inconsistency and obtain a stable `npm run check:fast` pass. If the behavior failure is intermittent, capture the exact failing subtest before proceeding.
+
+## Codex Review: 2D.4 Inventory Fix + Compose Email Extraction
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `e65b668` — removes `stat_file` and `verify_file_exists` from the inline File Discovery / Read / Index inventory row.
+- `7809e85` — moves `COMPOSE_EMAIL_TOOL` into `src/service/action_tools/tools/os-app-tools.mjs`.
+
+Accepted:
+- The 2D.4a inventory inconsistency called out in the previous Codex review is fixed.
+- The previous unstable `check:fast` gate is now clean on rerun.
+- `COMPOSE_EMAIL_TOOL` behavior appears preserved: it still builds a `mailto:` URL and uses the shared `openWithDefaultHandler`.
+- Tool ids, count/order, confirmation-gated ids, behavior tests, and desktop GUI smoke are stable.
+
+Architecture issue:
+- Do not treat `COMPOSE_EMAIL_TOOL` living in `os-app-tools.mjs` as the final architecture.
+- The reason for the move was helper reuse, but owner boundaries should follow domain responsibility, not only shared helper dependency.
+- `compose_email` is an email-family tool. It should move to a dedicated `src/service/action_tools/tools/email-tools.mjs` owner, or the plan should explicitly define a temporary compatibility reason and a near-term cleanup.
+- `scripts/verify-tool-registry-snapshot.mjs` currently accepts `COMPOSE_EMAIL_TOOL` as owned by `os-app-tools.mjs`; that assertion should be revised when the email owner is corrected.
+
+Verifier issue:
+- The verifier's inventory family check is too loose: it only checks that the word `Email` appears somewhere in the doc. After `7809e85`, the dedicated inline Email family row was removed, but the verifier still passes because `Email` appears in other text.
+- Strengthen the doc assertion to validate actual ownership rows or explicit family table entries, not broad substring presence.
+
+Required before more 2D moves:
+- Add a narrow cleanup step: create/verify an email owner module or document `COMPOSE_EMAIL_TOOL` in `os-app-tools.mjs` as temporary only.
+- Update the source-owner verifier so email ownership is domain-correct.
+- Do not continue broad file-read extraction or high-risk 2D.5 work until this ownership mismatch is addressed.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/os-app-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-behavior-tests.mjs`: passed 986/986.
+- `npm run check:fast`: passed 65/65.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Product behavior is acceptable.
+- Current structure is not acceptable as a final owner boundary because email logic is now mixed into the OS/app module.
+- Next step should be an email owner cleanup and verifier tightening, not another broad tool-family extraction.
+
+## Codex Review: Email Owner Fix + File Discovery Slice
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `5e2f53c` — moves `COMPOSE_EMAIL_TOOL` from `os-app-tools.mjs` to dedicated `email-tools.mjs`.
+- `a343192` — extracts manifest/path helpers to `file-manifest-helpers.mjs`.
+- `f967ee1` — moves `LIST_FILES_TOOL`, `GLOB_FILES_TOOL`, `FIND_RECENT_FILES_TOOL`, and `GET_LATEST_ARTIFACT_TOOL` into `file-read-tools.mjs`.
+
+Accepted:
+- The previous email ownership issue is fixed: `compose_email` now has a domain-correct owner in `email-tools.mjs`.
+- `SEND_EMAIL_SMTP_TOOL` remains explicitly deferred in `index.mjs` because it still depends on the `NOOP_TOOLS` path.
+- The file discovery move is a reasonable next slice. It moves read/enumeration/artifact-lookup tools, not write/edit/generate/register behavior.
+- `file-manifest-helpers.mjs` gives shared helpers a single owner and avoids copying `resolveDefaultOutputDir`, `readManifest`, `writeManifest`, or `globToRegex`.
+- Owner verifier assertions now cover email and the moved file discovery tools.
+
+Cleanup notes before the next move:
+- `file-manifest-helpers.mjs` is shared by both read-side discovery and still-inline artifact registration / output resolution paths. Do not let this become a vague dumping ground; if artifact write tools move later, split helper ownership by read manifest vs artifact write/output concerns if needed.
+- `index.mjs` currently imports `file-manifest-helpers.mjs` near the file tool section instead of with the other imports. Node accepts this, but future cleanup should keep static imports grouped at the top for readability and predictable ownership scanning.
+- The inventory still says Phase 2D.6 moved "4 of 10 tools" while the extracted file-read owner now contains six tools total including the earlier `stat_file` and `verify_file_exists`. This is understandable as a phase-slice count, but later inventory should avoid ambiguous counts.
+- The verifier still mostly checks expected files rather than scanning all `tools/**` for duplicate extracted exports. Keep full-tree duplicate-owner scanning on the hardening list.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/action_tools/tools/file-read-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/file-manifest-helpers.mjs`: passed.
+- `node --check src/service/action_tools/tools/email-tools.mjs`: passed.
+- `node --check scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `npm run check:fast`: passed 65/65.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Product behavior and current verifier gates are acceptable.
+- The next extraction may continue inside the file-read/index family, but do not move `REGISTER_ARTIFACT_TOOL`, `RESOLVE_OUTPUT_PATH_TOOL`, `INDEX_FILE_CONTENT_TOOL`, or artifact-producing/write tools until their artifact/source invariants are separately locked.
+- Prefer the next narrow slice to be read-only text/search helpers with targeted tests for file-read evidence coverage.
+
+## Codex Review: 2D Cleanup and 2E Readiness
+
+Review date: 2026-05-10.
+
+DeepSeek commit reviewed:
+- `a209cd0` — moves the `file-manifest-helpers.mjs` static import to the top import block in `src/service/action_tools/tools/index.mjs`.
+
+Accepted:
+- The import cleanup addresses the previous readability / ownership-scanning note.
+- No new tool ids, IPC channels, artifact kinds, storage schema, or runtime behavior changed in this commit.
+- Phase 2D low-risk decomposition is now in a reasonable checkpoint state: browser/web, OS/app low-risk tools, scheduler, compose email, file stat/verify, and file discovery tools have owners and verifier coverage.
+
+Remaining 2D high-risk surfaces:
+- `WRITE_FILE_TOOL`, `EDIT_FILE_TOOL`, `RUN_SCRIPT_TOOL`, `GENERATE_DOCUMENT_TOOL`, `RENDER_DIAGRAM_TOOL`, `RENDER_SVG_TOOL`.
+- `READ_FILE_TEXT_TOOL`, `READ_FOLDER_TEXT_TOOL`, `SEARCH_FILE_CONTENT_TOOL`, `INDEX_FILE_CONTENT_TOOL`.
+- `REGISTER_ARTIFACT_TOOL`, `RESOLVE_OUTPUT_PATH_TOOL`.
+- `GUI_FIND_ELEMENT_TOOL`, `GUI_CLICK_TOOL`, `GUI_TYPE_TEXT_TOOL`.
+- `DRAFT_CAPABILITY_TOOL`, `SAVE_CAPABILITY_DRAFT_TOOL`.
+- Deferred `LAUNCH_APP_TOOL`, `TAKE_SCREENSHOT_TOOL`, `READ_CLIPBOARD_TOOL`, and `SEND_EMAIL_SMTP_TOOL`.
+
+2E readiness decision:
+- Yes, Phase 2E may start, but only as `2E.0 / 2E.1` artifact boundary inventory and service-owned helper consolidation.
+- Do not continue mechanical 2D extraction of artifact-producing/write tools before 2E locks artifact kind/path/source/registration invariants.
+- Do not rewrite document generation internals in the first 2E pass.
+- Do not change artifact ids, artifact paths, preview URLs, final-answer links, lineage behavior, or artifact manifest schema.
+
+Recommended next DeepSeek task:
+- Start `Phase 2E.0` with docs/verifier-only inventory if not already current:
+  - map artifact kind inference, path inference, registration, preview/open/reveal, lineage, transform, fallback, and extract call sites;
+  - add or strengthen verifier coverage for artifact boundary call sites.
+- Then start `Phase 2E.1`:
+  - create service-owned artifact boundary helpers for kind/path/source inference and registration options;
+  - migrate only low-risk duplicated inference call sites;
+  - leave generation/rendering/registering behavior intact.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/action_tools/tools/file-read-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/file-manifest-helpers.mjs`: passed.
+- `node --check scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `npm run check:fast`: passed 65/65.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Close Phase 2D as "low-risk decomposition checkpoint complete", not "all tool families extracted".
+- Proceed to Phase 2E with strict artifact-boundary scope.
+
+## Codex Review: 2E.0 Inventory + Artifact Path Helper
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `0ee9b72` — adds Phase 2E.0 artifact boundary call-site inventory and verifier sections.
+- `64cbf3b` — extracts artifact path helpers to `src/service/core/artifact-path-helper.mjs`.
+
+Accepted:
+- `0ee9b72` is directionally correct: it inventories kind inference, path inference, registration, preview/open/reveal, lineage, transform, fallback, and extract call sites.
+- The artifact surface verifier now checks that the 2E.0 inventory sections exist.
+- Moving path helper ownership into service core is the right 2E.1 target in principle.
+
+Blocker:
+- `64cbf3b` is not behavior-preserving. The new `resolveSandboxedTarget` implementation changed security semantics.
+- Previous behavior rejected absolute paths outside the output/allowed roots with `path escapes task workspace`.
+- New behavior can rewrite an outside absolute path to `path.resolve(outputDir, path.basename(relativePath))` instead of throwing.
+- Previous behavior checked symlink components in the parent chain and rejected symlink targets. The new helper removed those `lstat` symlink checks.
+- This weakens the artifact/file-write sandbox and violates the "boundary consolidation, no behavior change" rule.
+
+Required fix before continuing 2E:
+- Restore exact old `resolveSandboxedTarget` semantics in `artifact-path-helper.mjs`.
+- Absolute path inside output/allowed roots must be accepted as-is.
+- Absolute path outside all roots must throw.
+- `..` segments must throw.
+- Parent-chain symlinks must throw.
+- Existing target symlinks must throw.
+- Add a focused behavior test or verifier that proves those sandbox invariants.
+
+Verification rerun by Codex:
+- `node --check src/service/core/artifact-path-helper.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `npm run check:fast`: passed 65/65.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Phase 2E.0 inventory is accepted.
+- Phase 2E.1 path helper extraction is blocked until sandbox semantics are restored and test-locked.
+- Do not proceed to registration, kind inference, or artifact-producing tool moves yet.

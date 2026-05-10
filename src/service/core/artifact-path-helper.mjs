@@ -1,11 +1,7 @@
-import { mkdir } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-/**
- * Resolve the output directory for a tool execution.
- * Prefers ctx.outputDir, then runtime config, then falls back to Desktop/UCA.
- */
 export function resolveOutputDirForTool(ctx) {
   if (ctx?.outputDir) return ctx.outputDir;
   const configuredDir = ctx?.runtime?.configStore?.load?.()?.output?.defaultDir;
@@ -15,17 +11,11 @@ export function resolveOutputDirForTool(ctx) {
   return path.join(os.homedir(), "Desktop", "UCA", ctx?.task?.task_id ?? `scratch-${Date.now()}`);
 }
 
-/**
- * Ensure the output directory exists, creating it recursively if needed.
- */
 export async function ensureOutputDir(outputDir) {
   await mkdir(outputDir, { recursive: true });
   return outputDir;
 }
 
-/**
- * Return the list of configured writable artifact roots for sandbox validation.
- */
 export function configuredWritableArtifactRoots(ctx = {}) {
   return [
     ctx?.runtime?.paths?.outputsDir,
@@ -36,35 +26,59 @@ export function configuredWritableArtifactRoots(ctx = {}) {
     .map((candidate) => path.resolve(candidate));
 }
 
-/**
- * Validate and resolve a target path within the output directory sandbox.
- * Rejects `..` segments and paths outside allowed roots.
- */
 export async function resolveSandboxedTarget(outputDir, relativePath, { allowedRoots = [] } = {}) {
   if (!relativePath || typeof relativePath !== "string") {
     throw new Error("path is required");
   }
+  // Reject `..` segments outright, even if they'd cancel out, because LLMs
+  // sometimes write things like `reports/../../etc/passwd` and we don't want
+  // to rely on resolve() normalising away the mistake.
   if (relativePath.includes("..")) {
     throw new Error("path must not contain '..'");
   }
+  // Treat absolute paths as "use as-is" but still check they're inside the
+  // output dir so the LLM can paste a full `C:\...\outputs\xx\foo.txt` without
+  // being rejected.
   const resolvedOutputDir = path.resolve(outputDir);
-  let target = path.resolve(resolvedOutputDir, relativePath);
-  // If the target is absolute and inside the output dir, keep it;
-  // otherwise prepend the output dir.
-  if (!target.startsWith(resolvedOutputDir + path.sep) && target !== resolvedOutputDir) {
-    // Check if it's inside any allowed root
-    const roots = [resolvedOutputDir, ...allowedRoots.map((r) => path.resolve(r))];
-    const inside = roots.some((root) => target.startsWith(root + path.sep) || target === root);
-    if (!inside) {
-      // Prepend output dir as a fallback
-      target = path.resolve(resolvedOutputDir, path.basename(relativePath));
+  const absTarget = path.isAbsolute(relativePath)
+    ? path.resolve(relativePath)
+    : path.resolve(resolvedOutputDir, relativePath);
+  const roots = [
+    resolvedOutputDir,
+    ...allowedRoots
+      .filter((candidate) => typeof candidate === "string" && candidate.trim())
+      .map((candidate) => path.resolve(candidate))
+  ];
+  const containingRoot = roots.find((root) =>
+    absTarget === root || absTarget.startsWith(root + path.sep)
+  );
+  if (!containingRoot) {
+    throw new Error(`path escapes task workspace: ${relativePath}`);
+  }
+  // Reject any existing symlink components in the *parent* chain between the
+  // workspace and the target. realpath() would silently follow them.
+  let probe = path.dirname(absTarget);
+  while (probe && probe.length >= containingRoot.length) {
+    try {
+      const info = await lstat(probe);
+      if (info.isSymbolicLink()) {
+        throw new Error(`parent path contains a symlink: ${probe}`);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
     }
+    const parent = path.dirname(probe);
+    if (parent === probe) break;
+    probe = parent;
   }
-  // Final check: still inside at least one allowed root
-  const allRoots = [resolvedOutputDir, ...allowedRoots.map((r) => path.resolve(r))];
-  const isInside = allRoots.some((root) => target.startsWith(root + path.sep) || target === root);
-  if (!isInside) {
-    throw new Error(`path escapes the output directory: ${relativePath}`);
+  // If the target already exists, make sure it's not itself a symlink.
+  try {
+    const info = await lstat(absTarget);
+    if (info.isSymbolicLink()) {
+      throw new Error(`target path is a symlink: ${relativePath}`);
+    }
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw error;
   }
-  return target;
+  return absTarget;
 }
