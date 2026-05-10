@@ -14,6 +14,7 @@ import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "..
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "./browser-web-tools.mjs";
+import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL } from "./os-app-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
@@ -482,37 +483,6 @@ export const COMPOSE_EMAIL_TOOL = {
 
 export const SEND_EMAIL_SMTP_TOOL = NOOP_TOOLS.find((tool) => tool.id === "send_email_smtp");
 
-export const OPEN_FILE_TOOL = {
-  ...TOOL_DEFINITIONS.find((t) => t.id === "open_file"),
-  async execute(args = {}) {
-    const target = args.path;
-    if (!target) return createActionResult({ success: false, observation: "path required" });
-    try {
-      await openWithDefaultHandler(target);
-      return createActionResult({ success: true, observation: `Opened ${target}` });
-    } catch (error) {
-      return createActionResult({ success: false, observation: `Failed to open file: ${error.message}` });
-    }
-  }
-};
-
-export const REVEAL_IN_EXPLORER_TOOL = {
-  ...TOOL_DEFINITIONS.find((t) => t.id === "reveal_in_explorer"),
-  async execute(args = {}) {
-    if (!args.path) return createActionResult({ success: false, observation: "path required" });
-    try {
-      if (process.platform === "win32") {
-        await execFileAsync("explorer.exe", ["/select,", args.path]);
-      } else {
-        return OPEN_FILE_TOOL.execute({ path: path.dirname(args.path) });
-      }
-      return createActionResult({ success: true, observation: `Revealed ${args.path}` });
-    } catch (error) {
-      return createActionResult({ success: false, observation: `Failed to reveal: ${error.message}` });
-    }
-  }
-};
-
 export const LAUNCH_APP_TOOL = {
   ...TOOL_DEFINITIONS.find((t) => t.id === "launch_app"),
   async execute(args = {}) {
@@ -726,26 +696,6 @@ export const NOTIFY_TOOL = {
   }
 };
 export const READ_CLIPBOARD_TOOL = NOOP_TOOLS.find((tool) => tool.id === "read_clipboard");
-
-export const FILE_OP_TOOL = {
-  id: "file_op",
-  name: "File Operation",
-  description: "Perform a constrained file operation in the allowed workspace.",
-  parameters: ACTION_TOOL_SCHEMAS.file_op,
-  risk_level: "medium",
-  required_capabilities: ["file_write"],
-  requires_confirmation: false,
-  async execute(args) {
-    return createActionResult({
-      success: true,
-      observation: `Prepared file operation ${args.operation} for ${args.path}`,
-      metadata: {
-        operation: args.operation,
-        targetPath: args.targetPath ?? null
-      }
-    });
-  }
-};
 
 export const TAKE_SCREENSHOT_TOOL = {
   id: "take_screenshot",
