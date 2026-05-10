@@ -1,25 +1,8 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-
 import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
 import { createActionResult } from "../types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
-
-const execFileAsync = promisify(execFile);
-
-async function openWithDefaultHandler(target) {
-  if (process.platform === "win32") {
-    await execFileAsync("powershell.exe", [
-      "-NoProfile", "-Command",
-      `Start-Process ${JSON.stringify(target)}`
-    ], { windowsHide: true });
-  } else if (process.platform === "darwin") {
-    await execFileAsync("open", [target]);
-  } else {
-    await execFileAsync("xdg-open", [target]);
-  }
-}
+import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
 
 // Real implementations for the most common tools
 export const OPEN_URL_TOOL = {

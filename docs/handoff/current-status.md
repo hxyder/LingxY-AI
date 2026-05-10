@@ -129,3 +129,77 @@ Verification rerun by Codex:
 Next allowed step:
 - Phase 2D.1 may start, but only the low-risk browser/web/search/translation family should move first.
 - Do not move `write_file`, `edit_file`, `run_script`, `generate_document`, `register_artifact`, GUI automation, or capability creator tools in the first extraction.
+
+## Codex Review: Phase 2D.1 Browser/Web Tool Extraction
+
+Review date: 2026-05-10.
+
+DeepSeek commit reviewed:
+- `907dd00` — extracts browser/web/search/translation tools from `src/service/action_tools/tools/index.mjs`.
+
+Accepted:
+- The intended 2D.1 product move is scoped to the approved family: `OPEN_URL_TOOL`, `WEB_SEARCH_TOOL`, `WEB_SEARCH_FETCH_TOOL`, `FETCH_URL_CONTENT_TOOL`, and `TRANSLATE_TEXT_TOOL`.
+- High-risk tools such as `write_file`, `edit_file`, `run_script`, `generate_document`, `register_artifact`, GUI automation, and capability creator remain in `tools/index.mjs`.
+- `BUILTIN_ACTION_TOOLS` id order/count and confirmation-gated tool list remain stable.
+
+Blocker before Phase 2D.2:
+- `openWithDefaultHandler` now has two implementations: one local copy in `src/service/action_tools/tools/browser-web-tools.mjs` and one exported implementation in `src/service/action_tools/tools/open-with-default-handler.mjs`.
+- This violates the one-owner rule and creates drift risk. The new browser/web module should import the shared helper instead of redefining it, or the shared helper module should be removed if it is not the intended owner.
+- Add/strengthen verifier coverage so 2D.1 cannot be marked complete while duplicated helper implementations exist.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/browser-web-tools.mjs`: passed.
+- `node --check src/service/action_tools/tools/open-with-default-handler.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-web-search-link-contract.mjs`: passed.
+- `node scripts/verify-open-url-surface-gating.mjs`: passed.
+- `npm run check:fast`: passed 65/65.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+
+Decision:
+- Do not start 2D.2 until the duplicate `openWithDefaultHandler` ownership is resolved and locked by verifier.
+
+## Codex Direction: Capability Directory Architecture
+
+Review date: 2026-05-10.
+
+The target architecture has been added to `linxi_codebase_reorganization_execution_plan.md` under `Phase 2D.X — Long-term capability directory architecture`.
+
+Important direction:
+- Tools, skills, MCP, connectors, providers, and code-cli adapters should eventually live under a clean `src/service/capabilities/**` source layout.
+- Built-in source capabilities belong in source directories; user-installed skills/MCP/tools/connectors must live under runtime data paths, not under `src/`.
+- Legacy paths such as `src/service/action_tools/**`, `src/service/ai/skills/**`, `src/service/ai/mcp/**`, and `src/service/connectors/**` may become compatibility barrels during migration, but they must not contain parallel implementations after the new owner is verified.
+
+Do not jump directly into the full `src/service/capabilities/**` migration yet.
+
+Immediate order:
+- First fix the Phase 2D.1 duplicate `openWithDefaultHandler` ownership.
+- Continue Phase 2D family extraction under the current `action_tools` layout.
+- Start a later `CAP-0` phase for docs/verifier-only capability directory inventory before any broad source moves.
+
+## Codex Direction: Whole-Repository Cleanliness
+
+Review date: 2026-05-10.
+
+The plan now also includes `Phase 2D.Y — Whole-repository directory architecture and cleanliness standard`.
+
+Scope:
+- This applies to all code and files, not only tools/skills/MCP.
+- Future cleanup must cover desktop app code, service runtime, shared contracts, workers, scripts, tests, docs, assets/generated files, config, and native host boundaries.
+
+Target direction:
+- Long term, the repo should move toward `apps/` + `packages/` style ownership:
+  - `apps/desktop/**`
+  - `apps/native-host/**`
+  - `packages/service/**`
+  - `packages/shared/**`
+  - grouped `scripts/**`, `tests/**`, `docs/**`, `assets/**`, `config/**`
+- This is a target architecture, not permission to do a cosmetic root-directory reshuffle now.
+
+Execution order:
+- Keep current immediate blocker first: fix duplicate `openWithDefaultHandler` ownership.
+- Continue current Phase 2D tool-family extraction.
+- Add `CAP-0` and `REPO-0` docs/verifier-only inventory phases before broad physical moves.
+- Every later directory migration must have owner docs, compatibility barrels if needed, cleanup verifiers, and no stale old-owner assertions.
