@@ -50,6 +50,25 @@ export function hasFileGenerationToolCapability({
   return false;
 }
 
+/**
+ * Returns a reason string if artifact recovery should be blocked, or null.
+ * Centralized here so the agent-loop doesn't duplicate policy logic that
+ * belongs in the shared artifact fallback layer (Codex round-1).
+ */
+export function artifactRecoveryBlockedReason(taskSpec = {}) {
+  const goal = String(taskSpec?.goal ?? "").trim();
+  const requiredToolNames = Array.isArray(taskSpec?.success_contract?.required_tool_names)
+    ? taskSpec.success_contract.required_tool_names.map((name) => String(name ?? "").trim())
+    : [];
+  if (goal === "transform_existing_file") {
+    return "goal_transform_existing_file_requires_edit_file";
+  }
+  if (requiredToolNames.includes("edit_file")) {
+    return "required_tool_edit_file_not_called";
+  }
+  return null;
+}
+
 export function shouldSynthesizeRequestedFallbackArtifact({
   requestedFormat = null,
   generatedArtifacts = [],

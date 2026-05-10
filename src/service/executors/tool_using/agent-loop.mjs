@@ -16,6 +16,7 @@ import { resolveProviderForTask } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
+import { artifactRecoveryBlockedReason } from "../../core/artifact-fallback-policy.mjs";
 import {
   formatResourceContext,
   formatUntrustedSourceMaterial,
@@ -932,6 +933,14 @@ export async function attemptArtifactRecovery({
   if (!registry || typeof registry.list !== "function") {
     return { ok: false, reason: "no_registry" };
   }
+  const taskSpec = selectSuccessContractValidationSpec(task)
+    ?? task?.task_spec
+    ?? task?.task_spec_initial
+    ?? {};
+  const blockedReason = artifactRecoveryBlockedReason(taskSpec);
+  if (blockedReason) {
+    return { ok: false, reason: blockedReason };
+  }
   const finalText = String(result?.final_text ?? result?.finalText ?? "").trim();
   if (!finalText) {
     return { ok: false, reason: "no_final_text" };
@@ -969,10 +978,6 @@ export async function attemptArtifactRecovery({
   //   - rawKind non-empty but unrecognised → SKIP recovery with a
   //     single-reason "unsupported_kind:<rawKind>" so the user sees
   //     the real cause rather than a downstream kind-mismatch shadow.
-  const taskSpec = selectSuccessContractValidationSpec(task)
-    ?? task?.task_spec
-    ?? task?.task_spec_initial
-    ?? {};
   const rawKind = String(taskSpec?.artifact?.kind ?? taskSpec?.contract?.output_contract?.kind ?? "")
     .trim().toLowerCase();
   const kindAliases = { word: "docx", excel: "xlsx", ppt: "pptx", powerpoint: "pptx" };

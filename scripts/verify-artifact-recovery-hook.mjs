@@ -612,8 +612,8 @@ function makeSuccessResult(finalText, transcript = []) {
     out.status === "partial_success"
   );
   check(
-    "transform_existing_file recovery: reason = transform_existing_file_requires_edit_file",
-    out.artifact_recovery?.reason === "transform_existing_file_requires_edit_file"
+    "transform_existing_file recovery: reason = goal_transform_existing_file_requires_edit_file",
+    out.artifact_recovery?.reason === "goal_transform_existing_file_requires_edit_file"
   );
 }
 
