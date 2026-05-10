@@ -66,9 +66,10 @@ No modules bypass `provider-adapter.mjs` for direct provider HTTP calls.
   provider resolution paths may be created outside this module.
 - `provider-adapter.mjs` is the single provider call boundary. No new
   direct provider HTTP/streaming calls may be created outside this module.
-- `src/service/embeddings/semantic.mjs` and `src/service/core/intent/semantic-router.mjs`
-  are the approved provider-resolution callers outside the executor/submission pipeline;
-  any new exceptions must be documented here.
+- `src/service/embeddings/semantic.mjs` (dynamic import) and
+  `src/service/core/intent/semantic-router.mjs` (both resolver + adapter) are
+  the approved out-of-pipeline callers. `src/service/extractors/file-ingest.mjs`
+  references provider-resolver only in a comment (not a runtime call).
 - Provider config/secrets must not be read synchronously on hot paths.
 - Cached provider config resolver is a candidate for Phase 2G.2.
 

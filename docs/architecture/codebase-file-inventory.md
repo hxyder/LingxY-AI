@@ -37,7 +37,7 @@ Legend:
 
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `src/desktop/tray/electron-main.mjs` | High-level shell composition: app lifecycle, window/watcher/updater/IPC wiring, GUI smoke scheduling. | main | no | Compose-only; delegates to extracted lifecycle/actions/shortcut/link-browser/preview/smoke-runner/permission-handler helpers + IPC modules. | medium | 2543 → 1072 lines (-58%). Phases 2B.42-2B.48: 7 helpers extracted, remaining is composition glue. |
+| `src/desktop/tray/electron-main.mjs` | High-level shell composition: app lifecycle, window/watcher/updater/IPC wiring, GUI smoke scheduling. | main | no | Compose-only; delegates to extracted lifecycle/actions/shortcut/link-browser/preview/smoke-runner/permission-handler helpers + IPC modules. | medium | ~2500 → ~1000 lines. Phases 2B.42-2B.48: 7 helpers extracted, remaining is composition glue. |
 | `src/desktop/tray/bootstrap.mjs` | Validates desktop shell manifest and exposes bootstrap state. | main | no | `DESKTOP_SHELL_MANIFEST`, `IPC_CHANNELS`. | low | Small boundary helper. |
 | `src/desktop/tray/runtime-host.mjs` | Runtime host helper. | main/service boundary | no | Desktop runtime/service startup support. | medium | Boundary file. |
 | `src/desktop/tray/popup-card-manager.mjs` | Popup card BrowserWindow manager and popup IPC handlers. | main | no | Electron, `IPC_CHANNELS`. | medium | Main-owned UI shell logic; okay but should stay window/IPC scoped. |
@@ -173,7 +173,7 @@ Legend:
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `src/service/action_tools/registry.mjs` | Action tool registry and `call()`. | service/tools | no | Tool definitions. | high | Central tool dispatch. |
-| `src/service/action_tools/tools/index.mjs` | Tool aggregator: imports 6 extracted tool families + owns remaining high-risk inline tools. | service/tools | no | Aggregates from browser-web-tools, os-app-tools, scheduler-tools, file-read-tools, email-tools, file-manifest-helpers, artifact-path-helper. | medium | 4105 → 3049 lines (-26%). Phase 2D.1-2D.6: low-risk families extracted; high-risk tools (write/edit/run/generate/render/gui/capability) remain inline. |
+| `src/service/action_tools/tools/index.mjs` | Tool aggregator: imports 6 extracted tool families + owns remaining high-risk inline tools. | service/tools | no | Aggregates from browser-web-tools, os-app-tools, scheduler-tools, file-read-tools, email-tools, file-manifest-helpers, artifact-path-helper. | medium | ~4100 → ~2900 lines. Phase 2D.1-2D.6: low-risk families extracted (17 tools across 5 modules); high-risk tools (write/edit/run/generate/render/gui/capability) remain inline. |
 | `src/service/action_tools/schemas/index.mjs` | Tool schemas. | service/shared | no | Tool registry/executors. | high | Must stay aligned with tool ids. |
 | `src/service/action_tools/tools/document-renderer.mjs` | DOCX/PPTX/XLSX/PDF/HTML preview rendering. | service/artifact | no | docx/exceljs/pptx/pdf/html helpers. | high | Correct layer but heavy; worker may be needed for large docs. |
 | `src/service/action_tools/tools/memory-tools.mjs` | Runtime memory/session task recall tools. | service/tools/context | no | Store/session/artifacts. | high | Important context surface. |

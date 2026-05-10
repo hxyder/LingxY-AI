@@ -50,7 +50,6 @@ const approvedResolverCallers = new Set([
   "src/service/core/http-routes/config-provider-routes.mjs",
   "src/service/core/intent/semantic-router.mjs",
   "src/service/embeddings/semantic.mjs",
-  "src/service/extractors/file-ingest.mjs",
   "src/service/dag/streaming-planner.mjs",
   "src/service/dag/planner.mjs"
 ]);
@@ -67,27 +66,39 @@ function walkDir(dir, files = []) {
   return files;
 }
 
+// Comment-only references to provider-resolver (no runtime import/call)
+const commentOnlyCallers = new Set([
+  "src/service/extractors/file-ingest.mjs"
+]);
+
 const allServiceFiles = walkDir(path.join(root, "src/service"));
 for (const filePath of allServiceFiles) {
   const src = readFileSync(filePath, "utf8");
   if (!src.includes("resolveProviderForTask") && !src.includes("provider-resolver")) continue;
   const rel = path.relative(root, filePath).replace(/\\/g, "/");
+  if (commentOnlyCallers.has(rel)) continue;
   if (!approvedResolverCallers.has(rel)) {
     fail(`${rel} uses provider-resolver but is not in the approved caller list`);
   }
 }
 
-// ── 5. All approved adapter callers use createProviderAdapter ──
-const approvedAdapterCallers = [
+// ── 5. Tree scan: every createProviderAdapter / provider-adapter user must be approved ──
+const approvedAdapterCallers = new Set([
   "src/service/executors/tool_using/agent-loop.mjs",
   "src/service/executors/tool_using/final-composer.mjs",
   "src/service/executors/agentic/planner.mjs",
-  "src/service/executors/fast/fast-executor.mjs"
-];
-for (const callerPath of approvedAdapterCallers) {
-  const callerSrc = read(callerPath);
-  assert(callerSrc.includes("createProviderAdapter"),
-    `${callerPath} must use createProviderAdapter for provider calls`);
+  "src/service/executors/agentic/provider-adapter.mjs",
+  "src/service/executors/fast/fast-executor.mjs",
+  "src/service/core/intent/semantic-router.mjs"
+]);
+
+for (const filePath of allServiceFiles) {
+  const src = readFileSync(filePath, "utf8");
+  if (!src.includes("createProviderAdapter") && !src.includes("provider-adapter")) continue;
+  const rel = path.relative(root, filePath).replace(/\\/g, "/");
+  if (!approvedAdapterCallers.has(rel)) {
+    fail(`${rel} uses provider-adapter but is not in the approved caller list`);
+  }
 }
 
 // ── 6. No unauthorized direct provider HTTP calls across ALL src/service/** ──
