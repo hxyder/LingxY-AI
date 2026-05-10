@@ -573,17 +573,6 @@ export function createElectronShellRuntime({
       setInterval(() => { updateTrayBadge().catch(() => {}); }, 30_000);
       startClipboardWatcher();
       startActiveWindowMemoryPoll();
-      if (process.env.LINGXY_ELECTRON_GUI_SMOKE === "1") {
-        setTimeout(() => {
-          runDesktopGuiSmoke().catch((error) => {
-            writeDesktopGuiSmokeResult({
-              ok: false,
-              error: error?.message ?? String(error)
-            });
-            app.exit(1);
-          });
-        }, 250);
-      }
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {
           safeError("Failed to process second-instance args", error);
@@ -859,6 +848,18 @@ export function createElectronShellRuntime({
     BrowserWindow,
     app,
   });
+
+      if (process.env.LINGXY_ELECTRON_GUI_SMOKE === "1") {
+        setTimeout(() => {
+          runDesktopGuiSmoke().catch((error) => {
+            writeDesktopGuiSmokeResult({
+              ok: false,
+              error: error?.message ?? String(error)
+            });
+            app.exit(1);
+          });
+        }, 250);
+      }
 
       registerShellOpenUrlIpc({
         ipcMain,
