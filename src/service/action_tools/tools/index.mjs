@@ -19,6 +19,7 @@ import { COMPOSE_EMAIL_TOOL } from "./email-tools.mjs";
 import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "./scheduler-tools.mjs";
 import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "./file-read-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
+import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "./file-manifest-helpers.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
@@ -1868,8 +1869,6 @@ export const RENDER_SVG_TOOL = {
     }
   }
 };
-import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "./file-manifest-helpers.mjs";
-
 
 export const READ_FILE_TEXT_TOOL = {
   id: "read_file_text",
