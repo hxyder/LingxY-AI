@@ -138,9 +138,13 @@ Worker: `src/service/workers/artifact-extract-worker.mjs`
 
 ### Phase 2E Consolidation Priorities
 
-1. **Path inference** (highest duplication) — consolidate `resolveOutputDirForTool`/`ensureOutputDir`/`resolveSandboxedTarget` into a service-owned artifact path helper; reduce duplicated inference across agent-loop, planner, and submission pipelines.
-2. **Registration** — consolidate `registerArtifact` call sites behind a single service-owned helper; the 8+ calls in submission pipeline should go through one facade.
-3. **Kind inference** — `artifactKindFromTarget` in tools/index.mjs duplicates logic from `inferArtifactKind` in artifact-metadata.mjs; consolidate into the metadata module.
+1. **Path inference** ✅ Phase 2E.1 — consolidated into `src/service/core/artifact-path-helper.mjs`.
+2. **Registration** ✅ Phase 2E.2 — call sites verified and invariants locked:
+   - `artifact-store.mjs` `registerArtifact` returns `artifact_id` + `task_id` fields
+   - `artifact-action-contract.mjs` `artifactRegistrationOptionsForPath` for metadata-aware registration
+   - 4 submission files (`browser`, `context`, `file`, `image`) must call `registerArtifact` + `appendArtifact`
+   - Broker/facade consolidation deferred — call sites are heterogeneous (different metadata sources, event handling)
+3. **Kind inference** — `artifactKindFromTarget` in tools/index.mjs is coupled to document generation tools; extraction deferred until high-risk tools (generate_document, write_file, edit_file) are stabilized.
 4. **Lineage, Transform, Extract** — already well-factored with dedicated services; no immediate consolidation needed.
 5. **Preview/Open/Reveal** — already thin; no immediate consolidation needed.
 6. **Fallback** — dedicated module exists but is sparsely referenced; ensure callers consistently use it.

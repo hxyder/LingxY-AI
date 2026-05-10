@@ -96,6 +96,37 @@ assert(doc.includes("Phase 2E Consolidation Priorities"),
 assert(doc.includes("Path Inference (heaviest category)"),
   "artifact inventory must identify path inference as the heaviest category");
 
+// Phase 2E.2: registration contract invariants
+const artifactStoreSrc = readFileSync(path.join(root, "src/service/store/artifact-store.mjs"), "utf8");
+assert(artifactStoreSrc.includes("registerArtifact"),
+  "artifact-store.mjs must export registerArtifact");
+assert(artifactStoreSrc.includes("artifact_id") && artifactStoreSrc.includes("task_id"),
+  "registerArtifact must return artifact_id and task_id fields");
+
+const artifactContractSrc = readFileSync(path.join(root, "src/service/core/artifact-action-contract.mjs"), "utf8");
+assert(artifactContractSrc.includes("artifactRegistrationOptionsForPath"),
+  "artifact-action-contract.mjs must export artifactRegistrationOptionsForPath");
+
+// Registration call sites: browser-submission and context-submission must
+// exist and use registerArtifact (Phase 2E.2 lock — prevents silent drift)
+for (const filePath of [
+  "src/service/core/browser-submission.mjs",
+  "src/service/core/context-submission.mjs",
+  "src/service/core/file-submission.mjs",
+  "src/service/core/image-submission.mjs"
+]) {
+  const submissionSrc = readFileSync(path.join(root, filePath), "utf8");
+  assert(submissionSrc.includes("registerArtifact"),
+    `${filePath} must call registerArtifact for artifact registration`);
+  assert(submissionSrc.includes("appendArtifact"),
+    `${filePath} must call appendArtifact after registration`);
+}
+
+// registration options call sites in submission pipeline
+const browserSubSrc = readFileSync(path.join(root, "src/service/core/browser-submission.mjs"), "utf8");
+assert(browserSubSrc.includes("artifactRegistrationOptionsForPath"),
+  "browser-submission must use artifactRegistrationOptionsForPath for metadata-aware registration");
+
 if (!process.exitCode) {
   console.log("[artifact-surface] artifact surface snapshot verified.");
 }
