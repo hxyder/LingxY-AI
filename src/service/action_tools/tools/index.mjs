@@ -14,7 +14,7 @@ import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "..
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "./browser-web-tools.mjs";
-import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL } from "./os-app-tools.mjs";
+import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL } from "./os-app-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
@@ -619,80 +619,6 @@ export const LAUNCH_APP_TOOL = {
     } catch (error) {
       return createActionResult({ success: false, observation: `Failed to launch ${appArg}: ${error.message}` });
     }
-  }
-};
-
-export const COPY_TO_CLIPBOARD_TOOL = {
-  ...TOOL_DEFINITIONS.find((t) => t.id === "copy_to_clipboard"),
-  async execute(args = {}) {
-    const content = args.content ?? args.text ?? args.value ?? "";
-    if (!content) return createActionResult({ success: false, observation: "content required" });
-    const text = typeof content === "string" ? content : JSON.stringify(content);
-    try {
-      if (process.platform === "win32") {
-        // pipe text to clip.exe via powershell to handle UTF-8 reliably
-        await execFileAsync("powershell.exe", [
-          "-NoProfile", "-Command",
-          `Set-Clipboard -Value ${JSON.stringify(text)}`
-        ], { windowsHide: true });
-      } else if (process.platform === "darwin") {
-        const child = spawn("pbcopy");
-        child.stdin.write(text);
-        child.stdin.end();
-        await new Promise((resolve) => child.on("close", resolve));
-      } else {
-        const child = spawn("xclip", ["-selection", "clipboard"]);
-        child.stdin.write(text);
-        child.stdin.end();
-        await new Promise((resolve) => child.on("close", resolve));
-      }
-      const preview = text.slice(0, 60);
-      return createActionResult({
-        success: true,
-        observation: `Copied ${text.length} chars to clipboard${text.length > 60 ? `: "${preview}…"` : `: "${preview}"`}`
-      });
-    } catch (error) {
-      return createActionResult({ success: false, observation: `Failed to copy: ${error.message}` });
-    }
-  }
-};
-export const NOTIFY_TOOL = {
-  ...TOOL_DEFINITIONS.find((tool) => tool.id === "notify"),
-  async execute(args = {}, ctx = {}) {
-    const baseDir = ctx.runtime?.paths?.baseDir
-      ?? path.join(os.tmpdir(), "uca-test-runtime");
-    const notificationDir = args.notificationDir
-      ?? path.join(baseDir, "notifications");
-    await mkdir(notificationDir, { recursive: true });
-    const notificationPath = path.join(notificationDir, `notification-${Date.now()}-${crypto.randomUUID()}.json`);
-    const payload = {
-      kind: args.kind ?? undefined,
-      title: args.title ?? "UCA 提醒",
-      body: args.body ?? args.message ?? "时间到了",
-      created_at: new Date().toISOString(),
-      handoff: args.handoff ?? null,
-      navigate: args.navigate ?? null,
-      taskId: args.taskId ?? ctx.task?.task_id ?? null,
-      artifactPath: args.artifactPath ?? null,
-      mime: args.mime ?? null,
-      inlinePreview: args.inlinePreview ?? null,
-      openWindow: args.openWindow ?? null,
-      allowContinue: args.allowContinue ?? undefined,
-      allowLongBody: args.allowLongBody ?? undefined,
-      autoHideMs: args.autoHideMs ?? undefined,
-      dedupeKey: args.dedupeKey ?? undefined,
-      skipBatch: args.skipBatch ?? undefined,
-      forcePopup: args.forcePopup ?? undefined
-    };
-    await writeFile(notificationPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
-    return createActionResult({
-      success: true,
-      observation: `Displayed notification "${payload.title}"`,
-      metadata: {
-        tool_id: "notify",
-        notification_path: notificationPath
-      }
-    });
   }
 };
 export const READ_CLIPBOARD_TOOL = NOOP_TOOLS.find((tool) => tool.id === "read_clipboard");

@@ -1,4 +1,7 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import crypto from "node:crypto";
+import { mkdir, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
@@ -72,6 +75,98 @@ export const FILE_OP_TOOL = {
       metadata: {
         operation: args.operation,
         targetPath: args.targetPath ?? null
+      }
+    });
+  }
+};
+
+export const COPY_TO_CLIPBOARD_TOOL = {
+  id: "copy_to_clipboard",
+  name: "Copy To Clipboard",
+  description: "Write text to the system clipboard.",
+  parameters: ACTION_TOOL_SCHEMAS.copy_to_clipboard,
+  risk_level: "low",
+  required_capabilities: ["clipboard_write"],
+  requires_confirmation: false,
+  formatObservation(args) {
+    return `Copied ${String(args.content).length} characters to the clipboard`;
+  },
+  async execute(args = {}) {
+    const content = args.content ?? args.text ?? args.value ?? "";
+    if (!content) return createActionResult({ success: false, observation: "content required" });
+    const text = typeof content === "string" ? content : JSON.stringify(content);
+    try {
+      if (process.platform === "win32") {
+        await execFileAsync("powershell.exe", [
+          "-NoProfile", "-Command",
+          `Set-Clipboard -Value ${JSON.stringify(text)}`
+        ], { windowsHide: true });
+      } else if (process.platform === "darwin") {
+        const child = spawn("pbcopy");
+        child.stdin.write(text);
+        child.stdin.end();
+        await new Promise((resolve) => child.on("close", resolve));
+      } else {
+        const child = spawn("xclip", ["-selection", "clipboard"]);
+        child.stdin.write(text);
+        child.stdin.end();
+        await new Promise((resolve) => child.on("close", resolve));
+      }
+      const preview = text.slice(0, 60);
+      return createActionResult({
+        success: true,
+        observation: `Copied ${text.length} chars to clipboard${text.length > 60 ? `: "${preview}…"` : `: "${preview}"`}`
+      });
+    } catch (error) {
+      return createActionResult({ success: false, observation: `Failed to copy: ${error.message}` });
+    }
+  }
+};
+
+export const NOTIFY_TOOL = {
+  id: "notify",
+  name: "Notify",
+  description: "Display a notification with configurable auto-dismiss.",
+  parameters: ACTION_TOOL_SCHEMAS.notify,
+  risk_level: "low",
+  required_capabilities: ["notification"],
+  requires_confirmation: false,
+  formatObservation(args) {
+    return `Notified ${args.title ?? ""}`;
+  },
+  async execute(args = {}, ctx = {}) {
+    const baseDir = ctx.runtime?.paths?.baseDir
+      ?? path.join(os.tmpdir(), "uca-test-runtime");
+    const notificationDir = args.notificationDir
+      ?? path.join(baseDir, "notifications");
+    await mkdir(notificationDir, { recursive: true });
+    const notificationPath = path.join(notificationDir, `notification-${Date.now()}-${crypto.randomUUID()}.json`);
+    const payload = {
+      kind: args.kind ?? undefined,
+      title: args.title ?? "UCA 提醒",
+      body: args.body ?? args.message ?? "时间到了",
+      created_at: new Date().toISOString(),
+      handoff: args.handoff ?? null,
+      navigate: args.navigate ?? null,
+      taskId: args.taskId ?? ctx.task?.task_id ?? null,
+      artifactPath: args.artifactPath ?? null,
+      mime: args.mime ?? null,
+      inlinePreview: args.inlinePreview ?? null,
+      openWindow: args.openWindow ?? null,
+      allowContinue: args.allowContinue ?? undefined,
+      allowLongBody: args.allowLongBody ?? undefined,
+      autoHideMs: args.autoHideMs ?? undefined,
+      dedupeKey: args.dedupeKey ?? undefined,
+      skipBatch: args.skipBatch ?? undefined,
+      forcePopup: args.forcePopup ?? undefined
+    };
+    await writeFile(notificationPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    return createActionResult({
+      success: true,
+      observation: `Displayed notification "${payload.title}"`,
+      metadata: {
+        tool_id: "notify",
+        notification_path: notificationPath
       }
     });
   }
