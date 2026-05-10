@@ -40,6 +40,7 @@ import { createShortcutRouter } from "./desktop-shortcut-router.mjs";
 import { createLinkBrowserWindowManager } from "./desktop-link-browser-window.mjs";
 import { createPreviewWindowManager } from "./desktop-preview-window-manager.mjs";
 import { createDesktopGuiSmokeRunner } from "./desktop-gui-smoke-runner.mjs";
+import { installMediaPermissionHandlers } from "./desktop-permission-handler.mjs";
 import {
   buildOverlayPayloadFromFiles,
   ECHO_DOCK_DROP_VOICE_READY_MS
@@ -519,40 +520,7 @@ export function createElectronShellRuntime({
         });
       }
 
-      // Grant microphone access to our own renderer windows so the Web
-      // Speech API (used by the overlay's voice input) doesn't fail with
-      // `not-allowed`. Permission is only granted to file:// or http://127.0.0.1
-      // URLs that we serve ourselves — never to arbitrary remote origins.
-      try {
-        session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-          const requestingUrl = webContents?.getURL?.() ?? "";
-          const isLocal = requestingUrl.startsWith("file://")
-            || requestingUrl.startsWith("http://127.0.0.1")
-            || requestingUrl.startsWith("http://localhost");
-          const isAudioOrDisplay = permission === "media"
-            || permission === "audioCapture"
-            || permission === "microphone"
-            || permission === "displayCapture";
-          if (isLocal && isAudioOrDisplay) {
-            callback(true);
-            return;
-          }
-          callback(false);
-        });
-        session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
-          const url = requestingOrigin ?? webContents?.getURL?.() ?? "";
-          const isLocal = url.startsWith("file://")
-            || url.startsWith("http://127.0.0.1")
-            || url.startsWith("http://localhost");
-          const isAudioOrDisplay = permission === "media"
-            || permission === "audioCapture"
-            || permission === "microphone"
-            || permission === "displayCapture";
-          return isLocal && isAudioOrDisplay;
-        });
-      } catch (error) {
-        safeError("Failed to install permission handler", error);
-      }
+      installMediaPermissionHandlers({ session, safeError });
 
       await loadSettings();
       registerShellLocalIpc({
