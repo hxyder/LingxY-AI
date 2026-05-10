@@ -36,8 +36,9 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 | OS / App / File / Clipboard / Notify | `tools/os-app-tools.mjs` (~175 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify` |
 | Email | `tools/email-tools.mjs` (~50 lines) | `compose_email` |
 | Scheduler | `tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
-| File Stat / Verify | `tools/file-read-tools.mjs` (~80 lines) | `stat_file`, `verify_file_exists` |
+| File Discovery / Read / Stat / Artifact | `tools/file-read-tools.mjs` (~330 lines) | `stat_file`, `verify_file_exists`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact` |
 | Shared OS helper | `tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
+| Shared file manifest helpers | `tools/file-manifest-helpers.mjs` | `resolveDefaultOutputDir`, `readManifest`, `writeManifest`, `globToRegex` |
 
 ### Inline families (still in `tools/index.mjs`)
 
@@ -45,7 +46,7 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 |--------|----------|----------------|------|
 | File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects) |
 | Document / Artifact / Diagram / SVG | `generate_document`, `render_diagram`, `render_svg` | ~680 | high (artifact-producing) |
-| File Discovery / Read / Index | `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact`, `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` | ~1040 | medium |
+| File Read / Index / Search | `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` | ~840 | medium |
 | GUI Automation | `gui_find_element`, `gui_click`, `gui_type_text` | ~240 | high (OS integration) |
 | Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
 
@@ -74,7 +75,7 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 1. Browser / Web / Search / Translation ✅ Phase 2D.1
 2. OS / App / Clipboard / Notification ✅ Phase 2D.2a + 2D.2b (3 deferred)
 3. Scheduler ✅ Phase 2D.3
-4. File Discovery / Read / Index (next, medium risk)
+4. File Discovery / Read / Index ✅ Phase 2D.6 (4 of 10 tools moved; 6 remain inline)
 5. File Write / Script Execution (higher risk, side effects)
 6. Document / Artifact / Diagram / SVG Generation (higher risk, artifact-producing)
 7. GUI Automation (higher risk, OS integration)

@@ -219,7 +219,7 @@ assert(!indexSrc.includes("function openWithDefaultHandler"),
 
 // Phase 2D.4: file-read-tools ownership
 const fileReadSrc = read("src/service/action_tools/tools/file-read-tools.mjs");
-for (const tool of ["STAT_FILE_TOOL", "VERIFY_FILE_EXISTS_TOOL"]) {
+for (const tool of ["STAT_FILE_TOOL", "VERIFY_FILE_EXISTS_TOOL", "LIST_FILES_TOOL", "GLOB_FILES_TOOL", "FIND_RECENT_FILES_TOOL", "GET_LATEST_ARTIFACT_TOOL"]) {
   assert(fileReadSrc.includes(`export const ${tool}`),
     `file-read-tools.mjs must own ${tool}`);
   assert(!indexSrc.includes(`export const ${tool} = {`),
