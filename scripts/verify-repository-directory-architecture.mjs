@@ -148,6 +148,65 @@ for (const name of ipcModules) {
   }
 }
 
+// REPO-1.5a preflight: migration-mode checks
+const consoleDir = path.join(root, "src/desktop/renderer/console");
+const rendererDir = path.join(root, "src/desktop/renderer");
+const preExistingClients = new Set([
+  "console-connectors-client.mjs",
+  "console-notes-runtime-client.mjs",
+  "console-skills-client.mjs"
+]);
+
+const consoleFiles = existsSync(consoleDir)
+  ? readdirSync(consoleDir).filter(f => f.endsWith(".mjs") || f.endsWith(".js"))
+  : [];
+const migratedFiles = consoleFiles.filter(f => !preExistingClients.has(f));
+
+if (migratedFiles.length > 0) {
+  // MIGRATION MODE: barrels must exist at old flat paths
+  for (const f of migratedFiles) {
+    const oldName = "console-" + f;
+    const oldPath = path.join(rendererDir, oldName);
+    if (!existsSync(oldPath)) {
+      fail(`REPO-1.5a barrel missing: ${oldName}`);
+    }
+    const barrelContent = readFileSync(oldPath, "utf8");
+    if (!barrelContent.includes("export * from")) {
+      fail(`REPO-1.5a flat path is not a barrel: ${oldName}`);
+    }
+  }
+  // No old-name cross-references in moved files
+  for (const f of migratedFiles) {
+    const content = readFileSync(path.join(consoleDir, f), "utf8");
+    const oldRefs = content.match(/from ['\"]\.\.?\/console-[a-z-]+\.mjs['\"]/g) ?? [];
+    for (const ref of oldRefs) {
+      fail(`REPO-1.5a cross-ref in ${f}: ${ref}`);
+    }
+  }
+} else {
+  // PRE-MIGRATION: verify known cross-references exist (prove baseline unchanged)
+  for (const { file, pattern } of [
+    { file: "console-inbox-view.mjs", pattern: "./console-account-connectors-view.mjs" },
+    { file: "console-task-list.mjs", pattern: "./console-task-detail.mjs" }
+  ]) {
+    const flatPath = path.join(rendererDir, file);
+    if (existsSync(flatPath)) {
+      const content = readFileSync(flatPath, "utf8");
+      if (!content.includes(pattern)) {
+        fail(`REPO-1.5a pre-move: ${file} no longer imports ${pattern}`);
+      }
+    }
+  }
+  // No stale barrels from previous incomplete migration
+  for (const f of readdirSync(rendererDir).filter(f => f.startsWith("console-") && f.endsWith(".mjs"))) {
+    if (preExistingClients.has(f)) continue;
+    const content = readFileSync(path.join(rendererDir, f), "utf8");
+    if (content.includes("Compatibility barrel") || content.includes("export * from")) {
+      fail(`REPO-1.5a stale barrel: ${f}`);
+    }
+  }
+}
+
 if (!process.exitCode) {
   console.log("[repo-arch] repository directory architecture verified");
 }
