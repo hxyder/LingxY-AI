@@ -1906,3 +1906,82 @@ Next instruction for DeepSeek:
   `node scripts/verify-tool-registry-snapshot.mjs`,
   `node scripts/verify-capability-roots.mjs`,
   `node scripts/verify-stale-owner-paths.mjs`, and `npm run check:fast`.
+
+## Codex Review: CAP-1 Skill Install Physical Move
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `66de08b` - `feat: CAP-1 skill-install-tools physical move to capabilities/tools/`.
+
+Accepted after Codex cleanup:
+- `0165b86` correctly committed the previous Codex skill-install runtime verifier
+  hardening before the physical move.
+- `skill-install-tools.mjs` now lives at
+  `src/service/capabilities/tools/skill-install-tools.mjs`.
+- The old `src/service/action_tools/tools/skill-install-tools.mjs` owner path is
+  absent.
+- `src/service/action_tools/tools/index.mjs` imports the skill-install tools from
+  the capability owner.
+- No compatibility barrel remains at the old owner path.
+
+Issues found and fixed by Codex:
+- `scripts/verify-skill-install-tools-contract.mjs` only changed the current path;
+  it did not assert old-path absence and still described the phase as
+  preflight-only. Codex converted it into a post-move owner verifier.
+- `scripts/verify-skill-install-tools.mjs` still imported the old owner. Codex
+  updated it to the capability owner.
+- `scripts/verify-tool-registry-snapshot.mjs` did not lock the capability import,
+  did not list the old owner in moved CAP-1 paths, and still described
+  `skill-install-tools.mjs` as later-phase work. Codex fixed all three.
+- `scripts/verify-capability-roots.mjs` did not include the new capability owner.
+  Codex added it.
+- `scripts/verify-stale-owner-paths.mjs` had the moved old path with bad
+  indentation. Codex normalized the guard entry.
+- `docs/architecture/capability-directory-architecture.md` and
+  `docs/architecture/current-codebase-structure-audit.md` still referenced the
+  old ownership shape. Codex updated the active inventory text.
+- `docs/architecture/skill-install-tools-boundary.md` still said the file had not
+  moved. Codex updated it to the moved-owner state and current verifier
+  coverage.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-skill-install-tools-contract.mjs`: passed.
+- `node scripts/verify-skill-install-tools-contract.mjs`: passed.
+- `node scripts/verify-skill-install-tools-runtime.mjs`: passed.
+- `node scripts/verify-skill-install-tools.mjs`: passed, 65/65.
+- `node scripts/verify-skill-install-approval-preview.mjs`: passed, 22/22.
+- `node scripts/verify-skill-stage-finalize.mjs`: passed, 25/25.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `npm run check:fast`: passed, 77/77.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- Accept `66de08b` after Codex cleanup.
+- CAP-1 skill-install physical move is complete: owner, aggregator import,
+  old-path deletion, stale-owner guard, contract verifier, runtime verifier, and
+  inventory docs now agree.
+- CAP-1 completed high-risk tool-family physical moves now include
+  `vision-analyze`, `memory-tools`, and `skill-install-tools`.
+- `document-renderer.mjs`, `mermaid-assets.mjs`, and `svg-sanitize.mjs` are still
+  old-owner high-risk render/artifact/security families.
+- Do not open CAP-2 yet.
+
+Next instruction for DeepSeek:
+- Commit Codex's skill-install physical-move cleanup first.
+- Next work should be `document-renderer.mjs` static and runtime preflight, not a
+  physical move and not CAP-2.
+- The document-renderer preflight must document and verify:
+  - current dependencies and owner boundaries;
+  - no-touch contracts for artifact kinds, generated document behavior, preview
+    formats, file writes, IPC channels, storage records, and public tool ids;
+  - runtime behavior for supported document/render outputs with controlled test
+    seams or targeted behavior tests;
+  - failure/cleanup behavior without adding fallback shortcuts or prompt-specific
+    patches.
+- Only after static and runtime preflight are green may a separate physical move
+  be prepared for `document-renderer.mjs`.

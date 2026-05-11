@@ -23,7 +23,7 @@
 import {
   PREVIEW_SKILL_FROM_GITHUB_TOOL,
   INSTALL_SKILL_FROM_GITHUB_TOOL
-} from "../src/service/action_tools/tools/skill-install-tools.mjs";
+} from "../src/service/capabilities/tools/skill-install-tools.mjs";
 import {
   createInstallStateRegistry
 } from "../src/service/ai/skills/install-state.mjs";

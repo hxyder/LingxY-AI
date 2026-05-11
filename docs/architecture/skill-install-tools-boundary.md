@@ -1,7 +1,8 @@
 # Skill Install Tools Boundary
 
-CAP-1 deferred family assessment. Status: 2026-05-11, boundary and runtime
-security preflight documented, not moved.
+CAP-1 high-risk family migration. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/skill-install-tools.mjs` after static and
+runtime/security preflight verification.
 
 ## Current State
 
@@ -12,20 +13,21 @@ security preflight documented, not moved.
 
 ## Dependencies
 
-| Import | Current path | Post-move path |
+| Import | Current path | Notes |
 |--------|-------------|----------------|
 | `stageSkillFromGitHub` | `../../ai/skills/github-install.mjs` | Unchanged |
 | `finalizeStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
 | `discardStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
-| `createActionResult` | `../types.mjs` | `../../action_tools/types.mjs` |
+| `createActionResult` | `../../action_tools/types.mjs` | Result shape unchanged |
 
 Three imports from `github-install.mjs` — these are already at `../../ai/skills/` and would remain correct after a move to `capabilities/tools/`.
 
 ## Current Verifier Coverage
 
 - `scripts/verify-skill-install-tools-contract.mjs` locks tool ids, risk
-  levels, confirmation gate, current owner exports, delegation references,
-  contentHash references, surface-gating presence, and boundary document.
+  levels, confirmation gate, moved owner, old-path removal, exports,
+  delegation references, contentHash references, surface-gating presence, and
+  boundary document.
 - `scripts/verify-skill-install-tools-runtime.mjs` executes preview and install
   with injected stage/finalize/discard seams, confirms cleanup on missing state
   registry, confirms state_token and contentHash-bound stagingInfo handoff, and
@@ -60,9 +62,13 @@ Three imports from `github-install.mjs` — these are already at `../../ai/skill
 
 ## Decision
 
-**Preflight only in this phase.** Higher risk than memory-tools due to
-confirmation gate and security boundary. Static and runtime/security preflight
-coverage now exists, but the file is intentionally not moved in the same phase.
-A physical move must be a separate commit that updates imports/inventories,
-adds old-path guards, and reruns the runtime/security verifiers after the path
-change.
+Moved from the old action-tools owner to
+`src/service/capabilities/tools/skill-install-tools.mjs` in CAP-1 as a focused
+security/approval tool-family move. The old owner path must not return as a
+compatibility barrel or parallel implementation.
+
+Remaining follow-up:
+- `document-renderer.mjs`, `mermaid-assets.mjs`, and `svg-sanitize.mjs` remain
+  old-owner high-risk artifact/render/security families.
+- CAP-2 schemas/registry migration remains blocked until remaining high-risk
+  tool families are classified and reviewed.

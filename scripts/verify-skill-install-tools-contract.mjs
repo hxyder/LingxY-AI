@@ -14,7 +14,10 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-// CAP-1 skill-install-tools contract preflight. No physical move.
+// CAP-1 skill-install-tools ownership verifier.
+// Locks the post-move owner and no-touch contracts. Runtime/security coverage
+// lives in verify-skill-install-tools-runtime.mjs and the existing skill
+// install verifier suite.
 
 // 1. Both tools exist in BUILTIN_ACTION_TOOLS
 const previewTool = BUILTIN_ACTION_TOOLS.find(t => t.id === "preview_skill_from_github");
@@ -38,6 +41,8 @@ assert(confirmationIds.includes("install_skill_from_github"),
 // 3. Current owner file exists
 const currentPath = "src/service/capabilities/tools/skill-install-tools.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
+assert(!existsSync(path.join(root, "src/service/action_tools/tools/skill-install-tools.mjs")),
+  "old action_tools skill-install-tools owner must not exist after CAP-1 move");
 
 // 4. Current owner exports both tools
 const skillSrc = read(currentPath);
@@ -69,7 +74,9 @@ const boundaryPath = "docs/architecture/skill-install-tools-boundary.md";
 assert(existsSync(path.join(root, boundaryPath)), "skill-install-tools boundary doc missing");
 const boundaryDoc = read(boundaryPath);
 assert(boundaryDoc.includes("Skill Install Tools Boundary"), "boundary doc must have title");
-assert(boundaryDoc.includes("Preflight only in this phase"), "boundary doc must state preflight-only status");
+assert(boundaryDoc.includes("moved to") &&
+  boundaryDoc.includes("`src/service/capabilities/tools/skill-install-tools.mjs`"),
+  "boundary doc must state the moved owner");
 
 if (!process.exitCode) {
   console.log("[skill-install-tools] contract verified");

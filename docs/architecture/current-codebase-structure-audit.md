@@ -331,7 +331,7 @@ Tool registry and built-in tool definitions:
 - `src/service/action_tools/schemas/index.mjs`
 - `src/service/action_tools/tools/index.mjs`
 - `src/service/capabilities/tools/memory-tools.mjs`
-- `src/service/action_tools/tools/skill-install-tools.mjs`
+- `src/service/capabilities/tools/skill-install-tools.mjs`
 - `src/service/capabilities/tools/vision-analyze.mjs`
 - `src/service/connectors/tools/*.mjs`
 
