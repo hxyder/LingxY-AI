@@ -2339,3 +2339,33 @@ Decision:
 - Screenshot / GUI inline-family preflight is complete.
 - This preflight is sufficient to proceed with CAP-2 schema-only migration.
 - Do not physically extract screenshot or GUI tools in CAP-2.
+
+## Codex Progress: CAP-2 Action Tool Schemas Preflight
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Added `docs/architecture/action-tool-schemas-boundary.md`.
+- Added `scripts/verify-action-tool-schemas-contract.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs`.
+
+Preflight result:
+- `ACTION_TOOL_SCHEMAS` remains at
+  `src/service/action_tools/schemas/index.mjs`.
+- No product source was moved.
+- The verifier locks the public export, import-free schema-only shape, 61-key
+  schema surface, key alignment with `BUILTIN_ACTION_TOOLS`, and the no-touch
+  rule for registry/policy/types/inline tools.
+
+Verification run by Codex:
+- `node --check scripts/verify-action-tool-schemas-contract.mjs`: passed.
+- `node scripts/verify-action-tool-schemas-contract.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `npm run check:fast`: passed, 85/85.
+
+Decision:
+- CAP-2 schema preflight is complete.
+- The next valid step is a separate physical move of only
+  `src/service/action_tools/schemas/index.mjs` to
+  `src/service/capabilities/schemas/index.mjs`.
