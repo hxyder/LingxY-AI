@@ -2,11 +2,6 @@
 import assert from "node:assert/strict";
 import { RECALL_MEMORY_TOOL, LIST_RECENT_TASKS_TOOL, GET_TASK_DETAIL_TOOL, LIST_CONVERSATION_ARTIFACTS_TOOL } from "../src/service/action_tools/tools/memory-tools.mjs";
 
-function fail(message) {
-  console.error(`[memory-tools-runtime] ${message}`);
-  process.exitCode = 1;
-}
-
 // CAP-1 memory-tools runtime preflight. All four tools tested with
 // stubbed runtime store. No physical move.
 
@@ -86,6 +81,9 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
   );
   assert(result.success === true, "list_recent_tasks must succeed");
   assert(result.metadata?.task_ids?.length >= 2, "list_recent must return recent tasks");
+  assert(result.metadata.task_ids.includes("recent-1"), "list_recent must include recent-1");
+  assert(result.metadata.task_ids.includes("recent-2"), "list_recent must include recent-2");
+  assert(result.observation.includes("/out/draft.eml"), "list_recent must include task artifact paths");
 }
 
 // ── 5. list_recent_tasks: filters non-success tasks ──
@@ -100,6 +98,8 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
     { runtime }
   );
   assert(result.success === true, "list_recent must succeed even with only failed tasks");
+  assert(result.observation.includes("No completed tasks"), "list_recent must return the no-completed-tasks message");
+  assert(!result.observation.includes("fail-1"), "list_recent must not expose failed tasks by default");
 }
 
 // ── 6. get_task_detail: found ──
@@ -116,6 +116,8 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
   assert(result.success === true, "get_task_detail must succeed for found task");
   assert(result.observation.includes("detail-1"), "detail result must include task id");
   assert(result.observation.includes("deep dive"), "detail result must include user command");
+  assert(result.metadata?.artifact_paths?.includes("/out/notes.txt"),
+    "detail result metadata must include artifact paths");
 }
 
 // ── 7. get_task_detail: not found ──
@@ -133,8 +135,9 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
 // ── 8. list_conversation_artifacts: success ──
 {
   const runtime = makeRuntime({
-    tasks: [
-      { task_id: "conv-1", status: "success", user_command: "file generation", created_at: new Date().toISOString(), intent: "generate", artifacts: [{ path: "/out/report.pdf" }, { path: "/out/slides.pptx" }] }
+    artifacts: [
+      { task_id: "conv-1", path: "/out/report.pdf", created_at: new Date().toISOString() },
+      { task_id: "conv-1", path: "/out/slides.pptx", created_at: new Date().toISOString() }
     ]
   });
   const result = await LIST_CONVERSATION_ARTIFACTS_TOOL.execute(
@@ -142,6 +145,11 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
     { runtime }
   );
   assert(result.success === true, "list_conversation_artifacts must succeed");
+  assert(result.observation.includes("conv-test"), "conversation artifact result must include conversation id");
+  assert(result.observation.includes("/out/report.pdf"), "conversation artifact result must include report path");
+  assert(result.observation.includes("/out/slides.pptx"), "conversation artifact result must include slides path");
+  assert.deepEqual(result.metadata?.artifact_paths, ["/out/report.pdf", "/out/slides.pptx"],
+    "conversation artifact metadata must include exact artifact paths");
 }
 
 if (!process.exitCode) {

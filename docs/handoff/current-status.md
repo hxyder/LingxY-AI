@@ -1697,3 +1697,63 @@ Next instruction for DeepSeek:
   `list_conversation_artifacts`.
 - Only after that verifier is green may DeepSeek prepare a separate
   `memory-tools.mjs` physical move commit.
+
+## Codex Review: CAP-1 Memory Tools Runtime Preflight
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `0fdb0b9` - `feat: CAP-1 memory-tools runtime verifier (all 4 tools, no physical move)`.
+
+Accepted:
+- `bb01630` correctly committed the previous Codex boundary-doc corrections
+  before adding the runtime verifier.
+- `0fdb0b9` adds `scripts/verify-memory-tools-runtime.mjs` and wires it into
+  `scripts/check-manifest.mjs`; `npm run check:fast` now runs 76 commands.
+- No product source files were moved or edited in the DeepSeek commit.
+- The verifier executes all four memory tools with stubbed
+  `runtime.store` / `runtime.platform.embeddingStore` surfaces:
+  `recall_memory`, `list_recent_tasks`, `get_task_detail`, and
+  `list_conversation_artifacts`.
+
+Issue found and fixed by Codex:
+- The initial `list_conversation_artifacts` runtime check asserted only
+  `success: true`, so it could pass on the empty-artifact success branch.
+  Codex changed the stub to return concrete artifact rows and now asserts
+  observation text plus exact `metadata.artifact_paths`.
+- Codex also strengthened `list_recent_tasks` and `get_task_detail` assertions
+  so artifact metadata and default failed-task filtering are locked.
+- `docs/architecture/memory-tools-boundary.md` still described runtime execution
+  checks as future work. Codex updated it to document current contract +
+  runtime preflight coverage while keeping the file explicitly not moved.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-memory-tools-runtime.mjs`: passed.
+- `node scripts/verify-memory-tools-runtime.mjs`: passed.
+- `node scripts/verify-memory-tools-contract.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `npm run check:fast`: passed, 76/76.
+
+Decision:
+- Accept `0fdb0b9` after Codex verifier hardening as the memory-tools runtime
+  preflight.
+- `memory-tools.mjs` is now eligible for a separate physical move commit, but
+  it has not moved yet.
+- `skill-install-tools.mjs` is still blocked from physical move until its
+  approval/contentHash/surface-gating runtime verifier exists.
+- Do not open CAP-2 yet.
+
+Next instruction for DeepSeek:
+- Commit Codex's memory runtime verifier hardening first.
+- Then prepare a separate `memory-tools.mjs` physical move commit only:
+  move `src/service/action_tools/tools/memory-tools.mjs` to
+  `src/service/capabilities/tools/memory-tools.mjs`, update the aggregator
+  import, update capability/tool inventories, and add old-path absence guards.
+- Do not include `skill-install-tools.mjs` or other families in the same move.
+- After the move, rerun `node scripts/verify-memory-tools-runtime.mjs`,
+  `node scripts/verify-memory-tools-contract.mjs`,
+  `node scripts/verify-tool-registry-snapshot.mjs`,
+  `node scripts/verify-capability-roots.mjs`,
+  `node scripts/verify-stale-owner-paths.mjs`, and `npm run check:fast`.

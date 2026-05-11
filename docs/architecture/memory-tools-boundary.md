@@ -1,12 +1,22 @@
 # Memory Tools Boundary
 
-CAP-1 deferred family assessment. Status: 2026-05-11, boundary documented, not moved.
+CAP-1 deferred family assessment. Status: 2026-05-11, boundary and runtime
+preflight documented, not moved.
 
 ## Current State
 
 - File: `src/service/action_tools/tools/memory-tools.mjs` (319 lines)
 - Tools: `recall_memory`, `list_recent_tasks`, `get_task_detail`, `list_conversation_artifacts`
 - All four are read-only, aggregated via `...MEMORY_TOOLS` into `BUILTIN_ACTION_TOOLS`
+
+## Current Verifier Coverage
+
+- `scripts/verify-memory-tools-contract.mjs` locks the current old owner,
+  exports, tool ids, read-only shape, store/embeddingStore access, and boundary
+  document.
+- `scripts/verify-memory-tools-runtime.mjs` executes all four tools with
+  stubbed runtime surfaces, including semantic recall filtering, recent-task
+  filtering, task detail artifact metadata, and conversation artifact metadata.
 
 ## Dependencies
 
@@ -41,11 +51,8 @@ through the `ctx` parameter at runtime.
 
 ## Decision
 
-**Preflight only in this phase.** Memory tools are read-only with a single import and
-no provider/network dependencies. Physical move is lower risk than vision-analyze but
-still requires:
-1. Contract verifier (current step)
-2. `recall_memory.execute` with stubbed runtime store
-3. `list_recent_tasks.execute` with stubbed store
-4. `get_task_detail.execute` with stubbed store
-5. `list_conversation_artifacts.execute` with stubbed store/artifact rows
+**Preflight only in this phase.** Memory tools are read-only with a single import
+and no provider/network dependencies. Static and runtime preflight coverage now
+exists, but the file is intentionally not moved in the same phase. A physical
+move must be a separate commit that updates imports/inventories, adds old-path
+guards, and reruns the runtime verifier after the path change.
