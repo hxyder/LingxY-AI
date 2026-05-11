@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,6 +58,34 @@ for (const p of userDataPaths) {
 // High-risk deferred items must be documented
 assert(doc.includes("high-risk deferred") || doc.includes("deferred"),
   "repo arch doc must document high-risk deferred items");
+
+// Phase REPO-1: desktop app contracts that must survive directory moves
+const desktopContracts = [
+  { path: "src/desktop/tray/electron-main.mjs", desc: "composition root" },
+  { path: "src/desktop/renderer/preload.cjs", desc: "preload bridge" },
+  { path: "src/desktop/shared/manifest.mjs", desc: "IPC channels + shell manifest" },
+  { path: "src/desktop/tray/ipc", desc: "IPC modules directory" },
+];
+for (const { path: p, desc } of desktopContracts) {
+  assert(existsSync(path.join(root, p)), `desktop contract missing: ${p} (${desc})`);
+}
+
+// IPC module count must remain 21 (any move must preserve all modules)
+const ipcDir = path.join(root, "src/desktop/tray/ipc");
+const ipcModules = readdirSync(ipcDir).filter(f => f.startsWith("register-") && f.endsWith(".mjs"));
+assert(ipcModules.length === 21, `IPC module count must be 21, got ${ipcModules.length}`);
+
+// Desktop app layout inventory doc must exist
+const desktopInventoryPath = "docs/architecture/desktop-app-layout-inventory.md";
+assert(existsSync(path.join(root, desktopInventoryPath)),
+  "desktop app layout inventory doc missing");
+const desktopDoc = read(desktopInventoryPath);
+assert(desktopDoc.includes("Desktop App Layout Inventory"),
+  "desktop layout inventory missing title");
+assert(desktopDoc.includes("Current Layout") && desktopDoc.includes("Target Layout"),
+  "desktop layout inventory must have current and target layouts");
+assert(desktopDoc.includes("Contracts That Must Not Change"),
+  "desktop layout inventory must document contracts that must not change");
 
 if (!process.exitCode) {
   console.log("[repo-arch] repository directory architecture verified");
