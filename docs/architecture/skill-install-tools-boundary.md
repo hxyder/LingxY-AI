@@ -1,10 +1,11 @@
 # Skill Install Tools Boundary
 
-CAP-1 deferred family assessment. Status: 2026-05-11, boundary documented, not moved.
+CAP-1 deferred family assessment. Status: 2026-05-11, boundary and runtime
+security preflight documented, not moved.
 
 ## Current State
 
-- File: `src/service/action_tools/tools/skill-install-tools.mjs` (211 lines)
+- File: `src/service/action_tools/tools/skill-install-tools.mjs`
 - Tools: `preview_skill_from_github` (low risk, no confirmation), `install_skill_from_github` (high risk, requires_confirmation)
 - Two-step LLM-callable install: preview (staging + validate SKILL.md) → install (atomic swap + registry append)
 - Aggregated into `BUILTIN_ACTION_TOOLS` via named exports
@@ -17,10 +18,22 @@ CAP-1 deferred family assessment. Status: 2026-05-11, boundary documented, not m
 | `finalizeStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
 | `discardStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
 | `createActionResult` | `../types.mjs` | `../../action_tools/types.mjs` |
-| `createNoopTool` | `../tool-helper.mjs` | `../../action_tools/tool-helper.mjs` |
-| `ACTION_TOOL_SCHEMAS` | `../schemas/index.mjs` | `../../action_tools/schemas/index.mjs` |
 
 Three imports from `github-install.mjs` — these are already at `../../ai/skills/` and would remain correct after a move to `capabilities/tools/`.
+
+## Current Verifier Coverage
+
+- `scripts/verify-skill-install-tools-contract.mjs` locks tool ids, risk
+  levels, confirmation gate, current owner exports, delegation references,
+  contentHash references, surface-gating presence, and boundary document.
+- `scripts/verify-skill-install-tools-runtime.mjs` executes preview and install
+  with injected stage/finalize/discard seams, confirms cleanup on missing state
+  registry, confirms state_token and contentHash-bound stagingInfo handoff, and
+  exercises class-level surface gating.
+- Existing broader gates still apply:
+  `scripts/verify-skill-install-tools.mjs`,
+  `scripts/verify-skill-install-approval-preview.mjs`, and
+  `scripts/verify-skill-stage-finalize.mjs`.
 
 ## Security / Approval Boundary
 
@@ -43,12 +56,13 @@ Three imports from `github-install.mjs` — these are already at `../../ai/skill
 |------|----------|------------|
 | Confirmation gate must survive path change | High | Contract verifier locks requires_confirmation |
 | `../../ai/skills/github-install.mjs` post-move | Low | Same relative path from `capabilities/tools/`, unchanged |
-| `../tool-helper.mjs` post-move | Low | Standard CAP-1 path fix |
+| Narrow test seam must not change production behavior | Medium | Runtime verifier exercises injected seams; defaults remain production functions |
 
 ## Decision
 
 **Preflight only in this phase.** Higher risk than memory-tools due to
-confirmation gate and security boundary. Physical move requires:
-1. Contract verifier (current step)
-2. Approval flow test proving contentHash binding survives path change
-3. Surface gating verifier (shouldExposeSkillInstall still gates correctly)
+confirmation gate and security boundary. Static and runtime/security preflight
+coverage now exists, but the file is intentionally not moved in the same phase.
+A physical move must be a separate commit that updates imports/inventories,
+adds old-path guards, and reruns the runtime/security verifiers after the path
+change.

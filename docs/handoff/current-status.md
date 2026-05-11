@@ -1832,3 +1832,77 @@ Next instruction for DeepSeek:
   - prove contentHash/state_token binding survives the approval flow;
   - prove `shouldExposeSkillInstall` still gates exposure by class-level
     surface, not prompt-specific phrases.
+
+## Codex Review: CAP-1 Skill Install Runtime/Security Preflight
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `4f0189d` - `feat: CAP-1 skill-install-tools runtime preflight + test seam`.
+
+Accepted:
+- `9c03455` correctly committed the previous Codex memory-tools move cleanup
+  before starting skill-install runtime/security preflight work.
+- `4f0189d` keeps `skill-install-tools.mjs` at
+  `src/service/action_tools/tools/skill-install-tools.mjs`; no physical move
+  occurred.
+- The `_testSeam` is narrow and defaults to the production
+  `stageSkillFromGitHub`, `finalizeStagedInstall`, and `discardStagedInstall`
+  implementations.
+- `scripts/verify-skill-install-tools-runtime.mjs` is wired into
+  `scripts/check-manifest.mjs`; `npm run check:fast` now runs 77 commands.
+
+Issues found and fixed by Codex:
+- The first runtime verifier proved success/failure paths, but did not assert
+  that injected stage/finalize/discard functions were actually called with the
+  right URL/runtime/stagingInfo. Codex added those call-shape checks.
+- The missing-registry preview case did not prove cleanup. Codex now asserts
+  `discardInstall` receives the exact staged info when the registry is absent.
+- The install success case did not prove `state_token` consumption hands the
+  same contentHash-bound stagingInfo to finalize. Codex added exact
+  `consume(token)` and `finalize(stagingInfo, { runtime })` assertions.
+- Surface gating was only checked by source-string presence. Codex added live
+  `shouldExposeSkillInstall` and `filterToolsForTask` checks for positive and
+  negative class-level cases.
+- `docs/architecture/skill-install-tools-boundary.md` listed nonexistent
+  `createNoopTool` and `ACTION_TOOL_SCHEMAS` imports. Codex corrected the
+  dependency table and updated the doc to reflect current runtime/security
+  preflight coverage while keeping the file explicitly not moved.
+
+Verification rerun by Codex:
+- `node --check src/service/action_tools/tools/skill-install-tools.mjs`: passed.
+- `node --check scripts/verify-skill-install-tools-runtime.mjs`: passed.
+- `node scripts/verify-skill-install-tools-runtime.mjs`: passed.
+- `node scripts/verify-skill-install-tools-contract.mjs`: passed.
+- `node scripts/verify-skill-install-tools.mjs`: passed, 65/65.
+- `node scripts/verify-skill-install-approval-preview.mjs`: passed, 22/22.
+- `node scripts/verify-skill-stage-finalize.mjs`: passed, 25/25.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `npm run check:fast`: passed, 77/77.
+
+Decision:
+- Accept `4f0189d` after Codex verifier and boundary-doc hardening.
+- Skill-install static + runtime/security preflight coverage is now sufficient
+  to prepare a separate physical move commit.
+- `skill-install-tools.mjs` has not moved yet.
+- Do not open CAP-2 yet.
+
+Next instruction for DeepSeek:
+- Commit Codex's skill-install verifier/doc hardening first.
+- Then prepare a separate `skill-install-tools.mjs` physical move commit only:
+  move `src/service/action_tools/tools/skill-install-tools.mjs` to
+  `src/service/capabilities/tools/skill-install-tools.mjs`, update the
+  aggregator import, update capability/tool inventories, update runtime and
+  contract verifier imports/owner checks, and add old-path absence guards.
+- Do not include `document-renderer.mjs`, `mermaid-assets.mjs`,
+  `svg-sanitize.mjs`, or CAP-2 schemas/registry work in the same move.
+- After the move, rerun `node scripts/verify-skill-install-tools-runtime.mjs`,
+  `node scripts/verify-skill-install-tools-contract.mjs`,
+  `node scripts/verify-skill-install-tools.mjs`,
+  `node scripts/verify-skill-install-approval-preview.mjs`,
+  `node scripts/verify-skill-stage-finalize.mjs`,
+  `node scripts/verify-tool-registry-snapshot.mjs`,
+  `node scripts/verify-capability-roots.mjs`,
+  `node scripts/verify-stale-owner-paths.mjs`, and `npm run check:fast`.
