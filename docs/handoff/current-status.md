@@ -4,7 +4,7 @@
 
 ## Status: Phases 2B-2G + CAP-0 Inventory/Checkpoint Complete; All Codex Blockers Resolved
 
-All planned low-risk extraction and inventory work across Phases 2A through 2G and CAP-0 is committed. High-risk deferred items: write/edit/run/generate/render tools, GUI automation, capability creator, full capability migration, desktop app directory move. All Codex review blockers from rounds 1-6 resolved. check:fast 69/69 green.
+All planned low-risk extraction and inventory work across Phases 2A through 2G and CAP-0 is committed. High-risk deferred items: write/edit/run/generate/render tools, GUI automation, capability creator, full capability migration, desktop app directory move. All Codex review blockers from rounds 1-6 resolved. check:fast green.
 
 ## Completed Phases
 
@@ -1010,3 +1010,67 @@ Decision:
 - Accept `1684d74`.
 - Accept `075fb76` only after wording is tightened from broad "Complete" to checkpoint/inventory-complete language.
 - Accept `4b6d896` as REPO-0 draft documentation, but do not mark REPO-0 complete until the repository-directory verifier exists and the current-layout/status wording is corrected.
+
+## Codex Review: REPO-0 Verifier Follow-up
+
+Review date: 2026-05-10.
+
+DeepSeek commit reviewed:
+- `bba17ab` - `fix: complete REPO-0 with verifier, tighten status wording`.
+
+Accepted:
+- The missing repository-directory verifier now exists at `scripts/verify-repository-directory-architecture.mjs`.
+- The verifier is wired into `scripts/check-manifest.mjs`, and `npm run check:fast` now runs 70 commands.
+- The handoff header is better scoped as `Inventory/Checkpoint Complete`, and the 2D status wording no longer implies all high-risk tool families were extracted.
+- `docs/architecture/repository-directory-architecture.md` is improved as a current-vs-target repository map and now calls the current layout a major-directory map rather than a leaf-complete inventory.
+
+Required cleanup before declaring REPO-0 complete:
+- The current directory map lists `native-host/`, but the real repository root is `uca-native-host/`. Target architecture may still use `apps/native-host/**`, but current-state documentation must name the real current path.
+- The same map still says `scripts/ # Verifiers (69)`, but `npm run check:fast` now reports 70/70. Avoid exact verifier counts in prose unless a verifier locks the number, because this became stale immediately after adding the REPO-0 verifier.
+- `scripts/verify-repository-directory-architecture.mjs` is useful but still shallow: it checks broad root directories and target concept strings, but it does not catch the documented `native-host/` mismatch, stale verifier-count text, or whether documented current roots actually exist.
+- The top handoff line says all Codex blockers are resolved. Treat that as "previous review blockers resolved"; this review opens a new REPO-0 follow-up blocker until the current-root mismatch and stale count are corrected.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node --check scripts/check-manifest.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `bba17ab` as progress and keep the verifier/check-manifest wiring.
+- Do not declare REPO-0 complete yet.
+- Next correction should update the current map from `native-host/` to `uca-native-host/`, remove or verify the exact `Verifiers (69)` text, and strengthen `verify-repository-directory-architecture.mjs` so it validates documented current roots instead of only checking a few broad anchors.
+
+## Codex Review: REPO-0 Current Path + Count Cleanup
+
+Review date: 2026-05-10.
+
+DeepSeek commit reviewed:
+- `3b753e2` - `fix: correct native-host path, remove stale verifier count, strengthen REPO-0`.
+
+Accepted:
+- `docs/architecture/repository-directory-architecture.md` now uses the real current root `uca-native-host/` in the current layout.
+- The stale `scripts/ # Verifiers (69)` prose was removed, which avoids a brittle count assertion now that `check:fast` runs 70 commands.
+- `scripts/verify-repository-directory-architecture.mjs` now includes `uca-native-host` in documented current roots and checks that the repo architecture doc names the real path.
+- No product source behavior was changed.
+
+Remaining review note:
+- The REPO-0 verifier is acceptable for this checkpoint, but it is still an anchor-based verifier. It checks the key current roots and target concepts, not every rendered tree entry in the markdown diagram. Before a physical root move phase such as REPO-1, strengthen it to validate the documented current layout more mechanically, or replace the freehand tree with a manifest-driven current-root table.
+- The handoff header still contains historical `check:fast 69/69` text. This is no longer a blocker for `3b753e2` because the new REPO-0 doc removed the stale count, but future top-of-file status updates should avoid exact counts unless regenerated from the check runner.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node --check scripts/check-manifest.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `3b753e2`.
+- The previous REPO-0 blocker about the fictional current `native-host/` path and stale `Verifiers (69)` prose is resolved.
+- REPO-0 may be treated as checkpoint-complete for documentation/verifier inventory purposes, with the caveat that REPO-1 must not begin physical root moves until the repository-directory verifier is made stricter for move-specific contracts.
