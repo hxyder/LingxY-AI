@@ -1,7 +1,7 @@
 # Desktop App Layout Inventory
 
 Phase REPO-1 inventory of current vs target desktop app directory layout.
-Status: 2026-05-10. No physical moves yet; verifier-first only.
+Status: 2026-05-11. REPO-1.1 through REPO-1.4 are complete; REPO-1.5 and REPO-1.6 are deferred until the renderer HTML entrypoint migration can be done as a verified, complete move.
 
 ## Current Layout (`src/desktop/`)
 

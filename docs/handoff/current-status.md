@@ -1199,3 +1199,126 @@ Verification rerun by Codex:
 Decision:
 - Accept `cb1d399`.
 - Reject `3bc7b8f` as complete. It is structurally in the intended direction, but currently breaks Electron GUI startup. Do not start REPO-1.3 until IPC module import resolution and GUI smoke are green, and until the new module-load verifier is added.
+
+## Codex Review: REPO-1.2 Repair + REPO-1.3 Shell Helper Move
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `ffbcf68` - `fix: repair broken IPC module relative imports after REPO-1.2 move`.
+- `fa0f4a3` - `refactor: move 6 shell helpers from tray/ to shell/ (REPO-1.3)`.
+
+Accepted:
+- `ffbcf68` fixes the REPO-1.2 startup blocker by changing the 9 moved IPC modules to import `normalizePlainObject` from `../../tray/desktop-payload-normalizers.mjs`.
+- `scripts/verify-repository-directory-architecture.mjs` now dynamically imports every `src/desktop/main/ipc/register-*.mjs` module with `pathToFileURL(...)`, so the exact broken-import class from REPO-1.2 should be caught before GUI startup.
+- All 21 IPC modules in `src/desktop/main/ipc/` now pass direct ESM import-resolution probing.
+- `fa0f4a3` performs the intended functional move for 6 shell helpers into `src/desktop/shell/` and updates `electron-main.mjs` plus relevant verifiers to the new paths.
+- `npm run verify:desktop-gui-smoke` passes 44/44, and `npm run check:fast` passes 70/70.
+
+Remaining cleanup before declaring REPO-1.3 complete:
+- `docs/architecture/codebase-file-inventory.md` still lists the 6 moved shell helper files under `src/desktop/tray/`:
+  - `desktop-window-lifecycle.mjs`
+  - `desktop-window-actions.mjs`
+  - `desktop-shortcut-router.mjs`
+  - `desktop-link-browser-window.mjs`
+  - `desktop-preview-window-manager.mjs`
+  - `desktop-permission-handler.mjs`
+- Those are active inventory rows, not just historical review text, so they violate the no stale old-owner assertion rule for a migration-complete claim.
+- Strengthen `scripts/verify-repository-directory-architecture.mjs` or a desktop ownership verifier so REPO-1.3 fails if active inventory docs keep these six old `src/desktop/tray/...` owner paths after the files have moved to `src/desktop/shell/...`.
+
+Review note:
+- A bare Node dynamic import probe of `src/desktop/shell/desktop-preview-window-manager.mjs` reports an `electron` named-export/CJS interop error for `import { screen } from "electron"`. This did not reproduce in the real Electron GUI smoke run, so it is not a product blocker. Do not add a naive dynamic-import verifier for all shell helpers unless Electron module interop is mocked or the helper is refactored to receive `screen` by injection.
+
+Verification rerun by Codex:
+- Direct ESM import probe for all 21 `src/desktop/main/ipc/register-*.mjs`: passed.
+- `node --check src/desktop/tray/electron-main.mjs`: passed.
+- `node --check src/desktop/shell/*.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-desktop-shell.mjs`: passed.
+- `node scripts/verify-ipc-contract-inventory.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- `node scripts/verify-desktop-gui-perf-smoke.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-link-open-choice-contract.mjs`: passed.
+- `node scripts/verify-preview-window.mjs`: passed.
+- `node scripts/verify-ui-extras.mjs`: passed.
+- `node scripts/verify-audio-entrypoints.mjs`: passed.
+- `node scripts/verify-context-handoff-ui.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `ffbcf68`; REPO-1.2's functional blocker is resolved.
+- Accept `fa0f4a3` as a functional shell-helper move, but do not declare REPO-1.3 complete until `codebase-file-inventory.md` and verifier coverage prove the six old tray owner paths are gone from active inventory.
+
+## Codex Review: REPO-1.3 Inventory Cleanup
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `fe2f8ac` - `fix: update codebase inventory shell helper paths to shell/ (Codex REPO-1.3)`.
+
+Accepted:
+- `docs/architecture/codebase-file-inventory.md` now lists the six moved shell helpers under `src/desktop/shell/`.
+- `scripts/verify-repository-directory-architecture.mjs` now fails if active inventory docs retain the old `src/desktop/tray/...` paths for those six shell helpers.
+- A current sweep found no active architecture/source/script references to the moved smoke runner path, old tray IPC path, broken `src/desktop/main/desktop-payload-normalizers.mjs` path, or the six moved shell helper owner paths, except for the verifier's own forbidden-string checks.
+- GUI smoke and fast checks remain green.
+
+Verification rerun by Codex:
+- `Test-Path src/desktop/tray/desktop-window-lifecycle.mjs`: false.
+- `Test-Path src/desktop/shell/desktop-window-lifecycle.mjs`: true.
+- `Test-Path src/desktop/tray/desktop-permission-handler.mjs`: false.
+- `Test-Path src/desktop/shell/desktop-permission-handler.mjs`: true.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-desktop-shell.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- `node scripts/verify-desktop-gui-perf-smoke.mjs`: passed.
+- `node scripts/verify-ipc-contract-inventory.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-link-open-choice-contract.mjs`: passed.
+- `node scripts/verify-preview-window.mjs`: passed.
+- `node scripts/verify-ui-extras.mjs`: passed.
+- `node scripts/verify-audio-entrypoints.mjs`: passed.
+- `node scripts/verify-context-handoff-ui.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `fe2f8ac`.
+- REPO-1.3 may now be treated as complete for the six shell-helper move: product paths, active inventory docs, and verifier coverage agree.
+- Do not begin the next physical move unless the same rule remains enforced: active inventory docs must be updated in the move PR, and stale old-owner text must be blocked by verifier coverage before any completion claim.
+
+## Codex Review: REPO-1.4 Renderer Shared Clients + REPO-1.5 Deferral
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `2e7fffa` - `chore: classify + verify 4 renderer shared clients (REPO-1.4)`.
+- `e3565b4` - `docs: defer REPO-1.5 physical renderer moves (HTML script dependencies)`.
+
+Accepted:
+- `2e7fffa` is correctly scoped as classification/verification only. It does not pretend to move `renderer/shared/`; it locks the four real shared renderer client files in `scripts/verify-repository-directory-architecture.mjs`.
+- The actual `src/desktop/renderer/shared/` directory contains exactly these four files: `runtime-http-client.mjs`, `runtime-task-client.mjs`, `shell-client.mjs`, and `echo-runtime-client.mjs`.
+- `e3565b4` makes the right call to defer REPO-1.5 physical renderer sub-window moves. Moving renderer window files is not a cosmetic path change because the HTML files contain direct script references; a partial move would risk broken windows.
+- No product source files were changed by either reviewed commit. The changes are docs plus verifier coverage only.
+- The stale status line in `docs/architecture/desktop-app-layout-inventory.md` was corrected during this review so it no longer claims "No physical moves yet" after REPO-1.1 through REPO-1.3 have already moved files.
+
+Required next-step discipline:
+- Do not start REPO-1.5 as a simple folder shuffle. It must be planned as a complete renderer-entry migration that updates HTML script references, any static/package/electron-builder assumptions, renderer verifiers, GUI smoke coverage, and stale old-owner text checks in the same phase.
+- Before any future REPO-1.5 completion claim, prove there are no active old-owner assertions left in inventory docs, source imports, package scripts, verifier snapshots, or HTML entrypoint references.
+- REPO-1.6 remains a cleanup phase only after REPO-1.5 has a proven complete replacement path; it must not be used to postpone required verifier or inventory updates from the actual move phase.
+
+Verification rerun by Codex:
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- Stale moved-path sweep for REPO-1.1 through REPO-1.3: only verifier-owned forbidden-string checks remain.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `2e7fffa`; REPO-1.4 can be treated as complete for renderer shared-client classification and verifier locking.
+- Accept `e3565b4`; REPO-1.5 and REPO-1.6 should stay deferred until the renderer HTML entrypoint migration is designed and executed as a full verified move.
+- Do not mark the broader REPO-1 sequence fully closed yet. The next valid work is either a detailed REPO-1.5 migration design or moving to another independent cleanup phase that does not create half-migrated renderer paths.
