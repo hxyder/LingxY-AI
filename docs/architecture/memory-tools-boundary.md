@@ -1,7 +1,8 @@
 # Memory Tools Boundary
 
-CAP-1 deferred family assessment. Status: 2026-05-11, boundary and runtime
-preflight documented, not moved.
+CAP-1 high-risk family migration. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/memory-tools.mjs` after static and runtime
+preflight verification.
 
 ## Current State
 
@@ -11,18 +12,18 @@ preflight documented, not moved.
 
 ## Current Verifier Coverage
 
-- `scripts/verify-memory-tools-contract.mjs` locks the current old owner,
-  exports, tool ids, read-only shape, store/embeddingStore access, and boundary
-  document.
+- `scripts/verify-memory-tools-contract.mjs` locks the moved owner, old-path
+  removal, exports, tool ids, read-only shape, store/embeddingStore access, and
+  boundary document.
 - `scripts/verify-memory-tools-runtime.mjs` executes all four tools with
   stubbed runtime surfaces, including semantic recall filtering, recent-task
   filtering, task detail artifact metadata, and conversation artifact metadata.
 
 ## Dependencies
 
-| Import | Current path | Post-move path |
+| Import | Current path | Notes |
 |--------|-------------|----------------|
-| `createActionResult` | `../types.mjs` | `../../action_tools/types.mjs` |
+| `createActionResult` | `../../action_tools/types.mjs` | Result shape unchanged |
 
 No other imports. The module accesses `runtime.store` and `runtime.platform.embeddingStore`
 through the `ctx` parameter at runtime.
@@ -51,8 +52,13 @@ through the `ctx` parameter at runtime.
 
 ## Decision
 
-**Preflight only in this phase.** Memory tools are read-only with a single import
-and no provider/network dependencies. Static and runtime preflight coverage now
-exists, but the file is intentionally not moved in the same phase. A physical
-move must be a separate commit that updates imports/inventories, adds old-path
-guards, and reruns the runtime verifier after the path change.
+Moved from the old action-tools owner to
+`src/service/capabilities/tools/memory-tools.mjs` in CAP-1 as a focused
+read-only memory/session tool-family move. The old owner path must not return
+as a compatibility barrel or parallel implementation.
+
+Remaining follow-up:
+- `skill-install-tools.mjs` is still blocked from physical move until approval,
+  contentHash, and surface-gating runtime verification exists.
+- CAP-2 schemas/registry migration remains blocked until the remaining
+  high-risk tool families are classified and reviewed.

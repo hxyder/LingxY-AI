@@ -265,9 +265,10 @@ function findRecentArtifactPath(runtime, preferredKind = null) {
 }
 
 // UCA-182 Phase 21: shifted from "inject blobs of context at submit
-// time" to "let the AI ask". The model now has three memory tools —
-// recall_memory / list_recent_tasks / get_task_detail — registered
-// in src/service/action_tools/tools/memory-tools.mjs. When it sees
+// time" to "let the AI ask". The model now has memory tools —
+// recall_memory / list_recent_tasks / get_task_detail /
+// list_conversation_artifacts — registered in
+// src/service/capabilities/tools/memory-tools.mjs. When it sees
 // a referential pronoun or any gap in its context, the planner calls
 // those tools explicitly instead of us trying to pre-guess. This
 // replaced the earlier regex-based patches.

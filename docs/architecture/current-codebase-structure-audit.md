@@ -330,7 +330,7 @@ Tool registry and built-in tool definitions:
 - `src/service/action_tools/registry.mjs`
 - `src/service/action_tools/schemas/index.mjs`
 - `src/service/action_tools/tools/index.mjs`
-- `src/service/action_tools/tools/memory-tools.mjs`
+- `src/service/capabilities/tools/memory-tools.mjs`
 - `src/service/action_tools/tools/skill-install-tools.mjs`
 - `src/service/capabilities/tools/vision-analyze.mjs`
 - `src/service/connectors/tools/*.mjs`
@@ -747,4 +747,3 @@ main / preload / renderer / service / worker related code positions:
 | renderer | `src/desktop/renderer/*.js`, `*.mjs`, `*.html`, `*.css`; view models under `src/desktop/console/` and `src/desktop/overlay/` |
 | service | `src/service/**`; key runtime entrypoints are `src/service/core/persistent-runtime.mjs`, `src/service/core/service-bootstrap.mjs`, `src/service/core/http-server.mjs`, and `src/service/core/context-submission.mjs` |
 | worker | No dedicated worker layer exists. Worker-like/heavy jobs currently live in `src/service/extractors/`, `src/service/audio/`, `src/service/action_tools/tools/index.mjs`, `src/service/core/external-call.mjs`, subprocess-backed code CLI modules, PowerShell/Python scripts, and helper/native projects |
-

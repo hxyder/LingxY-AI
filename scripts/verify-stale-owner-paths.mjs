@@ -55,7 +55,7 @@ const forbiddenExistingPaths = [
   "src/service/action_tools/tools/open-with-default-handler.mjs",
   "src/service/action_tools/tools/os-app-tools.mjs",
   "src/service/action_tools/tools/scheduler-tools.mjs",
-    "src/service/action_tools/tools/memory-tools.mjs",
+  "src/service/action_tools/tools/memory-tools.mjs",
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);

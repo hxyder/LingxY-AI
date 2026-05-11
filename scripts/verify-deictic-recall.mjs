@@ -19,7 +19,7 @@ import {
   GET_TASK_DETAIL_TOOL,
   LIST_CONVERSATION_ARTIFACTS_TOOL,
   MEMORY_TOOLS
-} from "../src/service/action_tools/tools/memory-tools.mjs";
+} from "../src/service/capabilities/tools/memory-tools.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");

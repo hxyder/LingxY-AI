@@ -14,7 +14,9 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-// CAP-1 memory-tools contract preflight. No physical move.
+// CAP-1 memory-tools ownership verifier.
+// Locks the post-move owner and no-touch contracts. Runtime execution coverage
+// lives in verify-memory-tools-runtime.mjs.
 
 // 1. All four tools exist in BUILTIN_ACTION_TOOLS
 const memoryToolIds = ["recall_memory", "list_recent_tasks", "get_task_detail", "list_conversation_artifacts"];
@@ -26,6 +28,8 @@ for (const id of memoryToolIds) {
 // 2. Current owner file exists
 const currentPath = "src/service/capabilities/tools/memory-tools.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
+assert(!existsSync(path.join(root, "src/service/action_tools/tools/memory-tools.mjs")),
+  "old action_tools memory-tools owner must not exist after CAP-1 move");
 
 // 3. Current owner exports the tools
 const memSrc = read(currentPath);
@@ -54,8 +58,9 @@ assert(existsSync(path.join(root, boundaryPath)), "memory-tools boundary doc mis
 const boundaryDoc = read(boundaryPath);
 assert(boundaryDoc.includes("Memory Tools Boundary"),
   "boundary doc must have title");
-assert(boundaryDoc.includes("Preflight only in this phase"),
-  "boundary doc must state preflight-only status");
+assert(boundaryDoc.includes("moved to") &&
+  boundaryDoc.includes("`src/service/capabilities/tools/memory-tools.mjs`"),
+  "boundary doc must state the moved owner");
 
 if (!process.exitCode) {
   console.log("[memory-tools] contract verified");

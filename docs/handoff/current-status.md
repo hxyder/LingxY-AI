@@ -1757,3 +1757,78 @@ Next instruction for DeepSeek:
   `node scripts/verify-tool-registry-snapshot.mjs`,
   `node scripts/verify-capability-roots.mjs`,
   `node scripts/verify-stale-owner-paths.mjs`, and `npm run check:fast`.
+
+## Codex Review: CAP-1 Memory Tools Physical Move
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `024681d` - `feat: CAP-1 memory-tools physical move to capabilities/tools/`.
+
+Accepted:
+- `3a7ac44` correctly committed the previous Codex memory runtime verifier
+  hardening before the physical move.
+- `memory-tools.mjs` was physically moved to
+  `src/service/capabilities/tools/memory-tools.mjs`.
+- The old `src/service/action_tools/tools/memory-tools.mjs` path is absent; no
+  compatibility barrel remains.
+- `src/service/action_tools/tools/index.mjs` imports `MEMORY_TOOLS` from the
+  capability owner.
+- The moved source keeps the same tool ids and read-only behavior.
+
+Issues found and fixed by Codex:
+- `scripts/verify-memory-tools-contract.mjs` only changed `currentPath`; it did
+  not assert the old owner path was absent and still described the phase as
+  preflight-only. Codex converted it into a post-move ownership verifier.
+- `scripts/verify-tool-registry-snapshot.mjs` still listed `memory-tools.mjs`
+  as a later-phase old-owner file and did not lock the new capability import.
+  Codex added both checks.
+- `scripts/verify-capability-roots.mjs` did not list
+  `src/service/capabilities/tools/memory-tools.mjs`; Codex added it.
+- `docs/architecture/capability-directory-architecture.md` still listed
+  `memory-tools.mjs` under old action-tools ownership. Codex moved it to the
+  capability-owned tools row.
+- `docs/architecture/memory-tools-boundary.md` still said the file was not
+  moved. Codex updated it to the moved-owner state and current verifier
+  coverage.
+- `scripts/verify-deictic-recall.mjs` still imported memory tools from the old
+  path. Codex updated it to the capability owner.
+- `src/service/core/context-submission.mjs` had a stale source comment pointing
+  at the old owner and mentioning only three memory tools. Codex updated the
+  comment to the current owner and four-tool surface.
+- `docs/architecture/current-codebase-structure-audit.md` still referenced the
+  old owner path. Codex updated the active audit inventory row.
+
+Verification rerun by Codex:
+- `node scripts/verify-memory-tools-contract.mjs`: passed.
+- `node scripts/verify-memory-tools-runtime.mjs`: passed.
+- `node scripts/verify-deictic-recall.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+- First `npm run check:fast` run failed at behavior aggregation with `pass 984
+  / fail 2`; direct `node scripts/verify-behavior-tests.mjs` rerun passed
+  986/986, and a full `npm run check:fast` rerun passed 76/76.
+
+Decision:
+- Accept `024681d` after Codex cleanup.
+- CAP-1 memory-tools physical move is complete: owner, import, old-path
+  deletion, stale-owner guard, static contract verifier, runtime verifier,
+  deictic recall verifier, and inventory docs now agree.
+- `skill-install-tools.mjs` is still blocked from physical move until approval,
+  contentHash, and surface-gating runtime verification exists.
+- Do not open CAP-2 yet.
+
+Next instruction for DeepSeek:
+- Commit Codex's memory-tools move cleanup first.
+- Next work should be `skill-install-tools.mjs` runtime/security preflight, not
+  a physical move:
+  - execute preview and install wrappers with stubbed `stageSkillFromGitHub`,
+    `finalizeStagedInstall`, and `discardStagedInstall` or an approved seam;
+  - prove `install_skill_from_github` remains high risk and confirmation-gated;
+  - prove contentHash/state_token binding survives the approval flow;
+  - prove `shouldExposeSkillInstall` still gates exposure by class-level
+    surface, not prompt-specific phrases.

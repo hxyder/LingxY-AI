@@ -229,6 +229,8 @@ assert(indexSrc.includes("from \"../../capabilities/tools/file-read-tools.mjs\""
   "index.mjs must import file-read-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/vision-analyze.mjs\""),
   "index.mjs must import vision-analyze.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/memory-tools.mjs\""),
+  "index.mjs must import memory-tools.mjs from capabilities/tools/");
 
 // CAP-1 closure: moved families must NOT exist at old action_tools/tools/ paths
 const cap1MovedPaths = [
@@ -238,6 +240,7 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/file-read-tools.mjs",
   "src/service/action_tools/tools/email-tools.mjs",
   "src/service/action_tools/tools/vision-analyze.mjs",
+  "src/service/action_tools/tools/memory-tools.mjs",
   "src/service/action_tools/tools/file-manifest-helpers.mjs",
   "src/service/action_tools/tools/open-with-default-handler.mjs",
 ];
@@ -247,7 +250,6 @@ for (const oldPath of cap1MovedPaths) {
 }
 // Remaining old-owner files are intentionally deferred:
 //   index.mjs — live aggregator and remaining inline-tool owner
-//   memory-tools.mjs — session/memory boundary (later phase)
 //   skill-install-tools.mjs — security/approval boundary (later phase)
 //   document-renderer.mjs — artifact-producing (later phase)
 //   mermaid-assets.mjs — diagram rendering (later phase)
