@@ -1,11 +1,12 @@
 # Mermaid Assets Boundary
 
-CAP-1 high-risk render-asset migration. Status: 2026-05-11, preflight only.
-`mermaid-assets.mjs` has not been physically moved.
+CAP-1 high-risk render-asset migration. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/mermaid-assets.mjs` after static and runtime
+preflight verification.
 
 ## Current State
 
-- File: `src/service/action_tools/tools/mermaid-assets.mjs`
+- File: `src/service/capabilities/tools/mermaid-assets.mjs`
 - Public API: `resolveMermaidScriptSrc`, `MERMAID_SCRIPT_SRC`,
   `renderMermaidScriptTag`
 - Callers:
@@ -17,9 +18,9 @@ CAP-1 high-risk render-asset migration. Status: 2026-05-11, preflight only.
 
 ## Current Verifier Coverage
 
-- `scripts/verify-mermaid-assets-contract.mjs` locks the current owner, no-move
-  preflight state, public exports, local dependency specifier, known callers,
-  no CDN strings, and this boundary document.
+- `scripts/verify-mermaid-assets-contract.mjs` locks the moved owner, old-path
+  removal, public exports, local dependency specifier, known callers, no CDN
+  strings, and this boundary document.
 - `scripts/verify-mermaid-assets-runtime.mjs` executes the resolver and script
   tag helper, proves attribute escaping, checks the local Mermaid bundle exists,
   and exercises `render_diagram` plus document preview HTML output.
@@ -44,7 +45,6 @@ generated artifacts to a CDN.
   public action-tool registry ids.
 - Do not change `render_diagram` output path, `artifactPaths`, or generated HTML
   fallback behavior.
-- Do not physically move `mermaid-assets.mjs` during this preflight.
 - Do not add compatibility barrels or parallel old/new Mermaid helper
   implementations.
 
@@ -55,18 +55,15 @@ generated artifacts to a CDN.
 | Generated artifacts load Mermaid from CDN | High | Runtime verifier checks resolver, render_diagram, and document preview output |
 | Script tag injection through custom src | Medium | Runtime verifier checks HTML attribute escaping |
 | Kimi/document/render_diagram callers diverge | Medium | Contract verifier locks all known imports |
-| Physical move creates stale old-owner assertions | Medium | Preflight forbids move until static/runtime coverage is committed |
+| Physical move creates stale old-owner assertions | Medium | Contract, registry, roots, and stale-owner verifiers lock the moved owner |
 
 ## Decision
 
-Preflight only. The current owner remains
-`src/service/action_tools/tools/mermaid-assets.mjs` until static and runtime
-coverage have been committed and reviewed. A later physical move may move only
-this file as a separate commit, after updating imports, inventories, contract
-verifiers, runtime verifiers, moved-path guards, and stale old-owner text.
+moved from `src/service/action_tools/tools/mermaid-assets.mjs` to
+`src/service/capabilities/tools/mermaid-assets.mjs` in CAP-1 as a focused
+render-asset helper move. The old owner path must not return as a compatibility
+barrel or parallel implementation.
 
 Remaining follow-up:
-- Prepare the physical `mermaid-assets.mjs` move only after this preflight is
-  committed and green.
 - CAP-2 schemas/registry migration remains blocked until remaining high-risk
   tool families are classified and reviewed.

@@ -56,7 +56,6 @@ It currently removes:
   `image/svg+xml` metadata.
 - Do not add compatibility barrels or parallel old/new sanitizer
   implementations.
-- Do not move `mermaid-assets.mjs` in the same phase.
 
 ## Risks
 
@@ -76,7 +75,5 @@ security helper move. The old owner path must not return as a compatibility
 barrel or parallel implementation.
 
 Remaining follow-up:
-- `mermaid-assets.mjs` remains a separate high-risk render-asset family and
-  must not be folded into the sanitizer move.
 - CAP-2 schemas/registry migration remains blocked until remaining high-risk
   tool families are classified and reviewed.

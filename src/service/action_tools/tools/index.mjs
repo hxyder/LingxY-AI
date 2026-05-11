@@ -20,7 +20,7 @@ import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED
 import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "../../capabilities/tools/file-read-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "../../capabilities/tools/vision-analyze.mjs";
 import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "../../capabilities/tools/file-manifest-helpers.mjs";
-import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
+import { renderMermaidScriptTag } from "../../capabilities/tools/mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "../../capabilities/tools/svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
 import {

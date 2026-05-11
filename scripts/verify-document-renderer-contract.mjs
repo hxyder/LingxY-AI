@@ -29,8 +29,8 @@ assert(docSrc.includes("renderMermaidScriptTag"),
   "document previews must use the local Mermaid asset helper");
 assert(docSrc.includes("sanitizeSvgMarkup"),
   "document previews must sanitize embedded SVG components");
-assert(docSrc.includes("../../action_tools/tools/mermaid-assets.mjs"),
-  "document-renderer must keep using the existing mermaid-assets owner until that family moves");
+assert(docSrc.includes("from \"./mermaid-assets.mjs\""),
+  "document-renderer must import mermaid-assets from the sibling capability owner");
 assert(docSrc.includes("from \"./svg-sanitize.mjs\""),
   "document-renderer must import svg-sanitize from the capability owner");
 assert(docSrc.includes("await import(\"pptxgenjs\")"),

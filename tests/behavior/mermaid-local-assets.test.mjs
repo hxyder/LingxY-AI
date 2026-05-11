@@ -9,7 +9,7 @@ import {
   MERMAID_SCRIPT_SRC,
   renderMermaidScriptTag,
   resolveMermaidScriptSrc
-} from "../../src/service/action_tools/tools/mermaid-assets.mjs";
+} from "../../src/service/capabilities/tools/mermaid-assets.mjs";
 import { RENDER_DIAGRAM_TOOL } from "../../src/service/action_tools/tools/index.mjs";
 
 test("mermaid asset resolver points at the local npm dependency, never a CDN", async () => {

@@ -44,6 +44,7 @@ const phaseCap1OldOwners = [
   { old: "action_tools/tools/skill-install-tools.mjs", new: "capabilities/tools/skill-install-tools.mjs" },
   { old: "action_tools/tools/document-renderer.mjs", new: "capabilities/tools/document-renderer.mjs" },
   { old: "action_tools/tools/svg-sanitize.mjs", new: "capabilities/tools/svg-sanitize.mjs" },
+  { old: "action_tools/tools/mermaid-assets.mjs", new: "capabilities/tools/mermaid-assets.mjs" },
 ];
 const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners, ...phaseCap1OldOwners];
 
@@ -63,6 +64,7 @@ const forbiddenExistingPaths = [
   "src/service/action_tools/tools/skill-install-tools.mjs",
   "src/service/action_tools/tools/document-renderer.mjs",
   "src/service/action_tools/tools/svg-sanitize.mjs",
+  "src/service/action_tools/tools/mermaid-assets.mjs",
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);
@@ -108,6 +110,7 @@ for (const file of allFiles) {
   if (rel === "scripts/verify-skill-install-tools-contract.mjs") continue;
   if (rel === "scripts/verify-document-renderer-contract.mjs") continue;
   if (rel === "scripts/verify-svg-sanitize-contract.mjs") continue;
+  if (rel === "scripts/verify-mermaid-assets-contract.mjs") continue;
   // Skip the plan document (historical, not active)
   if (rel === "linxi_codebase_reorganization_execution_plan.md") continue;
 

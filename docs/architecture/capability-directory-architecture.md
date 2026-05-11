@@ -7,8 +7,8 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 
 | Capability type | Current path(s) | Tools / modules |
 | --- | --- | --- |
-| Action tools (built-in, remaining old owner) | `src/service/action_tools/tools/` | `index.mjs` (aggregator), `mermaid-assets.mjs` |
-| Capability-owned tools | `src/service/capabilities/tools/` | `browser-web-tools.mjs`, `document-renderer.mjs`, `email-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, `vision-analyze.mjs` |
+| Action tools (built-in, remaining old owner) | `src/service/action_tools/tools/` | `index.mjs` (aggregator) |
+| Capability-owned tools | `src/service/capabilities/tools/` | `browser-web-tools.mjs`, `document-renderer.mjs`, `email-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `mermaid-assets.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, `vision-analyze.mjs` |
 | Action tool schemas | `src/service/action_tools/schemas/index.mjs` | All tool parameter schemas |
 | Action tool registry | `src/service/action_tools/registry.mjs` | `createActionToolRegistry` |
 | Action tool types | `src/service/action_tools/types.mjs` | `createActionResult` |

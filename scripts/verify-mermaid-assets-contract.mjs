@@ -8,16 +8,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// CAP-1 mermaid-assets render-asset preflight verifier.
-// This is a static ownership and no-touch contract check only. It intentionally
-// does not move mermaid-assets.mjs; runtime coverage lives in
-// verify-mermaid-assets-runtime.mjs.
+// CAP-1 mermaid-assets render-asset ownership verifier.
+// This is a static ownership and no-touch contract check; runtime coverage
+// lives in verify-mermaid-assets-runtime.mjs.
 
-const currentPath = "src/service/action_tools/tools/mermaid-assets.mjs";
-const futurePath = "src/service/capabilities/tools/mermaid-assets.mjs";
+const currentPath = "src/service/capabilities/tools/mermaid-assets.mjs";
+const oldPath = "src/service/action_tools/tools/mermaid-assets.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
-assert(!existsSync(path.join(root, futurePath)),
-  "mermaid-assets.mjs must not be physically moved during preflight");
+assert(!existsSync(path.join(root, oldPath)),
+  "mermaid-assets.mjs must not remain at the old action_tools/tools owner path");
 
 const assetSrc = read(currentPath);
 for (const required of [
@@ -39,27 +38,26 @@ assert(!/from\s+["'][^"']*desktop\//u.test(assetSrc),
   "mermaid-assets must not import desktop code");
 
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
-assert(indexSrc.includes("from \"./mermaid-assets.mjs\""),
-  "index.mjs must import Mermaid assets from current owner during preflight");
+assert(indexSrc.includes("from \"../../capabilities/tools/mermaid-assets.mjs\""),
+  "index.mjs must import Mermaid assets from capabilities/tools/");
 assert(indexSrc.includes("renderMermaidScriptTag()"),
   "index.mjs must use shared Mermaid script tag helper");
 
 const docRendererSrc = read("src/service/capabilities/tools/document-renderer.mjs");
-assert(docRendererSrc.includes("../../action_tools/tools/mermaid-assets.mjs"),
-  "document-renderer must import Mermaid assets from current owner during preflight");
+assert(docRendererSrc.includes("from \"./mermaid-assets.mjs\""),
+  "document-renderer must import Mermaid assets from the sibling capability owner");
 
 const kimiSrc = read("src/service/executors/kimi/output-format.mjs");
-assert(kimiSrc.includes("../../action_tools/tools/mermaid-assets.mjs"),
-  "Kimi output formatter must import Mermaid assets from current owner during preflight");
+assert(kimiSrc.includes("../../capabilities/tools/mermaid-assets.mjs"),
+  "Kimi output formatter must import Mermaid assets from capabilities/tools/");
 
 const boundaryPath = "docs/architecture/mermaid-assets-boundary.md";
 assert(existsSync(path.join(root, boundaryPath)), "mermaid-assets boundary doc missing");
 const boundaryDoc = read(boundaryPath);
 for (const requiredText of [
   "Mermaid Assets Boundary",
-  "`src/service/action_tools/tools/mermaid-assets.mjs`",
-  "preflight only",
-  "Do not physically move",
+  "`src/service/capabilities/tools/mermaid-assets.mjs`",
+  "moved from `src/service/action_tools/tools/mermaid-assets.mjs`",
   "Render Asset Boundary",
   "No-Touch Areas",
   "render_diagram"
@@ -69,5 +67,5 @@ for (const requiredText of [
 }
 
 if (!process.exitCode) {
-  console.log("[mermaid-assets] contract preflight verified");
+  console.log("[mermaid-assets] contract verified");
 }

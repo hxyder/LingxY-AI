@@ -2248,3 +2248,64 @@ Decision:
 - The physical move must update action-tool aggregation, document renderer,
   Kimi output-format imports, behavior tests, ownership verifiers, structure
   verifiers, stale-owner checks, and architecture inventories in the same PR.
+
+## Codex Progress: CAP-1 Mermaid Assets Physical Move
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Moved `src/service/action_tools/tools/mermaid-assets.mjs` to
+  `src/service/capabilities/tools/mermaid-assets.mjs`.
+- Updated imports in `src/service/action_tools/tools/index.mjs`,
+  `src/service/capabilities/tools/document-renderer.mjs`,
+  `src/service/executors/kimi/output-format.mjs`,
+  `tests/behavior/mermaid-local-assets.test.mjs`, and
+  `scripts/verify-mermaid-assets-runtime.mjs`.
+- Updated `scripts/verify-mermaid-assets-contract.mjs` to lock moved owner and
+  old-path absence.
+- Updated structure, capability roots, tool-registry, document-renderer, and
+  stale-owner verifiers.
+- Updated architecture inventories and Mermaid/document/SVG/skill-install
+  boundary docs.
+
+Migration result:
+- Current owner: `src/service/capabilities/tools/mermaid-assets.mjs`.
+- Old owner: `src/service/action_tools/tools/mermaid-assets.mjs` is absent.
+- `src/service/action_tools/tools/` now contains only `index.mjs`.
+- No compatibility barrel remains.
+- No tool ids, artifact kinds, IPC channels, HTTP routes, storage schema,
+  provider ids, approval behavior, or public registry ids were changed.
+
+Verification run by Codex:
+- `node --check src/service/capabilities/tools/mermaid-assets.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/capabilities/tools/document-renderer.mjs`: passed.
+- `node --check src/service/executors/kimi/output-format.mjs`: passed.
+- `node --check scripts/verify-mermaid-assets-contract.mjs`: passed.
+- `node --check scripts/verify-mermaid-assets-runtime.mjs`: passed.
+- `node scripts/verify-mermaid-assets-contract.mjs`: passed.
+- `node scripts/verify-mermaid-assets-runtime.mjs`: passed.
+- `node scripts/verify-document-renderer-contract.mjs`: passed.
+- `node scripts/verify-document-renderer-runtime.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node --test tests/behavior/mermaid-local-assets.test.mjs tests/behavior/document-diagram-components.test.mjs`: passed, 6/6.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-preview-window.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: first run failed at behavior aggregation with pass
+  985 / fail 1 on `compound launch continues remaining independent targets
+  after one target fails`; direct single-file rerun passed 19/19; full
+  `npm run check:fast` rerun passed, 83/83.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- Mermaid asset helper physical move is complete after full validation.
+- CAP-1 helper/high-risk wrapper moves are closed through Mermaid.
+- Next work should not reopen moved helpers. The next valid direction is a
+  preflight for extracting a remaining high-risk inline tool family from
+  `src/service/action_tools/tools/index.mjs`, starting with a small,
+  verifier-friendly family rather than schema/registry relocation.

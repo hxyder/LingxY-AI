@@ -4,7 +4,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { extractPureLaunchApp } from "../../core/router/fast-path-router.mjs";
-import { renderMermaidScriptTag } from "../../action_tools/tools/mermaid-assets.mjs";
+import { renderMermaidScriptTag } from "../../capabilities/tools/mermaid-assets.mjs";
 import { sanitizeHtml } from "../../preview/providers/markdown.mjs";
 
 const execFileAsync = promisify(execFile);

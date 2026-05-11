@@ -68,6 +68,5 @@ security/approval tool-family move. The old owner path must not return as a
 compatibility barrel or parallel implementation.
 
 Remaining follow-up:
-- `mermaid-assets.mjs` remains an old-owner high-risk render-asset family.
 - CAP-2 schemas/registry migration remains blocked until remaining high-risk
   tool families are classified and reviewed.

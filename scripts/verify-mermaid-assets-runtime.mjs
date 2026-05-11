@@ -8,7 +8,7 @@ import {
   MERMAID_SCRIPT_SRC,
   renderMermaidScriptTag,
   resolveMermaidScriptSrc
-} from "../src/service/action_tools/tools/mermaid-assets.mjs";
+} from "../src/service/capabilities/tools/mermaid-assets.mjs";
 import { RENDER_DIAGRAM_TOOL } from "../src/service/action_tools/tools/index.mjs";
 import { renderDocumentPreviewHtml } from "../src/service/capabilities/tools/document-renderer.mjs";
 
@@ -33,7 +33,7 @@ assert.equal(
   "script tag helper must escape HTML attributes"
 );
 
-const outputDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-mermaid-assets-preflight-"));
+const outputDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-mermaid-assets-"));
 try {
   const diagram = await RENDER_DIAGRAM_TOOL.execute({
     code: "flowchart TD\n  A[Local] --> B[Bundle]",
@@ -66,4 +66,4 @@ try {
   await rm(outputDir, { recursive: true, force: true });
 }
 
-console.log("[mermaid-assets] runtime preflight verified");
+console.log("[mermaid-assets] runtime verified");

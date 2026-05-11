@@ -12,7 +12,7 @@
 
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
-import { renderMermaidScriptTag } from "../../action_tools/tools/mermaid-assets.mjs";
+import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
