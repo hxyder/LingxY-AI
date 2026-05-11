@@ -38,7 +38,7 @@ const capabilityRoots = [
   "src/service/action_tools/tools/os-app-tools.mjs",
   "src/service/action_tools/tools/scheduler-tools.mjs",
   "src/service/action_tools/tools/file-read-tools.mjs",
-  "src/service/action_tools/tools/email-tools.mjs",
+  "src/service/capabilities/tools/email-tools.mjs",
   // Shared action_tools helpers
   "src/service/action_tools/tools/open-with-default-handler.mjs",
   "src/service/action_tools/tools/file-manifest-helpers.mjs",

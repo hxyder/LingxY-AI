@@ -29,6 +29,7 @@ const phase2bOldOwners = [
 const phaseRepo1OldOwners = [
   { old: "tray/ipc/", new: "main/ipc/" },
   { old: "tray/desktop-payload-normalizers.mjs", new: "shared/desktop-payload-normalizers.mjs" },
+  { old: "action_tools/tools/email-tools.mjs", new: "capabilities/tools/email-tools.mjs" },
 ];
 
 const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners];

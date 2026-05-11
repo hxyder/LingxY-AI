@@ -169,7 +169,7 @@ for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL",
 }
 
 // Phase 2D.5: email-tools ownership (domain-correct owner, not mixed into os-app-tools)
-const emailSrc = read("src/service/action_tools/tools/email-tools.mjs");
+const emailSrc = read("src/service/capabilities/tools/email-tools.mjs");
 assert(emailSrc.includes("import { openWithDefaultHandler } from"),
   "email-tools.mjs must import openWithDefaultHandler from the shared module");
 for (const tool of ["COMPOSE_EMAIL_TOOL"]) {
@@ -193,8 +193,8 @@ assert(indexSrc.includes("from \"./os-app-tools.mjs\""),
   "index.mjs must import os-app-tools.mjs");
 assert(indexSrc.includes("from \"./scheduler-tools.mjs\""),
   "index.mjs must import scheduler-tools.mjs");
-assert(indexSrc.includes("from \"./email-tools.mjs\""),
-  "index.mjs must import email-tools.mjs");
+assert(indexSrc.includes("from \"../../capabilities/tools/email-tools.mjs\""),
+  "index.mjs must import email-tools.mjs from capabilities/tools/");
 // index.mjs must NOT redefine extracted tool bodies
 for (const tool of ["COMPOSE_EMAIL_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
