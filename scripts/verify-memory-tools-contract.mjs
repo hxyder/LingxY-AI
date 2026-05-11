@@ -24,7 +24,7 @@ for (const id of memoryToolIds) {
 }
 
 // 2. Current owner file exists
-const currentPath = "src/service/action_tools/tools/memory-tools.mjs";
+const currentPath = "src/service/capabilities/tools/memory-tools.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
 
 // 3. Current owner exports the tools

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { RECALL_MEMORY_TOOL, LIST_RECENT_TASKS_TOOL, GET_TASK_DETAIL_TOOL, LIST_CONVERSATION_ARTIFACTS_TOOL } from "../src/service/action_tools/tools/memory-tools.mjs";
+import { RECALL_MEMORY_TOOL, LIST_RECENT_TASKS_TOOL, GET_TASK_DETAIL_TOOL, LIST_CONVERSATION_ARTIFACTS_TOOL } from "../src/service/capabilities/tools/memory-tools.mjs";
 
 // CAP-1 memory-tools runtime preflight. All four tools tested with
 // stubbed runtime store. No physical move.

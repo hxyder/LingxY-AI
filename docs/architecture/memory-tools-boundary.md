@@ -5,7 +5,7 @@ preflight documented, not moved.
 
 ## Current State
 
-- File: `src/service/action_tools/tools/memory-tools.mjs` (319 lines)
+- File: `src/service/capabilities/tools/memory-tools.mjs` (319 lines)
 - Tools: `recall_memory`, `list_recent_tasks`, `get_task_detail`, `list_conversation_artifacts`
 - All four are read-only, aggregated via `...MEMORY_TOOLS` into `BUILTIN_ACTION_TOOLS`
 
