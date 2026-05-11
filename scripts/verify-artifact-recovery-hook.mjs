@@ -622,13 +622,8 @@ function makeSuccessResult(finalText, transcript = []) {
   const captured = [];
   const runtime = createStubRuntime({
     generateImpl: async (args) => {
-      captured.push({ toolId, args });
-      if (toolId === "generate_document") throw new Error("should not call generate_document");
-      return {
-        success: true,
-        observation: `mock ${toolId} result`,
-        artifact_paths: [`/tmp/stub.${args.kind}`]
-      };
+      captured.push(args);
+      throw new Error("generate_document must not be called when recovery is blocked by required_tool_names");
     }
   });
   const task = {
