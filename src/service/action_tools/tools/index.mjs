@@ -1113,7 +1113,7 @@ async function buildDocumentPreviewHtml(kind, outline, targetPath = "") {
   if (kind === "pdf") {
     return buildPdfHtml(outline);
   }
-  const { renderDocumentPreviewHtml } = await import("./document-renderer.mjs");
+  const { renderDocumentPreviewHtml } = await import("../../capabilities/tools/document-renderer.mjs");
   return renderDocumentPreviewHtml({
     kind,
     outline,
@@ -1139,7 +1139,7 @@ async function prepareGeneratedDocumentCheckpoint(ctx, targetPath, operation) {
 async function invokeDocumentRenderer({ kind, targetPath, outline }) {
   // Try the Node.js renderer first (pptxgenjs / docx / exceljs — styled output).
   try {
-    const { renderDocument } = await import("./document-renderer.mjs");
+    const { renderDocument } = await import("../../capabilities/tools/document-renderer.mjs");
     await renderDocument({ kind, targetPath, outline });
     return;
   } catch (nodeErr) {

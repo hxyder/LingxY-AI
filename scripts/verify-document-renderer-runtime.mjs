@@ -6,7 +6,7 @@ import path from "node:path";
 import {
   renderDocument,
   renderDocumentPreviewHtml
-} from "../src/service/action_tools/tools/document-renderer.mjs";
+} from "../src/service/capabilities/tools/document-renderer.mjs";
 import { GENERATE_DOCUMENT_TOOL } from "../src/service/action_tools/tools/index.mjs";
 
 function assertNoUnsafeSvgSurface(html, label) {

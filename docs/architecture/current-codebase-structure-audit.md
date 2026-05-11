@@ -400,7 +400,7 @@ Tool-level artifact generation:
   - `take_screenshot`
   - `run_script`
   - `register_artifact`
-- `src/service/action_tools/tools/document-renderer.mjs`
+- `src/service/capabilities/tools/document-renderer.mjs`
 
 Executor-level artifact logic:
 

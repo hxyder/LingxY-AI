@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { GENERATE_DOCUMENT_TOOL } from "../../src/service/action_tools/tools/index.mjs";
-import { renderDocumentPreviewHtml } from "../../src/service/action_tools/tools/document-renderer.mjs";
+import { renderDocumentPreviewHtml } from "../../src/service/capabilities/tools/document-renderer.mjs";
 
 test("generate_document renders structured diagram components in PDF HTML", async () => {
   const outputDir = await mkdtemp(path.join(os.tmpdir(), "uca-doc-diagram-"));

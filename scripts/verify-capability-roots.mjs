@@ -42,6 +42,7 @@ const capabilityRoots = [
   "src/service/capabilities/tools/vision-analyze.mjs",
   "src/service/capabilities/tools/memory-tools.mjs",
   "src/service/capabilities/tools/skill-install-tools.mjs",
+  "src/service/capabilities/tools/document-renderer.mjs",
   "src/service/capabilities/tools/open-with-default-handler.mjs",
   "src/service/capabilities/tools/file-manifest-helpers.mjs",
 ];

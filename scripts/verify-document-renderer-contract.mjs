@@ -9,16 +9,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// CAP-1 document-renderer preflight verifier.
-// This is a static ownership and no-touch contract check only. It intentionally
-// does not move document-renderer.mjs; runtime coverage lives in
+// CAP-1 document-renderer ownership verifier.
+// Locks the post-move owner and no-touch contracts. Runtime coverage lives in
 // verify-document-renderer-runtime.mjs.
 
-const currentPath = "src/service/action_tools/tools/document-renderer.mjs";
-const futurePath = "src/service/capabilities/tools/document-renderer.mjs";
+const currentPath = "src/service/capabilities/tools/document-renderer.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
-assert(!existsSync(path.join(root, futurePath)),
-  "document-renderer.mjs must not be physically moved during preflight");
+assert(!existsSync(path.join(root, "src/service/action_tools/tools/document-renderer.mjs")),
+  "old action_tools document-renderer owner must not exist after CAP-1 move");
 
 const docSrc = read(currentPath);
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
@@ -31,6 +29,10 @@ assert(docSrc.includes("renderMermaidScriptTag"),
   "document previews must use the local Mermaid asset helper");
 assert(docSrc.includes("sanitizeSvgMarkup"),
   "document previews must sanitize embedded SVG components");
+assert(docSrc.includes("../../action_tools/tools/mermaid-assets.mjs"),
+  "document-renderer must keep using the existing mermaid-assets owner until that family moves");
+assert(docSrc.includes("../../action_tools/tools/svg-sanitize.mjs"),
+  "document-renderer must keep using the existing svg-sanitize owner until that family moves");
 assert(docSrc.includes("await import(\"pptxgenjs\")"),
   "PPTX dependency must remain lazy-loaded inside the renderer");
 assert(docSrc.includes("await import(\"docx\")"),
@@ -54,8 +56,8 @@ assert.deepEqual(generateDocument.required_capabilities, ["file_write"],
 assert.equal(generateDocument.requires_confirmation, false,
   "generate_document confirmation behavior must remain unchanged");
 
-assert(indexSrc.includes("await import(\"./document-renderer.mjs\")"),
-  "index.mjs must still dynamically import the current document-renderer owner");
+assert(indexSrc.includes("await import(\"../../capabilities/tools/document-renderer.mjs\")"),
+  "index.mjs must dynamically import document-renderer from capabilities/tools/");
 assert(indexSrc.includes("writeDocumentPreviewSidecar"),
   "generate_document must continue writing preview sidecars for previewable artifacts");
 assert(indexSrc.includes("prepareGeneratedDocumentCheckpoint"),
@@ -70,9 +72,8 @@ assert(existsSync(path.join(root, boundaryPath)), "document-renderer boundary do
 const boundaryDoc = read(boundaryPath);
 for (const requiredText of [
   "Document Renderer Boundary",
-  "`src/service/action_tools/tools/document-renderer.mjs`",
-  "preflight only",
-  "Do not physically move",
+  "`src/service/capabilities/tools/document-renderer.mjs`",
+  "moved to",
   "artifact kinds",
   "preview_html_path",
   "reversibility",
@@ -83,5 +84,5 @@ for (const requiredText of [
 }
 
 if (!process.exitCode) {
-  console.log("[document-renderer] contract preflight verified");
+  console.log("[document-renderer] contract verified");
 }

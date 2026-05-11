@@ -45,7 +45,7 @@ async function writeStructuredPreviewHtml({ kind, outputPath, outline = null, pl
   const previewPath = previewSidecarPath(outputPath);
   let html = "";
   if (outline) {
-    const { renderDocumentPreviewHtml } = await import("../../action_tools/tools/document-renderer.mjs");
+    const { renderDocumentPreviewHtml } = await import("../../capabilities/tools/document-renderer.mjs");
     html = renderDocumentPreviewHtml({ kind, outline, title: path.basename(outputPath) });
   } else {
     html = await renderMarkdownDocumentHtml(plainText || "(empty)", {

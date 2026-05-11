@@ -1,11 +1,12 @@
 # Document Renderer Boundary
 
-CAP-1 high-risk family migration. Status: 2026-05-11, preflight only.
-`document-renderer.mjs` has not been physically moved.
+CAP-1 high-risk family migration. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/document-renderer.mjs` after static and runtime
+preflight verification.
 
 ## Current State
 
-- File: `src/service/action_tools/tools/document-renderer.mjs`
+- File: `src/service/capabilities/tools/document-renderer.mjs`
 - Public API: `renderDocumentPreviewHtml`, `renderDocument`
 - Tool caller: `generate_document` in `src/service/action_tools/tools/index.mjs`
 - Direct render kinds owned here: `pptx`, `docx`, `xlsx`
@@ -14,11 +15,11 @@ CAP-1 high-risk family migration. Status: 2026-05-11, preflight only.
 
 ## Current Verifier Coverage
 
-- `scripts/verify-document-renderer-contract.mjs` locks the current owner,
-  no-move preflight state, public exports, lazy heavy dependencies, local
-  Mermaid/SVG helpers, no renderer/Electron/provider imports, `generate_document`
-  contract fields, preview sidecar metadata, reversibility wiring, and this
-  boundary document.
+- `scripts/verify-document-renderer-contract.mjs` locks the moved owner,
+  old-path removal, public exports, lazy heavy dependencies, local Mermaid/SVG
+  helpers, no renderer/Electron/provider imports, `generate_document` contract
+  fields, preview sidecar metadata, reversibility wiring, and this boundary
+  document.
 - `scripts/verify-document-renderer-runtime.mjs` executes
   `renderDocumentPreviewHtml`, `renderDocument`, and `generate_document(html)`.
   It proves local Mermaid assets, SVG sanitization, text escaping, unsupported
@@ -37,8 +38,8 @@ CAP-1 high-risk family migration. Status: 2026-05-11, preflight only.
 |--------|--------------|-------|
 | `writeFile`, `mkdir` | `node:fs/promises` | Service-side artifact file writes |
 | `path` | `node:path` | Target and parent path handling |
-| `renderMermaidScriptTag` | `./mermaid-assets.mjs` | Local Mermaid asset script, no CDN |
-| `sanitizeSvgMarkup` | `./svg-sanitize.mjs` | Sanitizes embedded SVG components |
+| `renderMermaidScriptTag` | `../../action_tools/tools/mermaid-assets.mjs` | Local Mermaid asset script, no CDN |
+| `sanitizeSvgMarkup` | `../../action_tools/tools/svg-sanitize.mjs` | Sanitizes embedded SVG components |
 | `pptxgenjs` | dynamic import | PPTX rendering, lazy-loaded |
 | `docx` | dynamic import | DOCX rendering, lazy-loaded |
 | `exceljs` | dynamic import | XLSX rendering, lazy-loaded |
@@ -62,9 +63,7 @@ CAP-1 high-risk family migration. Status: 2026-05-11, preflight only.
   storage schema.
 - Do not change IPC channels, HTTP routes, provider ids, approval behavior, or
   public action-tool registry ids.
-- Do not move PDF/HTML fallback ownership out of `generate_document` during this
-  preflight.
-- Do not physically move `document-renderer.mjs` during this preflight.
+- Do not move PDF/HTML fallback ownership out of `generate_document`.
 - Do not add compatibility barrels or parallel old/new renderer
   implementations.
 - Do not move `mermaid-assets.mjs` or `svg-sanitize.mjs` in the same phase.
@@ -77,20 +76,16 @@ CAP-1 high-risk family migration. Status: 2026-05-11, preflight only.
 | Preview HTML loses local Mermaid or SVG sanitization | High | Runtime verifier checks local asset and sanitized SVG output |
 | Artifact metadata changes break preview/recovery UI | High | Contract and runtime verifiers lock `preview_html_path` and reversibility |
 | PDF/HTML fallback behavior gets folded into the helper | Medium | Contract doc keeps fallback ownership in `generate_document` |
-| Physical move creates stale old-owner assertions | Medium | Preflight explicitly forbids move until runtime coverage is green |
+| Physical move creates stale old-owner assertions | Medium | Contract, registry, roots, and stale-owner verifiers lock the moved owner |
 
 ## Decision
 
-Preflight only. The current owner remains
-`src/service/action_tools/tools/document-renderer.mjs` until static and runtime
-coverage have been committed and reviewed. A later physical move may move only
-this file as a separate commit, after updating dynamic imports, inventories,
-contract verifiers, runtime verifiers, moved-path guards, and stale old-owner
-text.
+Moved from the old action-tools owner to
+`src/service/capabilities/tools/document-renderer.mjs` in CAP-1 as a focused
+artifact-renderer tool-family move. The old owner path must not return as a
+compatibility barrel or parallel implementation.
 
 Remaining follow-up:
-- Prepare the physical `document-renderer.mjs` move only after this preflight is
-  committed and green.
 - `mermaid-assets.mjs` and `svg-sanitize.mjs` remain separate high-risk
   render/security families and must not be folded into the document-renderer
   move without their own boundary review.

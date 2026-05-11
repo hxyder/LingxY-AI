@@ -2044,3 +2044,66 @@ Next physical-move requirements:
 - Update capability roots, tool-registry moved-path guards, stale-owner guards,
   and architecture inventories.
 - Leave no compatibility barrel at the old path.
+
+## Codex Progress: CAP-1 Document Renderer Physical Move
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Moved `src/service/action_tools/tools/document-renderer.mjs` to
+  `src/service/capabilities/tools/document-renderer.mjs`.
+- Updated `generate_document` dynamic imports in
+  `src/service/action_tools/tools/index.mjs`.
+- Updated Kimi preview rendering import in `src/service/executors/kimi/output-format.mjs`.
+- Updated behavior tests and document-renderer runtime verifier imports.
+- Updated `scripts/verify-document-renderer-contract.mjs` to lock moved owner
+  and old-path absence.
+- Updated `scripts/verify-tool-registry-snapshot.mjs`,
+  `scripts/verify-capability-roots.mjs`, and
+  `scripts/verify-stale-owner-paths.mjs`.
+- Updated architecture inventories and `docs/architecture/document-renderer-boundary.md`.
+
+Migration result:
+- Current owner: `src/service/capabilities/tools/document-renderer.mjs`.
+- Old owner: `src/service/action_tools/tools/document-renderer.mjs` is absent.
+- No compatibility barrel was left at the old path.
+- `mermaid-assets.mjs` and `svg-sanitize.mjs` remain in
+  `src/service/action_tools/tools/` and are intentionally imported by relative
+  path until their own phases.
+- No tool ids, artifact kinds, IPC channels, HTTP routes, storage schema,
+  provider ids, approval behavior, or public registry ids were changed.
+
+Verification run by Codex so far:
+- `node --check src/service/capabilities/tools/document-renderer.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/executors/kimi/output-format.mjs`: passed.
+- `node --check scripts/verify-document-renderer-contract.mjs`: passed.
+- `node --check scripts/verify-document-renderer-runtime.mjs`: passed.
+- `node scripts/verify-document-renderer-contract.mjs`: passed.
+- `node scripts/verify-document-renderer-runtime.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node --test tests/behavior/document-diagram-components.test.mjs tests/behavior/svg-artifact-components.test.mjs`: passed, 7/7.
+- `node scripts/verify-doc-renderer-arg-length.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-file-reversibility-checkpoint.mjs`: passed.
+- `node scripts/verify-artifact-generation-invariant.mjs`: passed, 59/59.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-artifact-sandbox-invariants.mjs`: passed.
+- `node scripts/verify-artifact-recovery-hook.mjs`: passed, 49/49.
+- `node scripts/verify-artifact-transform-flows.mjs`: passed.
+- `node scripts/verify-preview-window.mjs`: passed.
+- `node scripts/verify-kimi-runtime.mjs`: skipped live Kimi runtime because
+  credentials are invalid or expired.
+- `node scripts/verify-file-kimi.mjs`: passed.
+- `npm run check:fast`: passed, 79/79.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- Document-renderer physical move is complete after full validation.
+- Do not start CAP-2 until `mermaid-assets.mjs` and `svg-sanitize.mjs` have
+  their own boundary review and migration decisions.
+- Next candidate should be `svg-sanitize.mjs` static/runtime security preflight,
+  because both `document-renderer.mjs` and `render_svg` depend on its sanitizer.

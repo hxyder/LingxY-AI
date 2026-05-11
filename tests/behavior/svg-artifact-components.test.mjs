@@ -8,7 +8,7 @@ import {
   GENERATE_DOCUMENT_TOOL,
   RENDER_SVG_TOOL
 } from "../../src/service/action_tools/tools/index.mjs";
-import { renderDocumentPreviewHtml } from "../../src/service/action_tools/tools/document-renderer.mjs";
+import { renderDocumentPreviewHtml } from "../../src/service/capabilities/tools/document-renderer.mjs";
 import { sanitizeSvgMarkup } from "../../src/service/action_tools/tools/svg-sanitize.mjs";
 
 const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120">

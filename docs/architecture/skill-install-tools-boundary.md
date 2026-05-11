@@ -68,7 +68,7 @@ security/approval tool-family move. The old owner path must not return as a
 compatibility barrel or parallel implementation.
 
 Remaining follow-up:
-- `document-renderer.mjs`, `mermaid-assets.mjs`, and `svg-sanitize.mjs` remain
-  old-owner high-risk artifact/render/security families.
+- `mermaid-assets.mjs` and `svg-sanitize.mjs` remain old-owner high-risk
+  render/security families.
 - CAP-2 schemas/registry migration remains blocked until remaining high-risk
   tool families are classified and reviewed.
