@@ -1520,3 +1520,43 @@ Next instruction for DeepSeek:
   - prove successful execution metadata for an accepted attached image path;
   - prove rejection still happens before file read/provider upload for unattached paths;
   - keep the old owner path in place until that runtime/provider preflight is green.
+
+## Codex Review: CAP-1 Vision Analyze Runtime Rejection Preflight
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `d380e54` - `feat: CAP-1 vision-analyze runtime preflight verifier`.
+
+Accepted:
+- The commit remains preflight-only. It adds `scripts/verify-vision-analyze-runtime.mjs` and wires it into `scripts/check-manifest.mjs`; no product source was moved.
+- The new verifier executes useful runtime rejection-path checks through the existing `VISION_ANALYZE_TOOL` / `__test` seam:
+  - attached `image_paths` are allowlisted;
+  - unattached paths are not allowlisted;
+  - `file_paths` are accepted as the same user attachment surface;
+  - empty `image_paths` are rejected by `execute`;
+  - unattached requested paths are rejected by `execute` before image read or provider upload;
+  - generated screenshot artifacts are collected as same-task image inputs.
+
+Issue found and fixed by Codex:
+- The new verifier still does not cover a successful provider execution path with stubbed `resolveProviderForTask`, `loadImageAsBase64`, `callAnthropicVision`, or `callOpenAIVision`.
+- Codex renamed its framing to "runtime rejection-path preflight", removed unused imports, strengthened the unattached-path assertion metadata, and updated `docs/architecture/vision-analyze-boundary.md` so this cannot be mistaken for a full move gate.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-vision-analyze-runtime.mjs`: passed.
+- `node scripts/verify-vision-analyze-runtime.mjs`: passed.
+- `node scripts/verify-vision-analyze-contract.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+
+Decision:
+- Accept `d380e54` after Codex cleanup, but only as runtime rejection-path coverage.
+- `vision-analyze.mjs` still must not move yet.
+- CAP-2 remains blocked.
+
+Next instruction for DeepSeek:
+- Commit Codex's cleanup first.
+- Add the missing successful-provider preflight before any physical move:
+  - introduce a clean injectable seam or test harness that can stub provider resolution, image loading, and the Anthropic/OpenAI vision calls without real network or filesystem image reads;
+  - prove accepted attached image path returns `success: true` with provider/model/image_count/image_paths metadata;
+  - prove `supportsVision:false`, `code_cli`, and `ollama` provider gates return the existing refusal observations;
+  - keep `src/service/action_tools/tools/vision-analyze.mjs` in place until that successful-provider preflight is green.

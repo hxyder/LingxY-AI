@@ -6,9 +6,13 @@ Current preflight coverage:
 - `scripts/verify-vision-analyze-contract.mjs` locks the static owner, registry,
   schema, allowlist, image limit, provider routing references, and deferred
   status.
-- This static verifier is necessary but not sufficient for a physical move.
-  It does not execute `VISION_ANALYZE_TOOL.execute` through a stubbed provider
-  resolver or stubbed multi-modal vision calls.
+- `scripts/verify-vision-analyze-runtime.mjs` executes early runtime rejection
+  paths: empty `image_paths`, unattached path refusal before filesystem/provider
+  work, attached/file path allowlist construction, and generated-image artifact
+  collection.
+- These verifiers are necessary but not sufficient for a physical move. They do
+  not execute a successful `VISION_ANALYZE_TOOL.execute` path through a stubbed
+  provider resolver and stubbed multi-modal vision calls.
 
 ## Current State
 

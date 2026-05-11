@@ -1,21 +1,13 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { VISION_ANALYZE_TOOL, __test } from "../src/service/action_tools/tools/vision-analyze.mjs";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-function fail(message) {
-  console.error(`[vision-analyze-runtime] ${message}`);
-  process.exitCode = 1;
-}
-
-// CAP-1 vision-analyze runtime preflight
+// CAP-1 vision-analyze runtime rejection-path preflight.
 // Uses the test seam (__test) to verify security allowlist and rejection
 // paths without making real provider calls.
-// Provider stubbing for full execute() flow is deferred.
+// This is necessary but not sufficient for the physical move: provider stubbing
+// for the full successful execute() flow is still required.
 
 const { buildAttachedAllowlist, collectGeneratedImageArtifacts } = __test;
 
@@ -88,6 +80,14 @@ const { buildAttachedAllowlist, collectGeneratedImageArtifacts } = __test;
   assert(result.success === false, "execute must reject unattached paths");
   assert(result.observation && !result.observation.includes("describe"),
     "rejection must not be a Vision provider response");
+  assert.deepEqual(result.metadata?.rejected_image_paths, ["C:\\Users\\hacker\\stolen.png"],
+    "rejection metadata must include the unattached path");
+  assert.deepEqual(result.metadata?.accepted_image_paths, [],
+    "rejection metadata must not accept any unattached path");
+  assert(!result.observation.includes("Failed to read image"),
+    "rejection must happen before filesystem image read");
+  assert(!result.observation.includes("vision_analyze failed"),
+    "rejection must happen before provider upload/call");
 }
 
 // ── 6. collectGeneratedImageArtifacts: empty transcript → no images ──
