@@ -18,7 +18,7 @@ import {
 // always lead the LLM to supply `name`, so crashing on missing name
 // surfaces a confusing SQL error instead of just working.
 //
-// B1 priority (UPGRADE_PLAN.md):
+// B1 priority (lingxy_codex_ready_agent_runtime_upgrade_plan.md):
 //   1. action.params.userCommand   — most faithful to the actual action
 //      because plan-executor crafts it from the residual command, so
 //      drift-prone fields (recipient lists, counts) match what will

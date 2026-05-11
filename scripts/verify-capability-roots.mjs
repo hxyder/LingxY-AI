@@ -33,15 +33,12 @@ const capabilityRoots = [
   "src/service/connectors",
   // Providers
   "src/service/ai/providers",
-  // Extracted tool families
+  // Extracted tool families and capability-owned helpers
   "src/service/capabilities/tools/browser-web-tools.mjs",
   "src/service/capabilities/tools/os-app-tools.mjs",
   "src/service/capabilities/tools/scheduler-tools.mjs",
-  "src/service/capabilities/tools/file-manifest-helpers.mjs",
   "src/service/capabilities/tools/file-read-tools.mjs",
   "src/service/capabilities/tools/email-tools.mjs",
-  "src/service/capabilities/tools/scheduler-tools.mjs",
-  // Shared action_tools helpers
   "src/service/capabilities/tools/open-with-default-handler.mjs",
   "src/service/capabilities/tools/file-manifest-helpers.mjs",
 ];

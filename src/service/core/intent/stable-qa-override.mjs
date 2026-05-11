@@ -1,5 +1,5 @@
 // B2-a (c): deterministic override that catches "stable Q&A" prompts
-// the LLM mis-routed into web_policy=required. UPGRADE_PLAN.md.
+// the LLM mis-routed into web_policy=required. lingxy_codex_ready_agent_runtime_upgrade_plan.md.
 //
 // Rule (priority high to low — the FIRST matching condition wins):
 //   1. freshness time-word OR freshness topic-word OR explicit

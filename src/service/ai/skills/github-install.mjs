@@ -14,7 +14,7 @@ import {
 // and git argument-injection are real, so the URL/branch validators below
 // are deliberately strict.
 //
-// C18 #3 (UPGRADE_PLAN.md, 2026-05-08): the URL parser now also accepts
+// C18 #3 (lingxy_codex_ready_agent_runtime_upgrade_plan.md, 2026-05-08): the URL parser now also accepts
 // the GitHub deep-tree shape — https://github.com/owner/repo/tree/<branch>/
 // <sub/path> — so users can paste a link to a specific skill folder
 // inside a multi-skill repo. The branch + subPath are validated strictly

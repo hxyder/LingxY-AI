@@ -11,11 +11,12 @@
  *
  * `stable-qa-override.mjs` patched SR mistakes by maintaining two
  * topic dictionaries (LEARNING_VERB_RE: 18 verbs, FRESHNESS_TOPIC_
- * WORD_RE: 22 nouns). The user's `feedback_no_test_case_patches.md`
- * memory explicitly rejected this pattern: hard signals must remain
+ * WORD_RE: 22 nouns). The runtime upgrade plan explicitly rejected
+ * this pattern: hard signals must remain
  * narrow and structural (URL / attachment / explicit search verb /
  * explicit no-search / time-sensitive / external side effect /
- * destructive action). Topic regex is reserved for SR itself, not
+ * destructive action). This follows lingxy_codex_ready_agent_runtime_upgrade_plan.md:
+ * topic regex is reserved for SR itself, not
  * for sibling rules.
  *
  * The verifier is a framework-level fix: instead of growing the

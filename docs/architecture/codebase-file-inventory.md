@@ -173,7 +173,7 @@ Legend:
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
 | `src/service/action_tools/registry.mjs` | Action tool registry and `call()`. | service/tools | no | Tool definitions. | high | Central tool dispatch. |
-| `src/service/action_tools/tools/index.mjs` | Tool aggregator: imports 6 extracted tool families + owns remaining high-risk inline tools. | service/tools | no | Aggregates from browser-web-tools, os-app-tools, scheduler-tools, file-read-tools, email-tools, file-manifest-helpers, artifact-path-helper. | medium | ~4100 → ~2900 lines. Phase 2D.1-2D.6: low-risk families extracted (17 tools across 5 modules); high-risk tools (write/edit/run/generate/render/gui/capability) remain inline. |
+| `src/service/action_tools/tools/index.mjs` | Tool aggregator: imports 5 capability-owned tool families + owns remaining high-risk inline tools. | service/tools | no | Aggregates from `src/service/capabilities/tools/`, connector tools, memory tools, vision tools, skill install tools, and artifact-path-helper. | medium | ~4100 → 3048 lines. Phase 2D/CAP-1: low-risk families extracted and moved; high-risk tools (write/edit/run/generate/render/gui/capability) remain inline. |
 | `src/service/action_tools/schemas/index.mjs` | Tool schemas. | service/shared | no | Tool registry/executors. | high | Must stay aligned with tool ids. |
 | `src/service/action_tools/tools/document-renderer.mjs` | DOCX/PPTX/XLSX/PDF/HTML preview rendering. | service/artifact | no | docx/exceljs/pptx/pdf/html helpers. | high | Correct layer but heavy; worker may be needed for large docs. |
 | `src/service/action_tools/tools/memory-tools.mjs` | Runtime memory/session task recall tools. | service/tools/context | no | Store/session/artifacts. | high | Important context surface. |
@@ -264,7 +264,7 @@ No dedicated `src/service/workers/` directory currently exists.
 | `src/desktop/renderer/console.js` | Renderer UI plus runtime client/workflow logic. |
 | `src/desktop/renderer/overlay.js` | Renderer UI plus context/task/approval/artifact logic. |
 | `src/desktop/renderer/preload.cjs` | Very broad bridge; source of cross-layer API coupling. |
-| `src/service/action_tools/tools/index.mjs` | Now aggregator only: imports 6 extracted families + external modules. Low-risk decomposition complete (Phases 2D.1-2D.6). |
+| `src/service/action_tools/tools/index.mjs` | Aggregator plus remaining high-risk inline tools: imports 5 capability-owned tool families + helper modules + external modules. Low-risk decomposition and CAP-1 capability moves are complete for the moved families only. |
 | `src/service/capabilities/tools/browser-web-tools.mjs` | Browser/web/search/translation: 5 tools (open_url, web_search, web_search_fetch, fetch_url_content, translate_text). | service/tools | no | Phase 2D.1. |
 | `src/service/capabilities/tools/os-app-tools.mjs` | OS/app/clipboard/notify: 5 tools (open_file, reveal_in_explorer, file_op, copy_to_clipboard, notify). | service/tools | no | Phases 2D.2a-2D.2b. |
 | `src/service/capabilities/tools/scheduler-tools.mjs` | Scheduler: 4 tools (create, list, delete, pause scheduled tasks). | service/tools | no | Phase 2D.3. |

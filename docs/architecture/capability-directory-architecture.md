@@ -1,14 +1,14 @@
 # Capability Directory Architecture
 
 Phase CAP-0 inventory of current capability roots and target `src/service/capabilities/**` layout.
-Status: inventory verified against the current repository on 2026-05-10.
+Status: inventory verified against the current repository on 2026-05-11 after CAP-1 low-risk/helper tool-family moves.
 
 ## Current Capability Roots
 
 | Capability type | Current path(s) | Tools / modules |
 | --- | --- | --- |
-| Action tools (built-in) | `src/service/action_tools/tools/` | `index.mjs` (aggregator), `browser-web-tools.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `vision-analyze.mjs`, `skill-install-tools.mjs` |
-| Capability-owned tools | `src/service/capabilities/tools/` | `email-tools.mjs` (`compose_email`) |
+| Action tools (built-in, remaining old owner) | `src/service/action_tools/tools/` | `index.mjs` (aggregator), `document-renderer.mjs`, `memory-tools.mjs`, `mermaid-assets.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, `vision-analyze.mjs` |
+| Capability-owned tools | `src/service/capabilities/tools/` | `browser-web-tools.mjs`, `email-tools.mjs`, `file-read-tools.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs` |
 | Action tool schemas | `src/service/action_tools/schemas/index.mjs` | All tool parameter schemas |
 | Action tool registry | `src/service/action_tools/registry.mjs` | `createActionToolRegistry` |
 | Action tool types | `src/service/action_tools/types.mjs` | `createActionResult` |
@@ -17,7 +17,7 @@ Status: inventory verified against the current repository on 2026-05-10.
 | MCP | `src/service/ai/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/connectors/` | Connector tool aggregator, connector plugins, account tools |
 | Providers | `src/service/ai/providers/` | Provider catalog, config, model discovery |
-| Shared helpers | `src/service/action_tools/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs` |
+| Shared capability helpers | `src/service/capabilities/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs` |
 | Service core helpers | `src/service/core/` | `artifact-path-helper.mjs` (artifact boundary) |
 
 ## Target Architecture
@@ -47,13 +47,15 @@ src/service/capabilities/
 ## Migration Sequence
 
 1. CAP-0 ✅ — inventory current capability roots, create this doc, add verifier
-2. CAP-1 — migrate built-in tool families into `capabilities/tools/` one family at a time (`email-tools.mjs` complete)
+2. CAP-1 — migrate low-risk/helper built-in tool families into `capabilities/tools/` one family at a time (complete for browser/web/search/translation, email compose, file discovery/stat/artifact lookup, OS app/file/clipboard/notify, scheduler, and the two shared helpers)
 3. CAP-2 — move `action_tools/schemas/` to `capabilities/schemas/` (schema-only, no logic change)
 4. CAP-3 — move `action_tools/registry.mjs` + `types.mjs` + `risk_matrix.mjs` + `policy-guard.mjs` to `capabilities/registry/`
 5. CAP-4 — consolidate `ai/skills/`, `ai/mcp/`, `connectors/`, `ai/providers/` under `capabilities/`
 6. CAP-5 — final stale-path cleanup and verifier hardening after capability families move
 
 Each CAP-N phase is a separate PR. No phase moves code without verifier coverage.
+
+CAP-1 completion is scoped to the seven moved low-risk/helper modules listed above. It is not a claim that every tool-related module has left `src/service/action_tools/tools/`: memory, vision, skill install, artifact/render helpers, schema, registry, policy, and type surfaces remain explicit later-phase or high-risk work.
 
 ## Verification
 

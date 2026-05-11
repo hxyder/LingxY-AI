@@ -1,4 +1,4 @@
-// C18 #2b (UPGRADE_PLAN.md, 2026-05-08): in-memory registry mapping
+// C18 #2b (lingxy_codex_ready_agent_runtime_upgrade_plan.md, 2026-05-08): in-memory registry mapping
 // `state_token` → `stagingInfo`. Used by the two-step skill-install
 // action tools:
 //

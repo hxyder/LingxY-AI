@@ -1,4 +1,4 @@
-// C15 (UPGRADE_PLAN.md §C15): network-class failure classifier.
+// C15 (lingxy_codex_ready_agent_runtime_upgrade_plan.md §C15): network-class failure classifier.
 //
 // R wrote: "离线时也不要假装不能做，而是明确提示'这个任务需要联网
 // /需要配置 provider'，本地可做部分继续做."

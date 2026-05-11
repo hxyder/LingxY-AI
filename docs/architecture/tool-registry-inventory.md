@@ -2,7 +2,7 @@
 
 Phase 2A boundary inventory for built-in action tools.
 
-Status: verified against the current repository on 2026-05-09.
+Status: verified against the current repository on 2026-05-11.
 
 ## Contract Source
 
@@ -26,19 +26,19 @@ Status: verified against the current repository on 2026-05-09.
 
 ## Tool Family Ownership
 
-Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down from 4105).
+Status after CAP-1 low-risk/helper tool-family migration (2026-05-11). `tools/index.mjs` is now 3048 lines (down from 4105).
 
 ### Extracted families (own source modules)
 
 | Family | Source module | Tool IDs |
 |--------|---------------|----------|
-| Browser / Web / Search / Translation | `tools/browser-web-tools.mjs` (~280 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `translate_text` |
-| OS / App / File / Clipboard / Notify | `tools/os-app-tools.mjs` (~175 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify` |
+| Browser / Web / Search / Translation | `src/service/capabilities/tools/browser-web-tools.mjs` (~280 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `translate_text` |
+| OS / App / File / Clipboard / Notify | `src/service/capabilities/tools/os-app-tools.mjs` (~175 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify` |
 | Email | `src/service/capabilities/tools/email-tools.mjs` (~50 lines) | `compose_email` |
-| Scheduler | `tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
-| File Discovery / Read / Stat / Artifact | `tools/file-read-tools.mjs` (~330 lines) | `stat_file`, `verify_file_exists`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact` |
-| Shared OS helper | `tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
-| Shared file manifest helpers | `tools/file-manifest-helpers.mjs` | `resolveDefaultOutputDir`, `readManifest`, `writeManifest`, `globToRegex` |
+| Scheduler | `src/service/capabilities/tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
+| File Discovery / Read / Stat / Artifact | `src/service/capabilities/tools/file-read-tools.mjs` (~330 lines) | `stat_file`, `verify_file_exists`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact` |
+| Shared OS helper | `src/service/capabilities/tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
+| Shared file manifest helpers | `src/service/capabilities/tools/file-manifest-helpers.mjs` | `resolveDefaultOutputDir`, `readManifest`, `writeManifest`, `globToRegex` |
 
 ### Inline families (still in `tools/index.mjs`)
 
@@ -70,19 +70,24 @@ Status after Phase 2D.3 (2026-05-10). `tools/index.mjs` is now 3546 lines (down 
 | Connector | `connector_catalog_search`, `connector_catalog_get`, `connector_workflow_run`, `connector_plugin_manage` (external) |
 | Account | `account_list_connected_accounts`, `account_list_emails`, `account_list_events`, `account_list_files`, `account_download_file`, `account_send_email`, `account_upload_file`, `account_create_event` (external) |
 
-### Phase 2D extraction order (updated 2026-05-10)
+### Phase 2D extraction order and completed low-risk history
 
-1. Browser / Web / Search / Translation ✅ Phase 2D.1
-2. OS / App / Clipboard / Notification ✅ Phase 2D.2a + 2D.2b (3 deferred)
-3. Scheduler ✅ Phase 2D.3
-4. File Discovery / Read / Index ✅ Phase 2D.6 (4 of 10 tools moved; 6 remain inline)
-5. File Write / Script Execution (higher risk, side effects)
-6. Document / Artifact / Diagram / SVG Generation (higher risk, artifact-producing)
-7. GUI Automation (higher risk, OS integration)
-8. Capability Creator (higher risk, confirmation-gated)
-9. Email ✅ Phase 2D.5 (compose_email extracted; send_email_smtp deferred - NOOP_TOOLS)
+1. Browser / Web / Search / Translation: extracted in Phase 2D.1, moved to `capabilities/tools/` in CAP-1.
+2. OS / App / Clipboard / Notification: extracted in Phase 2D.2a + 2D.2b, moved to `capabilities/tools/` in CAP-1.
+3. Scheduler: extracted in Phase 2D.3, moved to `capabilities/tools/` in CAP-1.
+4. File Discovery / Read / Index: read/stat/artifact-lookup slice extracted in Phase 2D.4/2D.6, moved to `capabilities/tools/` in CAP-1; `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, and `resolve_output_path` remain inline.
+5. Email: `compose_email` extracted in Phase 2D.5 and moved to `capabilities/tools/` in CAP-1; `send_email_smtp` remains a `NOOP_TOOLS` entry.
 
-Do not move: `write_file`, `edit_file`, `run_script`, `generate_document`, `register_artifact`, `gui_*`.
+Do not move without a dedicated high-risk phase and targeted tests: `write_file`, `edit_file`, `run_script`, `generate_document`, `render_diagram`, `render_svg`, `register_artifact`, `resolve_output_path`, `gui_*`, memory tools, vision tools, skill install tools, schemas, registry, policy, or type surfaces.
+
+### Deferred high-risk families
+
+| Family | Reason |
+|--------|--------|
+| File Write / Script Execution | Side effects, reversibility, and sandbox policy. |
+| Document / Artifact / Diagram / SVG Generation | Artifact-producing behavior and renderer/preview coupling. |
+| GUI Automation | OS integration and GUI smoke coverage required. |
+| Capability Creator | Confirmation-gated capability generation and persistence. |
 
 ## Boundary Rules
 

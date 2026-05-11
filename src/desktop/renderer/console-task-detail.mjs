@@ -4,7 +4,7 @@ import {
 import { collectLlmUsageSummary } from "../../shared/llm-usage-summary.mjs";
 import { buildTaskTraceSummary } from "../../shared/task-trace-summary.mjs";
 
-// C17 (UPGRADE_PLAN.md §C17, R rule "cost 不准 → 改 token"):
+// C17 (lingxy_codex_ready_agent_runtime_upgrade_plan.md §C17, R rule "cost 不准 → 改 token"):
 // Task detail KV grid displays Tokens (in/out/total) as the primary
 // usage signal, replacing the prior `Cost` cell. Object destructuring
 // silently ignores any extra keys, so legacy callers passing `cost`

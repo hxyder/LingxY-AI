@@ -1,4 +1,4 @@
-// C18 #2b (UPGRADE_PLAN.md, 2026-05-08): two-step LLM-callable skill
+// C18 #2b (lingxy_codex_ready_agent_runtime_upgrade_plan.md, 2026-05-08): two-step LLM-callable skill
 // install. Implements D's pre-design ACCEPT (option-c):
 //
 //   1. preview_skill_from_github(url) — clones to staging + validates

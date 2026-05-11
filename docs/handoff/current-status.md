@@ -1398,3 +1398,53 @@ Next instruction for DeepSeek:
 - Commit the current Codex cleanup first.
 - Continue CAP-1 one family at a time. Prefer the next low-blast-radius family with a small module and clear import surface; do not move schemas/registry yet.
 - Every CAP-1 family move must delete the old source file before completion, add a stale-owner physical-path guard, update active inventory docs, run the targeted verifier, GUI smoke, and `check:fast`.
+
+## Codex Review: CAP-1 Remaining Low-Risk Tool Moves
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `49702e5` - `chore: apply Codex CAP-1 cleanup — remove barrel, harden verifiers`.
+- `bae09a3` - `feat: CAP-1 scheduler-tools migration to capabilities/tools/`.
+- `4b00b2a` - `feat: CAP-1 complete — migrate 5 remaining tool families to capabilities/tools/`.
+
+Accepted:
+- The moved tool families now have real capability owners under `src/service/capabilities/tools/`: browser/web/search/translation, email compose, file discovery/stat/artifact lookup, OS app/file/clipboard/notify, scheduler, `open-with-default-handler`, and `file-manifest-helpers`.
+- The old physical files for these moved families are gone from `src/service/action_tools/tools/`.
+- `src/service/action_tools/tools/index.mjs` imports the moved families from `../../capabilities/tools/...` and no longer defines their tool bodies.
+- GUI smoke and fast checks remain green after the move.
+
+Issues found and fixed by Codex:
+- `scripts/verify-capability-roots.mjs` duplicated `scheduler-tools.mjs` and `file-manifest-helpers.mjs`; Codex deduplicated the root list.
+- `scripts/verify-stale-owner-paths.mjs` classified CAP-1 tool paths under REPO-1 and duplicated `file-manifest-helpers`; Codex moved all CAP-1 old owners into one CAP-1 group and kept the no-barrel physical-path guard.
+- Active architecture docs were stale: `docs/architecture/capability-directory-architecture.md`, `docs/architecture/tool-registry-inventory.md`, and `docs/architecture/codebase-file-inventory.md` still implied several moved modules belonged to the old `action_tools/tools` root or used old line/count wording. Codex updated them to match the current tree.
+- `node scripts/verify-doc-references.mjs` was still red on missing source-comment references to `UPGRADE_PLAN.md` and `feedback_no_test_case_patches.md`. Codex fixed the comments to reference the existing canonical upgrade plan instead. These were comment-only source edits; no runtime behavior changed.
+
+Verification rerun by Codex:
+- `node --check` on all moved capability tool modules and `src/service/action_tools/tools/index.mjs`: passed.
+- `node --check` on the touched source-comment files: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-code-ownership-boundaries.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 71/71.
+
+Decision:
+- Accept `49702e5`, `bae09a3`, and `4b00b2a` after Codex cleanup.
+- CAP-1 is complete only for the seven moved low-risk/helper modules listed above. This is not a claim that every tool-related module has left `src/service/action_tools/tools/`.
+- Remaining old-owner files are intentional later-phase/high-risk surfaces: `index.mjs`, `document-renderer.mjs`, `memory-tools.mjs`, `mermaid-assets.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, and `vision-analyze.mjs`.
+
+Next instruction for DeepSeek:
+- First commit Codex's current cleanup as a review-fix commit.
+- Do not start CAP-2 schemas/registry yet.
+- Next executable task should be a CAP-1 closure/classification step for the remaining old-owner files:
+  - document why each remaining file is deferred;
+  - add/confirm verifier coverage that CAP-1 completion means "moved low-risk/helper families have no old path", not "action_tools/tools is empty";
+  - choose exactly one next high-risk family only after its boundary, tests, and no-touch areas are documented.
+- Recommended next high-risk candidate order: `vision-analyze.mjs` provider boundary, then `memory-tools.mjs` session/memory boundary, then `skill-install-tools.mjs` security/approval boundary. Artifact/render helpers should wait for an artifact-specific phase.
