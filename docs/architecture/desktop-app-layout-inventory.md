@@ -15,9 +15,10 @@ src/desktop/
 │   ├── desktop-shortcut-router.mjs    # Phase 2B.44
 │   ├── desktop-link-browser-window.mjs # Phase 2B.45
 │   ├── desktop-preview-window-manager.mjs # Phase 2B.46
-│   ├── desktop-gui-smoke-runner.mjs   # Phase 2B.47 (test-only)
 │   ├── desktop-permission-handler.mjs # Phase 2B.48
 │   └── ... (30+ other helpers)
+├── smoke/                       # Test-only GUI smoke (REPO-1.1)
+│   └── desktop-gui-smoke-runner.mjs   # Phase 2B.47
 ├── renderer/                    # Renderer windows + shared clients
 │   ├── console.js/html          # Main console window
 │   ├── overlay.js/html          # Overlay window
@@ -59,7 +60,7 @@ apps/desktop/
 │   ├── desktop-preview-window-manager.mjs
 │   ├── desktop-permission-handler.mjs
 │   └── ... (other shell helpers)
-├── smoke/                 ← src/desktop/tray/desktop-gui-smoke-runner.mjs
+├── smoke/                 # ✅ REPO-1.1 (moved from tray/)
 ├── shared/                ← src/desktop/shared/manifest.mjs
 └── assets/                ← src/desktop/assets/
 ```
@@ -67,11 +68,7 @@ apps/desktop/
 ## Migration Sequence (each step is a separate PR)
 
 1. **REPO-1.0** ✅ inventory + strengthen verifier (current step)
-2. **REPO-1.1** — move smoke runner: `tray/desktop-gui-smoke-runner.mjs` → `smoke/desktop-gui-smoke-runner.mjs`
-   - Create target directory + file, add compatibility barrel at old path
-   - Migrate import in `electron-main.mjs`, update verifiers
-   - Verify: GUI smoke, IPC inventory, verifier sweep for old-path references
-   - Remove old file when all references are migrated
+2. **REPO-1.1** ✅ smoke runner moved to `smoke/desktop-gui-smoke-runner.mjs`
 3. **REPO-1.2** — move IPC modules: `tray/ipc/` → `main/ipc/` (same per-phase barrel pattern)
 4. **REPO-1.3** — move shell helpers: `tray/desktop-*.mjs` (7 files) → `shell/` (same pattern)
 5. **REPO-1.4** — classify + verify renderer shared clients under current `renderer/shared/` path (no path change; verify ownership before REPO-1.5 feature-folder moves)

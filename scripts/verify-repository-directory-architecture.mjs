@@ -71,6 +71,20 @@ for (const { path: p, desc } of desktopContracts) {
   assert(existsSync(path.join(root, p)), `desktop contract missing: ${p} (${desc})`);
 }
 
+// REPO-1.1: no active inventory doc may claim the old smoke runner path
+const inventoryDocs = [
+  "docs/architecture/desktop-app-layout-inventory.md",
+  "docs/architecture/codebase-file-inventory.md"
+];
+for (const docPath of inventoryDocs) {
+  if (!existsSync(path.join(root, docPath))) continue;
+  const content = read(docPath);
+  // The old TRAY path for smoke runner must not appear in current-state sections
+  if (content.includes("src/desktop/tray/desktop-gui-smoke-runner.mjs")) {
+    fail(`${docPath} still references old smoke runner path (should be src/desktop/smoke/)`);
+  }
+}
+
 // IPC module count must remain 21 (any move must preserve all modules)
 const ipcDir = path.join(root, "src/desktop/tray/ipc");
 const ipcModules = readdirSync(ipcDir).filter(f => f.startsWith("register-") && f.endsWith(".mjs"));
