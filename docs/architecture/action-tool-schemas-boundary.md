@@ -1,11 +1,12 @@
 # Action Tool Schemas Boundary
 
-CAP-2 schema-owner migration. Status: 2026-05-11, preflight only.
-`ACTION_TOOL_SCHEMAS` has not been physically moved.
+CAP-2 schema-owner migration. Status: 2026-05-11, moved to
+`src/service/capabilities/schemas/index.mjs` after static preflight
+verification.
 
 ## Current State
 
-- Current owner: `src/service/action_tools/schemas/index.mjs`
+- Current owner: `src/service/capabilities/schemas/index.mjs`
 - Public API: `ACTION_TOOL_SCHEMAS`
 - Current schema count: 61
 - Runtime consumers:
@@ -23,8 +24,8 @@ CAP-2 schema-owner migration. Status: 2026-05-11, preflight only.
 - CAP-2 must not change descriptions, risk levels, confirmation gates,
   artifact kinds, provider ids, IPC channels, HTTP routes, storage schema, or
   action result shape.
-- CAP-2 may only move the owner from `action_tools/schemas/` to
-  `capabilities/schemas/` and update imports/verifiers/docs.
+- CAP-2 moved the owner from `action_tools/schemas/` to
+  `capabilities/schemas/` and updated imports/verifiers/docs.
 
 ## No-Touch Areas
 
@@ -37,15 +38,12 @@ CAP-2 schema-owner migration. Status: 2026-05-11, preflight only.
 
 ## Verification
 
-- `scripts/verify-action-tool-schemas-contract.mjs` locks the current owner,
-  public export, 61-key schema surface, key alignment with built-in tool ids,
-  schema-only import-free shape, and this boundary document.
-- After the physical move, the same verifier must lock the moved owner and
-  absence of the old path.
+- `scripts/verify-action-tool-schemas-contract.mjs` locks the moved owner,
+  old-path removal, public export, 61-key schema surface, key alignment with
+  built-in tool ids, schema-only import-free shape, and this boundary document.
 
 ## Decision
 
-Preflight only. The current owner remains
-`src/service/action_tools/schemas/index.mjs` until static coverage is committed
-and reviewed. The next CAP-2 commit may move only this schema directory and
-must leave no old-path compatibility barrel.
+moved from `src/service/action_tools/schemas/index.mjs` to
+`src/service/capabilities/schemas/index.mjs`. The old owner path must not
+return as a compatibility barrel or duplicate schema implementation.

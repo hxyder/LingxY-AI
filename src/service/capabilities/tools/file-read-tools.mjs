@@ -2,7 +2,7 @@ import { readdir, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { ACTION_TOOL_SCHEMAS } from "../../action_tools/schemas/index.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
 import { createActionResult } from "../../action_tools/types.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveDefaultOutputDir, readManifest, globToRegex } from "../../capabilities/tools/file-manifest-helpers.mjs";

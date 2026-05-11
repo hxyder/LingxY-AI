@@ -2369,3 +2369,67 @@ Decision:
 - The next valid step is a separate physical move of only
   `src/service/action_tools/schemas/index.mjs` to
   `src/service/capabilities/schemas/index.mjs`.
+
+## Codex Progress: CAP-2 Action Tool Schemas Physical Move
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Moved `src/service/action_tools/schemas/index.mjs` to
+  `src/service/capabilities/schemas/index.mjs`.
+- Updated imports in the action-tool aggregator, capability-owned tool modules,
+  action-tool verifier, capability behavior tests, and file-content specialty
+  verifiers.
+- Updated `scripts/verify-action-tool-schemas-contract.mjs` to lock moved
+  owner and old-path absence.
+- Updated structure, capability roots, tool registry, stale-owner, and
+  architecture inventories.
+- Fixed two stale file-content specialty verifier slice boundaries that still
+  assumed `VERIFY_FILE_EXISTS_TOOL` was inline in `index.mjs`; current verified
+  inline boundaries are search -> index and index -> register_artifact.
+
+Migration result:
+- Current owner: `src/service/capabilities/schemas/index.mjs`.
+- Old owner: `src/service/action_tools/schemas/index.mjs` is absent.
+- No compatibility barrel remains.
+- Registry, types, risk matrix, policy guard, file reversibility, and remaining
+  inline tool implementations were not moved.
+- Tool ids, schema keys, confirmation gates, risk levels, artifact kinds, IPC
+  channels, HTTP routes, provider ids, and storage schema were not changed.
+
+Verification run by Codex:
+- `node --check src/service/capabilities/schemas/index.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/capabilities/tools/browser-web-tools.mjs`: passed.
+- `node --check src/service/capabilities/tools/os-app-tools.mjs`: passed.
+- `node --check src/service/capabilities/tools/scheduler-tools.mjs`: passed.
+- `node --check src/service/capabilities/tools/file-read-tools.mjs`: passed.
+- `node --check src/service/capabilities/tools/vision-analyze.mjs`: passed.
+- `node --check src/service/capabilities/tools/email-tools.mjs`: passed.
+- `node scripts/verify-action-tool-schemas-contract.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node --test tests/behavior/capability-draft-tool.test.mjs tests/behavior/capability-save-tool.test.mjs`: passed, 19/19.
+- `node scripts/verify-file-content-search-tool.mjs`: passed.
+- `node scripts/verify-file-content-index-tool.mjs`: passed.
+- `node scripts/verify-file-content-index-ui.mjs`: passed.
+- `node scripts/verify-artifact-generation-invariant.mjs`: passed, 59/59.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-artifact-sandbox-invariants.mjs`: passed.
+- `node scripts/verify-desktop-capture-gui-tools-contract.mjs`: passed.
+- `node scripts/verify-vision-analyze-contract.mjs`: passed.
+- `node scripts/verify-vision-analyze-runtime.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 85/85.
+- `npm run verify:desktop-gui-smoke`: first run timed out waiting for the GUI
+  smoke result after 30000ms; immediate rerun passed, 44/44.
+
+Decision:
+- CAP-2 schema-only migration is complete after full validation.
+- Do not reopen schema owner or recreate `src/service/action_tools/schemas/`.
+- Next valid phase is CAP-3 preflight for registry/types/risk/policy ownership,
+  not a physical CAP-3 move without verifier coverage.

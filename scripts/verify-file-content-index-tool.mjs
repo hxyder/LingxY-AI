@@ -7,7 +7,7 @@ function read(relPath) {
   return readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-const schemas = read("src/service/action_tools/schemas/index.mjs");
+const schemas = read("src/service/capabilities/schemas/index.mjs");
 const tools = read("src/service/action_tools/tools/index.mjs");
 const surface = read("src/service/executors/tool_using/tool-surface.mjs");
 const agentLoop = read("src/service/executors/tool_using/agent-loop.mjs");
@@ -15,9 +15,9 @@ const agenticToolExecution = read("src/service/executors/agentic/tool-execution.
 const runtimeServices = read("src/service/core/task-runtime/runtime-services.mjs");
 const approvalContext = read("src/service/executors/shared/tool-approval-context.mjs");
 const toolStart = tools.indexOf("export const INDEX_FILE_CONTENT_TOOL");
-const toolEnd = tools.indexOf("export const VERIFY_FILE_EXISTS_TOOL");
+const toolEnd = tools.indexOf("export const REGISTER_ARTIFACT_TOOL");
 assert.ok(toolStart >= 0, "INDEX_FILE_CONTENT_TOOL export must exist");
-assert.ok(toolEnd > toolStart, "INDEX_FILE_CONTENT_TOOL must stay before VERIFY_FILE_EXISTS_TOOL");
+assert.ok(toolEnd > toolStart, "INDEX_FILE_CONTENT_TOOL must stay before REGISTER_ARTIFACT_TOOL");
 const indexTool = tools.slice(toolStart, toolEnd);
 
 assert.match(schemas, /index_file_content/);

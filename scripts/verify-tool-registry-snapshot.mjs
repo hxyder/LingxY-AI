@@ -239,6 +239,12 @@ assert(indexSrc.includes("from \"../../capabilities/tools/svg-sanitize.mjs\""),
   "index.mjs must import svg-sanitize.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/mermaid-assets.mjs\""),
   "index.mjs must import mermaid-assets.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/schemas/index.mjs\""),
+  "index.mjs must import ACTION_TOOL_SCHEMAS from capabilities/schemas/");
+assert(existsSync(path.join(root, "src/service/capabilities/schemas/index.mjs")),
+  "CAP-2 schema owner must exist under capabilities/schemas/");
+assert(!existsSync(path.join(root, "src/service/action_tools/schemas/index.mjs")),
+  "CAP-2 schema owner must not remain under action_tools/schemas/");
 
 // CAP-1 closure: moved families must NOT exist at old action_tools/tools/ paths
 const cap1MovedPaths = [

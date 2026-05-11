@@ -15,7 +15,7 @@ const consoleJs = read("src/desktop/renderer/console.js");
 const indexPanel = read("src/desktop/renderer/console-file-content-index-panel.mjs");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
-const schemas = read("src/service/action_tools/schemas/index.mjs");
+const schemas = read("src/service/capabilities/schemas/index.mjs");
 const tools = read("src/service/action_tools/tools/index.mjs");
 
 for (const id of [

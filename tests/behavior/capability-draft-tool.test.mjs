@@ -5,7 +5,7 @@ import {
   BUILTIN_ACTION_TOOLS,
   DRAFT_CAPABILITY_TOOL
 } from "../../src/service/action_tools/tools/index.mjs";
-import { ACTION_TOOL_SCHEMAS } from "../../src/service/action_tools/schemas/index.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../../src/service/capabilities/schemas/index.mjs";
 import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
 
 // The tool is exposed as a normal action tool registered in

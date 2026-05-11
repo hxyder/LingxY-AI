@@ -1,4 +1,4 @@
-import { ACTION_TOOL_SCHEMAS } from "../../action_tools/schemas/index.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
 import { createActionResult } from "../../action_tools/types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";

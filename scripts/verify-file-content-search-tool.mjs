@@ -7,13 +7,13 @@ function read(relPath) {
   return readFileSync(path.join(process.cwd(), relPath), "utf8");
 }
 
-const schemas = read("src/service/action_tools/schemas/index.mjs");
+const schemas = read("src/service/capabilities/schemas/index.mjs");
 const tools = read("src/service/action_tools/tools/index.mjs");
 const surface = read("src/service/executors/tool_using/tool-surface.mjs");
 const toolStart = tools.indexOf("export const SEARCH_FILE_CONTENT_TOOL");
-const toolEnd = tools.indexOf("export const VERIFY_FILE_EXISTS_TOOL");
+const toolEnd = tools.indexOf("export const INDEX_FILE_CONTENT_TOOL");
 assert.ok(toolStart >= 0, "SEARCH_FILE_CONTENT_TOOL export must exist");
-assert.ok(toolEnd > toolStart, "SEARCH_FILE_CONTENT_TOOL must stay before VERIFY_FILE_EXISTS_TOOL");
+assert.ok(toolEnd > toolStart, "SEARCH_FILE_CONTENT_TOOL must stay before INDEX_FILE_CONTENT_TOOL");
 const searchTool = tools.slice(toolStart, toolEnd);
 
 assert.match(schemas, /search_file_content/);

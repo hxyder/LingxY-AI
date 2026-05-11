@@ -19,7 +19,7 @@ function fail(message) {
 const capabilityRoots = [
   // Action tools
   "src/service/action_tools/tools/index.mjs",
-  "src/service/action_tools/schemas/index.mjs",
+  "src/service/capabilities/schemas/index.mjs",
   "src/service/action_tools/registry.mjs",
   "src/service/action_tools/types.mjs",
   "src/service/action_tools/risk_matrix.mjs",
@@ -76,6 +76,8 @@ assert(doc.includes("Current Capability Roots"), "capability arch doc must inven
 assert(doc.includes("Target Architecture"), "capability arch doc must describe target layout");
 assert(doc.includes("Migration Rules"), "capability arch doc must define migration rules");
 assert(doc.includes("Migration Sequence"), "capability arch doc must list migration sequence");
+assert(doc.includes("src/service/capabilities/schemas/index.mjs"),
+  "capability arch doc must list moved schema owner");
 
 // ── 4. Legacy compatibility rule: no parallel implementations ──
 // Extracted tool families must NOT have their tool bodies in both the

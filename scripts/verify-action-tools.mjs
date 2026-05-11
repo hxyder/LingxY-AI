@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
 import { evaluateToolRisk } from "../src/service/action_tools/risk_matrix.mjs";
-import { ACTION_TOOL_SCHEMAS } from "../src/service/action_tools/schemas/index.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../src/service/capabilities/schemas/index.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { formatResultsForAssistant, normalizeSearchRecency, searchWeb } from "../src/service/search/free-search.mjs";
 import { submitActionToolTask } from "../src/service/core/action-tool-submission.mjs";

@@ -9,7 +9,7 @@ import {
   DRAFT_CAPABILITY_TOOL,
   SAVE_CAPABILITY_DRAFT_TOOL
 } from "../../src/service/action_tools/tools/index.mjs";
-import { ACTION_TOOL_SCHEMAS } from "../../src/service/action_tools/schemas/index.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../../src/service/capabilities/schemas/index.mjs";
 import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
 
 function createRegistry() {

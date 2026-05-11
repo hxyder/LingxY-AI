@@ -15,7 +15,7 @@
  */
 
 import path from "node:path";
-import { ACTION_TOOL_SCHEMAS } from "../../action_tools/schemas/index.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
 import { createActionResult } from "../../action_tools/types.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import {

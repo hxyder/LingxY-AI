@@ -328,7 +328,7 @@ Ephemeral events not persisted to store:
 Tool registry and built-in tool definitions:
 
 - `src/service/action_tools/registry.mjs`
-- `src/service/action_tools/schemas/index.mjs`
+- `src/service/capabilities/schemas/index.mjs`
 - `src/service/action_tools/tools/index.mjs`
 - `src/service/capabilities/tools/memory-tools.mjs`
 - `src/service/capabilities/tools/skill-install-tools.mjs`

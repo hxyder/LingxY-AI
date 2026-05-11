@@ -289,7 +289,7 @@ const requiredPaths = [
   "src/service/core/router/intent-router.mjs",
   "src/service/action_tools/README.md",
   "src/service/action_tools/types.mjs",
-  "src/service/action_tools/schemas/index.mjs",
+  "src/service/capabilities/schemas/index.mjs",
   "src/service/action_tools/tool-helper.mjs",
   "src/service/action_tools/risk_matrix.mjs",
   "src/service/action_tools/registry.mjs",

@@ -22,7 +22,7 @@ Current verifier coverage:
 
 | Import | Current path | Notes |
 |--------|-------------|----------------|
-| `ACTION_TOOL_SCHEMAS` | `../../action_tools/schemas/index.mjs` | Schema surface unchanged |
+| `ACTION_TOOL_SCHEMAS` | `../schemas/index.mjs` | Schema surface unchanged |
 | `createActionResult` | `../../action_tools/types.mjs` | Result shape unchanged |
 | `resolveProviderForTask` | `../../executors/shared/provider-resolver.mjs` | Unchanged |
 | `callAnthropicVision` | `../../executors/multi_modal/multi-modal-executor.mjs` | Unchanged |
