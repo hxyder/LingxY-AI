@@ -7,7 +7,7 @@ Status: 2026-05-10. No physical moves yet; verifier-first only.
 
 ```
 src/desktop/
-├── tray/                        # Main process (54 files)
+├── tray/                        # Main process (composition root + helpers + IPC)
 │   ├── electron-main.mjs        # Composition root (~1000 lines, -58%)
 │   ├── ipc/                     # 21 IPC modules (register-*-ipc.mjs)
 │   ├── desktop-window-lifecycle.mjs   # Phase 2B.42
@@ -18,7 +18,7 @@ src/desktop/
 │   ├── desktop-gui-smoke-runner.mjs   # Phase 2B.47 (test-only)
 │   ├── desktop-permission-handler.mjs # Phase 2B.48
 │   └── ... (30+ other helpers)
-├── renderer/                    # Renderer windows + shared clients (80+ files)
+├── renderer/                    # Renderer windows + shared clients
 │   ├── console.js/html          # Main console window
 │   ├── overlay.js/html          # Overlay window
 │   ├── dock.js/html             # Dock window
@@ -67,12 +67,24 @@ apps/desktop/
 ## Migration Sequence (each step is a separate PR)
 
 1. **REPO-1.0** ✅ inventory + strengthen verifier (current step)
-2. **REPO-1.1** — move smoke runner: `tray/desktop-gui-smoke-runner.mjs` → `smoke/`
-3. **REPO-1.2** — move IPC modules: `tray/ipc/` → `main/ipc/`
-4. **REPO-1.3** — move shell helpers: `tray/desktop-*.mjs` (7 files) → `shell/`
-5. **REPO-1.4** — move renderer shared clients: `renderer/shared/` → `renderer/shared/` (path stable)
-6. **REPO-1.5** — move renderer feature folders: reorganize `renderer/` sub-windows
-7. **REPO-1.6** — add compatibility barrels at old paths, update all imports
+2. **REPO-1.1** — move smoke runner: `tray/desktop-gui-smoke-runner.mjs` → `smoke/desktop-gui-smoke-runner.mjs`
+   - Create target directory + file, add compatibility barrel at old path
+   - Migrate import in `electron-main.mjs`, update verifiers
+   - Verify: GUI smoke, IPC inventory, verifier sweep for old-path references
+   - Remove old file when all references are migrated
+3. **REPO-1.2** — move IPC modules: `tray/ipc/` → `main/ipc/` (same per-phase barrel pattern)
+4. **REPO-1.3** — move shell helpers: `tray/desktop-*.mjs` (7 files) → `shell/` (same pattern)
+5. **REPO-1.4** — classify + verify renderer shared clients under current `renderer/shared/` path (no path change; verify ownership before REPO-1.5 feature-folder moves)
+6. **REPO-1.5** — reorganize renderer sub-windows into `renderer/console/`, `renderer/overlay/`, etc.
+7. **REPO-1.6** — final cleanup: remove any remaining compatibility barrels, update all imports
+
+**Each sub-phase follows the same pattern:**
+1. Create target directory/file
+2. Add compatibility barrel at old path (re-export only, no logic)
+3. Migrate all imports to new path
+4. Update verifiers to check new owner
+5. Verify: GUI smoke, IPC inventory, verifier sweep for stale old-path references
+6. Remove old file/barrel when safe
 
 ## Contracts That Must Not Change
 
