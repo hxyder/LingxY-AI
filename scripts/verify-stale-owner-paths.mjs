@@ -37,7 +37,8 @@ const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners];
 // Post-migration: old physical paths must not exist as reachable files.
 // Compatibility barrels are disallowed under the no-short-term-fallback rule.
 const forbiddenExistingPaths = [
-  "src/desktop/tray/desktop-payload-normalizers.mjs"
+  "src/desktop/tray/desktop-payload-normalizers.mjs",
+  "src/service/action_tools/tools/email-tools.mjs"
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);

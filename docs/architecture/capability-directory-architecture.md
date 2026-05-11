@@ -7,7 +7,8 @@ Status: inventory verified against the current repository on 2026-05-10.
 
 | Capability type | Current path(s) | Tools / modules |
 | --- | --- | --- |
-| Action tools (built-in) | `src/service/action_tools/tools/` | `index.mjs` (aggregator), `browser-web-tools.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `file-read-tools.mjs`, `email-tools.mjs`, `memory-tools.mjs`, `vision-analyze.mjs`, `skill-install-tools.mjs` |
+| Action tools (built-in) | `src/service/action_tools/tools/` | `index.mjs` (aggregator), `browser-web-tools.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `vision-analyze.mjs`, `skill-install-tools.mjs` |
+| Capability-owned tools | `src/service/capabilities/tools/` | `email-tools.mjs` (`compose_email`) |
 | Action tool schemas | `src/service/action_tools/schemas/index.mjs` | All tool parameter schemas |
 | Action tool registry | `src/service/action_tools/registry.mjs` | `createActionToolRegistry` |
 | Action tool types | `src/service/action_tools/types.mjs` | `createActionResult` |
@@ -39,18 +40,18 @@ src/service/capabilities/
 
 - Built-in source capabilities belong in `src/service/capabilities/**`.
 - User-installed skills/MCP/tools/connectors must live under runtime data paths, NOT under `src/`.
-- Legacy paths (`src/service/action_tools/**`, `src/service/ai/skills/**`, `src/service/ai/mcp/**`, `src/service/connectors/**`) may become compatibility barrels during migration, but must not contain parallel implementations after the new owner is verified.
-- Compatibility barrels may re-export only; they must not keep logic.
+- Legacy paths (`src/service/action_tools/**`, `src/service/ai/skills/**`, `src/service/ai/mcp/**`, `src/service/connectors/**`) must be deleted once all active callers move, unless a phase explicitly names a temporary migration window and guards it with a verifier.
+- Compatibility barrels may re-export only during a named migration window; they must not remain in a completion claim.
 - Do not start broad source moves until each family has owner documentation and migration verifiers.
 
 ## Migration Sequence
 
 1. CAP-0 ✅ — inventory current capability roots, create this doc, add verifier
-2. CAP-1 — extract remaining `action_tools/tools/index.mjs` high-risk tools to per-family modules (deferred until artifact-boundary invariants locked)
+2. CAP-1 — migrate built-in tool families into `capabilities/tools/` one family at a time (`email-tools.mjs` complete)
 3. CAP-2 — move `action_tools/schemas/` to `capabilities/schemas/` (schema-only, no logic change)
 4. CAP-3 — move `action_tools/registry.mjs` + `types.mjs` + `risk_matrix.mjs` + `policy-guard.mjs` to `capabilities/registry/`
 5. CAP-4 — consolidate `ai/skills/`, `ai/mcp/`, `connectors/`, `ai/providers/` under `capabilities/`
-6. CAP-5 — add compatibility barrels at legacy paths, update all imports
+6. CAP-5 — final stale-path cleanup and verifier hardening after capability families move
 
 Each CAP-N phase is a separate PR. No phase moves code without verifier coverage.
 

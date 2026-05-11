@@ -54,7 +54,7 @@ function referenceExists(fromFile, rawReference) {
 }
 
 const missing = [];
-for (const file of trackedFiles().filter(isSourceFile)) {
+for (const file of trackedFiles().filter(isSourceFile).filter((file) => existsSync(repoPath(file)))) {
   const text = readFileSync(repoPath(file), "utf8");
   const lines = text.split(/\r?\n/u);
   for (const [index, line] of lines.entries()) {

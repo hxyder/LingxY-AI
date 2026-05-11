@@ -1359,3 +1359,42 @@ Next instruction for DeepSeek:
 - First commit the current Codex verifier correction.
 - Do not run more REPO-1.5a physical-move attempts without Electron DevTools or equivalent renderer module-graph evidence.
 - Next executable work should be a non-renderer structural phase with proven Node/Electron-main behavior, or a dedicated REPO-1.5a-debug task that captures renderer console errors and module graph initialization before changing files again.
+
+## Codex Review: CAP-1 Email Tools Migration
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `e621ef8` - `feat: CAP-1 email-tools migration to capabilities/tools/`.
+
+Accepted with fixes:
+- The owner move is correct: `COMPOSE_EMAIL_TOOL` now belongs at `src/service/capabilities/tools/email-tools.mjs`.
+- `src/service/action_tools/tools/index.mjs` imports `COMPOSE_EMAIL_TOOL` from the new capability owner.
+- `scripts/verify-capability-roots.mjs`, `scripts/verify-tool-registry-snapshot.mjs`, `scripts/verify-stale-owner-paths.mjs`, and `docs/architecture/codebase-file-inventory.md` were updated for the new owner.
+
+Issue found and fixed by Codex:
+- DeepSeek left `src/service/action_tools/tools/email-tools.mjs` as a compatibility barrel. Under the current no-short-term-fallback discipline, this is not a valid completion state once all active callers use the new owner.
+- Codex deleted the old compatibility barrel.
+- Codex added `src/service/action_tools/tools/email-tools.mjs` to the stale-owner physical-path guard.
+- Codex updated `docs/architecture/capability-directory-architecture.md` and `docs/architecture/tool-registry-inventory.md` so active architecture docs no longer describe email-tools as owned by the old action_tools directory.
+- Codex also adjusted `scripts/verify-doc-references.mjs` to skip tracked source files that are deleted in the working tree, so local migration verification can run before the deletion is committed.
+
+Verification rerun by Codex:
+- `node --check src/service/capabilities/tools/email-tools.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-code-ownership-boundaries.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 71/71.
+- `node scripts/verify-doc-references.mjs`: still fails on pre-existing missing Markdown references (`UPGRADE_PLAN.md`, `feedback_no_test_case_patches.md`) unrelated to the CAP-1 email move; not treated as this phase's completion gate.
+
+Decision:
+- Accept `e621ef8` after Codex's no-barrel cleanup and doc/verifier hardening.
+- CAP-1 email-tools migration is complete for this single tool family: active caller, owner docs, registry verifier, capability-root verifier, stale-owner verifier, and physical paths agree.
+
+Next instruction for DeepSeek:
+- Commit the current Codex cleanup first.
+- Continue CAP-1 one family at a time. Prefer the next low-blast-radius family with a small module and clear import surface; do not move schemas/registry yet.
+- Every CAP-1 family move must delete the old source file before completion, add a stale-owner physical-path guard, update active inventory docs, run the targeted verifier, GUI smoke, and `check:fast`.
