@@ -2309,3 +2309,33 @@ Decision:
   preflight for extracting a remaining high-risk inline tool family from
   `src/service/action_tools/tools/index.mjs`, starting with a small,
   verifier-friendly family rather than schema/registry relocation.
+
+## Codex Progress: Desktop Capture / GUI Inline Family Preflight
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Added `docs/architecture/desktop-capture-gui-tools-boundary.md`.
+- Added `scripts/verify-desktop-capture-gui-tools-contract.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs`.
+
+Preflight result:
+- `take_screenshot`, `gui_find_element`, `gui_click`, and `gui_type_text`
+  remain inline in `src/service/action_tools/tools/index.mjs`.
+- No product source was moved.
+- The verifier locks tool ids, schema references, risk levels, confirmation
+  gates, required capabilities, Windows-only execution boundary, PowerShell
+  screenshot helper path, PNG artifact metadata, and the inline GUI helper
+  functions.
+
+Verification run by Codex:
+- `node --check scripts/verify-desktop-capture-gui-tools-contract.mjs`: passed.
+- `node scripts/verify-desktop-capture-gui-tools-contract.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `npm run check:fast`: passed, 84/84.
+
+Decision:
+- Screenshot / GUI inline-family preflight is complete.
+- This preflight is sufficient to proceed with CAP-2 schema-only migration.
+- Do not physically extract screenshot or GUI tools in CAP-2.
