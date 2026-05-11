@@ -2107,3 +2107,47 @@ Decision:
   their own boundary review and migration decisions.
 - Next candidate should be `svg-sanitize.mjs` static/runtime security preflight,
   because both `document-renderer.mjs` and `render_svg` depend on its sanitizer.
+
+## Codex Progress: CAP-1 SVG Sanitize Static/Runtime Preflight
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Added `docs/architecture/svg-sanitize-boundary.md`.
+- Added `scripts/verify-svg-sanitize-contract.mjs`.
+- Added `scripts/verify-svg-sanitize-runtime.mjs`.
+- Wired both verifiers into `scripts/check-manifest.mjs` and `check:fast`.
+- No product source file was moved or refactored in this preflight.
+
+Boundary locked:
+- Current owner remains `src/service/action_tools/tools/svg-sanitize.mjs`.
+- Future owner `src/service/capabilities/tools/svg-sanitize.mjs` must remain
+  absent until the separate physical move phase.
+- The sanitizer stays an import-free pure helper: no filesystem, network,
+  Electron, renderer, provider, or runtime calls.
+- `render_svg`, document preview SVG components, and tool-call validation all
+  continue to depend on the same sanitizer helper.
+
+Runtime coverage added:
+- Direct `sanitizeSvgMarkup` and `isSafeSvgMarkup` checks for invalid input,
+  XML/doctype removal, forbidden element removal, event handler removal,
+  javascript URL removal, and xlink namespace removal.
+- `RENDER_SVG_TOOL` rejection for unsafe non-SVG input.
+- `RENDER_SVG_TOOL` writes sanitized standalone SVG artifacts with
+  `image/svg+xml` metadata.
+- Document preview embedded SVG output is sanitized.
+
+Verification run by Codex:
+- `node --check scripts/verify-svg-sanitize-contract.mjs`: passed.
+- `node --check scripts/verify-svg-sanitize-runtime.mjs`: passed.
+- `node scripts/verify-svg-sanitize-contract.mjs`: passed.
+- `node scripts/verify-svg-sanitize-runtime.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `npm run check:fast`: passed, 81/81.
+
+Decision:
+- SVG sanitizer static/runtime preflight is ready to commit.
+- After this commit, the next valid step is a separate physical move of only
+  `svg-sanitize.mjs`.
+- Do not move `mermaid-assets.mjs` in the same commit.
