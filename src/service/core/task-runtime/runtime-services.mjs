@@ -1,4 +1,4 @@
-import { createActionToolRegistry } from "../../action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";

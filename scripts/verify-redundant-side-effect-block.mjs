@@ -26,7 +26,7 @@
 import assert from "node:assert/strict";
 
 import { runToolAgentLoop } from "../src/service/executors/tool_using/agent-loop.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 
 let pass = 0;
 let fail = 0;

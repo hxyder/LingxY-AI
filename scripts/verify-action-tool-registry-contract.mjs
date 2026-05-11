@@ -5,15 +5,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
-import { ACTION_TOOL_RISK_LEVELS, createActionResult } from "../src/service/action_tools/types.mjs";
-import { evaluateToolRisk } from "../src/service/action_tools/risk_matrix.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
+import { ACTION_TOOL_RISK_LEVELS, createActionResult } from "../src/service/capabilities/registry/types.mjs";
+import { evaluateToolRisk } from "../src/service/capabilities/registry/risk_matrix.mjs";
 import {
   DEFAULT_RATE_LIMITS,
   applyPolicyGuard,
   getRateLimitUsage,
   resetRateLimits
-} from "../src/service/action_tools/policy-guard.mjs";
+} from "../src/service/capabilities/registry/policy-guard.mjs";
 import {
   applyFileReversibilityCheckpoint,
   collectFileReversibilityCheckpoints,
@@ -24,23 +24,30 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// CAP-3 action-tool registry/type/risk/policy ownership preflight.
-// This locks current behavior before the physical owner move.
+// CAP-3 action-tool registry/type/risk/policy ownership verifier.
+// This locks the moved owner and the stable execution contract.
 
 const currentPaths = [
-  "src/service/action_tools/registry.mjs",
-  "src/service/action_tools/types.mjs",
-  "src/service/action_tools/risk_matrix.mjs",
-  "src/service/action_tools/policy-guard.mjs",
+  "src/service/capabilities/registry/registry.mjs",
+  "src/service/capabilities/registry/types.mjs",
+  "src/service/capabilities/registry/risk_matrix.mjs",
+  "src/service/capabilities/registry/policy-guard.mjs",
   "src/service/action_tools/file-reversibility.mjs"
 ];
 for (const rel of currentPaths) {
   assert(existsSync(path.join(root, rel)), `current CAP-3 owner missing: ${rel}`);
 }
 
-const futureDir = "src/service/capabilities/registry";
-assert(!existsSync(path.join(root, futureDir)),
-  "CAP-3 preflight must not create the future registry owner before the physical move");
+const removedOwnerPaths = [
+  "src/service/action_tools/registry.mjs",
+  "src/service/action_tools/types.mjs",
+  "src/service/action_tools/risk_matrix.mjs",
+  "src/service/action_tools/policy-guard.mjs"
+];
+for (const rel of removedOwnerPaths) {
+  assert(!existsSync(path.join(root, rel)),
+    `old CAP-3 owner must not remain after migration: ${rel}`);
+}
 
 const expectedIds = [
   "open_url",
@@ -220,7 +227,7 @@ for (const rel of currentPaths) {
     `${rel} must not reference Electron bridge/main APIs`);
 }
 
-const registrySrc = read("src/service/action_tools/registry.mjs");
+const registrySrc = read("src/service/capabilities/registry/registry.mjs");
 assert(registrySrc.includes("evaluateToolRisk"), "registry must evaluate risk through risk_matrix");
 assert(registrySrc.includes("applyPolicyGuard"), "registry.call must use applyPolicyGuard");
 assert(registrySrc.includes("tool.execute(args, ctx)"), "registry.call execution behavior changed");
@@ -230,11 +237,12 @@ assert(existsSync(path.join(root, boundaryPath)), "action tool registry boundary
 const boundaryDoc = read(boundaryPath);
 for (const text of [
   "Action Tool Registry Boundary",
-  "`src/service/action_tools/registry.mjs`",
-  "`src/service/action_tools/types.mjs`",
-  "`src/service/action_tools/risk_matrix.mjs`",
-  "`src/service/action_tools/policy-guard.mjs`",
+  "`src/service/capabilities/registry/registry.mjs`",
+  "`src/service/capabilities/registry/types.mjs`",
+  "`src/service/capabilities/registry/risk_matrix.mjs`",
+  "`src/service/capabilities/registry/policy-guard.mjs`",
   "`src/service/action_tools/file-reversibility.mjs`",
+  "moved from `src/service/action_tools/registry.mjs`",
   "`src/service/capabilities/registry/`",
   "Current State",
   "Public Contract",
@@ -244,4 +252,4 @@ for (const text of [
   assert(boundaryDoc.includes(text), `boundary doc missing required text: ${text}`);
 }
 
-console.log("[action-tool-registry] contract preflight verified");
+console.log("[action-tool-registry] contract verified");

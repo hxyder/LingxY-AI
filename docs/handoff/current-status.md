@@ -2478,3 +2478,67 @@ Decision:
   - prove old owner files are absent and no compatibility barrels remain;
   - keep `file-reversibility.mjs` out of the physical move unless the phase is
     explicitly expanded with artifact/file-recovery verifier coverage.
+
+## Codex Review: CAP-3 Registry/Policy Physical Move
+
+Date: 2026-05-11
+
+Scope:
+- Moved action-tool registry/type/risk/policy owners to
+  `src/service/capabilities/registry/`.
+- Updated product imports in service core, executors, scheduler, connectors,
+  MCP bridge, capability-owned tool modules, and the remaining action-tool
+  aggregator.
+- Updated tests, scripts, architecture inventories, capability-root verifier,
+  structure verifier, stale-owner verifier, and tool-registry verifier.
+- Left `src/service/action_tools/file-reversibility.mjs` in place intentionally;
+  it remains a file/artifact recovery surface and needs its own move phase if
+  moved later.
+
+Migration result:
+- Current owner: `src/service/capabilities/registry/registry.mjs`.
+- Current result/type owner: `src/service/capabilities/registry/types.mjs`.
+- Current risk owner: `src/service/capabilities/registry/risk_matrix.mjs`.
+- Current policy owner: `src/service/capabilities/registry/policy-guard.mjs`.
+- Old owner files under `src/service/action_tools/` are absent.
+- No compatibility barrels remain.
+- Tool ids, tool order, confirmation gates, schema keys, artifact kinds, IPC
+  channels, HTTP routes, provider ids, storage schema, and action result shape
+  were not changed.
+
+Additional verifier cleanup:
+- `scripts/verify-agentic-parity.mjs` now matches the current finalization
+  contract using `selectSuccessContractValidationSpec(task)` before
+  `validateSuccessContract(validationSpec, validatorTranscript)`.
+- `scripts/verify-call-tool-envelope-unwrap.mjs` now matches the current
+  framework behavior: direct `call_tool` envelopes are unwrapped before registry
+  lookup; truly unknown tool ids still end in readable `partial_success`.
+
+Verification run by Codex:
+- `node scripts/verify-action-tool-registry-contract.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-tool-policy-guard.mjs`: passed, 20/20.
+- `node scripts/verify-file-reversibility-checkpoint.mjs`: passed.
+- `node scripts/verify-approval-gate.mjs`: passed.
+- `node scripts/verify-unified-connectors.mjs`: passed.
+- `node scripts/verify-connector-workflow-dispatcher.mjs`: passed.
+- `node scripts/verify-workflow-first-dispatch.mjs`: passed.
+- `node scripts/verify-agentic-step-gate.mjs`: passed, 13/13.
+- `node scripts/verify-agentic-planner.mjs`: passed.
+- `node scripts/verify-agentic-parity.mjs`: passed, 10/10.
+- `node scripts/verify-call-tool-envelope-unwrap.mjs`: passed, 10/10.
+- `node --test tests/behavior/action-tool-submission.test.mjs tests/behavior/agent-loop-confirmation-gate.test.mjs tests/behavior/agent-loop-error-budget.test.mjs tests/behavior/agent-loop-phase-gate.test.mjs tests/behavior/agent-loop-sequencing.test.mjs tests/behavior/file-reversibility-checkpoint.test.mjs`: passed, 47/47.
+- `node --test tests/behavior/capability-draft-tool.test.mjs tests/behavior/capability-save-tool.test.mjs tests/behavior/read-file-text-tool.test.mjs tests/behavior/local-file-fresh-read-contract.test.mjs`: passed, 55/55.
+- `node scripts/verify-security-broker.mjs`: passed.
+- `node scripts/verify-policy-group-expansion.mjs`: passed, 26/26.
+- `npm run check:fast`: passed, 86/86.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- CAP-3 physical move is ready to commit.
+- Next valid direction after CAP-3 commit is CAP-4 planning/preflight, not a
+  broad move of skills/MCP/connectors/providers without per-family boundaries.

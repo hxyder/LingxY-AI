@@ -13,7 +13,7 @@
  */
 
 import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { createConnectorMcpServer } from "../src/service/ai/mcp/internal-server/connector-mcp-server.mjs";
 

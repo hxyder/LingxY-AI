@@ -1,5 +1,5 @@
-import { appendAuditLog } from "../security/audit-log.mjs";
-import { groupsOfTool } from "../core/policy/policy-groups.mjs";
+import { appendAuditLog } from "../../security/audit-log.mjs";
+import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 import { createActionResult } from "./types.mjs";
 
 const DEFAULT_RATE_LIMITS = Object.freeze({

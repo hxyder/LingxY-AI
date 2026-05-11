@@ -6,8 +6,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 
 import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
-import { createActionResult } from "../../action_tools/types.mjs";
-import { openWithDefaultHandler } from "../../capabilities/tools/open-with-default-handler.mjs";
+import { createActionResult } from "../registry/types.mjs";
+import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
 
 const execFileAsync = promisify(execFile);
 

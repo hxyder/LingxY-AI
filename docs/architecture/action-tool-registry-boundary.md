@@ -1,16 +1,20 @@
 # Action Tool Registry Boundary
 
-CAP-3 registry/type/risk/policy ownership preflight. Status: 2026-05-11,
-preflight only.
+CAP-3 registry/type/risk/policy ownership migration. Status: 2026-05-11,
+moved to `src/service/capabilities/registry/` after static preflight
+verification.
 
 ## Current State
 
-- Current registry owner: `src/service/action_tools/registry.mjs`
-- Current result/type owner: `src/service/action_tools/types.mjs`
-- Current risk owner: `src/service/action_tools/risk_matrix.mjs`
-- Current policy owner: `src/service/action_tools/policy-guard.mjs`
+- Current registry owner: `src/service/capabilities/registry/registry.mjs`
+  (moved from `src/service/action_tools/registry.mjs`)
+- Current result/type owner: `src/service/capabilities/registry/types.mjs`
+  (moved from `src/service/action_tools/types.mjs`)
+- Current risk owner: `src/service/capabilities/registry/risk_matrix.mjs`
+  (moved from `src/service/action_tools/risk_matrix.mjs`)
+- Current policy owner: `src/service/capabilities/registry/policy-guard.mjs`
+  (moved from `src/service/action_tools/policy-guard.mjs`)
 - Current file reversibility owner: `src/service/action_tools/file-reversibility.mjs`
-- Target owner for CAP-3: `src/service/capabilities/registry/`
 
 ## Public Contract
 
@@ -43,7 +47,7 @@ preflight only.
 
 ## Migration Shape
 
-CAP-3 must happen in two commits:
+CAP-3 happened in two commits:
 
 1. Preflight: add this boundary and `scripts/verify-action-tool-registry-contract.mjs`.
 2. Physical move: move registry/type/risk/policy owners to
@@ -57,7 +61,7 @@ with updated verifier coverage.
 
 ## Verification
 
-- `scripts/verify-action-tool-registry-contract.mjs` locks the current owner
-  paths, future target, public APIs, built-in registry snapshot, confirmation
-  gates, policy/risk behavior, file reversibility export stability, boundary
-  documentation, and desktop/runtime dependency exclusions.
+- `scripts/verify-action-tool-registry-contract.mjs` locks the moved owner
+  paths, old-path removal, public APIs, built-in registry snapshot,
+  confirmation gates, policy/risk behavior, file reversibility export
+  stability, boundary documentation, and desktop/runtime dependency exclusions.

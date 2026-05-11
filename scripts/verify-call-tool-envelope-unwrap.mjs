@@ -21,7 +21,7 @@
 import assert from "node:assert/strict";
 
 import { runToolAgentLoop } from "../src/service/executors/tool_using/agent-loop.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -87,9 +87,8 @@ function makeRuntime({ plannerSequence }) {
 //    the loop should recover by retrying — but the wrapper-unwrap
 //    happens INSIDE llmPlanner's JSON path, not in the agent loop's
 //    decision handling. So a custom planner that already returns
-//    {tool: "call_tool", args: {...}} would still hit unknown_tool.
-//    For this synthesis-retry guard, we just ensure the loop emits
-//    a synthesis_retry instead of crashing the task.
+//    {tool: "call_tool", args: {...}} is now also unwrapped by the
+//    decision-normalization path before registry lookup.
 // ---------------------------------------------------------------------
 {
   realTool.__called = 0;
@@ -102,15 +101,15 @@ function makeRuntime({ plannerSequence }) {
   ];
   const { runtime, events } = makeRuntime({ plannerSequence });
   const result = await runToolAgentLoop({ task: makeTask(), runtime, maxIterations: 6 });
-  check("unknown-tool: loop does NOT immediately fail",
+  check("call_tool envelope: loop does NOT immediately fail",
     result.status !== "failed");
-  check("unknown-tool: tool_call_denied(unknown_tool) is emitted",
-    events.some((e) => e.eventType === "tool_call_denied" && e.payload?.reason === "unknown_tool"));
-  check("unknown-tool: synthesis_retry hint is pushed",
-    events.some((e) => e.eventType === "synthesis_retry" && e.payload?.reason === "unknown_tool"));
-  check("unknown-tool: planner's second turn (real tool) actually runs",
+  check("call_tool envelope: no unknown_tool denial is emitted",
+    !events.some((e) => e.eventType === "tool_call_denied" && e.payload?.reason === "unknown_tool"));
+  check("call_tool envelope: no unknown_tool synthesis retry is pushed",
+    !events.some((e) => e.eventType === "synthesis_retry" && e.payload?.reason === "unknown_tool"));
+  check("call_tool envelope: unwrapped real tool actually runs",
     realTool.__called === 1);
-  check("unknown-tool: final task status is success after recovery",
+  check("call_tool envelope: final task status is success after recovery",
     result.status === "success");
 }
 
@@ -124,17 +123,17 @@ function makeRuntime({ plannerSequence }) {
   // Planner keeps emitting the same bad tool id. After the retry budget,
   // we should partial_success out.
   const plannerSequence = [
-    { type: "tool_call", tool: "call_tool", args: {} },
-    { type: "tool_call", tool: "call_tool", args: {} },
-    { type: "tool_call", tool: "call_tool", args: {} },
-    { type: "tool_call", tool: "call_tool", args: {} }
+    { type: "tool_call", tool: "definitely_missing_tool", args: {} },
+    { type: "tool_call", tool: "definitely_missing_tool", args: {} },
+    { type: "tool_call", tool: "definitely_missing_tool", args: {} },
+    { type: "tool_call", tool: "definitely_missing_tool", args: {} }
   ];
   const { runtime } = makeRuntime({ plannerSequence });
   const result = await runToolAgentLoop({ task: makeTask(), runtime, maxIterations: 6 });
   check("retry-exhausted: status is partial_success (not failed)",
     result.status === "partial_success");
-  check("retry-exhausted: final_text is in user's language and names the bad tool",
-    /call_tool/.test(result.final_text ?? "") && /未知|换一种|清晰/.test(result.final_text ?? ""));
+  check("retry-exhausted: final_text is readable and names the bad tool",
+    /definitely_missing_tool/.test(result.final_text ?? "") && /not available|未知|换一种|清晰/.test(result.final_text ?? ""));
 }
 
 // ---------------------------------------------------------------------

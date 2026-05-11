@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { createLaunchAmbiguityResult } from "../../src/service/action_tools/tools/index.mjs";
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";

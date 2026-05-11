@@ -172,7 +172,7 @@ Legend:
 
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `src/service/action_tools/registry.mjs` | Action tool registry and `call()`. | service/tools | no | Tool definitions. | high | Central tool dispatch. |
+| `src/service/capabilities/registry/registry.mjs` | Action tool registry and `call()`. | service/tools | no | Tool definitions. | high | Central tool dispatch. |
 | `src/service/action_tools/tools/index.mjs` | Tool aggregator: imports 5 capability-owned tool families + owns remaining high-risk inline tools. | service/tools | no | Aggregates from `src/service/capabilities/tools/`, connector tools, memory tools, vision tools, skill install tools, and artifact-path-helper. | medium | ~4100 → 3048 lines. Phase 2D/CAP-1: low-risk families extracted and moved; high-risk tools (write/edit/run/generate/render/gui/capability) remain inline. |
 | `src/service/capabilities/schemas/index.mjs` | Tool schemas. | service/shared | no | Tool registry/executors. | high | Must stay aligned with tool ids. |
 | `src/service/capabilities/tools/document-renderer.mjs` | DOCX/PPTX/XLSX/PDF/HTML preview rendering. | service/artifact | no | docx/exceljs/pptx/pdf/html helpers, sibling Mermaid asset helper, shared SVG sanitizer. | high | Correct layer but heavy; worker may be needed for large docs. |
@@ -181,8 +181,8 @@ Legend:
 | `src/service/capabilities/tools/memory-tools.mjs` | Runtime memory/session task recall tools. | service/tools/context | no | Store/session/artifacts. | high | Important context surface. |
 | `src/service/capabilities/tools/skill-install-tools.mjs` | Skill GitHub preview/install tools. | service/tools/security | no | Skill lifecycle/install state. | high | Side-effect approval sensitive. |
 | `src/service/capabilities/tools/vision-analyze.mjs` | Vision analysis action tool. | service/tools/provider | no | Provider resolver/adapter. | high | Provider/image boundary. |
-| `src/service/action_tools/policy-guard.mjs` | Tool policy/rate limits. | service/policy | no | Runtime/tool policy. | high | Security-sensitive. |
-| `src/service/action_tools/risk_matrix.mjs` | Tool risk evaluation. | service/policy | no | Tool calls. | high | Security-sensitive. |
+| `src/service/capabilities/registry/policy-guard.mjs` | Tool policy/rate limits. | service/policy | no | Runtime/tool policy. | high | Security-sensitive. |
+| `src/service/capabilities/registry/risk_matrix.mjs` | Tool risk evaluation. | service/policy | no | Tool calls. | high | Security-sensitive. |
 | `src/service/action_tools/file-reversibility.mjs` | File mutation checkpoint/restore helpers. | service/tools/artifact | no | FS, task events. | high | Must align with approvals and recovery. |
 
 ## Artifacts and Preview

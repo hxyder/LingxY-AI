@@ -6,7 +6,7 @@ import {
   extractWorkflowInput,
   matchWorkflowByTrigger
 } from "../src/service/connectors/core/connector-intent.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";

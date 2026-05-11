@@ -20,10 +20,10 @@ const capabilityRoots = [
   // Action tools
   "src/service/action_tools/tools/index.mjs",
   "src/service/capabilities/schemas/index.mjs",
-  "src/service/action_tools/registry.mjs",
-  "src/service/action_tools/types.mjs",
-  "src/service/action_tools/risk_matrix.mjs",
-  "src/service/action_tools/policy-guard.mjs",
+  "src/service/capabilities/registry/registry.mjs",
+  "src/service/capabilities/registry/types.mjs",
+  "src/service/capabilities/registry/risk_matrix.mjs",
+  "src/service/capabilities/registry/policy-guard.mjs",
   "src/service/action_tools/file-reversibility.mjs",
   // Skills
   "src/service/ai/skills/lifecycle.mjs",

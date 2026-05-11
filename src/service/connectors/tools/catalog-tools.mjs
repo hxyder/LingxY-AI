@@ -1,4 +1,4 @@
-import { createActionResult } from "../../action_tools/types.mjs";
+import { createActionResult } from "../../capabilities/registry/types.mjs";
 import { createConnectorCatalog } from "../core/catalog.mjs";
 import { runConnectorWorkflow } from "../core/workflow-dispatcher.mjs";
 

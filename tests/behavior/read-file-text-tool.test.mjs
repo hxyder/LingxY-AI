@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 import { filterToolsForTask } from "../../src/service/executors/tool_using/tool-surface.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";

@@ -31,7 +31,7 @@ import {
   ACCOUNT_SEND_EMAIL_TOOL,
   ACCOUNT_UPLOAD_FILE_TOOL
 } from "../src/service/connectors/tools/write-tools.mjs";
-import { evaluateToolRisk } from "../src/service/action_tools/risk_matrix.mjs";
+import { evaluateToolRisk } from "../src/service/capabilities/registry/risk_matrix.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");

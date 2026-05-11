@@ -81,7 +81,7 @@ export async function executeAgenticToolCall({
   }
 
   try {
-    const { evaluateToolRisk } = await import("../../action_tools/risk_matrix.mjs");
+    const { evaluateToolRisk } = await import("../../capabilities/registry/risk_matrix.mjs");
     const risk = evaluateToolRisk(tool, callArgs, toolContext ?? {});
     if (risk.requires_confirmation && runtime?.pendingApprovals?.create) {
       // C18 #2c: pass runtime through so install_skill_from_github

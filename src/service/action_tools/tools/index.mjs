@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ACTION_TOOL_SCHEMAS } from "../../capabilities/schemas/index.mjs";
 import { createNoopTool } from "../tool-helper.mjs";
-import { createActionResult } from "../types.mjs";
+import { createActionResult } from "../../capabilities/registry/types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";

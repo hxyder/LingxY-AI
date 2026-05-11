@@ -124,7 +124,7 @@ export const RR_REGISTRY = Object.freeze({
     risk: "LLM ignores prompt instructions and calls a tool the task forbids.",
     severity: "high",
     mitigation: "Registry-level forbidden enforcement before tool.execute runs; audit on block.",
-    enforcement: "src/service/action_tools/policy-guard.mjs",
+    enforcement: "src/service/capabilities/registry/policy-guard.mjs",
     status: "mitigated"
   }),
   "RR-03": Object.freeze({
@@ -133,7 +133,7 @@ export const RR_REGISTRY = Object.freeze({
     risk: "Synonymous tools bypass per-toolId policy (e.g. web_search_fetch blocked but web_search succeeds).",
     severity: "high",
     mitigation: "Capability-based policy guard: forbidden decisions expand across every member of the policy group, and the guard checks group-membership as defense in depth.",
-    enforcement: "src/service/core/policy/policy-groups.mjs + src/service/action_tools/policy-guard.mjs",
+    enforcement: "src/service/core/policy/policy-groups.mjs + src/service/capabilities/registry/policy-guard.mjs",
     status: "mitigated"
   }),
   "RR-04": Object.freeze({

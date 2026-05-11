@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { createActionToolRegistry } from "../../action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { validateToolCall } from "./tool-call-validator.mjs";
 import { emitTaskEvent as _emitTaskEventFn } from "../../core/task-runtime.mjs";

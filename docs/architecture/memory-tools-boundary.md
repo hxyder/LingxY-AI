@@ -23,7 +23,7 @@ preflight verification.
 
 | Import | Current path | Notes |
 |--------|-------------|----------------|
-| `createActionResult` | `../../action_tools/types.mjs` | Result shape unchanged |
+| `createActionResult` | `../../capabilities/registry/types.mjs` | Result shape unchanged |
 
 No other imports. The module accesses `runtime.store` and `runtime.platform.embeddingStore`
 through the `ctx` parameter at runtime.

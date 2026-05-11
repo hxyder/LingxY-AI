@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { submitContextTask } from "../../src/service/core/context-submission.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 import { createArtifactStore } from "../../src/service/store/artifact-store.mjs";

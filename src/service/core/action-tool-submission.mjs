@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { routeIntent } from "./router/intent-router.mjs";
-import { createActionToolRegistry } from "../action_tools/registry.mjs";
+import { createActionToolRegistry } from "../capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import {
   createTaskRecord,

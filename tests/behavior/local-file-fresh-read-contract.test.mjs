@@ -7,7 +7,7 @@ import path from "node:path";
 import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
 import { validateSuccessContract } from "../../src/service/core/policy/success-contract-validator.mjs";
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
-import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 
 function taskSpec({ depth = "standard" } = {}) {

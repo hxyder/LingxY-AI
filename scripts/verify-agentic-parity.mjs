@@ -32,7 +32,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runAgenticPlanner } from "../src/service/executors/agentic/planner.mjs";
 import { createAgenticExecutorScaffold } from "../src/service/executors/agentic/executor.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 
 let pass = 0;
@@ -151,8 +151,10 @@ await it("agentic finalization imports validateSuccessContract + extractEvidence
     "finalization must import extractEvidence");
   assert.match(finalization, /transcriptForValidator/,
     "finalization must use the transcript translation seam");
-  assert.match(finalization, /validateSuccessContract\(task\?\.task_spec, validatorTranscript\)/,
-    "finalization must invoke validateSuccessContract with translated transcript");
+  assert.match(finalization, /selectSuccessContractValidationSpec\(task\)/,
+    "finalization must resolve the validator spec through selectSuccessContractValidationSpec");
+  assert.match(finalization, /validateSuccessContract\(validationSpec, validatorTranscript\)/,
+    "finalization must invoke validateSuccessContract with the selected spec and translated transcript");
 });
 
 // ── 2. Source-level lock-in: executor picks event_type from downgraded ──

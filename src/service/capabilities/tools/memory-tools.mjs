@@ -20,7 +20,7 @@
 // pronoun ("上个问题", "刚才那份", "之前的 ppt", "last one") — the
 // AI decides, we don't.
 
-import { createActionResult } from "../../action_tools/types.mjs";
+import { createActionResult } from "../registry/types.mjs";
 
 const DEFAULT_RECALL_LIMIT = 5;
 const DEFAULT_RECENT_MINUTES = 30;

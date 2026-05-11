@@ -6,7 +6,7 @@ import { submitBrowserTask } from "../src/service/core/browser-submission.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
 import { createSecurityBroker } from "../src/service/security/broker.mjs";

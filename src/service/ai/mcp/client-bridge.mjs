@@ -19,7 +19,7 @@
 
 import { createRequire } from "node:module";
 import path from "node:path";
-import { createActionResult } from "../../action_tools/types.mjs";
+import { createActionResult } from "../../capabilities/registry/types.mjs";
 import { resolveMcpEnv } from "./env-resolver.mjs";
 
 const _require = createRequire(import.meta.url);

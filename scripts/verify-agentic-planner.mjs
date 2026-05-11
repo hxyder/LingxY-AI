@@ -29,7 +29,7 @@ import {
   parseJsonToolCalls,
   extractAssistantText
 } from "../src/service/executors/agentic/code-cli-bridge.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { detectRequestedOutputFormat } from "../src/service/executors/kimi/output-format.mjs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";

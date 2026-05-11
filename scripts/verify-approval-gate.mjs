@@ -79,7 +79,7 @@ function createFakeEmailTool() {
   // we import planner.mjs to ensure the file loads cleanly and then
   // directly instantiate the risk-matrix + pendingApprovals path that
   // it uses. This keeps the test fast and deterministic.
-  const { evaluateToolRisk } = await import("../src/service/action_tools/risk_matrix.mjs");
+  const { evaluateToolRisk } = await import("../src/service/capabilities/registry/risk_matrix.mjs");
   const risk = evaluateToolRisk(tool, { to: "a@b.com", subject: "hi", body: "hi" }, {});
   assert.equal(risk.requires_confirmation, true,
     "account_send_email must be flagged requires_confirmation by risk matrix");

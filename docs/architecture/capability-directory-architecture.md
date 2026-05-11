@@ -10,9 +10,9 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 | Action tools (built-in, remaining old owner) | `src/service/action_tools/tools/` | `index.mjs` (aggregator) |
 | Capability-owned tools | `src/service/capabilities/tools/` | `browser-web-tools.mjs`, `document-renderer.mjs`, `email-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `mermaid-assets.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, `vision-analyze.mjs` |
 | Action tool schemas | `src/service/capabilities/schemas/index.mjs` | All tool parameter schemas |
-| Action tool registry | `src/service/action_tools/registry.mjs` | `createActionToolRegistry` |
-| Action tool types | `src/service/action_tools/types.mjs` | `createActionResult` |
-| Risk/policy | `src/service/action_tools/risk_matrix.mjs`, `policy-guard.mjs`, `file-reversibility.mjs` | Tool risk evaluation, policy guard, file reversibility |
+| Action tool registry | `src/service/capabilities/registry/registry.mjs` | `createActionToolRegistry` |
+| Action tool types | `src/service/capabilities/registry/types.mjs` | `createActionResult` |
+| Risk/policy | `src/service/capabilities/registry/risk_matrix.mjs`, `src/service/capabilities/registry/policy-guard.mjs`, `src/service/action_tools/file-reversibility.mjs` | Tool risk evaluation, policy guard, file reversibility |
 | Skills | `src/service/ai/skills/` | Skill lifecycle (`lifecycle.mjs`), skill installer, skill markdown editor |
 | MCP | `src/service/ai/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/connectors/` | Connector tool aggregator, connector plugins, account tools |
@@ -49,7 +49,7 @@ src/service/capabilities/
 1. CAP-0 ✅ — inventory current capability roots, create this doc, add verifier
 2. CAP-1 — migrate low-risk/helper built-in tool families into `capabilities/tools/` one family at a time (complete for browser/web/search/translation, email compose, file discovery/stat/artifact lookup, OS app/file/clipboard/notify, scheduler, and the two shared helpers)
 3. CAP-2 — move `action_tools/schemas/` to `capabilities/schemas/` (schema-only, no logic change)
-4. CAP-3 — move `action_tools/registry.mjs` + `types.mjs` + `risk_matrix.mjs` + `policy-guard.mjs` to `capabilities/registry/`
+4. CAP-3 ✅ — move registry, result/type, risk, and policy owners to `capabilities/registry/`
 5. CAP-4 — consolidate `ai/skills/`, `ai/mcp/`, `connectors/`, `ai/providers/` under `capabilities/`
 6. CAP-5 — final stale-path cleanup and verifier hardening after capability families move
 

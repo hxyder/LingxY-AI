@@ -13,7 +13,7 @@
 
 import assert from "node:assert/strict";
 
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { createProviderAdapter } from "../src/service/executors/agentic/provider-adapter.mjs";
 import {
   describeResolvedProvider,

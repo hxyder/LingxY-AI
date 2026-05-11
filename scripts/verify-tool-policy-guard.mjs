@@ -17,8 +17,8 @@
 
 import assert from "node:assert/strict";
 
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
-import { resetRateLimits, getRateLimitUsage, DEFAULT_RATE_LIMITS } from "../src/service/action_tools/policy-guard.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
+import { resetRateLimits, getRateLimitUsage, DEFAULT_RATE_LIMITS } from "../src/service/capabilities/registry/policy-guard.mjs";
 
 function makeFakeRuntime() {
   const auditEntries = [];

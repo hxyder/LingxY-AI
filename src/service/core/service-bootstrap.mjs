@@ -25,7 +25,7 @@ import { createNotesStore } from "../store/notes-store.mjs";
 import { createPreviewRegistry } from "../preview/registry.mjs";
 import { BUILTIN_PREVIEW_PROVIDERS } from "../preview/providers/index.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
-import { createActionToolRegistry } from "../action_tools/registry.mjs";
+import { createActionToolRegistry } from "../capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { createSchedulerRuntime } from "../scheduler/engine.mjs";

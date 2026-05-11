@@ -1,5 +1,5 @@
 import { appendAuditLog } from "../security/audit-log.mjs";
-import { evaluateToolRisk } from "../action_tools/risk_matrix.mjs";
+import { evaluateToolRisk } from "../capabilities/registry/risk_matrix.mjs";
 import { executeProposedAction } from "./execute-action.mjs";
 import { applyScheduleRunOutcome } from "./failure_guard.mjs";
 import { advanceScheduleAfterRun, claimScheduleForRun } from "./lifecycle.mjs";

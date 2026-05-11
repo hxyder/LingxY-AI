@@ -8,10 +8,10 @@ Status: verified against the current repository on 2026-05-11.
 
 | Surface | Path | Owner |
 | --- | --- | --- |
-| Registry implementation | `src/service/action_tools/registry.mjs` | Service runtime |
+| Registry implementation | `src/service/capabilities/registry/registry.mjs` | Service runtime |
 | Built-in tool definitions | `src/service/action_tools/tools/index.mjs` | Service runtime |
 | Schemas | `src/service/capabilities/schemas/index.mjs` | Service runtime |
-| Tool result shape | `src/service/action_tools/types.mjs` | Service runtime |
+| Tool result shape | `src/service/capabilities/registry/types.mjs` | Service runtime |
 | Tool execution submission | `src/service/core/action-tool-submission.mjs` | Service runtime |
 
 ## Snapshot

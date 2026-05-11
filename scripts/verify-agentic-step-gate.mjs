@@ -25,7 +25,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runAgenticPlanner } from "../src/service/executors/agentic/planner.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 
 let pass = 0;

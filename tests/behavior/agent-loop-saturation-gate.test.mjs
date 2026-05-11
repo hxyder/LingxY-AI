@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { runToolAgentLoop } from "../../src/service/executors/tool_using/agent-loop.mjs";
 
 function makeSearchTool({ calls }) {

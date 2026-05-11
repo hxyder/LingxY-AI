@@ -1,4 +1,4 @@
-import { createActionResult } from "../../action_tools/types.mjs";
+import { createActionResult } from "../../capabilities/registry/types.mjs";
 import { listUserAccounts, updateAccountLastUsed } from "../core/account-registry.mjs";
 import { resolveAccount } from "../core/account-router.mjs";
 import { createGoogleEvent, sendGoogleEmail, uploadGoogleFile } from "../google/google-connector.mjs";

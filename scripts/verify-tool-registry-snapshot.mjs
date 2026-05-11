@@ -245,6 +245,23 @@ assert(existsSync(path.join(root, "src/service/capabilities/schemas/index.mjs"))
   "CAP-2 schema owner must exist under capabilities/schemas/");
 assert(!existsSync(path.join(root, "src/service/action_tools/schemas/index.mjs")),
   "CAP-2 schema owner must not remain under action_tools/schemas/");
+assert(existsSync(path.join(root, "src/service/capabilities/registry/registry.mjs")),
+  "CAP-3 registry owner must exist under capabilities/registry/");
+assert(existsSync(path.join(root, "src/service/capabilities/registry/types.mjs")),
+  "CAP-3 type owner must exist under capabilities/registry/");
+assert(existsSync(path.join(root, "src/service/capabilities/registry/risk_matrix.mjs")),
+  "CAP-3 risk owner must exist under capabilities/registry/");
+assert(existsSync(path.join(root, "src/service/capabilities/registry/policy-guard.mjs")),
+  "CAP-3 policy owner must exist under capabilities/registry/");
+for (const oldPath of [
+  "src/service/action_tools/registry.mjs",
+  "src/service/action_tools/types.mjs",
+  "src/service/action_tools/risk_matrix.mjs",
+  "src/service/action_tools/policy-guard.mjs"
+]) {
+  assert(!existsSync(path.join(root, oldPath)),
+    `CAP-3 moved file must not exist at old path: ${oldPath}`);
+}
 
 // CAP-1 closure: moved families must NOT exist at old action_tools/tools/ paths
 const cap1MovedPaths = [

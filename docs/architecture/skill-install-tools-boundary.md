@@ -18,7 +18,7 @@ runtime/security preflight verification.
 | `stageSkillFromGitHub` | `../../ai/skills/github-install.mjs` | Unchanged |
 | `finalizeStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
 | `discardStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
-| `createActionResult` | `../../action_tools/types.mjs` | Result shape unchanged |
+| `createActionResult` | `../../capabilities/registry/types.mjs` | Result shape unchanged |
 
 Three imports from `github-install.mjs` — these are already at `../../ai/skills/` and would remain correct after a move to `capabilities/tools/`.
 

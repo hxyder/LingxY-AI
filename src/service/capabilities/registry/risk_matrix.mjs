@@ -1,4 +1,4 @@
-import { isExecutablePath, isSafePath } from "./tool-helper.mjs";
+import { isExecutablePath } from "../../action_tools/tool-helper.mjs";
 
 export function evaluateToolRisk(tool, args = {}, ctx = {}) {
   let requiresConfirmation = false;

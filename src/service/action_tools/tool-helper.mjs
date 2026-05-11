@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createActionResult } from "./types.mjs";
+import { createActionResult } from "../capabilities/registry/types.mjs";
 
 export function createNoopTool(definition) {
   return {

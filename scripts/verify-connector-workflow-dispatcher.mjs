@@ -3,7 +3,7 @@ import crypto from "node:crypto";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createActionResult } from "../src/service/action_tools/types.mjs";
+import { createActionResult } from "../src/service/capabilities/registry/types.mjs";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { createPersistentRuntime } from "../src/service/core/persistent-runtime.mjs";
 import { submitConnectorWorkflowTask } from "../src/service/connectors/core/workflow-submission.mjs";

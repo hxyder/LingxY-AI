@@ -327,7 +327,7 @@ Ephemeral events not persisted to store:
 
 Tool registry and built-in tool definitions:
 
-- `src/service/action_tools/registry.mjs`
+- `src/service/capabilities/registry/registry.mjs`
 - `src/service/capabilities/schemas/index.mjs`
 - `src/service/action_tools/tools/index.mjs`
 - `src/service/capabilities/tools/memory-tools.mjs`
@@ -369,8 +369,8 @@ Tool execution paths:
 - Connector tools aggregate from:
   `src/service/connectors/tools/action-tool-aggregator.mjs`.
 
-Risk: tool policy/filtering is split across `action_tools/policy-guard.mjs`,
-`action_tools/risk_matrix.mjs`,
+Risk: tool policy/filtering is split across `capabilities/registry/policy-guard.mjs`,
+`capabilities/registry/risk_matrix.mjs`,
 `executors/tool_using/tool-surface.mjs`,
 `executors/agentic/tool-surface.mjs`, side-effect gates, scheduler gates,
 phase gates, connector planners, and route/admin approval handling.
@@ -540,7 +540,7 @@ Renderer-local state:
 
 | Concern | Current scattered locations |
 | --- | --- |
-| Tool filtering/policy | `action_tools/policy-guard.mjs`, `risk_matrix.mjs`, `executors/tool_using/tool-surface.mjs`, `executors/agentic/tool-surface.mjs`, side-effect gates, scheduler gates, connector planners. |
+| Tool filtering/policy | `capabilities/registry/policy-guard.mjs`, `capabilities/registry/risk_matrix.mjs`, `executors/tool_using/tool-surface.mjs`, `executors/agentic/tool-surface.mjs`, side-effect gates, scheduler gates, connector planners. |
 | Artifact path/kind inference | `action_tools/tools/index.mjs`, `core/artifact-action-contract.mjs`, `core/artifact-quality.mjs`, `core/artifact-transforms/*`, renderer preview/open logic, Kimi output format. |
 | Artifact display/preview/open | `overlay.js`, `console.js`, `live-preview.js`, `preview-window.js`, preview providers, preview route handlers, `preload.cjs`. |
 | Provider resolution/calls | `provider-resolver.mjs`, `provider-adapter.mjs`, fast/multimodal/agentic/Kimi executors, semantic router, provider health/model discovery routes. |

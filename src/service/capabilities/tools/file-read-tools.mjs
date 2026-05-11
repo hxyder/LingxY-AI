@@ -3,9 +3,9 @@ import os from "node:os";
 import path from "node:path";
 
 import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
-import { createActionResult } from "../../action_tools/types.mjs";
+import { createActionResult } from "../registry/types.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
-import { resolveDefaultOutputDir, readManifest, globToRegex } from "../../capabilities/tools/file-manifest-helpers.mjs";
+import { resolveDefaultOutputDir, readManifest, globToRegex } from "./file-manifest-helpers.mjs";
 
 const FILE_KIND_EXTS = {
   pptx: [".pptx"],

@@ -1,5 +1,5 @@
-import { createActionResult } from "../../action_tools/types.mjs";
-import { evaluateToolRisk } from "../../action_tools/risk_matrix.mjs";
+import { createActionResult } from "../../capabilities/registry/types.mjs";
+import { evaluateToolRisk } from "../../capabilities/registry/risk_matrix.mjs";
 import {
   applySideEffectContractToWorkflowInput,
   policyGroupsForConnectorWorkflow

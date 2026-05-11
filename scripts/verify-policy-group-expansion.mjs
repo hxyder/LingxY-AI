@@ -36,7 +36,7 @@ import {
   buildExternalWebReadPolicy
 } from "../src/service/core/policy/tool-policy-resolver.mjs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
-import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
+import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 
 let pass = 0;
 let fail = 0;
