@@ -14,11 +14,9 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-// CAP-1 vision-analyze static preflight verifier.
-// Documents current + future owner; does not move the file.
-// This is not a runtime/provider execution proof. The physical move still
-// requires a focused execute() test with provider + multi-modal calls stubbed
-// or an explicit test seam that makes that execution path injectable.
+// CAP-1 vision-analyze ownership verifier.
+// Locks the post-move owner and no-touch contracts. Runtime/provider execution
+// coverage lives in verify-vision-analyze-runtime.mjs.
 
 // 1. Tool exists in BUILTIN_ACTION_TOOLS with correct id
 const visionTool = BUILTIN_ACTION_TOOLS.find(t => t.id === "vision_analyze");
@@ -29,6 +27,8 @@ assert(visionTool.requires_confirmation === false, "vision_analyze must not requ
 // 2. Current owner file exists
 const currentPath = "src/service/capabilities/tools/vision-analyze.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
+assert(!existsSync(path.join(root, "src/service/action_tools/tools/vision-analyze.mjs")),
+  "old action_tools vision-analyze owner must not exist after CAP-1 move");
 
 // 3. Current owner exports VISION_ANALYZE_TOOL
 const visionSrc = read(currentPath);
@@ -52,12 +52,12 @@ assert(visionSrc.includes("ACTION_TOOL_SCHEMAS.vision_analyze") ||
   visionSrc.includes('id: "vision_analyze"'),
   "vision_analyze must reference its schema");
 
-// 5. Boundary doc must document the deferred status
+// 5. Boundary doc must document the moved status
 const boundaryDocPath = "docs/architecture/vision-analyze-boundary.md";
 assert(existsSync(path.join(root, boundaryDocPath)), "vision-analyze boundary doc missing");
 const boundaryDoc = read(boundaryDocPath);
-assert(boundaryDoc.includes("Not moved in this phase"),
-  "boundary doc must state vision_analyze is not moved yet");
+assert(boundaryDoc.includes("moved to `src/service/capabilities/tools/vision-analyze.mjs`"),
+  "boundary doc must state the current moved owner");
 
 // 6. Provider boundary verifier must cover this tool
 const providerVerifierSrc = read("scripts/verify-provider-boundary.mjs");

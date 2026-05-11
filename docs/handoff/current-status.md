@@ -1560,3 +1560,84 @@ Next instruction for DeepSeek:
   - prove accepted attached image path returns `success: true` with provider/model/image_count/image_paths metadata;
   - prove `supportsVision:false`, `code_cli`, and `ollama` provider gates return the existing refusal observations;
   - keep `src/service/action_tools/tools/vision-analyze.mjs` in place until that successful-provider preflight is green.
+
+## Codex Review: CAP-1 Vision Analyze Physical Move
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `6ea169d` - `feat: add vision-analyze provider-gate tests via __test.callVisionProvider`.
+- `a91eb0c` - `feat: CAP-1 vision-analyze physical move + injectable test seam`.
+
+Accepted:
+- `vision-analyze.mjs` was physically moved to `src/service/capabilities/tools/vision-analyze.mjs`.
+- The old `src/service/action_tools/tools/vision-analyze.mjs` path is absent; no compatibility barrel remains.
+- `src/service/action_tools/tools/index.mjs` imports `VISION_ANALYZE_TOOL` from the capability owner.
+- Provider-boundary, stale-owner, contract, runtime, inventory, and behavior-test surfaces were updated to the new owner.
+- The `_testSeam` on `VISION_ANALYZE_TOOL.execute` is narrow and defaults to production implementations, so runtime behavior is unchanged outside tests.
+
+Issues found and fixed by Codex:
+- `docs/architecture/vision-analyze-boundary.md` still described the tool as not moved and insufficient for physical migration. Codex updated it to the current moved-owner state and current verifier coverage.
+- `scripts/verify-vision-analyze-contract.mjs` still required the old "Not moved in this phase" documentation text. Codex changed it to require the new moved owner and to assert the old owner path is absent.
+- `scripts/verify-capability-roots.mjs` did not include `src/service/capabilities/tools/vision-analyze.mjs`; Codex added the new root.
+- `scripts/verify-tool-registry-snapshot.mjs` did not yet lock the `index.mjs` import or old physical path for vision. Codex added both checks and removed stale "next high-risk candidate" wording.
+- `scripts/verify-vision-analyze-runtime.mjs` proved a stubbed successful `execute` path, but not the Anthropic/OpenAI branch selection inside `callVisionProvider`. Codex added injected-client coverage for both branches and replaced latent `fail(...)` calls with `assert.fail(...)`.
+- `scripts/verify-stale-owner-paths.mjs` now skips the vision contract verifier because that verifier intentionally owns the old-path guard string.
+
+Verification rerun by Codex:
+- `node --check src/service/capabilities/tools/vision-analyze.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check scripts/verify-vision-analyze-runtime.mjs`: passed.
+- `node --check scripts/verify-vision-analyze-contract.mjs`: passed.
+- `node scripts/verify-vision-analyze-runtime.mjs`: passed.
+- `node scripts/verify-vision-analyze-contract.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-provider-boundary.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-behavior-tests.mjs`: passed, 986/986.
+- `npm run check:fast`: passed, 73/73.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- Accept `6ea169d` and `a91eb0c` after Codex cleanup.
+- CAP-1 vision-analyze physical move is complete: owner, import, old-path deletion, stale-owner guard, provider-boundary verifier, static contract verifier, and runtime verifier agree.
+- Do not open CAP-2 yet.
+
+Next instruction for DeepSeek:
+- Commit Codex's cleanup first.
+- Continue CAP-1 with the next high-risk family preflight, not a physical move:
+  - recommended next: `memory-tools.mjs` session/memory/artifact boundary;
+  - document dependencies and no-touch contracts first;
+  - add a focused runtime verifier with stubbed runtime/store/session surfaces;
+  - only after that verifier is green should a separate physical move be prepared.
+
+## Codex Review: No New DeepSeek Commit After Vision Move
+
+Review date: 2026-05-11.
+
+Repository state reviewed:
+- Latest commit is still `a91eb0c` - `feat: CAP-1 vision-analyze physical move + injectable test seam`.
+- No new DeepSeek commit exists after the CAP-1 vision-analyze physical move.
+- The working tree still contains Codex cleanup for the vision-analyze review:
+  boundary docs, capability inventory, stale-owner/tool-registry/capability-root
+  verifiers, runtime verifier hardening, and the narrow provider-call injection
+  seam in `src/service/capabilities/tools/vision-analyze.mjs`.
+
+Decision:
+- There is no new DeepSeek implementation to accept or reject yet.
+- DeepSeek must not start the `memory-tools.mjs` preflight on top of an
+  uncommitted cleanup pile.
+- The correct next action is to commit the Codex cleanup from the previous
+  review, then start the next CAP-1 high-risk preflight as a new, separate
+  change.
+
+Next instruction for DeepSeek:
+- First commit the current Codex cleanup.
+- After the cleanup commit, begin only the `memory-tools.mjs` preflight:
+  inventory dependencies, no-touch contracts, and a focused verifier with
+  stubbed runtime/store/session surfaces.
+- Do not move `memory-tools.mjs` in the same commit as the preflight.

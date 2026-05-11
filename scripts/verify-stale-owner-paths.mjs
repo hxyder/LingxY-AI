@@ -46,7 +46,7 @@ const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners, ...phaseCap1OldOw
 // Post-migration: old physical paths must not exist as reachable files.
 // Compatibility barrels are disallowed under the no-short-term-fallback rule.
 const forbiddenExistingPaths = [
-    "src/service/action_tools/tools/vision-analyze.mjs",
+  "src/service/action_tools/tools/vision-analyze.mjs",
   "src/service/action_tools/tools/browser-web-tools.mjs",
   "src/desktop/tray/desktop-payload-normalizers.mjs",
   "src/service/action_tools/tools/email-tools.mjs",
@@ -92,6 +92,8 @@ for (const file of allFiles) {
   if (rel === "scripts/verify-repository-directory-architecture.mjs") continue;
   // Skip tool-registry verifier: CAP-1 closure intentionally checks old paths
   if (rel === "scripts/verify-tool-registry-snapshot.mjs") continue;
+  // Skip vision contract verifier: it intentionally guards the old CAP-1 path.
+  if (rel === "scripts/verify-vision-analyze-contract.mjs") continue;
   // Skip the plan document (historical, not active)
   if (rel === "linxi_codebase_reorganization_execution_plan.md") continue;
 

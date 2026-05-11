@@ -39,6 +39,7 @@ const capabilityRoots = [
   "src/service/capabilities/tools/scheduler-tools.mjs",
   "src/service/capabilities/tools/file-read-tools.mjs",
   "src/service/capabilities/tools/email-tools.mjs",
+  "src/service/capabilities/tools/vision-analyze.mjs",
   "src/service/capabilities/tools/open-with-default-handler.mjs",
   "src/service/capabilities/tools/file-manifest-helpers.mjs",
 ];

@@ -122,7 +122,9 @@ function buildAttachedAllowlist(ctx) {
 // just because the resolver routed `vision` to it. The tool refuses
 // rather than auto-falling-back; multi_modal still performs the
 // fallback dance for users who rely on legacy direct vision routing.
-async function callVisionProvider({ provider, prompt, images, signal }) {
+async function callVisionProvider({ provider, prompt, images, signal }, clients = {}) {
+  const callAnthropicVisionImpl = clients.callAnthropicVision ?? callAnthropicVision;
+  const callOpenAIVisionImpl = clients.callOpenAIVision ?? callOpenAIVision;
   if (!provider) {
     throw new Error("No Vision-capable provider configured. Open Console → Settings → Routing → Vision and pick a provider that supports images (GPT-4o, Gemini, Qwen-VL, Claude vision, 豆包, GLM-4V, Pixtral …).");
   }
@@ -143,7 +145,7 @@ async function callVisionProvider({ provider, prompt, images, signal }) {
     throw new Error(`vision_analyze does not yet support Ollama (${provider.providerName ?? provider.id}). The OpenAI-compat helper would post to the wrong path; needs a dedicated /api/chat route. For now, route Vision to an Anthropic / OpenAI-compatible vision provider.`);
   }
   if (provider.id === "anthropic" || provider.kind === "anthropic") {
-    return callAnthropicVision({
+    return callAnthropicVisionImpl({
       apiKey: provider.apiKey,
       baseUrl: provider.baseUrl,
       model: provider.model,
@@ -152,7 +154,7 @@ async function callVisionProvider({ provider, prompt, images, signal }) {
       signal
     });
   }
-  return callOpenAIVision({
+  return callOpenAIVisionImpl({
     apiKey: provider.apiKey,
     baseUrl: provider.baseUrl,
     model: provider.model,

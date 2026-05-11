@@ -6,8 +6,8 @@ import { VISION_ANALYZE_TOOL, __test } from "../src/service/capabilities/tools/v
 // CAP-1 vision-analyze runtime rejection-path preflight.
 // Uses the test seam (__test) to verify security allowlist and rejection
 // paths without making real provider calls.
-// This is necessary but not sufficient for the physical move: provider stubbing
-// for the full successful execute() flow is still required.
+// The successful execute() path uses ctx._testSeam; provider branch selection
+// is verified through __test.callVisionProvider with injected vision clients.
 
 const { buildAttachedAllowlist, collectGeneratedImageArtifacts } = __test;
 
@@ -112,7 +112,7 @@ const { callVisionProvider } = __test;
 {
   try {
     await callVisionProvider({ provider: null, prompt: "test", images: [], signal: null });
-    fail("callVisionProvider must throw when provider is null");
+    assert.fail("callVisionProvider must throw when provider is null");
   } catch (e) {
     assert(e.message.includes("No Vision-capable provider configured"),
       "no-provider error must be informative");
@@ -123,7 +123,7 @@ const { callVisionProvider } = __test;
 {
   try {
     await callVisionProvider({ provider: { kind: "code_cli", id: "test-cli", providerName: "TestCLI" }, prompt: "t", images: [], signal: null });
-    fail("callVisionProvider must refuse code_cli");
+    assert.fail("callVisionProvider must refuse code_cli");
   } catch (e) {
     assert(e.message.includes("code_cli"),
       "code_cli refusal must mention code_cli");
@@ -134,7 +134,7 @@ const { callVisionProvider } = __test;
 {
   try {
     await callVisionProvider({ provider: { kind: "openai", id: "test", supportsVision: false, providerName: "NoVision" }, prompt: "t", images: [], signal: null });
-    fail("callVisionProvider must refuse supportsVision:false");
+    assert.fail("callVisionProvider must refuse supportsVision:false");
   } catch (e) {
     assert(e.message.includes("supportsVision"),
       "supportsVision:false refusal must mention supportsVision");
@@ -145,14 +145,65 @@ const { callVisionProvider } = __test;
 {
   try {
     await callVisionProvider({ provider: { kind: "ollama", id: "ollama-test", providerName: "OllamaTest" }, prompt: "t", images: [], signal: null });
-    fail("callVisionProvider must refuse ollama");
+    assert.fail("callVisionProvider must refuse ollama");
   } catch (e) {
     assert(e.message.includes("Ollama"),
       "ollama refusal must mention Ollama");
   }
 }
 
-// ── 12. Successful provider path (stubbed via ctx._testSeam) ──
+// ── 12-13. Provider branch selection (injected clients, no network) ──
+{
+  let anthropicCalls = 0;
+  let openAiCalls = 0;
+  const result = await callVisionProvider({
+    provider: { id: "anthropic", kind: "anthropic", providerName: "Anthropic", model: "claude-test" },
+    prompt: "describe",
+    images: [{ mimeType: "image/png", data: "stub" }],
+    signal: null
+  }, {
+    callAnthropicVision: async ({ providerName, model, images }) => {
+      anthropicCalls += 1;
+      assert.equal(model, "claude-test", "Anthropic branch must pass model");
+      assert.equal(images.length, 1, "Anthropic branch must pass images");
+      return `anthropic ok ${providerName ?? ""}`.trim();
+    },
+    callOpenAIVision: async () => {
+      openAiCalls += 1;
+      throw new Error("OpenAI branch must not be used for Anthropic provider");
+    }
+  });
+  assert.equal(result, "anthropic ok", "Anthropic branch must return injected client result");
+  assert.equal(anthropicCalls, 1, "Anthropic branch must call Anthropic client once");
+  assert.equal(openAiCalls, 0, "Anthropic branch must not call OpenAI client");
+}
+
+{
+  let anthropicCalls = 0;
+  let openAiCalls = 0;
+  const result = await callVisionProvider({
+    provider: { id: "openai-compatible", kind: "openai", providerName: "OpenAICompat", model: "gpt-vision-test" },
+    prompt: "describe",
+    images: [{ mimeType: "image/png", data: "stub" }],
+    signal: null
+  }, {
+    callAnthropicVision: async () => {
+      anthropicCalls += 1;
+      throw new Error("Anthropic branch must not be used for OpenAI-compatible provider");
+    },
+    callOpenAIVision: async ({ model, images }) => {
+      openAiCalls += 1;
+      assert.equal(model, "gpt-vision-test", "OpenAI branch must pass model");
+      assert.equal(images.length, 1, "OpenAI branch must pass images");
+      return "openai ok";
+    }
+  });
+  assert.equal(result, "openai ok", "OpenAI branch must return injected client result");
+  assert.equal(openAiCalls, 1, "OpenAI branch must call OpenAI client once");
+  assert.equal(anthropicCalls, 0, "OpenAI branch must not call Anthropic client");
+}
+
+// ── 14. Successful execute path (stubbed via ctx._testSeam) ──
 {
   const ctx = {
     task: {
@@ -193,5 +244,5 @@ const { callVisionProvider } = __test;
 }
 
 if (!process.exitCode) {
-  console.log("[vision-analyze-runtime] security allowlist, rejection paths, provider gates, and stubbed success path verified");
+  console.log("[vision-analyze-runtime] security allowlist, rejection paths, provider gates, provider branch selection, and stubbed success path verified");
 }
