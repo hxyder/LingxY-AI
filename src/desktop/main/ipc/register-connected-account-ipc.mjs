@@ -1,4 +1,4 @@
-import { normalizePlainObject } from "../desktop-payload-normalizers.mjs";
+import { normalizePlainObject } from "../../tray/desktop-payload-normalizers.mjs";
 
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";

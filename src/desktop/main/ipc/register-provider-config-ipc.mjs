@@ -1,4 +1,4 @@
-import { normalizePlainObject } from "../desktop-payload-normalizers.mjs";
+import { normalizePlainObject } from "../../tray/desktop-payload-normalizers.mjs";
 
 function normalizeProviderConfigPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};

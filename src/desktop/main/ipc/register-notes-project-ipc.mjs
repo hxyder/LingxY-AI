@@ -1,4 +1,4 @@
-import { normalizePlainObject } from "../desktop-payload-normalizers.mjs";
+import { normalizePlainObject } from "../../tray/desktop-payload-normalizers.mjs";
 
 function normalizeNotesSavePayload(payload = {}) {
   if (Array.isArray(payload)) return payload;

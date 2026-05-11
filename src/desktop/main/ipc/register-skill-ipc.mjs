@@ -1,4 +1,4 @@
-import { normalizePlainObject } from "../desktop-payload-normalizers.mjs";
+import { normalizePlainObject } from "../../tray/desktop-payload-normalizers.mjs";
 
 function normalizeSkillRegistryPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};

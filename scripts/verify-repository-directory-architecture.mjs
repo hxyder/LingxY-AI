@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -101,6 +101,20 @@ assert(desktopDoc.includes("Current Layout") && desktopDoc.includes("Target Layo
   "desktop layout inventory must have current and target layouts");
 assert(desktopDoc.includes("Contracts That Must Not Change"),
   "desktop layout inventory must document contracts that must not change");
+
+// REPO-1.2 guard: every IPC module must be dynamically importable so
+// broken relative imports fail here instead of at Electron GUI startup.
+for (const name of ipcModules) {
+  try {
+    await import(pathToFileURL(path.join(ipcDir, name)).href);
+  } catch (error) {
+    if (error?.code === "ERR_MODULE_NOT_FOUND") {
+      fail(`IPC module import broken: ${name} — ${error.message}`);
+    }
+    // Runtime errors from module evaluation (missing electron APIs etc.)
+    // are expected; only ERR_MODULE_NOT_FOUND means a broken path.
+  }
+}
 
 if (!process.exitCode) {
   console.log("[repo-arch] repository directory architecture verified");
