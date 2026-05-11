@@ -67,7 +67,7 @@ apps/desktop/
 3. **REPO-1.2** ✅ IPC modules moved from `tray/ipc/` → `main/ipc/`
 4. **REPO-1.3** ✅ 6 shell helpers moved from `tray/` → `shell/`
 5. **REPO-1.4** ✅ 4 renderer shared clients classified/verified (no path change)
-6. **REPO-1.5** — deferred: reorganize renderer sub-windows (HTML script references make this high-risk; classify + document current layout instead)
+6. **REPO-1.5** — deferred: reorganize renderer sub-windows (5 attempts; `console_stream_delta_load` fails in Electron renderer process due to file:// ESM resolution differences from Node.js main process; requires Electron debugging)
 7. **REPO-1.6** — deferred: final cleanup when all moves are complete
 
 **Each sub-phase follows the same pattern:**
