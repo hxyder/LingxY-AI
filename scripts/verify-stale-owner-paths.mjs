@@ -88,6 +88,8 @@ for (const file of allFiles) {
   if (rel === "scripts/verify-stale-owner-paths.mjs") continue;
   // Skip repo-directory verifier: it intentionally owns old-path guard strings.
   if (rel === "scripts/verify-repository-directory-architecture.mjs") continue;
+  // Skip tool-registry verifier: CAP-1 closure intentionally checks old paths
+  if (rel === "scripts/verify-tool-registry-snapshot.mjs") continue;
   // Skip the plan document (historical, not active)
   if (rel === "linxi_codebase_reorganization_execution_plan.md") continue;
 

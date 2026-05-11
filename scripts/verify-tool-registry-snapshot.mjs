@@ -228,6 +228,29 @@ for (const tool of ["STAT_FILE_TOOL", "VERIFY_FILE_EXISTS_TOOL", "LIST_FILES_TOO
 assert(indexSrc.includes("from \"../../capabilities/tools/file-read-tools.mjs\""),
   "index.mjs must import file-read-tools.mjs from capabilities/tools/");
 
+// CAP-1 closure: moved families must NOT exist at old action_tools/tools/ paths
+const cap1MovedPaths = [
+  "src/service/action_tools/tools/browser-web-tools.mjs",
+  "src/service/action_tools/tools/os-app-tools.mjs",
+  "src/service/action_tools/tools/scheduler-tools.mjs",
+  "src/service/action_tools/tools/file-read-tools.mjs",
+  "src/service/action_tools/tools/email-tools.mjs",
+  "src/service/action_tools/tools/file-manifest-helpers.mjs",
+  "src/service/action_tools/tools/open-with-default-handler.mjs",
+];
+for (const oldPath of cap1MovedPaths) {
+  assert(!existsSync(path.join(root, oldPath)),
+    `CAP-1 moved file must not exist at old path: ${oldPath}`);
+}
+// Remaining old-owner files are intentionally deferred:
+//   index.mjs — aggregator (must stay as compatibility barrel)
+//   memory-tools.mjs — session/memory boundary (later phase)
+//   vision-analyze.mjs — provider boundary (next high-risk candidate)
+//   skill-install-tools.mjs — security/approval boundary (later phase)
+//   document-renderer.mjs — artifact-producing (later phase)
+//   mermaid-assets.mjs — diagram rendering (later phase)
+//   svg-sanitize.mjs — SVG security (later phase)
+
 // Deferred tools still in index.mjs must still be present
 for (const tool of ["LAUNCH_APP_TOOL", "TAKE_SCREENSHOT_TOOL"]) {
   assert(indexSrc.includes(`export const ${tool}`),
