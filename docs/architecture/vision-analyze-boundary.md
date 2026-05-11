@@ -54,7 +54,11 @@ real runtime behavior. Moving it requires:
 2. Provider boundary verification that Vision API calls still work from new path
 3. Runtime test that `vision_analyze` tool executes correctly
 
-Prefer moving this after:
-- CAP-2 schemas/registry migration (reduces import surface)
+Prefer moving this only after the vision-specific gates exist:
 - Vision tool runtime test coverage exists
 - Provider boundary verifier covers multi-modal executor paths
+- The owner map and stale old-path guards are updated in the same phase
+
+Do not use CAP-2 schemas/registry migration as a prerequisite or shortcut for
+this move. CAP-2 remains blocked until CAP-1 closure and high-risk tool
+classification are fully reviewed.

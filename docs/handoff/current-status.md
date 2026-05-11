@@ -1448,3 +1448,41 @@ Next instruction for DeepSeek:
   - add/confirm verifier coverage that CAP-1 completion means "moved low-risk/helper families have no old path", not "action_tools/tools is empty";
   - choose exactly one next high-risk family only after its boundary, tests, and no-touch areas are documented.
 - Recommended next high-risk candidate order: `vision-analyze.mjs` provider boundary, then `memory-tools.mjs` session/memory boundary, then `skill-install-tools.mjs` security/approval boundary. Artifact/render helpers should wait for an artifact-specific phase.
+
+## Codex Review: CAP-1 Closure + Vision Boundary Deferral
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `34ce89b` - `chore: CAP-1 closure — physical-path guard + deferred file classification`.
+- `2d89082` - `docs: CAP-1 vision-analyze boundary assessment (deferred)`.
+
+Accepted:
+- `34ce89b` correctly adds CAP-1 physical old-path assertions to `scripts/verify-tool-registry-snapshot.mjs`; the seven moved low-risk/helper modules cannot silently reappear under `src/service/action_tools/tools/`.
+- The stale-owner verifier skip for `scripts/verify-tool-registry-snapshot.mjs` is acceptable because that verifier intentionally owns old-path guard strings.
+- `2d89082` correctly defers `vision-analyze.mjs` instead of moving it without a runtime/provider test. The doc captures its provider resolver and multi-modal executor dependencies.
+
+Issue found and fixed by Codex:
+- `scripts/verify-tool-registry-snapshot.mjs` described `index.mjs` as a compatibility barrel. That is inaccurate: it is the live aggregator and still owns remaining inline high-risk tools. Codex corrected the comment.
+- `docs/architecture/vision-analyze-boundary.md` said to prefer moving vision after CAP-2 schemas/registry. That conflicts with current execution discipline: CAP-2 must not start yet, and vision needs its own provider/runtime gates. Codex changed the doc to require vision-specific test/verifier coverage instead of using CAP-2 as a prerequisite or shortcut.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+
+Decision:
+- Accept `34ce89b` and `2d89082` after Codex wording corrections.
+- CAP-1 closure is now verifier-backed for moved low-risk/helper paths.
+- `vision-analyze.mjs` remains deferred. Do not move it until a focused runtime/provider test exists.
+
+Next instruction for DeepSeek:
+- Commit Codex's wording corrections first.
+- Do not open CAP-2.
+- Next task should be "CAP-1 vision-analyze preflight", not a physical move:
+  - add a focused verifier/test that exercises `VISION_ANALYZE_TOOL.execute` with stubbed provider resolver and multi-modal vision calls;
+  - update `scripts/verify-provider-boundary.mjs` so it documents the current old owner and the future capability owner expectation;
+  - document no-touch contracts: tool id, schema key, provider ids, image loading semantics, artifact/source attachment semantics;
+  - only after that test is green should a later commit move `vision-analyze.mjs` to `src/service/capabilities/tools/` and delete the old path.

@@ -243,7 +243,7 @@ for (const oldPath of cap1MovedPaths) {
     `CAP-1 moved file must not exist at old path: ${oldPath}`);
 }
 // Remaining old-owner files are intentionally deferred:
-//   index.mjs — aggregator (must stay as compatibility barrel)
+//   index.mjs — live aggregator and remaining inline-tool owner
 //   memory-tools.mjs — session/memory boundary (later phase)
 //   vision-analyze.mjs — provider boundary (next high-risk candidate)
 //   skill-install-tools.mjs — security/approval boundary (later phase)
