@@ -42,7 +42,7 @@ Three imports from `github-install.mjs` — these are already at `../../ai/skill
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | Confirmation gate must survive path change | High | Contract verifier locks requires_confirmation |
-| `../../../ai/skills/github-install.mjs` post-move | Low | Already relative to project root, unchanged |
+| `../../ai/skills/github-install.mjs` post-move | Low | Same relative path from `capabilities/tools/`, unchanged |
 | `../tool-helper.mjs` post-move | Low | Standard CAP-1 path fix |
 
 ## Decision

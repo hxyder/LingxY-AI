@@ -1641,3 +1641,59 @@ Next instruction for DeepSeek:
   inventory dependencies, no-touch contracts, and a focused verifier with
   stubbed runtime/store/session surfaces.
 - Do not move `memory-tools.mjs` in the same commit as the preflight.
+
+## Codex Review: CAP-1 Memory + Skill Install Static Preflights
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `2c06ff5` - `docs: CAP-1 memory-tools contract preflight (no physical move)`.
+- `c572302` - `docs: CAP-1 skill-install-tools contract preflight (no physical move)`.
+
+Accepted:
+- `95bd07e` correctly committed the prior Codex vision-analyze cleanup before
+  new preflight work started.
+- `2c06ff5` adds a static boundary document and verifier for
+  `src/service/action_tools/tools/memory-tools.mjs`; it does not move or edit
+  product source.
+- `c572302` adds a static boundary document and verifier for
+  `src/service/action_tools/tools/skill-install-tools.mjs`; it does not move or
+  edit product source.
+- Both new verifiers are wired into `scripts/check-manifest.mjs`, so
+  `npm run check:fast` now runs 75 commands.
+
+Issues found and fixed by Codex:
+- `docs/architecture/memory-tools-boundary.md` listed execution follow-up for
+  only three of the four memory tools. Codex added
+  `list_conversation_artifacts.execute` with stubbed store/artifact rows.
+- `docs/architecture/skill-install-tools-boundary.md` had an incorrect
+  post-move `github-install.mjs` relative-path note. Codex corrected it to
+  `../../ai/skills/github-install.mjs` from `capabilities/tools/`.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-memory-tools-contract.mjs`: passed.
+- `node --check scripts/verify-skill-install-tools-contract.mjs`: passed.
+- `node scripts/verify-memory-tools-contract.mjs`: passed.
+- `node scripts/verify-skill-install-tools-contract.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `npm run check:fast`: passed, 75/75.
+
+Decision:
+- Accept `2c06ff5` and `c572302` after Codex doc corrections as static contract
+  preflights only.
+- These commits are not permission to physically move either family.
+- The `skill-install-tools.mjs` preflight may remain as inventory, but its
+  physical move is blocked until its approval/security runtime gates exist.
+
+Next instruction for DeepSeek:
+- Commit Codex's two boundary-doc corrections first.
+- Next work must be the `memory-tools.mjs` runtime verifier, not another static
+  inventory family and not a physical move.
+- The memory runtime verifier must execute all four tools with stubbed
+  `runtime.store` and `runtime.platform.embeddingStore` surfaces:
+  `recall_memory`, `list_recent_tasks`, `get_task_detail`, and
+  `list_conversation_artifacts`.
+- Only after that verifier is green may DeepSeek prepare a separate
+  `memory-tools.mjs` physical move commit.

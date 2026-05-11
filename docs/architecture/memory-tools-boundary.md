@@ -48,3 +48,4 @@ still requires:
 2. `recall_memory.execute` with stubbed runtime store
 3. `list_recent_tasks.execute` with stubbed store
 4. `get_task_detail.execute` with stubbed store
+5. `list_conversation_artifacts.execute` with stubbed store/artifact rows
