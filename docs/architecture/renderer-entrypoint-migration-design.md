@@ -167,10 +167,44 @@ must preserve them and add the 16 moved console-*.mjs files.
 | `renderer/console-task-event-stream.mjs` | `renderer/console/task-event-stream.mjs` |
 | `renderer/console-task-list.mjs` | `renderer/console/task-list.mjs` |
 | `renderer/console-task-timeline.mjs` | `renderer/console/task-timeline.mjs` |
-| `renderer/preview-window.js` | `renderer/preview/preview-window.js` |
-| `renderer/preview-window.html` | `renderer/preview/preview-window.html` |
+
+Preview window files (`preview-window.js`, `preview-window.html`) belong to
+REPO-1.5c (preview window phase), not the console phase. They stay at their
+current flat paths until that phase.
 
 Verifier coverage required for each old path → new path → compatibility barrel → barrel removal.
+
+## Pre-Move Cross-Reference Scan (REPO-1.5a)
+
+Before any file is moved, scan every file to be renamed for internal imports
+that reference the OLD name pattern. Example: `task-list.mjs` (renamed from
+`console-task-list.mjs`) still imports from `./console-task-detail.mjs` instead
+of the new `./task-detail.mjs`. This must be fixed during the move.
+
+```bash
+# Run BEFORE creating barrels, while old files are still at flat paths
+rg "from \"\./console-" src/desktop/renderer/console/*.mjs
+# Every hit must be updated to the new name in the same PR.
+```
+
+## Barrel Existence During Migration Window
+
+During the migration, every old flat path must remain a re-export-only
+compatibility barrel. Verifier check during the window:
+
+```javascript
+// Verify barrels exist for every file in the old-to-new mapping
+for (const [oldName, newPath] of consoleFileMapping) {
+  const barrelPath = path.join(rendererDir, oldName);
+  assert(fs.existsSync(barrelPath), `barrel missing: ${oldName}`);
+  const content = fs.readFileSync(barrelPath, 'utf8');
+  assert(content.includes('export * from'), `${oldName} is not a barrel`);
+  assert(!content.includes('async function'), `${oldName} contains logic`);
+}
+```
+
+Remove barrels only after all imports, verifiers, and GUI smoke reference the
+new paths.
 
 ## Pre-Move Checklist (per sub-phase)
 
