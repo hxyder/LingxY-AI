@@ -2542,3 +2542,48 @@ Decision:
 - CAP-3 physical move is ready to commit.
 - Next valid direction after CAP-3 commit is CAP-4 planning/preflight, not a
   broad move of skills/MCP/connectors/providers without per-family boundaries.
+
+## Codex Review: CAP-4A Skills Surface Static Preflight
+
+Date: 2026-05-11
+
+Scope:
+- Added `docs/architecture/skill-surface-boundary.md`.
+- Added `scripts/verify-skill-surface-contract.mjs` and wired it into full and
+  fast check manifests.
+- Did not move, rename, or refactor product source files.
+- Did not change tool ids, IPC channels, HTTP routes, artifact kinds, provider
+  ids, storage schema, or runtime behavior.
+
+Preflight locked:
+- Current skill runtime owner remains `src/service/ai/skills/` until the
+  physical CAP-4A move.
+- Public skill exports remain available from builtin, discovery,
+  github-install, install-state, lifecycle, registry-validation, and registry
+  modules.
+- Skill owner files do not import desktop, Electron, renderer, provider, MCP, or
+  connector implementation modules.
+- Desktop UI/view-model files do not import skill runtime internals.
+- Skill install action tools still delegate to `stageSkillFromGitHub`,
+  `finalizeStagedInstall`, and `discardStagedInstall`.
+- Editable skill helpers still delegate to lifecycle helpers.
+- `/ai/skills` remains a service HTTP route contract.
+- User-installed skill data must not live under `src/`.
+
+Verification run by Codex:
+- `node --check scripts/verify-skill-surface-contract.mjs`: passed.
+- `node scripts/verify-skill-surface-contract.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 87/87.
+
+Decision:
+- CAP-4A preflight is ready to commit.
+- Next valid step after committing this preflight is the CAP-4A physical move:
+  - create `src/service/capabilities/skills/`;
+  - move all files from `src/service/ai/skills/` into that owner;
+  - update every active import in product code, tests, scripts, and docs;
+  - update `verify-skill-surface-contract.mjs`, `verify-capability-roots.mjs`,
+    `verify-structure.mjs`, `verify-stale-owner-paths.mjs`, and inventories;
+  - prove `src/service/ai/skills/` is gone or contains no reachable
+    implementation files;
+  - do not leave compatibility barrels once callers are migrated.
