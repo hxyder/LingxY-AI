@@ -8,16 +8,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// CAP-1 svg-sanitize security preflight verifier.
-// This is a static ownership and no-touch contract check only. It intentionally
-// does not move svg-sanitize.mjs; runtime coverage lives in
+// CAP-1 svg-sanitize security ownership verifier.
+// Locks the post-move owner and no-touch contracts. Runtime coverage lives in
 // verify-svg-sanitize-runtime.mjs.
 
-const currentPath = "src/service/action_tools/tools/svg-sanitize.mjs";
-const futurePath = "src/service/capabilities/tools/svg-sanitize.mjs";
+const currentPath = "src/service/capabilities/tools/svg-sanitize.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
-assert(!existsSync(path.join(root, futurePath)),
-  "svg-sanitize.mjs must not be physically moved during preflight");
+assert(!existsSync(path.join(root, "src/service/action_tools/tools/svg-sanitize.mjs")),
+  "old action_tools svg-sanitize owner must not exist after CAP-1 move");
 
 const sanitizerSrc = read(currentPath);
 assert(sanitizerSrc.includes("export function sanitizeSvgMarkup"),
@@ -44,27 +42,26 @@ for (const required of [
 }
 
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
-assert(indexSrc.includes("from \"./svg-sanitize.mjs\""),
-  "index.mjs must import sanitizer from current owner during preflight");
+assert(indexSrc.includes("from \"../../capabilities/tools/svg-sanitize.mjs\""),
+  "index.mjs must import sanitizer from capabilities/tools/");
 assert(indexSrc.includes("RENDER_SVG_TOOL"),
   "index.mjs must still own render_svg until its own tool-family extraction");
 
 const docRendererSrc = read("src/service/capabilities/tools/document-renderer.mjs");
-assert(docRendererSrc.includes("../../action_tools/tools/svg-sanitize.mjs"),
-  "document-renderer must import sanitizer from current owner during preflight");
+assert(docRendererSrc.includes("from \"./svg-sanitize.mjs\""),
+  "document-renderer must import sanitizer from the moved capability owner");
 
 const validatorSrc = read("src/service/executors/tool_using/tool-call-validator.mjs");
-assert(validatorSrc.includes("../../action_tools/tools/svg-sanitize.mjs"),
-  "tool-call-validator must import sanitizer from current owner during preflight");
+assert(validatorSrc.includes("../../capabilities/tools/svg-sanitize.mjs"),
+  "tool-call-validator must import sanitizer from capabilities/tools/");
 
 const boundaryPath = "docs/architecture/svg-sanitize-boundary.md";
 assert(existsSync(path.join(root, boundaryPath)), "svg-sanitize boundary doc missing");
 const boundaryDoc = read(boundaryPath);
 for (const requiredText of [
   "SVG Sanitize Boundary",
-  "`src/service/action_tools/tools/svg-sanitize.mjs`",
-  "preflight only",
-  "Do not physically move",
+  "`src/service/capabilities/tools/svg-sanitize.mjs`",
+  "moved to",
   "Security Boundary",
   "No-Touch Areas",
   "render_svg"
@@ -74,5 +71,5 @@ for (const requiredText of [
 }
 
 if (!process.exitCode) {
-  console.log("[svg-sanitize] contract preflight verified");
+  console.log("[svg-sanitize] contract verified");
 }

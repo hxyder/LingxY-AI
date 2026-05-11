@@ -3,7 +3,7 @@ import {
   evaluateDocumentOutlineQuality,
   formatDocumentQualityError
 } from "../../core/artifact-quality.mjs";
-import { isSafeSvgMarkup } from "../../action_tools/tools/svg-sanitize.mjs";
+import { isSafeSvgMarkup } from "../../capabilities/tools/svg-sanitize.mjs";
 
 function isString(value) {
   return typeof value === "string";

@@ -21,7 +21,7 @@ import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TO
 import { VISION_ANALYZE_TOOL } from "../../capabilities/tools/vision-analyze.mjs";
 import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "../../capabilities/tools/file-manifest-helpers.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
-import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
+import { sanitizeSvgMarkup } from "../../capabilities/tools/svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
 import {
   applyCapabilityInterviewAnswer,

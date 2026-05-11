@@ -2151,3 +2151,59 @@ Decision:
 - After this commit, the next valid step is a separate physical move of only
   `svg-sanitize.mjs`.
 - Do not move `mermaid-assets.mjs` in the same commit.
+
+## Codex Progress: CAP-1 SVG Sanitize Physical Move
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Moved `src/service/action_tools/tools/svg-sanitize.mjs` to
+  `src/service/capabilities/tools/svg-sanitize.mjs`.
+- Updated imports in `src/service/action_tools/tools/index.mjs`,
+  `src/service/capabilities/tools/document-renderer.mjs`,
+  `src/service/executors/tool_using/tool-call-validator.mjs`,
+  `tests/behavior/svg-artifact-components.test.mjs`, and
+  `scripts/verify-svg-sanitize-runtime.mjs`.
+- Updated `scripts/verify-svg-sanitize-contract.mjs` to lock moved owner and
+  old-path absence.
+- Updated structure, capability roots, tool-registry, and stale-owner verifiers.
+- Updated architecture inventories and SVG/document boundary docs.
+
+Migration result:
+- Current owner: `src/service/capabilities/tools/svg-sanitize.mjs`.
+- Old owner: `src/service/action_tools/tools/svg-sanitize.mjs` is absent.
+- No compatibility barrel remains.
+- `mermaid-assets.mjs` remains the only old-owner render helper in
+  `src/service/action_tools/tools/`.
+- No tool ids, artifact kinds, IPC channels, HTTP routes, storage schema,
+  provider ids, approval behavior, or public registry ids were changed.
+
+Verification run by Codex so far:
+- `node --check src/service/capabilities/tools/svg-sanitize.mjs`: passed.
+- `node --check src/service/action_tools/tools/index.mjs`: passed.
+- `node --check src/service/capabilities/tools/document-renderer.mjs`: passed.
+- `node --check src/service/executors/tool_using/tool-call-validator.mjs`: passed.
+- `node scripts/verify-svg-sanitize-contract.mjs`: passed.
+- `node scripts/verify-svg-sanitize-runtime.mjs`: passed.
+- `node scripts/verify-document-renderer-contract.mjs`: passed.
+- `node scripts/verify-document-renderer-runtime.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node --test tests/behavior/svg-artifact-components.test.mjs tests/behavior/tool-call-validator-document.test.mjs`: passed, 16/16.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-artifact-generation-invariant.mjs`: passed, 59/59.
+- `node scripts/verify-artifact-surface-snapshot.mjs`: passed.
+- `node scripts/verify-artifact-sandbox-invariants.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 81/81.
+- `npm run verify:desktop-gui-smoke`: first run timed out waiting for the GUI
+  smoke result after 30000ms; immediate rerun passed, 44/44.
+
+Decision:
+- SVG sanitizer physical move is complete after full validation.
+- Do not open CAP-2 yet.
+- Next candidate after this commit should be `mermaid-assets.mjs` static/runtime
+  render-asset preflight, then a separate physical move if green.

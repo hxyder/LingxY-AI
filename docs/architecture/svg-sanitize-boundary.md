@@ -1,11 +1,12 @@
 # SVG Sanitize Boundary
 
-CAP-1 high-risk security-family migration. Status: 2026-05-11, preflight only.
-`svg-sanitize.mjs` has not been physically moved.
+CAP-1 high-risk security-family migration. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/svg-sanitize.mjs` after static and runtime
+preflight verification.
 
 ## Current State
 
-- File: `src/service/action_tools/tools/svg-sanitize.mjs`
+- File: `src/service/capabilities/tools/svg-sanitize.mjs`
 - Public API: `sanitizeSvgMarkup`, `isSafeSvgMarkup`
 - Callers:
   - `src/service/action_tools/tools/index.mjs` for `render_svg` and document
@@ -17,9 +18,9 @@ CAP-1 high-risk security-family migration. Status: 2026-05-11, preflight only.
 
 ## Current Verifier Coverage
 
-- `scripts/verify-svg-sanitize-contract.mjs` locks the current owner, no-move
-  preflight state, public exports, import-free pure helper shape, known callers,
-  and this boundary document.
+- `scripts/verify-svg-sanitize-contract.mjs` locks the moved owner, old-path
+  removal, public exports, import-free pure helper shape, known callers, and
+  this boundary document.
 - `scripts/verify-svg-sanitize-runtime.mjs` executes the sanitizer, `render_svg`,
   and document preview SVG paths. It proves forbidden element removal,
   self-closing forbidden element removal, event handler removal, javascript URL
@@ -53,7 +54,6 @@ It currently removes:
   public action-tool registry ids.
 - Do not change `render_svg` output path, `artifactPaths`, or
   `image/svg+xml` metadata.
-- Do not physically move `svg-sanitize.mjs` during this preflight.
 - Do not add compatibility barrels or parallel old/new sanitizer
   implementations.
 - Do not move `mermaid-assets.mjs` in the same phase.
@@ -66,19 +66,16 @@ It currently removes:
 | Document preview embeds unsafe SVG | High | Runtime verifier checks document preview SVG figure output |
 | render_svg writes unsafe standalone SVG | High | Runtime verifier executes `RENDER_SVG_TOOL` and inspects output |
 | Validator diverges from renderer | Medium | Contract verifier locks validator import and runtime verifier covers invalid rejection |
-| Physical move creates stale old-owner assertions | Medium | Preflight forbids move until static/runtime coverage is committed |
+| Physical move creates stale old-owner assertions | Medium | Contract, registry, roots, and stale-owner verifiers lock the moved owner |
 
 ## Decision
 
-Preflight only. The current owner remains
-`src/service/action_tools/tools/svg-sanitize.mjs` until static and runtime
-coverage have been committed and reviewed. A later physical move may move only
-this file as a separate commit, after updating imports, inventories, contract
-verifiers, runtime verifiers, moved-path guards, and stale old-owner text.
+Moved from the old action-tools owner to
+`src/service/capabilities/tools/svg-sanitize.mjs` in CAP-1 as a focused
+security helper move. The old owner path must not return as a compatibility
+barrel or parallel implementation.
 
 Remaining follow-up:
-- Prepare the physical `svg-sanitize.mjs` move only after this preflight is
-  committed and green.
 - `mermaid-assets.mjs` remains a separate high-risk render-asset family and
   must not be folded into the sanitizer move.
 - CAP-2 schemas/registry migration remains blocked until remaining high-risk

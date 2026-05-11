@@ -9,7 +9,7 @@ import {
   RENDER_SVG_TOOL
 } from "../../src/service/action_tools/tools/index.mjs";
 import { renderDocumentPreviewHtml } from "../../src/service/capabilities/tools/document-renderer.mjs";
-import { sanitizeSvgMarkup } from "../../src/service/action_tools/tools/svg-sanitize.mjs";
+import { sanitizeSvgMarkup } from "../../src/service/capabilities/tools/svg-sanitize.mjs";
 
 const SAMPLE_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 120">
   <rect width="240" height="120" fill="#f8fafc"/>

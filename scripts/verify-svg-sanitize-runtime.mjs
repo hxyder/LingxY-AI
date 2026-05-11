@@ -10,7 +10,7 @@ import { renderDocumentPreviewHtml } from "../src/service/capabilities/tools/doc
 import {
   isSafeSvgMarkup,
   sanitizeSvgMarkup
-} from "../src/service/action_tools/tools/svg-sanitize.mjs";
+} from "../src/service/capabilities/tools/svg-sanitize.mjs";
 
 function svgFigure(html = "") {
   return html.match(/<figure class="doc-svg">[\s\S]*?<\/figure>/iu)?.[0] ?? "";

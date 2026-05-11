@@ -295,7 +295,7 @@ const requiredPaths = [
   "src/service/action_tools/registry.mjs",
   "src/service/action_tools/tools/index.mjs",
   "src/service/action_tools/tools/mermaid-assets.mjs",
-  "src/service/action_tools/tools/svg-sanitize.mjs",
+  "src/service/capabilities/tools/svg-sanitize.mjs",
   "src/service/core/file-submission.mjs",
   "src/service/store/artifact-store.mjs",
   "src/service/extractors/file-ingest.mjs",

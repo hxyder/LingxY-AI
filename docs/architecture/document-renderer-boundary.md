@@ -39,7 +39,7 @@ preflight verification.
 | `writeFile`, `mkdir` | `node:fs/promises` | Service-side artifact file writes |
 | `path` | `node:path` | Target and parent path handling |
 | `renderMermaidScriptTag` | `../../action_tools/tools/mermaid-assets.mjs` | Local Mermaid asset script, no CDN |
-| `sanitizeSvgMarkup` | `../../action_tools/tools/svg-sanitize.mjs` | Sanitizes embedded SVG components |
+| `sanitizeSvgMarkup` | `./svg-sanitize.mjs` | Sanitizes embedded SVG components |
 | `pptxgenjs` | dynamic import | PPTX rendering, lazy-loaded |
 | `docx` | dynamic import | DOCX rendering, lazy-loaded |
 | `exceljs` | dynamic import | XLSX rendering, lazy-loaded |
@@ -66,7 +66,7 @@ preflight verification.
 - Do not move PDF/HTML fallback ownership out of `generate_document`.
 - Do not add compatibility barrels or parallel old/new renderer
   implementations.
-- Do not move `mermaid-assets.mjs` or `svg-sanitize.mjs` in the same phase.
+- Do not move `mermaid-assets.mjs` in the same phase.
 
 ## Risks
 
@@ -86,8 +86,7 @@ artifact-renderer tool-family move. The old owner path must not return as a
 compatibility barrel or parallel implementation.
 
 Remaining follow-up:
-- `mermaid-assets.mjs` and `svg-sanitize.mjs` remain separate high-risk
-  render/security families and must not be folded into the document-renderer
-  move without their own boundary review.
+- `mermaid-assets.mjs` remains a separate high-risk render-asset family and
+  must not be folded into the document-renderer or sanitizer moves.
 - CAP-2 schemas/registry migration remains blocked until remaining high-risk
   tool families are classified and reviewed.
