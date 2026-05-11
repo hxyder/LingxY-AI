@@ -40,8 +40,8 @@ linxi/
 │       ├── templates/    # Prompt templates
 │       ├── utils/        # Shared service utilities
 │       └── https/        # HTTPS/HTTP server setup
-├── native-host/           # Native messaging host (Windows)
-├── scripts/              # Verifiers (69), checks, dev tooling, GUI smoke runner
+├── uca-native-host/       # Native messaging host (Windows)
+├── scripts/              # Verifiers, checks, dev tooling, GUI smoke runner
 ├── tests/                # Behavior tests
 ├── docs/                 # Architecture docs, inventories, handoff
 └── assets/               # Brand assets, icons

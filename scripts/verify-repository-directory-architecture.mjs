@@ -25,7 +25,7 @@ assert(doc.includes("Target Architecture"), "repo arch doc must have target layo
 assert(doc.includes("Migration Rules"), "repo arch doc must have migration rules");
 assert(doc.includes("Current Phase Status"), "repo arch doc must have phase status");
 
-// Documented current roots must exist
+// Documented current roots must exist (match actual repo paths)
 const currentRoots = [
   "src/desktop",
   "src/service",
@@ -33,10 +33,15 @@ const currentRoots = [
   "tests",
   "docs",
   "assets",
+  "uca-native-host",
 ];
 for (const rel of currentRoots) {
   assert(existsSync(path.join(root, rel)), `documented current root missing: ${rel}`);
 }
+// The doc must reference the actual native host path (not a fictional one)
+assert(doc.includes("uca-native-host"), "repo arch doc must use real native host root: uca-native-host");
+assert(!doc.includes("native-host/") || doc.includes("uca-native-host"),
+  "repo arch doc must not name a fictional native-host/ without the real uca-native-host/ path");
 
 // Target layout concepts are named in the doc
 for (const term of ["apps/", "native-host", "packages/", "capabilities/"]) {
