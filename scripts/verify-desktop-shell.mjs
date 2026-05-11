@@ -73,7 +73,7 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
 const desktopSettings = readFileSync(new URL("../src/desktop/tray/desktop-settings.mjs", import.meta.url), "utf8");
 const desktopWindowBounds = readFileSync(new URL("../src/desktop/tray/desktop-window-bounds.mjs", import.meta.url), "utf8");
-const desktopWindowLifecycle = readFileSync(new URL("../src/desktop/tray/desktop-window-lifecycle.mjs", import.meta.url), "utf8");
+const desktopWindowLifecycle = readFileSync(new URL("../src/desktop/shell/desktop-window-lifecycle.mjs", import.meta.url), "utf8");
 const ipcModuleDir = new URL("../src/desktop/main/ipc/", import.meta.url);
 const ipcModules = readdirSync(ipcModuleDir, { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))

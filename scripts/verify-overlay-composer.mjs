@@ -124,7 +124,7 @@ assert.equal(preload.includes("readTextFile"), true);
 assert.equal(preload.includes("writeClipboardText"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
-const desktopWindowLifecycle = await read("src/desktop/tray/desktop-window-lifecycle.mjs");
+const desktopWindowLifecycle = await read("src/desktop/shell/desktop-window-lifecycle.mjs");
 assert.equal(desktopWindowLifecycle.includes("did-finish-load"), true);
 assert.equal(desktopWindowLifecycle.includes("browserWindow.on(\"focus\""), true);
 assert.equal(desktopWindowLifecycle.includes("webContents.send(IPC_CHANNELS.shellReady"), true);

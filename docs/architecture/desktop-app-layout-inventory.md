@@ -7,15 +7,16 @@ Status: 2026-05-10. No physical moves yet; verifier-first only.
 
 ```
 src/desktop/
-├── tray/                        # Main process (composition root + helpers + IPC)
+├── tray/                        # Main process (composition root + remaining helpers)
 │   ├── electron-main.mjs        # Composition root (~1000 lines, -58%)
+│   └── ... (remaining helpers: settings, diagnostics, paths, dock, etc.)
+├── shell/                       # Extracted shell helpers (REPO-1.3)
 │   ├── desktop-window-lifecycle.mjs   # Phase 2B.42
 │   ├── desktop-window-actions.mjs     # Phase 2B.43
 │   ├── desktop-shortcut-router.mjs    # Phase 2B.44
 │   ├── desktop-link-browser-window.mjs # Phase 2B.45
 │   ├── desktop-preview-window-manager.mjs # Phase 2B.46
-│   ├── desktop-permission-handler.mjs # Phase 2B.48
-│   └── ... (30+ other helpers)
+│   └── desktop-permission-handler.mjs # Phase 2B.48
 ├── smoke/                       # Test-only GUI smoke (REPO-1.1)
 │   └── desktop-gui-smoke-runner.mjs   # Phase 2B.47
 ├── main/                        # Main process IPC modules (REPO-1.2)
@@ -53,14 +54,7 @@ apps/desktop/
 │   ├── dock/              # dock window
 │   ├── popup/             # popup card
 │   └── preview/           # preview window
-├── shell/                 ← src/desktop/tray/ shell helpers (7 extracted modules)
-│   ├── desktop-window-lifecycle.mjs
-│   ├── desktop-window-actions.mjs
-│   ├── desktop-shortcut-router.mjs
-│   ├── desktop-link-browser-window.mjs
-│   ├── desktop-preview-window-manager.mjs
-│   ├── desktop-permission-handler.mjs
-│   └── ... (other shell helpers)
+├── shell/                 # ✅ REPO-1.3 (moved from tray/)
 ├── smoke/                 # ✅ REPO-1.1 (moved from tray/)
 ├── shared/                ← src/desktop/shared/manifest.mjs
 └── assets/                ← src/desktop/assets/
@@ -71,7 +65,7 @@ apps/desktop/
 1. **REPO-1.0** ✅ inventory + strengthen verifier (current step)
 2. **REPO-1.1** ✅ smoke runner moved to `smoke/desktop-gui-smoke-runner.mjs`
 3. **REPO-1.2** ✅ IPC modules moved from `tray/ipc/` → `main/ipc/`
-4. **REPO-1.3** — move shell helpers: `tray/desktop-*.mjs` (7 files) → `shell/` (same pattern)
+4. **REPO-1.3** ✅ 6 shell helpers moved from `tray/` → `shell/`
 5. **REPO-1.4** — classify + verify renderer shared clients under current `renderer/shared/` path (no path change; verify ownership before REPO-1.5 feature-folder moves)
 6. **REPO-1.5** — reorganize renderer sub-windows into `renderer/console/`, `renderer/overlay/`, etc.
 7. **REPO-1.6** — final cleanup: remove any remaining compatibility barrels, update all imports

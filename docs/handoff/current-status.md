@@ -1150,3 +1150,52 @@ Verification rerun by Codex:
 Decision:
 - Accept `4ef8aef`.
 - Accept `b33d895` as a functional move, but do not declare REPO-1.1 complete until the two stale active-inventory assertions above are corrected and the repository-directory verifier blocks their return.
+
+## Codex Review: REPO-1.1 Cleanup + REPO-1.2 IPC Move
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `cb1d399` - `fix: remove stale smoke runner old-path references from inventory docs`.
+- `3bc7b8f` - `refactor: move 21 IPC modules from tray/ipc/ to main/ipc/ (REPO-1.2)`.
+
+Accepted:
+- `cb1d399` resolves the previous REPO-1.1 inventory blocker. The current desktop layout now lists `src/desktop/smoke/desktop-gui-smoke-runner.mjs`, the false smoke compatibility-barrel note is gone, and the repository verifier blocks the old smoke runner path in active inventory docs.
+- `3bc7b8f` correctly moves the 21 IPC module files to `src/desktop/main/ipc/`, removes the old `src/desktop/tray/ipc/` directory, and updates `electron-main.mjs` imports plus IPC inventory snapshots to the new owner path.
+- IPC contract counters still verify through `scripts/verify-ipc-contract-inventory.mjs`, and `npm run check:fast` still passes 70/70.
+
+Blocking issue:
+- REPO-1.2 is not functionally complete. `npm run verify:desktop-gui-smoke` fails at Electron startup with `ERR_MODULE_NOT_FOUND`.
+- Root cause: 9 moved IPC modules still import `normalizePlainObject` from `../desktop-payload-normalizers.mjs`, which now resolves to the non-existent `src/desktop/main/desktop-payload-normalizers.mjs` instead of the actual `src/desktop/tray/desktop-payload-normalizers.mjs`.
+- A direct ESM import-resolution probe fails for:
+  - `src/desktop/main/ipc/register-admin-ipc.mjs`
+  - `src/desktop/main/ipc/register-connected-account-ipc.mjs`
+  - `src/desktop/main/ipc/register-email-ipc.mjs`
+  - `src/desktop/main/ipc/register-notes-project-ipc.mjs`
+  - `src/desktop/main/ipc/register-provider-config-ipc.mjs`
+  - `src/desktop/main/ipc/register-runtime-config-ipc.mjs`
+  - `src/desktop/main/ipc/register-scheduler-ipc.mjs`
+  - `src/desktop/main/ipc/register-skill-ipc.mjs`
+  - `src/desktop/main/ipc/register-task-ipc.mjs`
+- Existing fast verifiers missed this because `node --check` does not resolve ESM imports and `verify-ipc-contract-inventory.mjs` scans text/counts instead of importing each IPC module.
+
+Required fix before REPO-1.2 can be accepted:
+- Fix the broken relative imports. The immediate mechanical fix is to point those 9 modules at `../../tray/desktop-payload-normalizers.mjs`; a cleaner follow-up would move pure payload normalizers to a stable shared/main helper location and update the verifier accordingly.
+- Add a verifier step that dynamically imports every `src/desktop/main/ipc/register-*.mjs` module, using `pathToFileURL(...)` on Windows, so broken relative imports fail without needing a full Electron GUI smoke run.
+- Rerun `npm run verify:desktop-gui-smoke`; this is the gate that currently fails and therefore blocks REPO-1.2 completion.
+
+Verification rerun by Codex:
+- `node scripts/verify-ipc-contract-inventory.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-desktop-shell.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-desktop-gui-perf-smoke.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `npm run check:fast`: passed 70/70, but this is insufficient for REPO-1.2 because it did not catch the broken IPC module imports.
+- `npm run verify:desktop-gui-smoke`: failed with `ERR_MODULE_NOT_FOUND` for `src/desktop/main/desktop-payload-normalizers.mjs`.
+
+Decision:
+- Accept `cb1d399`.
+- Reject `3bc7b8f` as complete. It is structurally in the intended direction, but currently breaks Electron GUI startup. Do not start REPO-1.3 until IPC module import resolution and GUI smoke are green, and until the new module-load verifier is added.

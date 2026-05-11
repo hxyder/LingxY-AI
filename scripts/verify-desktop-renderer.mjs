@@ -258,9 +258,9 @@ const mainProcess = [
   await read("src/desktop/tray/desktop-service-client.mjs"),
   await read("src/desktop/tray/desktop-window-config.mjs"),
   await read("src/desktop/tray/desktop-window-bounds.mjs"),
-  await read("src/desktop/tray/desktop-window-lifecycle.mjs"),
-  await read("src/desktop/tray/desktop-link-browser-window.mjs"),
-  await read("src/desktop/tray/desktop-permission-handler.mjs"),
+  await read("src/desktop/shell/desktop-window-lifecycle.mjs"),
+  await read("src/desktop/shell/desktop-link-browser-window.mjs"),
+  await read("src/desktop/shell/desktop-permission-handler.mjs"),
   await read("src/desktop/tray/desktop-paths.mjs"),
   await read("src/desktop/tray/desktop-notifications.mjs"),
   ...(await readDesktopTrayIpcModules())

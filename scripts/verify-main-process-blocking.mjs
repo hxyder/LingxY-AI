@@ -378,7 +378,7 @@ assert.match(desktopClipboardWatcher, /intervalMs = 800/,
   "desktop-clipboard-watcher.mjs must preserve the existing clipboard poll cadence");
 
 const desktopWindowLifecycle = readFileSync(
-  path.join(repoRoot, "src", "desktop", "tray", "desktop-window-lifecycle.mjs"),
+  path.join(repoRoot, "src", "desktop", "shell", "desktop-window-lifecycle.mjs"),
   "utf8"
 );
 assert.doesNotMatch(electronMain, /browserWindow\.on\(["']close["'],/,

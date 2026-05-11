@@ -10,7 +10,7 @@ const root = path.resolve(__dirname, "..");
 const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8");
 
 const electronMain = read("src/desktop/tray/electron-main.mjs");
-const linkBrowserModule = read("src/desktop/tray/desktop-link-browser-window.mjs");
+const linkBrowserModule = read("src/desktop/shell/desktop-link-browser-window.mjs");
 const shellOpenUrlIpc = read("src/desktop/main/ipc/register-shell-open-url-ipc.mjs");
 const mainProcess = `${electronMain}\n${shellOpenUrlIpc}`;
 const overlayJs = read("src/desktop/renderer/overlay.js");

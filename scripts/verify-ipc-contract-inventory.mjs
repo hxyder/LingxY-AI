@@ -11,12 +11,12 @@ const mainPath = path.join(root, "src/desktop/tray/electron-main.mjs");
 const ipcModuleRoot = path.join(root, "src/desktop/main/ipc");
 const mainIpcHelperPaths = [
   path.join(root, "src/desktop/tray/desktop-window-messages.mjs"),
-  path.join(root, "src/desktop/tray/desktop-window-lifecycle.mjs"),
-  path.join(root, "src/desktop/tray/desktop-window-actions.mjs"),
-  path.join(root, "src/desktop/tray/desktop-shortcut-router.mjs"),
+  path.join(root, "src/desktop/shell/desktop-window-lifecycle.mjs"),
+  path.join(root, "src/desktop/shell/desktop-window-actions.mjs"),
+  path.join(root, "src/desktop/shell/desktop-shortcut-router.mjs"),
   path.join(root, "src/desktop/tray/desktop-dock-menu.mjs"),
   path.join(root, "src/desktop/tray/desktop-clipboard-watcher.mjs"),
-  path.join(root, "src/desktop/tray/desktop-preview-window-manager.mjs")
+  path.join(root, "src/desktop/shell/desktop-preview-window-manager.mjs")
 ];
 const preloadPath = path.join(root, "src/desktop/renderer/preload.cjs");
 

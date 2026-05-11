@@ -34,13 +34,13 @@ import {
   resolveWindowOptions
 } from "./desktop-window-config.mjs";
 import { createDesktopWindowBounds } from "./desktop-window-bounds.mjs";
-import { installWindowLifecycleHandlers } from "./desktop-window-lifecycle.mjs";
-import { createDesktopWindowActions } from "./desktop-window-actions.mjs";
-import { createShortcutRouter } from "./desktop-shortcut-router.mjs";
-import { createLinkBrowserWindowManager } from "./desktop-link-browser-window.mjs";
-import { createPreviewWindowManager } from "./desktop-preview-window-manager.mjs";
+import { installWindowLifecycleHandlers } from "../shell/desktop-window-lifecycle.mjs";
+import { createDesktopWindowActions } from "../shell/desktop-window-actions.mjs";
+import { createShortcutRouter } from "../shell/desktop-shortcut-router.mjs";
+import { createLinkBrowserWindowManager } from "../shell/desktop-link-browser-window.mjs";
+import { createPreviewWindowManager } from "../shell/desktop-preview-window-manager.mjs";
 import { createDesktopGuiSmokeRunner } from "../smoke/desktop-gui-smoke-runner.mjs";
-import { installMediaPermissionHandlers } from "./desktop-permission-handler.mjs";
+import { installMediaPermissionHandlers } from "../shell/desktop-permission-handler.mjs";
 import {
   buildOverlayPayloadFromFiles,
   ECHO_DOCK_DROP_VOICE_READY_MS
