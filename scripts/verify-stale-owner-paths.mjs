@@ -30,6 +30,7 @@ const phaseRepo1OldOwners = [
   { old: "tray/ipc/", new: "main/ipc/" },
   { old: "tray/desktop-payload-normalizers.mjs", new: "shared/desktop-payload-normalizers.mjs" },
   { old: "action_tools/tools/email-tools.mjs", new: "capabilities/tools/email-tools.mjs" },
+  { old: "action_tools/tools/scheduler-tools.mjs", new: "capabilities/tools/scheduler-tools.mjs" },
 ];
 
 const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners];
@@ -38,7 +39,8 @@ const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners];
 // Compatibility barrels are disallowed under the no-short-term-fallback rule.
 const forbiddenExistingPaths = [
   "src/desktop/tray/desktop-payload-normalizers.mjs",
-  "src/service/action_tools/tools/email-tools.mjs"
+  "src/service/action_tools/tools/email-tools.mjs",
+  "src/service/action_tools/tools/scheduler-tools.mjs"
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);

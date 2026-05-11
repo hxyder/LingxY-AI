@@ -16,7 +16,7 @@ import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "./browser-web-tools.mjs";
 import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL } from "./os-app-tools.mjs";
 import { COMPOSE_EMAIL_TOOL } from "../../capabilities/tools/email-tools.mjs";
-import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "./scheduler-tools.mjs";
+import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "../../capabilities/tools/scheduler-tools.mjs";
 import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "./file-read-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
 import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "./file-manifest-helpers.mjs";

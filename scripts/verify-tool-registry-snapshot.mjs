@@ -177,7 +177,7 @@ for (const tool of ["COMPOSE_EMAIL_TOOL"]) {
     `email-tools.mjs must own ${tool}`);
 }
 
-const schedulerSrc = read("src/service/action_tools/tools/scheduler-tools.mjs");
+const schedulerSrc = read("src/service/capabilities/tools/scheduler-tools.mjs");
 assert(schedulerSrc.includes("function getSchedulerRuntime"),
   "scheduler-tools.mjs must own getSchedulerRuntime");
 for (const tool of ["CREATE_SCHEDULED_TASK_TOOL", "LIST_SCHEDULED_TASKS_TOOL", "DELETE_SCHEDULED_TASK_TOOL", "PAUSE_SCHEDULED_TASK_TOOL"]) {
@@ -191,8 +191,8 @@ assert(indexSrc.includes("from \"./browser-web-tools.mjs\""),
   "index.mjs must import browser-web-tools.mjs");
 assert(indexSrc.includes("from \"./os-app-tools.mjs\""),
   "index.mjs must import os-app-tools.mjs");
-assert(indexSrc.includes("from \"./scheduler-tools.mjs\""),
-  "index.mjs must import scheduler-tools.mjs");
+assert(indexSrc.includes("from \"../../capabilities/tools/scheduler-tools.mjs\""),
+  "index.mjs must import scheduler-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/email-tools.mjs\""),
   "index.mjs must import email-tools.mjs from capabilities/tools/");
 // index.mjs must NOT redefine extracted tool bodies

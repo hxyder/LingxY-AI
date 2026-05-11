@@ -267,7 +267,7 @@ No dedicated `src/service/workers/` directory currently exists.
 | `src/service/action_tools/tools/index.mjs` | Now aggregator only: imports 6 extracted families + external modules. Low-risk decomposition complete (Phases 2D.1-2D.6). |
 | `src/service/action_tools/tools/browser-web-tools.mjs` | Browser/web/search/translation: 5 tools (open_url, web_search, web_search_fetch, fetch_url_content, translate_text). | service/tools | no | Phase 2D.1. |
 | `src/service/action_tools/tools/os-app-tools.mjs` | OS/app/clipboard/notify: 5 tools (open_file, reveal_in_explorer, file_op, copy_to_clipboard, notify). | service/tools | no | Phases 2D.2a-2D.2b. |
-| `src/service/action_tools/tools/scheduler-tools.mjs` | Scheduler: 4 tools (create, list, delete, pause scheduled tasks). | service/tools | no | Phase 2D.3. |
+| `src/service/capabilities/tools/scheduler-tools.mjs` | Scheduler: 4 tools (create, list, delete, pause scheduled tasks). | service/tools | no | Phase 2D.3. |
 | `src/service/action_tools/tools/file-read-tools.mjs` | File discovery/read/stat: 6 tools (stat_file, verify_file_exists, list_files, glob_files, find_recent_files, get_latest_artifact). | service/tools | no | Phases 2D.4-2D.6. |
 | `src/service/capabilities/tools/email-tools.mjs` | Email: 1 tool (compose_email). | service/tools | no | Phase 2D.5. |
 | `src/service/action_tools/tools/file-manifest-helpers.mjs` | Shared file manifest/path/glob helpers: resolveDefaultOutputDir, readManifest, writeManifest, globToRegex. | service/tools/shared | no | Phase 2D.6a. |
