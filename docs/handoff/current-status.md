@@ -1322,3 +1322,40 @@ Decision:
 - Accept `2e7fffa`; REPO-1.4 can be treated as complete for renderer shared-client classification and verifier locking.
 - Accept `e3565b4`; REPO-1.5 and REPO-1.6 should stay deferred until the renderer HTML entrypoint migration is designed and executed as a full verified move.
 - Do not mark the broader REPO-1 sequence fully closed yet. The next valid work is either a detailed REPO-1.5 migration design or moving to another independent cleanup phase that does not create half-migrated renderer paths.
+
+## Codex Review: REPO-1.5a Final-Conclusion Check
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `dca9824` - `chore: apply Codex hardening — remove barrel, add forbidden-path guard`.
+- `9d68fef` - `docs: REPO-1.5a final conclusion — 10 attempts, Electron renderer blocker`.
+
+Accepted:
+- `dca9824` correctly commits the prior Codex cleanup: the obsolete `src/desktop/tray/desktop-payload-normalizers.mjs` compatibility barrel is gone, and the stale-owner verifier guards that old physical path.
+- `9d68fef` correctly records that REPO-1.5a physical renderer moves should not be retried blindly. The repeated `console_stream_delta_load` failures are valid evidence that the next attempt needs Electron renderer debugging, not more path shuffling.
+
+Issue found and fixed by Codex:
+- `9d68fef` regressed the REPO-1.5a verifier by replacing the strict old-path/barrel check with `console-${file}` and loose `export *`/`export {` substring checks.
+- Codex restored strict dual-mode verification:
+  - `console.js` maps to the real old flat path `console.js`, not `console-console.js`.
+  - Barrel-window mode accepts only active re-export lines pointing at the exact moved target.
+  - Completion/no-barrel mode is allowed only when no old flat files remain.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- REPO-1.5a half-migration path check: `src/desktop/renderer/console/console.js` and `src/desktop/renderer/console/task-list.mjs` are absent; flat `console.js` and `console-task-list.mjs` remain present.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 71/71.
+
+Decision:
+- Accept `dca9824`.
+- Accept `9d68fef` as a blocker record only after Codex's verifier correction.
+- No REPO-1.5a source migration is complete. Do not claim completion until an Electron-debugged attempt passes GUI smoke and stale-owner/path verifiers.
+
+Next instruction for DeepSeek:
+- First commit the current Codex verifier correction.
+- Do not run more REPO-1.5a physical-move attempts without Electron DevTools or equivalent renderer module-graph evidence.
+- Next executable work should be a non-renderer structural phase with proven Node/Electron-main behavior, or a dedicated REPO-1.5a-debug task that captures renderer console errors and module graph initialization before changing files again.

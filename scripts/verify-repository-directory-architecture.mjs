@@ -162,24 +162,40 @@ const consoleFiles = existsSync(consoleDir)
   : [];
 const migratedFiles = consoleFiles.filter(f => !preExistingClients.has(f));
 
+function repo15aOldFlatName(movedName) {
+  if (movedName === "console.js") return "console.js";
+  return `console-${movedName}`;
+}
+
+function repo15aAssertReExportOnly(oldName, movedName, barrelContent) {
+  const activeLines = barrelContent
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(line => line && !line.startsWith("//"));
+  const escapedMovedName = movedName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const exportAll = new RegExp(`^export\\s+\\*\\s+from\\s+['"]\\./console/${escapedMovedName}['"];?$`);
+  const exportNamed = new RegExp(`^export\\s+\\{[^}]+\\}\\s+from\\s+['"]\\./console/${escapedMovedName}['"];?$`);
+  if (activeLines.length === 0 || !activeLines.every(line => exportAll.test(line) || exportNamed.test(line))) {
+    fail(`REPO-1.5a flat path is not a re-export-only barrel: ${oldName}`);
+  }
+}
+
 if (migratedFiles.length > 0) {
   const anyOldFlatExists = migratedFiles.some(f => {
-    const oldName = "console-" + f;
+    const oldName = repo15aOldFlatName(f);
     return existsSync(path.join(rendererDir, oldName));
   });
 
   if (anyOldFlatExists) {
     // BARREL WINDOW: old flat files still exist; must be re-export-only barrels
     for (const f of migratedFiles) {
-      const oldName = "console-" + f;
+      const oldName = repo15aOldFlatName(f);
       const oldPath = path.join(rendererDir, oldName);
       if (!existsSync(oldPath)) {
         fail(`REPO-1.5a barrel missing: ${oldName}`);
       }
       const barrelContent = readFileSync(oldPath, "utf8");
-      if (!barrelContent.includes("export * from") && !barrelContent.includes("export {")) {
-        fail(`REPO-1.5a flat path is not a barrel: ${oldName}`);
-      }
+      repo15aAssertReExportOnly(oldName, f, barrelContent);
     }
   }
 
