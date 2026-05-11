@@ -1985,3 +1985,62 @@ Next instruction for DeepSeek:
     patches.
 - Only after static and runtime preflight are green may a separate physical move
   be prepared for `document-renderer.mjs`.
+
+## Codex Progress: CAP-1 Document Renderer Static/Runtime Preflight
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Added `docs/architecture/document-renderer-boundary.md`.
+- Added `scripts/verify-document-renderer-contract.mjs`.
+- Added `scripts/verify-document-renderer-runtime.mjs`.
+- Wired both verifiers into `scripts/check-manifest.mjs` and `check:fast`.
+- No product source file was moved or refactored in this preflight.
+
+Boundary locked:
+- Current owner remains `src/service/action_tools/tools/document-renderer.mjs`.
+- Future owner `src/service/capabilities/tools/document-renderer.mjs` must remain
+  absent until the separate physical move phase.
+- `generate_document` keeps tool id, artifact kinds, `file_write` capability,
+  no-confirmation behavior, preview sidecar metadata, reversibility metadata,
+  and PDF fallback metadata.
+- `document-renderer.mjs` stays a renderer helper: it must not own
+  `createActionResult`, desktop renderer imports, Electron main/tray imports,
+  or provider/model calls.
+
+Runtime coverage added:
+- `renderDocumentPreviewHtml` is executed for `docx`, `pdf`, `pptx`, and `xlsx`.
+- Preview HTML is checked for local Mermaid assets, no CDN usage, escaped text,
+  and sanitized SVG figures where SVG rendering is supported.
+- `renderDocument` is executed for DOCX, XLSX, and PPTX, with ZIP headers checked.
+- Unsupported direct `renderDocument({ kind: "pdf" })` is rejected so PDF/HTML
+  fallback ownership stays in `generate_document`.
+- `generate_document(html)` is executed and checked for artifact path,
+  `preview_html_path`, reversibility metadata, diagram rendering, and sanitized
+  SVG rendering.
+
+Verification run by Codex:
+- `node --check scripts/verify-document-renderer-contract.mjs`: passed.
+- `node --check scripts/verify-document-renderer-runtime.mjs`: passed.
+- `node scripts/verify-document-renderer-contract.mjs`: passed.
+- `node scripts/verify-document-renderer-runtime.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+
+Decision:
+- Document-renderer static and runtime preflight is ready to commit.
+- After this commit, the next valid step is a separate physical move of only
+  `document-renderer.mjs`.
+- Do not move `mermaid-assets.mjs` or `svg-sanitize.mjs` in the same commit.
+- Do not open CAP-2 yet.
+
+Next physical-move requirements:
+- Move only `src/service/action_tools/tools/document-renderer.mjs` to
+  `src/service/capabilities/tools/document-renderer.mjs`.
+- Update `index.mjs` dynamic imports for `renderDocumentPreviewHtml` and
+  `renderDocument`.
+- Update `document-renderer.mjs` relative imports to continue using the existing
+  old-owner `mermaid-assets.mjs` and `svg-sanitize.mjs`.
+- Update behavior tests and verifiers that import `document-renderer.mjs`.
+- Update capability roots, tool-registry moved-path guards, stale-owner guards,
+  and architecture inventories.
+- Leave no compatibility barrel at the old path.
