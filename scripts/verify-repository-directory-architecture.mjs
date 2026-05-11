@@ -1,0 +1,59 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "..");
+const read = (rel) => readFileSync(path.join(root, rel), "utf8");
+
+function fail(message) {
+  console.error(`[repo-arch] ${message}`);
+  process.exitCode = 1;
+}
+
+// Phase REPO-0: repository directory architecture verifier
+
+const docPath = "docs/architecture/repository-directory-architecture.md";
+assert(existsSync(path.join(root, docPath)), "repo directory architecture doc missing");
+
+const doc = read(docPath);
+assert(doc.includes("Repository Directory Architecture"), "repo arch doc missing title");
+assert(doc.includes("Current Layout"), "repo arch doc must have current layout");
+assert(doc.includes("Target Architecture"), "repo arch doc must have target layout");
+assert(doc.includes("Migration Rules"), "repo arch doc must have migration rules");
+assert(doc.includes("Current Phase Status"), "repo arch doc must have phase status");
+
+// Documented current roots must exist
+const currentRoots = [
+  "src/desktop",
+  "src/service",
+  "scripts",
+  "tests",
+  "docs",
+  "assets",
+];
+for (const rel of currentRoots) {
+  assert(existsSync(path.join(root, rel)), `documented current root missing: ${rel}`);
+}
+
+// Target layout concepts are named in the doc
+for (const term of ["apps/", "native-host", "packages/", "capabilities/"]) {
+  assert(doc.includes(term), `repo arch doc must reference target concept: ${term}`);
+}
+
+// Runtime/user data roots must be outside src
+const userDataPaths = ["src/user-data", "src/user-config", "src/user-plugins"];
+for (const p of userDataPaths) {
+  assert(!existsSync(path.join(root, p)),
+    `user data path must not exist under src/: ${p}`);
+}
+
+// High-risk deferred items must be documented
+assert(doc.includes("high-risk deferred") || doc.includes("deferred"),
+  "repo arch doc must document high-risk deferred items");
+
+if (!process.exitCode) {
+  console.log("[repo-arch] repository directory architecture verified");
+}

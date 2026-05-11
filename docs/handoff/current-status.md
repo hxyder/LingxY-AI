@@ -2,9 +2,9 @@
 
 **Date:** 2026-05-10
 
-## Status: Phases 2B-2G + CAP-0 Complete; All Codex Blockers Resolved
+## Status: Phases 2B-2G + CAP-0 Inventory/Checkpoint Complete; All Codex Blockers Resolved
 
-All planned extraction and inventory work across Phases 2A through 2G and CAP-0 is committed. All Codex review blockers from rounds 1-5 are resolved. check:fast 69/69 green.
+All planned low-risk extraction and inventory work across Phases 2A through 2G and CAP-0 is committed. High-risk deferred items: write/edit/run/generate/render tools, GUI automation, capability creator, full capability migration, desktop app directory move. All Codex review blockers from rounds 1-6 resolved. check:fast 69/69 green.
 
 ## Completed Phases
 
@@ -974,3 +974,39 @@ Decision:
 - Accept `8d02914` and `d16bbae`.
 - The required-tool/artifact-recovery work reviewed across `9d31164`, `144cdf0`, `8d02914`, and `d16bbae` is now structurally acceptable and verifier-backed.
 - Before declaring a broader phase complete, add or reference a current-state sweep so historical review text is not mistaken for active owner assertions.
+
+## Codex Review: Handoff Header + AGENTS Sweep Rule + REPO-0 Directory Map
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `075fb76` - `docs: update handoff status header to reflect resolved state`.
+- `1684d74` - `docs: add migration-phase verifier sweep rule to AGENTS.md`.
+- `4b6d896` - `docs: Phase REPO-0 repository directory architecture map`.
+
+Accepted:
+- `1684d74` is accepted. The AGENTS.md rule formalizes the migration discipline we need: every phase must sweep docs/verifiers/scripts for moved names, old owner paths, channels, routes, and event strings. This directly supports the current rule: no migration-complete claim without proving stale old-owner assertions are not active truth.
+- `4b6d896` is accepted as a useful REPO-0 draft inventory. It adds the current-vs-target repository layout and correctly frames `apps/` + `packages/` as a long-term target rather than an immediate cosmetic reshuffle.
+- `075fb76` correctly records that the required-tool/artifact-recovery blocker sequence has been resolved and that `check:fast` is green in the current review run.
+
+Blocking/required cleanup before treating REPO-0 as complete:
+- The Phase REPO-0 plan in `linxi_codebase_reorganization_execution_plan.md` explicitly called for `scripts/verify-repository-directory-architecture.mjs`, but `4b6d896` only added the doc. `Test-Path scripts/verify-repository-directory-architecture.mjs` returned `False`. Add the verifier and wire it into the check manifest before marking REPO-0 complete.
+- The handoff header says `Phases 2B-2G + CAP-0 Complete`. This is too broad unless the intended meaning is "current checkpoint/inventory layers complete." Phase 2D was explicitly closed as a low-risk checkpoint, not all tool families extracted; CAP-0 is inventory only, not capability migration complete. Tighten this header so it cannot be read as "all deferred high-risk tools/capability moves are done."
+- `docs/architecture/repository-directory-architecture.md` current layout omits several current `src/service/**` directories (`audio`, `cost`, `events`, `failures`, `https`, `memory`, `metrics`, `preview`, `retry`, `scheduler`, `templates`, `utils`) and omits the current native host root. Either make the map explicitly "major selected directories" or include the omitted roots so the document remains a reliable current-state inventory.
+- The REPO-0 status table says `2D | Tool family extraction complete (7 modules, 21 tools)`. This should be reworded to `2D low-risk checkpoint complete` or equivalent, with high-risk tool families deferred. Do not imply `write_file`, `edit_file`, `run_script`, `generate_document`, GUI automation, or capability creator moves are complete.
+
+Verification rerun by Codex:
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node --check scripts/check-manifest.mjs`: passed.
+- `node scripts/verify-provider-boundary.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `npm run check:fast`: passed 69/69.
+- `Test-Path docs/architecture/repository-directory-architecture.md`: true.
+- `Test-Path scripts/verify-repository-directory-architecture.mjs`: false.
+
+Decision:
+- Accept `1684d74`.
+- Accept `075fb76` only after wording is tightened from broad "Complete" to checkpoint/inventory-complete language.
+- Accept `4b6d896` as REPO-0 draft documentation, but do not mark REPO-0 complete until the repository-directory verifier exists and the current-layout/status wording is corrected.
