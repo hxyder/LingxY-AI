@@ -193,6 +193,28 @@ Verifier coverage required for each old path → new path → compatibility barr
 - [ ] Existing `renderer/console/` contents preserved (3 console client files)
 - [ ] Barrels removed after all references migrated
 
+## Lessons Learned (2026-05-11 Attempt)
+
+An attempted REPO-1.5a execution revealed additional complexity beyond the
+design doc:
+
+1. **Internal cross-references**: Moving files and dropping the `console-`
+   prefix requires updating internal imports within the moved files
+   (e.g., `task-list.mjs` imported from `./console-task-detail.mjs`).
+2. **Barrel creation timing**: Compatibility barrels at old flat paths must
+   exist during the entire migration window; if deleted prematurely,
+   any lingering reference causes `ERR_MODULE_NOT_FOUND`.
+3. **GUI smoke is the gate**: `console_stream_delta_load` failed after the
+   move, indicating that the console window ESM loading is sensitive to
+   path changes. The failure did not reproduce with `node --check` or
+   individual import tests.
+4. **Bulk verifier updates are not enough**: 22 verifier path updates were
+   made, but runtime failures still occurred due to the issues above.
+
+The attempt was reverted. REPO-1.5a should be executed as a focused session
+with stricter pre-move checks for internal cross-references, barrel existence
+verification, and incremental GUI smoke testing after each file group.
+
 ## Contracts That Must Not Change
 
 - Preload API (`window.ucaShell`)
