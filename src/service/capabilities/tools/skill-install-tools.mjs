@@ -29,7 +29,7 @@ import {
   finalizeStagedInstall,
   discardStagedInstall
 } from "../../ai/skills/github-install.mjs";
-import { createActionResult } from "../types.mjs";
+import { createActionResult } from "../../action_tools/types.mjs";
 
 // Truncated preview shown to the LLM in the tool result. The full
 // SKILL.md is held in the staging registry until install commits.

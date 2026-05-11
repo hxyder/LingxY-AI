@@ -177,7 +177,7 @@ Legend:
 | `src/service/action_tools/schemas/index.mjs` | Tool schemas. | service/shared | no | Tool registry/executors. | high | Must stay aligned with tool ids. |
 | `src/service/action_tools/tools/document-renderer.mjs` | DOCX/PPTX/XLSX/PDF/HTML preview rendering. | service/artifact | no | docx/exceljs/pptx/pdf/html helpers. | high | Correct layer but heavy; worker may be needed for large docs. |
 | `src/service/capabilities/tools/memory-tools.mjs` | Runtime memory/session task recall tools. | service/tools/context | no | Store/session/artifacts. | high | Important context surface. |
-| `src/service/action_tools/tools/skill-install-tools.mjs` | Skill GitHub preview/install tools. | service/tools/security | no | Skill lifecycle/install state. | high | Side-effect approval sensitive. |
+| `src/service/capabilities/tools/skill-install-tools.mjs` | Skill GitHub preview/install tools. | service/tools/security | no | Skill lifecycle/install state. | high | Side-effect approval sensitive. |
 | `src/service/capabilities/tools/vision-analyze.mjs` | Vision analysis action tool. | service/tools/provider | no | Provider resolver/adapter. | high | Provider/image boundary. |
 | `src/service/action_tools/policy-guard.mjs` | Tool policy/rate limits. | service/policy | no | Runtime/tool policy. | high | Security-sensitive. |
 | `src/service/action_tools/risk_matrix.mjs` | Tool risk evaluation. | service/policy | no | Tool calls. | high | Security-sensitive. |

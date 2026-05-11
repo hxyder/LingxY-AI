@@ -5,7 +5,7 @@ security preflight documented, not moved.
 
 ## Current State
 
-- File: `src/service/action_tools/tools/skill-install-tools.mjs`
+- File: `src/service/capabilities/tools/skill-install-tools.mjs`
 - Tools: `preview_skill_from_github` (low risk, no confirmation), `install_skill_from_github` (high risk, requires_confirmation)
 - Two-step LLM-callable install: preview (staging + validate SKILL.md) → install (atomic swap + registry append)
 - Aggregated into `BUILTIN_ACTION_TOOLS` via named exports

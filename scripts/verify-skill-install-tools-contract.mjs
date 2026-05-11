@@ -36,7 +36,7 @@ assert(confirmationIds.includes("install_skill_from_github"),
   "install_skill_from_github must be confirmation-gated");
 
 // 3. Current owner file exists
-const currentPath = "src/service/action_tools/tools/skill-install-tools.mjs";
+const currentPath = "src/service/capabilities/tools/skill-install-tools.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
 
 // 4. Current owner exports both tools

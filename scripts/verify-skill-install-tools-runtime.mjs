@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { PREVIEW_SKILL_FROM_GITHUB_TOOL, INSTALL_SKILL_FROM_GITHUB_TOOL } from "../src/service/action_tools/tools/skill-install-tools.mjs";
+import { PREVIEW_SKILL_FROM_GITHUB_TOOL, INSTALL_SKILL_FROM_GITHUB_TOOL } from "../src/service/capabilities/tools/skill-install-tools.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import {
   filterToolsForTask,
