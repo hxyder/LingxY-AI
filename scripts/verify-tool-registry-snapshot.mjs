@@ -144,11 +144,11 @@ for (const tool of BUILTIN_ACTION_TOOLS) {
 // extracted tool bodies must live only in their owner modules, and
 // index.mjs must only import + aggregate, not redefine them.
 
-const openHandlerSrc = read("src/service/action_tools/tools/open-with-default-handler.mjs");
+const openHandlerSrc = read("src/service/capabilities/tools/open-with-default-handler.mjs");
 assert(openHandlerSrc.includes("async function openWithDefaultHandler"),
   "only open-with-default-handler.mjs may define openWithDefaultHandler");
 
-const browserWebSrc = read("src/service/action_tools/tools/browser-web-tools.mjs");
+const browserWebSrc = read("src/service/capabilities/tools/browser-web-tools.mjs");
 assert(browserWebSrc.includes("import { openWithDefaultHandler } from"),
   "browser-web-tools.mjs must import openWithDefaultHandler from the shared module");
 assert(!browserWebSrc.includes("function openWithDefaultHandler"),
@@ -158,7 +158,7 @@ for (const tool of ["OPEN_URL_TOOL", "WEB_SEARCH_TOOL", "TRANSLATE_TEXT_TOOL", "
     `browser-web-tools.mjs must own ${tool}`);
 }
 
-const osAppSrc = read("src/service/action_tools/tools/os-app-tools.mjs");
+const osAppSrc = read("src/service/capabilities/tools/os-app-tools.mjs");
 assert(osAppSrc.includes("import { openWithDefaultHandler } from"),
   "os-app-tools.mjs must import openWithDefaultHandler from the shared module");
 assert(!osAppSrc.includes("function openWithDefaultHandler"),
@@ -187,10 +187,10 @@ for (const tool of ["CREATE_SCHEDULED_TASK_TOOL", "LIST_SCHEDULED_TASKS_TOOL", "
 
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
 // index.mjs must import the extracted modules
-assert(indexSrc.includes("from \"./browser-web-tools.mjs\""),
-  "index.mjs must import browser-web-tools.mjs");
-assert(indexSrc.includes("from \"./os-app-tools.mjs\""),
-  "index.mjs must import os-app-tools.mjs");
+assert(indexSrc.includes("from \"../../capabilities/tools/browser-web-tools.mjs\""),
+  "index.mjs must import browser-web-tools.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/os-app-tools.mjs\""),
+  "index.mjs must import os-app-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/scheduler-tools.mjs\""),
   "index.mjs must import scheduler-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/email-tools.mjs\""),
@@ -218,15 +218,15 @@ assert(!indexSrc.includes("function openWithDefaultHandler"),
   "index.mjs must NOT redefine openWithDefaultHandler (owned by open-with-default-handler.mjs)");
 
 // Phase 2D.4: file-read-tools ownership
-const fileReadSrc = read("src/service/action_tools/tools/file-read-tools.mjs");
+const fileReadSrc = read("src/service/capabilities/tools/file-read-tools.mjs");
 for (const tool of ["STAT_FILE_TOOL", "VERIFY_FILE_EXISTS_TOOL", "LIST_FILES_TOOL", "GLOB_FILES_TOOL", "FIND_RECENT_FILES_TOOL", "GET_LATEST_ARTIFACT_TOOL"]) {
   assert(fileReadSrc.includes(`export const ${tool}`),
     `file-read-tools.mjs must own ${tool}`);
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by file-read-tools.mjs)`);
 }
-assert(indexSrc.includes("from \"./file-read-tools.mjs\""),
-  "index.mjs must import file-read-tools.mjs");
+assert(indexSrc.includes("from \"../../capabilities/tools/file-read-tools.mjs\""),
+  "index.mjs must import file-read-tools.mjs from capabilities/tools/");
 
 // Deferred tools still in index.mjs must still be present
 for (const tool of ["LAUNCH_APP_TOOL", "TAKE_SCREENSHOT_TOOL"]) {

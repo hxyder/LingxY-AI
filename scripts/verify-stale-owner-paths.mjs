@@ -31,16 +31,29 @@ const phaseRepo1OldOwners = [
   { old: "tray/desktop-payload-normalizers.mjs", new: "shared/desktop-payload-normalizers.mjs" },
   { old: "action_tools/tools/email-tools.mjs", new: "capabilities/tools/email-tools.mjs" },
   { old: "action_tools/tools/scheduler-tools.mjs", new: "capabilities/tools/scheduler-tools.mjs" },
+  { old: "action_tools/tools/file-manifest-helpers.mjs", new: "capabilities/tools/file-manifest-helpers.mjs" },
 ];
 
-const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners];
+const phaseCap1OldOwners = [
+  { old: "action_tools/tools/browser-web-tools.mjs", new: "capabilities/tools/browser-web-tools.mjs" },
+  { old: "action_tools/tools/os-app-tools.mjs", new: "capabilities/tools/os-app-tools.mjs" },
+  { old: "action_tools/tools/file-read-tools.mjs", new: "capabilities/tools/file-read-tools.mjs" },
+  { old: "action_tools/tools/file-manifest-helpers.mjs", new: "capabilities/tools/file-manifest-helpers.mjs" },
+  { old: "action_tools/tools/open-with-default-handler.mjs", new: "capabilities/tools/open-with-default-handler.mjs" },
+];
+const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners, ...phaseCap1OldOwners];
 
 // Post-migration: old physical paths must not exist as reachable files.
 // Compatibility barrels are disallowed under the no-short-term-fallback rule.
 const forbiddenExistingPaths = [
+    "src/service/action_tools/tools/file-read-tools.mjs",
+    "src/service/action_tools/tools/os-app-tools.mjs",
+    "src/service/action_tools/tools/browser-web-tools.mjs",
+    "src/service/action_tools/tools/open-with-default-handler.mjs",
   "src/desktop/tray/desktop-payload-normalizers.mjs",
   "src/service/action_tools/tools/email-tools.mjs",
-  "src/service/action_tools/tools/scheduler-tools.mjs"
+  "src/service/action_tools/tools/scheduler-tools.mjs",
+  "src/service/action_tools/tools/file-manifest-helpers.mjs"
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);

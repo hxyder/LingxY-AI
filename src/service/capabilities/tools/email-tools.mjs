@@ -1,6 +1,6 @@
 import { ACTION_TOOL_SCHEMAS } from "../../action_tools/schemas/index.mjs";
 import { createActionResult } from "../../action_tools/types.mjs";
-import { openWithDefaultHandler } from "../../action_tools/tools/open-with-default-handler.mjs";
+import { openWithDefaultHandler } from "../../capabilities/tools/open-with-default-handler.mjs";
 
 export const COMPOSE_EMAIL_TOOL = {
   id: "compose_email",

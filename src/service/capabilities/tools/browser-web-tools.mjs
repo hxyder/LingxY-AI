@@ -1,8 +1,8 @@
-import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
-import { createActionResult } from "../types.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../../action_tools/schemas/index.mjs";
+import { createActionResult } from "../../action_tools/types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
-import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
+import { openWithDefaultHandler } from "../../capabilities/tools/open-with-default-handler.mjs";
 
 // Real implementations for the most common tools
 export const OPEN_URL_TOOL = {

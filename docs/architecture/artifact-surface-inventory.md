@@ -105,7 +105,7 @@ Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 
 | File | Role |
 |------|------|
-| `src/service/action_tools/tools/os-app-tools.mjs` | `REVEAL_IN_EXPLORER_TOOL` |
+| `src/service/capabilities/tools/os-app-tools.mjs` | `REVEAL_IN_EXPLORER_TOOL` |
 | `src/service/executors/tool_using/tool-surface.mjs` | `DIRECT_FILE_OPEN_TOOL_IDS` |
 
 ~5 files, ~8 lines. Lightest category; mostly tool-surface gating.

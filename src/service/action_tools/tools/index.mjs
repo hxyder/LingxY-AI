@@ -13,13 +13,13 @@ import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
-import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "./browser-web-tools.mjs";
-import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL } from "./os-app-tools.mjs";
+import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "../../capabilities/tools/browser-web-tools.mjs";
+import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL } from "../../capabilities/tools/os-app-tools.mjs";
 import { COMPOSE_EMAIL_TOOL } from "../../capabilities/tools/email-tools.mjs";
 import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "../../capabilities/tools/scheduler-tools.mjs";
-import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "./file-read-tools.mjs";
+import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "../../capabilities/tools/file-read-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
-import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "./file-manifest-helpers.mjs";
+import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "../../capabilities/tools/file-manifest-helpers.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
@@ -448,7 +448,7 @@ const NOOP_TOOLS = TOOL_DEFINITIONS
 // Open a URL or shell URI (mailto:, file:, http:) using the OS default handler.
 // On Windows we use PowerShell Start-Process which correctly handles `&` and `?`
 // in URLs (cmd.exe `start` does not — it interprets `&` as a command separator).
-import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
+import { openWithDefaultHandler } from "../../capabilities/tools/open-with-default-handler.mjs";
 
 export const SEND_EMAIL_SMTP_TOOL = NOOP_TOOLS.find((tool) => tool.id === "send_email_smtp");
 
