@@ -77,6 +77,8 @@ Use this tool BEFORE install_skill_from_github so the user sees what they're ins
     return `Previewed skill from ${args.url}`;
   },
   async execute(args = {}, ctx = {}) {
+    const _stage = ctx._testSeam?.stageSkill ?? stageSkillFromGitHub;
+    const _discard = ctx._testSeam?.discardInstall ?? discardStagedInstall;
     const url = String(args?.url ?? "").trim();
     if (!url) {
       return createActionResult({
@@ -85,7 +87,7 @@ Use this tool BEFORE install_skill_from_github so the user sees what they're ins
         metadata: { tool_id: "preview_skill_from_github", error: "missing_url" }
       });
     }
-    const stage = await stageSkillFromGitHub({ url, runtime: ctx.runtime });
+    const stage = await _stage({ url, runtime: ctx.runtime });
     if (!stage.ok) {
       return createActionResult({
         success: false,
@@ -98,7 +100,7 @@ Use this tool BEFORE install_skill_from_github so the user sees what they're ins
     if (!registry || typeof registry.put !== "function") {
       // Defensive: if the runtime doesn't have a registry wired,
       // don't leak the staging dir.
-      await discardStagedInstall(stage.stagingInfo);
+      await _discard(stage.stagingInfo);
       return createActionResult({
         success: false,
         observation: "skill install state registry not available on this runtime",
@@ -158,6 +160,7 @@ Failure modes:
     return `Installed skill ${meta.owner ?? "?"}/${meta.repo ?? "?"} → ${meta.root_path ?? "?"}`;
   },
   async execute(args = {}, ctx = {}) {
+    const _finalize = ctx._testSeam?.finalizeInstall ?? finalizeStagedInstall;
     const token = String(args?.state_token ?? "").trim();
     if (!token) {
       return createActionResult({
@@ -182,7 +185,7 @@ Failure modes:
         metadata: { tool_id: "install_skill_from_github", error: "state_token_invalid" }
       });
     }
-    const result = await finalizeStagedInstall(stagingInfo, { runtime: ctx.runtime });
+    const result = await _finalize(stagingInfo, { runtime: ctx.runtime });
     if (!result.ok) {
       // Finalize already removed the staging dir on failure.
       return createActionResult({
