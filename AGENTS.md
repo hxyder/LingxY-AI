@@ -41,6 +41,13 @@ must apply to every user task it executes.
    task events, storage records, or verifier contracts affected by the change.
 6. Test gate: add or update targeted tests/verifiers before broad wiring and run
    the relevant verification commands before completion.
+   For each migration phase, sweep `scripts/` and `docs/` with `rg` for moved
+   function names, IPC channels, route names, old file paths, and key event
+   strings. Update every affected verifier or inventory so it checks the new
+   owner and stable contract instead of asserting that code remains in the old
+   file. `npm run check:fast` passing is not enough if a related specialty
+   verifier is outside the fast manifest; run every verifier found by the sweep
+   or document why it is unrelated.
 7. Design-before-generation: inspect the existing design and record the intended
    migration shape before generating or editing broad code.
 8. Patch check: explicitly check whether the change is only a local patch; if it
