@@ -105,6 +105,53 @@ const { buildAttachedAllowlist, collectGeneratedImageArtifacts } = __test;
   assert(artifacts[0].endsWith("screen.png"), "collected path must match");
 }
 
+// ── 8-11. Provider gates (tested via __test.callVisionProvider seam) ──
+const { callVisionProvider } = __test;
+
+// 8. No provider → informative error
+{
+  try {
+    await callVisionProvider({ provider: null, prompt: "test", images: [], signal: null });
+    fail("callVisionProvider must throw when provider is null");
+  } catch (e) {
+    assert(e.message.includes("No Vision-capable provider configured"),
+      "no-provider error must be informative");
+  }
+}
+
+// 9. code_cli provider → refused
+{
+  try {
+    await callVisionProvider({ provider: { kind: "code_cli", id: "test-cli", providerName: "TestCLI" }, prompt: "t", images: [], signal: null });
+    fail("callVisionProvider must refuse code_cli");
+  } catch (e) {
+    assert(e.message.includes("code_cli"),
+      "code_cli refusal must mention code_cli");
+  }
+}
+
+// 10. supportsVision:false → refused
+{
+  try {
+    await callVisionProvider({ provider: { kind: "openai", id: "test", supportsVision: false, providerName: "NoVision" }, prompt: "t", images: [], signal: null });
+    fail("callVisionProvider must refuse supportsVision:false");
+  } catch (e) {
+    assert(e.message.includes("supportsVision"),
+      "supportsVision:false refusal must mention supportsVision");
+  }
+}
+
+// 11. ollama provider → refused
+{
+  try {
+    await callVisionProvider({ provider: { kind: "ollama", id: "ollama-test", providerName: "OllamaTest" }, prompt: "t", images: [], signal: null });
+    fail("callVisionProvider must refuse ollama");
+  } catch (e) {
+    assert(e.message.includes("Ollama"),
+      "ollama refusal must mention Ollama");
+  }
+}
+
 if (!process.exitCode) {
-  console.log("[vision-analyze-runtime] security allowlist and rejection paths verified");
+  console.log("[vision-analyze-runtime] security allowlist, rejection paths, and provider gates verified");
 }
