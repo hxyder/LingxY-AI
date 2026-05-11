@@ -23,7 +23,7 @@ All call sites go through `resolveProviderForTask` from `provider-resolver.mjs`:
 | Agentic planner | `src/service/executors/agentic/planner.mjs` | Static |
 | Provider adapter (agentic) | `src/service/executors/agentic/provider-adapter.mjs` | Dynamic |
 | Multi-modal executor | `src/service/executors/multi_modal/multi-modal-executor.mjs` | Static |
-| Vision analyze tool | `src/service/action_tools/tools/vision-analyze.mjs` | Static |
+| Vision analyze tool | `src/service/capabilities/tools/vision-analyze.mjs` | Static |
 | Browser submission | `src/service/core/browser-submission.mjs` | Static |
 | Context submission | `src/service/core/context-submission.mjs` | Static |
 | File submission | `src/service/core/file-submission.mjs` | Static |

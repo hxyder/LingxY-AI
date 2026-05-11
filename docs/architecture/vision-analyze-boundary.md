@@ -16,7 +16,7 @@ Current preflight coverage:
 
 ## Current State
 
-- File: `src/service/action_tools/tools/vision-analyze.mjs` (279 lines)
+- File: `src/service/capabilities/tools/vision-analyze.mjs` (279 lines)
 - Tool: `VISION_ANALYZE_TOOL` (id: `vision_analyze`)
 - Aggregated into `BUILTIN_ACTION_TOOLS` via `index.mjs`
 

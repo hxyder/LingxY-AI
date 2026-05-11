@@ -15,8 +15,8 @@
  */
 
 import path from "node:path";
-import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
-import { createActionResult } from "../types.mjs";
+import { ACTION_TOOL_SCHEMAS } from "../../action_tools/schemas/index.mjs";
+import { createActionResult } from "../../action_tools/types.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import {
   callAnthropicVision,
@@ -176,6 +176,13 @@ export const VISION_ANALYZE_TOOL = {
   required_capabilities: ["network", "file_read"],
   requires_confirmation: false,
   async execute(args = {}, ctx = {}) {
+    // Test seam: ctx._testSeam allows stubbing provider resolution,
+    // image loading, and vision provider calls for verifier coverage.
+    // Not part of the public tool surface.
+    const _resolveProvider = ctx._testSeam?.resolveProvider ?? resolveProviderForTask;
+    const _loadImage = ctx._testSeam?.loadImage ?? loadImageAsBase64;
+    const _callVision = ctx._testSeam?.callVision ?? callVisionProvider;
+
     const prompt = String(
       args.prompt ?? args.question ?? args.instruction ?? "Describe this image in detail."
     ).trim() || "Describe this image in detail.";
@@ -231,12 +238,12 @@ export const VISION_ANALYZE_TOOL = {
       });
     }
 
-    const provider = resolveProviderForTask("vision");
+    const provider = _resolveProvider("vision");
 
     const images = [];
     for (const p of acceptedPaths.slice(0, MAX_IMAGES_PER_CALL)) {
       try {
-        images.push(await loadImageAsBase64(p));
+        images.push(await _loadImage(p));
       } catch (error) {
         return createActionResult({
           success: false,
@@ -246,7 +253,7 @@ export const VISION_ANALYZE_TOOL = {
     }
 
     try {
-      const text = await callVisionProvider({
+      const text = await _callVision({
         provider,
         prompt,
         images,

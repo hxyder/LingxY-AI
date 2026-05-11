@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import path from "node:path";
-import { VISION_ANALYZE_TOOL, __test } from "../src/service/action_tools/tools/vision-analyze.mjs";
+import { VISION_ANALYZE_TOOL, __test } from "../src/service/capabilities/tools/vision-analyze.mjs";
 
 // CAP-1 vision-analyze runtime rejection-path preflight.
 // Uses the test seam (__test) to verify security allowlist and rejection
@@ -152,6 +152,46 @@ const { callVisionProvider } = __test;
   }
 }
 
+// ── 12. Successful provider path (stubbed via ctx._testSeam) ──
+{
+  const ctx = {
+    task: {
+      context_packet: {
+        image_paths: ["C:\\Users\\test\\photo.png"]
+      }
+    },
+    _testSeam: {
+      resolveProvider: (_taskType) => ({
+        id: "anthropic",
+        kind: "anthropic",
+        providerName: "TestAnthropic",
+        model: "claude-test",
+        apiKey: "sk-test",
+        baseUrl: "https://test.example.com"
+      }),
+      loadImage: async (_p) => ({ mimeType: "image/png", data: "base64stub" }),
+      callVision: async ({ provider, prompt, images }) =>
+        `Vision analysis: ${images.length} image(s) processed by ${provider.providerName} using ${provider.model}`
+    }
+  };
+  const result = await VISION_ANALYZE_TOOL.execute(
+    { image_paths: ["C:\\Users\\test\\photo.png"], prompt: "describe" },
+    ctx
+  );
+  assert(result.success === true,
+    "stubbed execute must return success for accepted attached path");
+  assert(result.metadata?.provider === "TestAnthropic",
+    "success metadata must include provider name");
+  assert(result.metadata?.model === "claude-test",
+    "success metadata must include model");
+  assert(result.metadata?.image_count === 1,
+    "success metadata must include image count");
+  assert.deepEqual(result.metadata?.image_paths, ["C:\\Users\\test\\photo.png"],
+    "success metadata must include accepted image paths");
+  assert(result.observation.includes("TestAnthropic"),
+    "success observation must reference the provider");
+}
+
 if (!process.exitCode) {
-  console.log("[vision-analyze-runtime] security allowlist, rejection paths, and provider gates verified");
+  console.log("[vision-analyze-runtime] security allowlist, rejection paths, provider gates, and stubbed success path verified");
 }

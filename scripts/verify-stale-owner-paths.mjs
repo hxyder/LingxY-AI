@@ -32,6 +32,7 @@ const phaseRepo1OldOwners = [
 ];
 
 const phaseCap1OldOwners = [
+  { old: "action_tools/tools/vision-analyze.mjs", new: "capabilities/tools/vision-analyze.mjs" },
   { old: "action_tools/tools/browser-web-tools.mjs", new: "capabilities/tools/browser-web-tools.mjs" },
   { old: "action_tools/tools/email-tools.mjs", new: "capabilities/tools/email-tools.mjs" },
   { old: "action_tools/tools/file-manifest-helpers.mjs", new: "capabilities/tools/file-manifest-helpers.mjs" },
@@ -45,6 +46,7 @@ const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners, ...phaseCap1OldOw
 // Post-migration: old physical paths must not exist as reachable files.
 // Compatibility barrels are disallowed under the no-short-term-fallback rule.
 const forbiddenExistingPaths = [
+    "src/service/action_tools/tools/vision-analyze.mjs",
   "src/service/action_tools/tools/browser-web-tools.mjs",
   "src/desktop/tray/desktop-payload-normalizers.mjs",
   "src/service/action_tools/tools/email-tools.mjs",

@@ -27,7 +27,7 @@ assert(visionTool.risk_level === "low", "vision_analyze risk_level must be low")
 assert(visionTool.requires_confirmation === false, "vision_analyze must not require confirmation");
 
 // 2. Current owner file exists
-const currentPath = "src/service/action_tools/tools/vision-analyze.mjs";
+const currentPath = "src/service/capabilities/tools/vision-analyze.mjs";
 assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
 
 // 3. Current owner exports VISION_ANALYZE_TOOL

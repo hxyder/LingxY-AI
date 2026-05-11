@@ -332,7 +332,7 @@ Tool registry and built-in tool definitions:
 - `src/service/action_tools/tools/index.mjs`
 - `src/service/action_tools/tools/memory-tools.mjs`
 - `src/service/action_tools/tools/skill-install-tools.mjs`
-- `src/service/action_tools/tools/vision-analyze.mjs`
+- `src/service/capabilities/tools/vision-analyze.mjs`
 - `src/service/connectors/tools/*.mjs`
 
 Major built-in tool ids found:
@@ -452,7 +452,7 @@ Provider calls:
 - `src/service/executors/kimi/kimi-cli-executor.mjs`
 - `src/service/executors/kimi/output-format.mjs`
 - `src/service/core/intent/semantic-router.mjs`
-- `src/service/action_tools/tools/vision-analyze.mjs`
+- `src/service/capabilities/tools/vision-analyze.mjs`
 - Audio/translation paths where configured.
 
 Provider health/model discovery:

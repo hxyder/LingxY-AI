@@ -40,7 +40,7 @@ const approvedResolverCallers = new Set([
   "src/service/executors/agentic/provider-adapter.mjs",
   "src/service/executors/multi_modal/multi-modal-executor.mjs",
   "src/service/executors/shared/provider-resolver.mjs",
-  "src/service/action_tools/tools/vision-analyze.mjs",
+  "src/service/capabilities/tools/vision-analyze.mjs",
   "src/service/core/browser-submission.mjs",
   "src/service/core/context-submission.mjs",
   "src/service/core/file-submission.mjs",

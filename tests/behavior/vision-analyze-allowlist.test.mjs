@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { __test as visionTest } from "../../src/service/action_tools/tools/vision-analyze.mjs";
+import { __test as visionTest } from "../../src/service/capabilities/tools/vision-analyze.mjs";
 
 test("vision_analyze allows same-task generated image artifacts without allowing arbitrary files", () => {
   const screenshotPath = "E:\\linxiDoc\\task_a\\screen.png";

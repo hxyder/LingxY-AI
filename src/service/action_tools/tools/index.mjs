@@ -18,7 +18,7 @@ import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOAR
 import { COMPOSE_EMAIL_TOOL } from "../../capabilities/tools/email-tools.mjs";
 import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "../../capabilities/tools/scheduler-tools.mjs";
 import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "../../capabilities/tools/file-read-tools.mjs";
-import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
+import { VISION_ANALYZE_TOOL } from "../../capabilities/tools/vision-analyze.mjs";
 import { resolveDefaultOutputDir, readManifest, writeManifest, globToRegex } from "../../capabilities/tools/file-manifest-helpers.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
