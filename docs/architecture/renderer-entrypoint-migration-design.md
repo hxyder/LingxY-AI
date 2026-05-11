@@ -182,9 +182,13 @@ that reference the OLD name pattern. Example: `task-list.mjs` (renamed from
 of the new `./task-detail.mjs`. This must be fixed during the move.
 
 ```bash
-# Run BEFORE creating barrels, while old files are still at flat paths
-rg "from \"\./console-" src/desktop/renderer/console/*.mjs
-# Every hit must be updated to the new name in the same PR.
+# Run BEFORE moving files, while they are still at flat console-*.mjs paths.
+# These files still reference each other with the old console- prefix.
+rg 'from "\./console-' src/desktop/renderer -g 'console-*.mjs'
+# Currently known hits (must be fixed during move):
+#   console-inbox-view.mjs -> ./console-account-connectors-view.mjs
+#   console-task-list.mjs  -> ./console-task-detail.mjs
+# Every hit must be updated to the new unprefixed name in the same PR.
 ```
 
 ## Barrel Existence During Migration Window
