@@ -71,6 +71,27 @@ for (const { path: p, desc } of desktopContracts) {
   assert(existsSync(path.join(root, p)), `desktop contract missing: ${p} (${desc})`);
 }
 
+// REPO-1.3: no active inventory doc may claim old tray/ paths for moved shell helpers
+const movedToShell = [
+  "desktop-window-lifecycle.mjs",
+  "desktop-window-actions.mjs",
+  "desktop-shortcut-router.mjs",
+  "desktop-link-browser-window.mjs",
+  "desktop-preview-window-manager.mjs",
+  "desktop-permission-handler.mjs"
+];
+for (const name of movedToShell) {
+  const oldPath = `src/desktop/tray/${name}`;
+  const newPath = `src/desktop/shell/${name}`;
+  for (const docPath of ["docs/architecture/codebase-file-inventory.md", "docs/architecture/desktop-app-layout-inventory.md"]) {
+    if (!existsSync(path.join(root, docPath))) continue;
+    const content = read(docPath);
+    if (content.includes(oldPath)) {
+      fail(`${docPath} still references old shell helper path: ${oldPath} (should be ${newPath})`);
+    }
+  }
+}
+
 // REPO-1.1: no active inventory doc may claim the old smoke runner path
 const inventoryDocs = [
   "docs/architecture/desktop-app-layout-inventory.md",
