@@ -2207,3 +2207,44 @@ Decision:
 - Do not open CAP-2 yet.
 - Next candidate after this commit should be `mermaid-assets.mjs` static/runtime
   render-asset preflight, then a separate physical move if green.
+
+## Codex Progress: CAP-1 Mermaid Assets Preflight
+
+Progress date: 2026-05-11.
+
+Scope completed:
+- Added `docs/architecture/mermaid-assets-boundary.md` for the current
+  Mermaid asset helper boundary.
+- Added `scripts/verify-mermaid-assets-contract.mjs` to lock the current
+  public API, local Mermaid bundle dependency, caller imports, and no-network /
+  no-write contract before movement.
+- Added `scripts/verify-mermaid-assets-runtime.mjs` to prove the generated
+  script source stays local, the bundle exists, HTML escaping is preserved, and
+  `render_diagram` plus document-preview Mermaid rendering still use the local
+  asset.
+- Wired both Mermaid verifiers into `scripts/check-manifest.mjs`.
+
+Preflight result:
+- `src/service/action_tools/tools/mermaid-assets.mjs` is still the current
+  owner during this preflight.
+- No product source file was moved in this commit.
+- No compatibility barrel was introduced.
+- No tool ids, artifact kinds, IPC channels, HTTP routes, storage schema,
+  provider ids, approval behavior, or public registry ids were changed.
+
+Verification run by Codex:
+- `node --check scripts/verify-mermaid-assets-contract.mjs`: passed.
+- `node --check scripts/verify-mermaid-assets-runtime.mjs`: passed.
+- `node scripts/verify-mermaid-assets-contract.mjs`: passed.
+- `node scripts/verify-mermaid-assets-runtime.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 83/83.
+
+Decision:
+- Mermaid static/runtime preflight is ready to commit.
+- After this commit, the next valid step is a separate physical move of only
+  `mermaid-assets.mjs`.
+- The physical move must update action-tool aggregation, document renderer,
+  Kimi output-format imports, behavior tests, ownership verifiers, structure
+  verifiers, stale-owner checks, and architecture inventories in the same PR.
