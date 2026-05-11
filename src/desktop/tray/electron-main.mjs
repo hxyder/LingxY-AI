@@ -26,7 +26,7 @@ import {
   buildApprovalDecisionBody,
   normalizeApprovalDecisionPayload,
   normalizePlainObject
-} from "./desktop-payload-normalizers.mjs";
+} from "../shared/desktop-payload-normalizers.mjs";
 import {
   buildRendererFileUrl,
   buildWindowUrl,

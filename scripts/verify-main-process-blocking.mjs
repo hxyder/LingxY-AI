@@ -176,7 +176,7 @@ const brandIcons = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "b
 const desktopServiceClient = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-service-client.mjs"), "utf8");
 const desktopDiagnostics = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-diagnostics.mjs"), "utf8");
 const desktopSettings = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-settings.mjs"), "utf8");
-const desktopPayloadNormalizers = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-payload-normalizers.mjs"), "utf8");
+const desktopPayloadNormalizers = readFileSync(path.join(repoRoot, "src", "desktop", "shared", "desktop-payload-normalizers.mjs"), "utf8");
 const desktopWindowConfig = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-window-config.mjs"), "utf8");
 const desktopWindowBounds = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-window-bounds.mjs"), "utf8");
 const desktopOverlayPayloads = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-overlay-payloads.mjs"), "utf8");
@@ -230,7 +230,7 @@ assert.match(desktopPayloadNormalizers, /export function buildApprovalDecisionBo
   "desktop-payload-normalizers.mjs must own approval decision body construction");
 
 const duplicatePlainObjectNormalizers = files
-  .filter((filePath) => !filePath.endsWith(path.join("src", "desktop", "tray", "desktop-payload-normalizers.mjs")))
+  .filter((filePath) => !filePath.endsWith(path.join("src", "desktop", "shared", "desktop-payload-normalizers.mjs")))
   .filter((filePath) => /^function normalizePlainObject\(value\) \{/m.test(readFileSync(filePath, "utf8")))
   .map((filePath) => path.relative(repoRoot, filePath).replaceAll("\\", "/"));
 assert.deepEqual(

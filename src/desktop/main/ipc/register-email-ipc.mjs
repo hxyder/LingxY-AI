@@ -1,4 +1,4 @@
-import { normalizePlainObject } from "../../tray/desktop-payload-normalizers.mjs";
+import { normalizePlainObject } from "../../shared/desktop-payload-normalizers.mjs";
 
 function normalizeEmailAccountPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
