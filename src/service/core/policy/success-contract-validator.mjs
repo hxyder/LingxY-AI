@@ -687,6 +687,24 @@ export function validateSuccessContract(taskSpec, transcript = []) {
     }
   }
 
+  const requiredToolNames = Array.isArray(taskSpec?.success_contract?.required_tool_names)
+    ? [...new Set(taskSpec.success_contract.required_tool_names.map((name) => String(name ?? "").trim()).filter(Boolean))]
+    : [];
+  for (const toolName of requiredToolNames) {
+    const allCalls = (transcript ?? []).filter(
+      (entry) => entry?.type === "tool_result" && entry?.tool === toolName
+    );
+    const successfulHits = allCalls.filter(isSuccessfulHit);
+    if (successfulHits.length > 0) continue;
+    const kind = allCalls.length === 0
+      ? `${toolName}_required_not_called`
+      : `${toolName}_required_all_failed`;
+    const message = allCalls.length === 0
+      ? `success_contract.required_tool_names includes "${toolName}" but the executor never invoked it successfully.`
+      : `success_contract.required_tool_names includes "${toolName}"; the tool was called but every call failed (errors: ${allCalls.map((h) => h.error ?? h.result?.error ?? "(none)").join(", ")}).`;
+    violations.push({ kind, message });
+  }
+
   // P4-RQ D3: research_quality coverage enforcement. Only fires when
   // the task is multi_source_research AND external_web_read is
   // already on required_policy_groups (i.e. web mode is "required").
