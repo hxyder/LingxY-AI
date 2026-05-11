@@ -33,6 +33,18 @@ const phaseRepo1OldOwners = [
 
 const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners];
 
+// Post-migration: old physical paths must not exist as reachable files.
+// Compatibility barrels are disallowed under the no-short-term-fallback rule.
+const forbiddenExistingPaths = [
+  "src/desktop/tray/desktop-payload-normalizers.mjs"
+];
+for (const rel of forbiddenExistingPaths) {
+  const absolute = path.join(root, rel);
+  if (existsSync(absolute)) {
+    fail(`${rel} still exists after migration (barrel not allowed under no-short-term-fallback rule)`);
+  }
+}
+
 // Scan: walk all source files (not node_modules, not .git)
 function walk(dir, files = []) {
   const absoluteDir = path.isAbsolute(dir) ? dir : path.join(root, dir);
