@@ -2433,3 +2433,48 @@ Decision:
 - Do not reopen schema owner or recreate `src/service/action_tools/schemas/`.
 - Next valid phase is CAP-3 preflight for registry/types/risk/policy ownership,
   not a physical CAP-3 move without verifier coverage.
+
+## Codex Review: CAP-3 Registry/Policy Static Preflight
+
+Date: 2026-05-11
+
+Scope:
+- Added CAP-3 preflight boundary documentation for action-tool registry,
+  result/type, risk, policy, and file-reversibility safety contracts.
+- Added `scripts/verify-action-tool-registry-contract.mjs` and wired it into
+  both full and fast check manifests.
+- Did not move, rename, or refactor product source files.
+- Did not change tool ids, tool order, confirmation gates, schemas, artifact
+  kinds, IPC channels, HTTP routes, provider ids, storage schema, or runtime
+  behavior.
+
+Preflight locked:
+- `createActionToolRegistry` register/get/list/evaluate/call behavior.
+- 61 built-in action tool ids in current order.
+- Confirmation-gated id snapshot.
+- `createActionResult` output shape.
+- `ACTION_TOOL_RISK_LEVELS`, `evaluateToolRisk`, policy guard, default rate
+  limits, and rate-limit usage helpers.
+- File reversibility export presence.
+- No Electron main/preload/renderer/desktop imports in registry/type/risk/policy
+  owner files.
+
+Verification run by Codex:
+- `node --check scripts/verify-action-tool-registry-contract.mjs`: passed.
+- `node scripts/verify-action-tool-registry-contract.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+
+Decision:
+- CAP-3 preflight is ready for commit.
+- Next valid step after committing this preflight is the CAP-3 physical move of
+  registry/type/risk/policy only:
+  - create `src/service/capabilities/registry/`;
+  - move `registry.mjs`, `types.mjs`, `risk_matrix.mjs`, and
+    `policy-guard.mjs`;
+  - update every active import in product code, tests, scripts, and docs;
+  - update `verify-action-tool-registry-contract.mjs`,
+    `verify-capability-roots.mjs`, `verify-tool-registry-snapshot.mjs`,
+    `verify-stale-owner-paths.mjs`, `verify-structure.mjs`, and inventories;
+  - prove old owner files are absent and no compatibility barrels remain;
+  - keep `file-reversibility.mjs` out of the physical move unless the phase is
+    explicitly expanded with artifact/file-recovery verifier coverage.
