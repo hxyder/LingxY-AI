@@ -1486,3 +1486,37 @@ Next instruction for DeepSeek:
   - update `scripts/verify-provider-boundary.mjs` so it documents the current old owner and the future capability owner expectation;
   - document no-touch contracts: tool id, schema key, provider ids, image loading semantics, artifact/source attachment semantics;
   - only after that test is green should a later commit move `vision-analyze.mjs` to `src/service/capabilities/tools/` and delete the old path.
+
+## Codex Review: CAP-1 Vision Analyze Static Preflight
+
+Review date: 2026-05-11.
+
+DeepSeek commit reviewed:
+- `21c3d0a` - `feat: CAP-1 vision-analyze preflight verifier`.
+
+Accepted:
+- The commit is correctly scoped as preflight only. It does not move `src/service/action_tools/tools/vision-analyze.mjs`, change tool ids, change provider ids, or alter runtime behavior.
+- `scripts/verify-vision-analyze-contract.mjs` locks important static contracts: registry presence, current owner path, `VISION_ANALYZE_TOOL` export, `image_paths` surface, attached-path allowlist, image limit, provider resolver reference, vision-specific provider calls, schema reference, and boundary-doc deferred status.
+- Adding the verifier to `scripts/check-manifest.mjs` is correct; it is now part of fast/release verification.
+
+Issue found and fixed by Codex:
+- The new verifier is static. It does not yet satisfy the previous instruction to exercise `VISION_ANALYZE_TOOL.execute` with a stubbed provider resolver and stubbed multi-modal vision calls.
+- Codex updated `scripts/verify-vision-analyze-contract.mjs` and `docs/architecture/vision-analyze-boundary.md` to say this explicitly, so the static preflight cannot be mistaken for permission to perform the physical move.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-vision-analyze-contract.mjs`: passed.
+- `node scripts/verify-vision-analyze-contract.mjs`: passed.
+- `node scripts/verify-doc-references.mjs`: passed.
+
+Decision:
+- Accept `21c3d0a` as a static preflight only.
+- Do not move `vision-analyze.mjs` yet.
+- Do not open CAP-2 yet.
+
+Next instruction for DeepSeek:
+- Commit Codex's clarification first.
+- Next commit must add the missing runtime/provider preflight before any physical move:
+  - either add an injectable test seam for `VISION_ANALYZE_TOOL.execute`, or another framework-approved way to stub `resolveProviderForTask`, `loadImageAsBase64`, `callAnthropicVision`, and `callOpenAIVision`;
+  - prove successful execution metadata for an accepted attached image path;
+  - prove rejection still happens before file read/provider upload for unattached paths;
+  - keep the old owner path in place until that runtime/provider preflight is green.

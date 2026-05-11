@@ -2,6 +2,14 @@
 
 CAP-1 deferred family assessment. Status: 2026-05-11, boundary documented, not moved.
 
+Current preflight coverage:
+- `scripts/verify-vision-analyze-contract.mjs` locks the static owner, registry,
+  schema, allowlist, image limit, provider routing references, and deferred
+  status.
+- This static verifier is necessary but not sufficient for a physical move.
+  It does not execute `VISION_ANALYZE_TOOL.execute` through a stubbed provider
+  resolver or stubbed multi-modal vision calls.
+
 ## Current State
 
 - File: `src/service/action_tools/tools/vision-analyze.mjs` (279 lines)
@@ -55,7 +63,8 @@ real runtime behavior. Moving it requires:
 3. Runtime test that `vision_analyze` tool executes correctly
 
 Prefer moving this only after the vision-specific gates exist:
-- Vision tool runtime test coverage exists
+- Vision tool runtime test coverage exists for `VISION_ANALYZE_TOOL.execute`
+  with provider resolution and multi-modal vision calls stubbed
 - Provider boundary verifier covers multi-modal executor paths
 - The owner map and stale old-path guards are updated in the same phase
 

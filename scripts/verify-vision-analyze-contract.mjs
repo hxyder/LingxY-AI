@@ -14,8 +14,11 @@ function fail(message) {
   process.exitCode = 1;
 }
 
-// CAP-1 vision-analyze preflight verifier
+// CAP-1 vision-analyze static preflight verifier.
 // Documents current + future owner; does not move the file.
+// This is not a runtime/provider execution proof. The physical move still
+// requires a focused execute() test with provider + multi-modal calls stubbed
+// or an explicit test seam that makes that execution path injectable.
 
 // 1. Tool exists in BUILTIN_ACTION_TOOLS with correct id
 const visionTool = BUILTIN_ACTION_TOOLS.find(t => t.id === "vision_analyze");
