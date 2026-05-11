@@ -6,9 +6,9 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "utf8");
-const readDesktopTrayIpcModules = () => readdirSync(path.join(repoRoot, "src/desktop/tray/ipc"), { withFileTypes: true })
+const readDesktopTrayIpcModules = () => readdirSync(path.join(repoRoot, "src/desktop/main/ipc"), { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
-  .map((entry) => readFileSync(path.join(repoRoot, "src/desktop/tray/ipc", entry.name), "utf8"));
+  .map((entry) => readFileSync(path.join(repoRoot, "src/desktop/main/ipc", entry.name), "utf8"));
 
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");

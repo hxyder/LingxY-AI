@@ -19,7 +19,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const manifest = read("src/desktop/shared/manifest.mjs");
 const manager = read("src/desktop/tray/popup-card-manager.mjs");
-const popupCardIpc = read("src/desktop/tray/ipc/register-popup-card-ipc.mjs");
+const popupCardIpc = read("src/desktop/main/ipc/register-popup-card-ipc.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
 const cardHtml = read("src/desktop/renderer/popup-card.html");
 const cardJs = read("src/desktop/renderer/popup-card.js");

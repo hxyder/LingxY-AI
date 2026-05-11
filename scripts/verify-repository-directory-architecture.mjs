@@ -64,7 +64,7 @@ const desktopContracts = [
   { path: "src/desktop/tray/electron-main.mjs", desc: "composition root" },
   { path: "src/desktop/renderer/preload.cjs", desc: "preload bridge" },
   { path: "src/desktop/shared/manifest.mjs", desc: "IPC channels + shell manifest" },
-  { path: "src/desktop/tray/ipc", desc: "IPC modules directory" },
+  { path: "src/desktop/main/ipc", desc: "IPC modules directory (REPO-1.2)" },
   { path: "src/desktop/smoke/desktop-gui-smoke-runner.mjs", desc: "smoke runner (REPO-1.1 target)" },
 ];
 for (const { path: p, desc } of desktopContracts) {
@@ -86,7 +86,7 @@ for (const docPath of inventoryDocs) {
 }
 
 // IPC module count must remain 21 (any move must preserve all modules)
-const ipcDir = path.join(root, "src/desktop/tray/ipc");
+const ipcDir = path.join(root, "src/desktop/main/ipc");
 const ipcModules = readdirSync(ipcDir).filter(f => f.startsWith("register-") && f.endsWith(".mjs"));
 assert(ipcModules.length === 21, `IPC module count must be 21, got ${ipcModules.length}`);
 

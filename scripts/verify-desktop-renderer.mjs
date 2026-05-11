@@ -12,7 +12,7 @@ async function read(relativePath) {
 }
 
 async function readDesktopTrayIpcModules() {
-  const ipcDir = path.join(repoRoot, "src/desktop/tray/ipc");
+  const ipcDir = path.join(repoRoot, "src/desktop/main/ipc");
   const entries = await readdir(ipcDir, { withFileTypes: true });
   return Promise.all(
     entries

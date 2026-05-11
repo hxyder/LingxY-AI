@@ -9,7 +9,7 @@ Status: verified against the current repository on 2026-05-09.
 | Surface | Path | Owner |
 | --- | --- | --- |
 | IPC channel constants | `src/desktop/shared/manifest.mjs` | Desktop shell |
-| Main-process handlers and sends | `src/desktop/tray/electron-main.mjs`, `src/desktop/tray/desktop-window-messages.mjs`, `src/desktop/tray/desktop-dock-menu.mjs`, `src/desktop/tray/desktop-clipboard-watcher.mjs`, `src/desktop/tray/ipc/register-preview-ipc.mjs`, `src/desktop/tray/ipc/register-updater-ipc.mjs`, `src/desktop/tray/ipc/register-diagnostics-ipc.mjs`, `src/desktop/tray/ipc/register-shell-open-url-ipc.mjs`, `src/desktop/tray/ipc/register-mcp-ipc.mjs`, `src/desktop/tray/ipc/register-scheduler-ipc.mjs`, `src/desktop/tray/ipc/register-provider-config-ipc.mjs`, `src/desktop/tray/ipc/register-skill-ipc.mjs`, `src/desktop/tray/ipc/register-runtime-config-ipc.mjs`, `src/desktop/tray/ipc/register-email-ipc.mjs`, `src/desktop/tray/ipc/register-notes-project-ipc.mjs`, `src/desktop/tray/ipc/register-connected-account-ipc.mjs`, `src/desktop/tray/ipc/register-shell-window-ipc.mjs`, `src/desktop/tray/ipc/register-shell-local-ipc.mjs`, `src/desktop/tray/ipc/register-admin-ipc.mjs`, `src/desktop/tray/ipc/register-approval-ipc.mjs`, `src/desktop/tray/ipc/register-audio-service-ipc.mjs`, `src/desktop/tray/ipc/register-office-ipc.mjs`, `src/desktop/tray/ipc/register-pdf-ipc.mjs`, `src/desktop/tray/ipc/register-task-ipc.mjs` | Desktop shell |
+| Main-process handlers and sends | `src/desktop/tray/electron-main.mjs`, `src/desktop/tray/desktop-window-messages.mjs`, `src/desktop/tray/desktop-dock-menu.mjs`, `src/desktop/tray/desktop-clipboard-watcher.mjs`, `src/desktop/main/ipc/register-preview-ipc.mjs`, `src/desktop/main/ipc/register-updater-ipc.mjs`, `src/desktop/main/ipc/register-diagnostics-ipc.mjs`, `src/desktop/main/ipc/register-shell-open-url-ipc.mjs`, `src/desktop/main/ipc/register-mcp-ipc.mjs`, `src/desktop/main/ipc/register-scheduler-ipc.mjs`, `src/desktop/main/ipc/register-provider-config-ipc.mjs`, `src/desktop/main/ipc/register-skill-ipc.mjs`, `src/desktop/main/ipc/register-runtime-config-ipc.mjs`, `src/desktop/main/ipc/register-email-ipc.mjs`, `src/desktop/main/ipc/register-notes-project-ipc.mjs`, `src/desktop/main/ipc/register-connected-account-ipc.mjs`, `src/desktop/main/ipc/register-shell-window-ipc.mjs`, `src/desktop/main/ipc/register-shell-local-ipc.mjs`, `src/desktop/main/ipc/register-admin-ipc.mjs`, `src/desktop/main/ipc/register-approval-ipc.mjs`, `src/desktop/main/ipc/register-audio-service-ipc.mjs`, `src/desktop/main/ipc/register-office-ipc.mjs`, `src/desktop/main/ipc/register-pdf-ipc.mjs`, `src/desktop/main/ipc/register-task-ipc.mjs` | Desktop shell |
 | Preload bridge | `src/desktop/renderer/preload.cjs` | Desktop shell / renderer bridge |
 | Renderer consumers | `src/desktop/renderer/**`, `src/desktop/console/**`, `src/desktop/overlay/**` | Desktop renderer |
 
@@ -74,27 +74,27 @@ The popup-card IPC family is now included in the extracted IPC module scan. Its 
 
 Current extracted IPC modules:
 
-- `src/desktop/tray/ipc/register-preview-ipc.mjs`: preview window show, append-delta, commit, close, and pin handlers.
-- `src/desktop/tray/ipc/register-updater-ipc.mjs`: updater status, strategy, check-now, and apply handlers.
-- `src/desktop/tray/ipc/register-diagnostics-ipc.mjs`: diagnostic bundle and renderer error report handlers.
-- `src/desktop/tray/ipc/register-shell-open-url-ipc.mjs`: shell open-url handler and link-open mode selection.
-- `src/desktop/tray/ipc/register-mcp-ipc.mjs`: MCP install, server save/delete/test/toggle/config, and draft import handlers.
-- `src/desktop/tray/ipc/register-scheduler-ipc.mjs`: schedule create/update/delete/run, template save/import/delete, and DAG resume handlers.
-- `src/desktop/tray/ipc/register-provider-config-ipc.mjs`: provider save/delete, onboarding suggestion update, and Code CLI adapter save/delete handlers.
-- `src/desktop/tray/ipc/register-skill-ipc.mjs`: skill registry/state, auto-skill save, skill markdown read/write, create/duplicate/delete/history/rollback/test handlers.
-- `src/desktop/tray/ipc/register-runtime-config-ipc.mjs`: routing, output, feature, and email settings update handlers.
-- `src/desktop/tray/ipc/register-email-ipc.mjs`: email account save/delete and digest check handlers.
-- `src/desktop/tray/ipc/register-notes-project-ipc.mjs`: notes save/upsert/delete/restore/append-chip, project store/files pick/attach/remove-index, and preview cache clear handlers.
-- `src/desktop/tray/ipc/register-connected-account-ipc.mjs`: connected account rename/default/disconnect and connector account disconnect/config save handlers.
-- `src/desktop/tray/ipc/register-shell-window-ipc.mjs`: shell status/show/hide/open-overlay-voice/drop-files/move/resize/ignore-mouse/notify/navigate-console handlers.
-- `src/desktop/tray/ipc/register-shell-local-ipc.mjs`: shell-local settings, note recording state, active-window capture, desktop audio source, Echo wake/diagnostics/shortcuts, dock menu, and echo bubble handlers.
-- `src/desktop/tray/ipc/register-admin-ipc.mjs`: security state update, budget update, and export bundle handlers.
-- `src/desktop/tray/ipc/register-approval-ipc.mjs`: approval approve and reject handlers.
-- `src/desktop/tray/ipc/register-audio-service-ipc.mjs`: Echo keyword detection/enrollment and note transcription service proxy handlers.
-- `src/desktop/tray/ipc/register-office-ipc.mjs`: Office add-in setup handler.
-- `src/desktop/tray/ipc/register-pdf-ipc.mjs`: PDF preview worker URL handler.
-- `src/desktop/tray/ipc/register-popup-card-ipc.mjs`: popup-card show/close/toggle-pin/resize/resolve handlers.
-- `src/desktop/tray/ipc/register-task-ipc.mjs`: task cancel/retry/delete/restore and file checkpoint recovery handlers.
+- `src/desktop/main/ipc/register-preview-ipc.mjs`: preview window show, append-delta, commit, close, and pin handlers.
+- `src/desktop/main/ipc/register-updater-ipc.mjs`: updater status, strategy, check-now, and apply handlers.
+- `src/desktop/main/ipc/register-diagnostics-ipc.mjs`: diagnostic bundle and renderer error report handlers.
+- `src/desktop/main/ipc/register-shell-open-url-ipc.mjs`: shell open-url handler and link-open mode selection.
+- `src/desktop/main/ipc/register-mcp-ipc.mjs`: MCP install, server save/delete/test/toggle/config, and draft import handlers.
+- `src/desktop/main/ipc/register-scheduler-ipc.mjs`: schedule create/update/delete/run, template save/import/delete, and DAG resume handlers.
+- `src/desktop/main/ipc/register-provider-config-ipc.mjs`: provider save/delete, onboarding suggestion update, and Code CLI adapter save/delete handlers.
+- `src/desktop/main/ipc/register-skill-ipc.mjs`: skill registry/state, auto-skill save, skill markdown read/write, create/duplicate/delete/history/rollback/test handlers.
+- `src/desktop/main/ipc/register-runtime-config-ipc.mjs`: routing, output, feature, and email settings update handlers.
+- `src/desktop/main/ipc/register-email-ipc.mjs`: email account save/delete and digest check handlers.
+- `src/desktop/main/ipc/register-notes-project-ipc.mjs`: notes save/upsert/delete/restore/append-chip, project store/files pick/attach/remove-index, and preview cache clear handlers.
+- `src/desktop/main/ipc/register-connected-account-ipc.mjs`: connected account rename/default/disconnect and connector account disconnect/config save handlers.
+- `src/desktop/main/ipc/register-shell-window-ipc.mjs`: shell status/show/hide/open-overlay-voice/drop-files/move/resize/ignore-mouse/notify/navigate-console handlers.
+- `src/desktop/main/ipc/register-shell-local-ipc.mjs`: shell-local settings, note recording state, active-window capture, desktop audio source, Echo wake/diagnostics/shortcuts, dock menu, and echo bubble handlers.
+- `src/desktop/main/ipc/register-admin-ipc.mjs`: security state update, budget update, and export bundle handlers.
+- `src/desktop/main/ipc/register-approval-ipc.mjs`: approval approve and reject handlers.
+- `src/desktop/main/ipc/register-audio-service-ipc.mjs`: Echo keyword detection/enrollment and note transcription service proxy handlers.
+- `src/desktop/main/ipc/register-office-ipc.mjs`: Office add-in setup handler.
+- `src/desktop/main/ipc/register-pdf-ipc.mjs`: PDF preview worker URL handler.
+- `src/desktop/main/ipc/register-popup-card-ipc.mjs`: popup-card show/close/toggle-pin/resize/resolve handlers.
+- `src/desktop/main/ipc/register-task-ipc.mjs`: task cancel/retry/delete/restore and file checkpoint recovery handlers.
 
 ## Verification
 

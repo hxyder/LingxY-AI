@@ -76,7 +76,7 @@ assert.ok(
 // ── 3. electron-main wiring ─────────────────────────────────────────
 const electronMainSrc = read("src/desktop/tray/electron-main.mjs");
 const desktopNotificationsSrc = read("src/desktop/tray/desktop-notifications.mjs");
-const updaterIpcSrc = read("src/desktop/tray/ipc/register-updater-ipc.mjs");
+const updaterIpcSrc = read("src/desktop/main/ipc/register-updater-ipc.mjs");
 const mainProcessIpcSrc = `${electronMainSrc}\n${updaterIpcSrc}`;
 assert.ok(
   /import\s*{\s*createAutoUpdater[^}]*}\s*from\s*"\.\/auto-updater\.mjs"/.test(electronMainSrc),

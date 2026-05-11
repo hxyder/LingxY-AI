@@ -227,7 +227,7 @@ Verification:
 Scope:
 
 - Split `src/desktop/tray/electron-main.mjs` IPC groups into small modules under
-  `src/desktop/tray/ipc/` without changing public IPC channel names.
+  `src/desktop/main/ipc/` without changing public IPC channel names.
 - Move request normalization into typed desktop service-client helpers.
 - Add a verifier that blocks large new IPC handlers and duplicate channel
   registration.

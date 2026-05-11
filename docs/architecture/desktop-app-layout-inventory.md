@@ -9,7 +9,6 @@ Status: 2026-05-10. No physical moves yet; verifier-first only.
 src/desktop/
 ├── tray/                        # Main process (composition root + helpers + IPC)
 │   ├── electron-main.mjs        # Composition root (~1000 lines, -58%)
-│   ├── ipc/                     # 21 IPC modules (register-*-ipc.mjs)
 │   ├── desktop-window-lifecycle.mjs   # Phase 2B.42
 │   ├── desktop-window-actions.mjs     # Phase 2B.43
 │   ├── desktop-shortcut-router.mjs    # Phase 2B.44
@@ -19,6 +18,8 @@ src/desktop/
 │   └── ... (30+ other helpers)
 ├── smoke/                       # Test-only GUI smoke (REPO-1.1)
 │   └── desktop-gui-smoke-runner.mjs   # Phase 2B.47
+├── main/                        # Main process IPC modules (REPO-1.2)
+│   └── ipc/                     # 21 IPC modules
 ├── renderer/                    # Renderer windows + shared clients
 │   ├── console.js/html          # Main console window
 │   ├── overlay.js/html          # Overlay window
@@ -42,7 +43,7 @@ src/desktop/
 apps/desktop/
 ├── main/                  ← src/desktop/tray/ (composition root + helpers)
 │   ├── electron-main.mjs  # unchanged entry point
-│   ├── ipc/               ← src/desktop/tray/ipc/
+│   ├── ipc/               ← src/desktop/main/ipc/
 │   └── ... (extracted helpers)
 ├── preload/               ← src/desktop/renderer/preload.cjs
 ├── renderer/              ← src/desktop/renderer/
@@ -69,7 +70,7 @@ apps/desktop/
 
 1. **REPO-1.0** ✅ inventory + strengthen verifier (current step)
 2. **REPO-1.1** ✅ smoke runner moved to `smoke/desktop-gui-smoke-runner.mjs`
-3. **REPO-1.2** — move IPC modules: `tray/ipc/` → `main/ipc/` (same per-phase barrel pattern)
+3. **REPO-1.2** ✅ IPC modules moved from `tray/ipc/` → `main/ipc/`
 4. **REPO-1.3** — move shell helpers: `tray/desktop-*.mjs` (7 files) → `shell/` (same pattern)
 5. **REPO-1.4** — classify + verify renderer shared clients under current `renderer/shared/` path (no path change; verify ownership before REPO-1.5 feature-folder moves)
 6. **REPO-1.5** — reorganize renderer sub-windows into `renderer/console/`, `renderer/overlay/`, etc.

@@ -70,7 +70,7 @@ const main = await source("src/desktop/tray/electron-main.mjs");
 const desktopNotifications = await source("src/desktop/tray/desktop-notifications.mjs");
 assert.ok(desktopNotifications.includes('reason: "primary_ui_visible"'),
   "success notifications must be suppressible while primary UI is visible");
-const ipcShellWindow = await source("src/desktop/tray/ipc/register-shell-window-ipc.mjs");
+const ipcShellWindow = await source("src/desktop/main/ipc/register-shell-window-ipc.mjs");
 assert.ok(ipcShellWindow.includes("setIgnoreMouseEvents(Boolean(ignore)"),
   "main process must expose dock click-through control");
 

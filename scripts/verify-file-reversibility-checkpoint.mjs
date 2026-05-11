@@ -11,9 +11,9 @@ const taskRoutes = readFileSync("src/service/core/http-routes/task-routes.mjs", 
 const manifest = readFileSync("src/desktop/shared/manifest.mjs", "utf8");
 const preload = readFileSync("src/desktop/renderer/preload.cjs", "utf8");
 const main = readFileSync("src/desktop/tray/electron-main.mjs", "utf8");
-const ipcModules = readdirSync("src/desktop/tray/ipc", { withFileTypes: true })
+const ipcModules = readdirSync("src/desktop/main/ipc", { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
-  .map((entry) => readFileSync(path.join("src/desktop/tray/ipc", entry.name), "utf8"))
+  .map((entry) => readFileSync(path.join("src/desktop/main/ipc", entry.name), "utf8"))
   .join("\n");
 const mainProcessIpc = `${main}\n${ipcModules}`;
 const renderer = readFileSync("src/desktop/renderer/console-task-detail.mjs", "utf8");

@@ -639,7 +639,7 @@ src/
 
 | Proposed move | Risk | Rationale |
 | --- | --- | --- |
-| Extract `electron-main.mjs` IPC route groups into `src/desktop/tray/ipc/*.mjs` without changing channels | Medium | Large but mostly mechanical; risk is missing a handler or actor header. Add verifier before moving. |
+| Extract `electron-main.mjs` IPC route groups into `src/desktop/main/ipc/*.mjs` without changing channels | Medium | Large but mostly mechanical; risk is missing a handler or actor header. Add verifier before moving. |
 | Generate or centralize preload API contract from `manifest.mjs` + typed method map | Medium/High | Broad surface; existing renderer calls are numerous. Needs compatibility facade. |
 | Move renderer direct `fetch` calls behind console/overlay runtime clients | Medium | Behavior should not change, but UI has many call sites and loading states. |
 | Split `action_tools/tools/index.mjs` into per-family modules | High | Tool ids, schemas, policy, tests, and prompt visibility depend on stable exports. Needs registry snapshot verifier. |

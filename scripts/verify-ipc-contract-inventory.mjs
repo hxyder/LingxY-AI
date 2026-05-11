@@ -8,7 +8,7 @@ const docPath = path.join(root, "docs/architecture/ipc-contract-inventory.md");
 // In Phase 2B, if IPC handlers move into modules, scan electron-main.mjs plus those
 // modules. The invariant is channel contract stability, not handler file location.
 const mainPath = path.join(root, "src/desktop/tray/electron-main.mjs");
-const ipcModuleRoot = path.join(root, "src/desktop/tray/ipc");
+const ipcModuleRoot = path.join(root, "src/desktop/main/ipc");
 const mainIpcHelperPaths = [
   path.join(root, "src/desktop/tray/desktop-window-messages.mjs"),
   path.join(root, "src/desktop/tray/desktop-window-lifecycle.mjs"),
@@ -155,27 +155,27 @@ const expectedHardcodedMainHandlers = [
 ];
 
 const expectedExtractedIpcModules = [
-  "src/desktop/tray/ipc/register-admin-ipc.mjs",
-  "src/desktop/tray/ipc/register-approval-ipc.mjs",
-  "src/desktop/tray/ipc/register-audio-service-ipc.mjs",
-  "src/desktop/tray/ipc/register-connected-account-ipc.mjs",
-  "src/desktop/tray/ipc/register-diagnostics-ipc.mjs",
-  "src/desktop/tray/ipc/register-email-ipc.mjs",
-  "src/desktop/tray/ipc/register-mcp-ipc.mjs",
-  "src/desktop/tray/ipc/register-notes-project-ipc.mjs",
-  "src/desktop/tray/ipc/register-office-ipc.mjs",
-  "src/desktop/tray/ipc/register-pdf-ipc.mjs",
-  "src/desktop/tray/ipc/register-popup-card-ipc.mjs",
-  "src/desktop/tray/ipc/register-preview-ipc.mjs",
-  "src/desktop/tray/ipc/register-provider-config-ipc.mjs",
-  "src/desktop/tray/ipc/register-runtime-config-ipc.mjs",
-  "src/desktop/tray/ipc/register-scheduler-ipc.mjs",
-  "src/desktop/tray/ipc/register-shell-local-ipc.mjs",
-  "src/desktop/tray/ipc/register-shell-open-url-ipc.mjs",
-  "src/desktop/tray/ipc/register-shell-window-ipc.mjs",
-  "src/desktop/tray/ipc/register-skill-ipc.mjs",
-  "src/desktop/tray/ipc/register-task-ipc.mjs",
-  "src/desktop/tray/ipc/register-updater-ipc.mjs"
+  "src/desktop/main/ipc/register-admin-ipc.mjs",
+  "src/desktop/main/ipc/register-approval-ipc.mjs",
+  "src/desktop/main/ipc/register-audio-service-ipc.mjs",
+  "src/desktop/main/ipc/register-connected-account-ipc.mjs",
+  "src/desktop/main/ipc/register-diagnostics-ipc.mjs",
+  "src/desktop/main/ipc/register-email-ipc.mjs",
+  "src/desktop/main/ipc/register-mcp-ipc.mjs",
+  "src/desktop/main/ipc/register-notes-project-ipc.mjs",
+  "src/desktop/main/ipc/register-office-ipc.mjs",
+  "src/desktop/main/ipc/register-pdf-ipc.mjs",
+  "src/desktop/main/ipc/register-popup-card-ipc.mjs",
+  "src/desktop/main/ipc/register-preview-ipc.mjs",
+  "src/desktop/main/ipc/register-provider-config-ipc.mjs",
+  "src/desktop/main/ipc/register-runtime-config-ipc.mjs",
+  "src/desktop/main/ipc/register-scheduler-ipc.mjs",
+  "src/desktop/main/ipc/register-shell-local-ipc.mjs",
+  "src/desktop/main/ipc/register-shell-open-url-ipc.mjs",
+  "src/desktop/main/ipc/register-shell-window-ipc.mjs",
+  "src/desktop/main/ipc/register-skill-ipc.mjs",
+  "src/desktop/main/ipc/register-task-ipc.mjs",
+  "src/desktop/main/ipc/register-updater-ipc.mjs"
 ];
 
 function fail(message) {

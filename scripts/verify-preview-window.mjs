@@ -77,7 +77,7 @@ const ROOT = path.resolve(__dirname, "..");
 {
   const src = await readFile(path.join(ROOT, "src/desktop/tray/electron-main.mjs"), "utf8");
   const previewMgr = await readFile(path.join(ROOT, "src/desktop/tray/desktop-preview-window-manager.mjs"), "utf8");
-  const previewIpc = await readFile(path.join(ROOT, "src/desktop/tray/ipc/register-preview-ipc.mjs"), "utf8");
+  const previewIpc = await readFile(path.join(ROOT, "src/desktop/main/ipc/register-preview-ipc.mjs"), "utf8");
   assert.ok(previewMgr.includes("function computePreviewBounds"),
     "desktop-preview-window-manager must compute the right-edge bounds for the preview window");
   assert.ok(previewMgr.includes("function ensurePreviewWindow"),

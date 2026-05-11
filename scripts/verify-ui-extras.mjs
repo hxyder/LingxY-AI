@@ -22,9 +22,9 @@ import { readCssWithImports } from "./lib/css-imports.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
-const readDesktopTrayIpcModules = () => readdirSync(path.join(root, "src/desktop/tray/ipc"), { withFileTypes: true })
+const readDesktopTrayIpcModules = () => readdirSync(path.join(root, "src/desktop/main/ipc"), { withFileTypes: true })
   .filter((entry) => entry.isFile() && /\.mjs$/u.test(entry.name))
-  .map((entry) => readFileSync(path.join(root, "src/desktop/tray/ipc", entry.name), "utf8"));
+  .map((entry) => readFileSync(path.join(root, "src/desktop/main/ipc", entry.name), "utf8"));
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");

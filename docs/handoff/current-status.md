@@ -1074,3 +1074,79 @@ Decision:
 - Accept `3b753e2`.
 - The previous REPO-0 blocker about the fictional current `native-host/` path and stale `Verifiers (69)` prose is resolved.
 - REPO-0 may be treated as checkpoint-complete for documentation/verifier inventory purposes, with the caveat that REPO-1 must not begin physical root moves until the repository-directory verifier is made stricter for move-specific contracts.
+
+## Codex Review: REPO-1.0 Desktop Layout Inventory
+
+Review date: 2026-05-10.
+
+DeepSeek commits reviewed:
+- `1f046fc` - `docs: remove stale verifier count from handoff header`.
+- `2ef1dc7` - `docs: Phase REPO-1.0 desktop app layout inventory and verifier guard`.
+
+Accepted:
+- `1f046fc` removes the stale top-level `check:fast 69/69` assertion from the current handoff status and replaces it with non-counted `check:fast green` wording.
+- `2ef1dc7` is verifier-first and does not physically move product source files.
+- `docs/architecture/desktop-app-layout-inventory.md` captures the current desktop layout, long-term `apps/desktop/**` target shape, no-change contracts, and required verification commands before any REPO-1 physical move.
+- `scripts/verify-repository-directory-architecture.mjs` now locks key desktop contract paths and the current 21 `register-*.mjs` IPC module count, so accidental early desktop reshuffles should fail fast.
+
+Required cleanup before REPO-1.1 starts:
+- Avoid unverified exact file-count prose in the inventory. Current local counts are `src/desktop/tray` 39 top-level files / 60 recursive files, and `src/desktop/renderer` 78 recursive files, which does not exactly match `tray/ (54 files)` and `renderer/ (80+ files)`. Either remove these counts or make the verifier compute and enforce the intended definition.
+- Fix the migration sequence wording: compatibility barrels must be created and verified during each move, not as a final REPO-1.6 step after all imports are changed. Each sub-phase should be `add target path + compatibility facade -> migrate imports -> verify no stale owner/import text -> remove or archive old reachable path when safe`.
+- Clarify REPO-1.4. The current line says `renderer/shared/ -> renderer/shared/ (path stable)`, which reads like a move to the same path. If the intent is only to classify/verify shared renderer clients before later feature-folder moves, say that explicitly.
+- Before REPO-1.1, add move-grade verifier checks for stale `src/desktop/tray/desktop-gui-smoke-runner.mjs` owner text/imports after the smoke runner move. The current verifier locks pre-move state, which is correct for REPO-1.0, but it must be updated in the same PR that performs each move.
+
+Verification rerun by Codex:
+- `node --check scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node --check scripts/check-manifest.mjs`: passed.
+- `node scripts/verify-ipc-contract-inventory.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `1f046fc` and `2ef1dc7` as REPO-1.0 inventory/guard progress.
+- REPO-1.1 should not start until the desktop layout inventory is corrected so it does not teach a late-compatibility-barrel migration pattern or stale unverified file counts.
+
+## Codex Review: REPO-1.0 Cleanup + REPO-1.1 Smoke Runner Move
+
+Review date: 2026-05-11.
+
+DeepSeek commits reviewed:
+- `4ef8aef` - `docs: fix REPO-1.0 inventory per Codex review`.
+- `b33d895` - `refactor: move smoke runner to src/desktop/smoke/ (REPO-1.1)`.
+
+Accepted:
+- `4ef8aef` resolves the previous REPO-1.0 documentation blockers: exact file-count prose was removed, compatibility facades are described as per-move work, and REPO-1.4 is clarified as a classification/verification step rather than a same-path move.
+- `b33d895` performs the intended low-risk REPO-1.1 move: `desktop-gui-smoke-runner.mjs` now lives at `src/desktop/smoke/desktop-gui-smoke-runner.mjs`, and `electron-main.mjs` imports it from the new owner path.
+- The old product path `src/desktop/tray/desktop-gui-smoke-runner.mjs` no longer exists, and the runtime/verifier code references the new smoke path.
+- GUI smoke still passes 44/44, including overlay, console, preview, link browser, popup, updater, and approval-card checks.
+
+Required cleanup before declaring REPO-1.1 complete:
+- `docs/architecture/desktop-app-layout-inventory.md` still lists `desktop-gui-smoke-runner.mjs` under `src/desktop/tray/` in the Current Layout. After REPO-1.1, that is stale current-state owner text and must move to a `src/desktop/smoke/` entry.
+- `docs/architecture/codebase-file-inventory.md` says there is a compatibility barrel at `src/desktop/tray/desktop-gui-smoke-runner.mjs`, but `Test-Path src/desktop/tray/desktop-gui-smoke-runner.mjs` is `False`. Either restore a deliberate compatibility barrel or, better for this completed single-import move, remove the false barrel note.
+- `scripts/verify-repository-directory-architecture.mjs` should fail on those stale current-layout/barrel assertions. Right now it checks the new smoke file exists, but it does not prove that old owner text was removed from active inventory docs.
+
+Verification rerun by Codex:
+- `Test-Path src/desktop/tray/desktop-gui-smoke-runner.mjs`: false.
+- `Test-Path src/desktop/smoke/desktop-gui-smoke-runner.mjs`: true.
+- `node --check src/desktop/tray/electron-main.mjs`: passed.
+- `node --check src/desktop/smoke/desktop-gui-smoke-runner.mjs`: passed.
+- `node --check scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-repository-directory-architecture.mjs`: passed.
+- `node scripts/verify-desktop-gui-perf-smoke.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- `node scripts/verify-ipc-contract-inventory.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-cancellation-propagation.mjs`: passed.
+- `node scripts/verify-conversation-branch-contract.mjs`: passed.
+- `node scripts/verify-task-llm-usage-ui.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed 44/44.
+- `npm run check:fast`: passed 70/70.
+
+Decision:
+- Accept `4ef8aef`.
+- Accept `b33d895` as a functional move, but do not declare REPO-1.1 complete until the two stale active-inventory assertions above are corrected and the repository-directory verifier blocks their return.
