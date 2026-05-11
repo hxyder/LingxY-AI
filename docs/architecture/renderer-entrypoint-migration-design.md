@@ -231,6 +231,26 @@ new paths.
 - [ ] Existing `renderer/console/` contents preserved (3 console client files)
 - [ ] Barrels removed after all references migrated
 
+## Final Status (2026-05-11, 10 attempts)
+
+REPO-1.5a physical migration has been attempted 10 times. The `console_stream_delta_load`
+GUI smoke check consistently fails (3/3 in final test) when console.js imports change
+to point at subdirectory paths. Root cause investigation:
+
+1. **Not an import resolution issue**: Node.js `import()` confirms all moved files and
+   their imports resolve correctly after the migration.
+2. **Not a barrel issue**: Both `export *` and explicit named re-export barrels fail.
+3. **Not a file modification issue**: Identical rewrites and `touch` don't break GUI smoke.
+4. **Electron renderer-specific**: The main-process patterns (REPO-1.2 IPC modules,
+   REPO-1.3 shell helpers, payload normalizers) all work. Only renderer file moves fail.
+5. **Consistent failure mode**: Even moving a single zero-import file (floating-ui.mjs)
+   causes `console_stream_delta_load` to fail.
+
+The preflight verifier supports both barrel-window and completion modes. The migration
+is mechanically correct but blocked by Electron renderer module loading behavior.
+Requires Electron DevTools debugging (`chrome://inspect`) to trace why the console
+module graph fails to initialize after path changes.
+
 ## Lessons Learned (2026-05-11 Attempt)
 
 An attempted REPO-1.5a execution revealed additional complexity beyond the

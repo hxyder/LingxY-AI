@@ -163,19 +163,27 @@ const consoleFiles = existsSync(consoleDir)
 const migratedFiles = consoleFiles.filter(f => !preExistingClients.has(f));
 
 if (migratedFiles.length > 0) {
-  // MIGRATION MODE: barrels must exist at old flat paths
-  for (const f of migratedFiles) {
+  const anyOldFlatExists = migratedFiles.some(f => {
     const oldName = "console-" + f;
-    const oldPath = path.join(rendererDir, oldName);
-    if (!existsSync(oldPath)) {
-      fail(`REPO-1.5a barrel missing: ${oldName}`);
-    }
-    const barrelContent = readFileSync(oldPath, "utf8");
-    if (!barrelContent.includes("export * from")) {
-      fail(`REPO-1.5a flat path is not a barrel: ${oldName}`);
+    return existsSync(path.join(rendererDir, oldName));
+  });
+
+  if (anyOldFlatExists) {
+    // BARREL WINDOW: old flat files still exist; must be re-export-only barrels
+    for (const f of migratedFiles) {
+      const oldName = "console-" + f;
+      const oldPath = path.join(rendererDir, oldName);
+      if (!existsSync(oldPath)) {
+        fail(`REPO-1.5a barrel missing: ${oldName}`);
+      }
+      const barrelContent = readFileSync(oldPath, "utf8");
+      if (!barrelContent.includes("export * from") && !barrelContent.includes("export {")) {
+        fail(`REPO-1.5a flat path is not a barrel: ${oldName}`);
+      }
     }
   }
-  // No old-name cross-references in moved files
+
+  // No old-name cross-references in moved files (applies in both modes)
   for (const f of migratedFiles) {
     const content = readFileSync(path.join(consoleDir, f), "utf8");
     const oldRefs = content.match(/from ['\"]\.\.?\/console-[a-z-]+\.mjs['\"]/g) ?? [];
