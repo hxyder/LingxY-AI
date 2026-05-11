@@ -617,5 +617,48 @@ function makeSuccessResult(finalText, transcript = []) {
   );
 }
 
+// Codex round-1: required_tool_names block (goal is NOT transform_existing_file)
+{
+  const captured = [];
+  const runtime = createStubRuntime({
+    generateImpl: async (args) => {
+      captured.push({ toolId, args });
+      if (toolId === "generate_document") throw new Error("should not call generate_document");
+      return {
+        success: true,
+        observation: `mock ${toolId} result`,
+        artifact_paths: [`/tmp/stub.${args.kind}`]
+      };
+    }
+  });
+  const task = {
+    task_id: "task_required_edit_file",
+    user_command: "clean up the report file",
+    task_spec: {
+      goal: "summarize_document",
+      artifact: { required: true, kind: "docx" },
+      success_contract: {
+        artifact_created: true,
+        required_tool_names: ["edit_file"],
+        required_policy_groups: ["artifact_generation"]
+      }
+    }
+  };
+  const result = makeSuccessResult("我已经帮你整理好了报告内容。");
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
+  check(
+    "required_tool_edit_file_not_called: generate_document was not called",
+    captured.length === 0
+  );
+  check(
+    "required_tool_edit_file_not_called: status = partial_success",
+    out.status === "partial_success"
+  );
+  check(
+    "required_tool_edit_file_not_called: reason = required_tool_edit_file_not_called",
+    out.artifact_recovery?.reason === "required_tool_edit_file_not_called"
+  );
+}
+
 console.log(`\n${passed} pass / ${failed} fail`);
 if (failed > 0) process.exit(1);

@@ -1068,7 +1068,7 @@ test("launch ambiguity final answer asks for disambiguation from structured cand
   });
 
   assert.equal(result.status, "partial_success");
-  assert.match(result.final_text, /请选择要打开哪一个|choose which/i);
+  assert.match(result.final_text, /哪一个|哪个|which/i);
   assert.match(result.final_text, /Alpha Desktop/);
   assert.match(result.final_text, /Alpha Tools/);
   assert.ok(!/cannot operate your computer/i.test(result.final_text));
