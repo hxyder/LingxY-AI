@@ -67,8 +67,8 @@ apps/desktop/
 3. **REPO-1.2** ✅ IPC modules moved from `tray/ipc/` → `main/ipc/`
 4. **REPO-1.3** ✅ 6 shell helpers moved from `tray/` → `shell/`
 5. **REPO-1.4** ✅ 4 renderer shared clients classified/verified (no path change)
-6. **REPO-1.5** — reorganize renderer sub-windows into `renderer/console/`, `renderer/overlay/`, etc.
-7. **REPO-1.6** — final cleanup: remove any remaining compatibility barrels, update all imports
+6. **REPO-1.5** — deferred: reorganize renderer sub-windows (HTML script references make this high-risk; classify + document current layout instead)
+7. **REPO-1.6** — deferred: final cleanup when all moves are complete
 
 **Each sub-phase follows the same pattern:**
 1. Create target directory/file
