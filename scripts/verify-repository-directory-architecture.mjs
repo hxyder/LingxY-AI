@@ -92,6 +92,17 @@ for (const name of movedToShell) {
   }
 }
 
+// REPO-1.4: renderer shared clients must exist at documented paths
+const sharedClients = [
+  { path: "src/desktop/renderer/shared/runtime-http-client.mjs", desc: "runtime HTTP client" },
+  { path: "src/desktop/renderer/shared/runtime-task-client.mjs", desc: "runtime task client" },
+  { path: "src/desktop/renderer/shared/shell-client.mjs", desc: "shell preload bridge client" },
+  { path: "src/desktop/renderer/shared/echo-runtime-client.mjs", desc: "echo runtime client" },
+];
+for (const { path: p, desc } of sharedClients) {
+  assert(existsSync(path.join(root, p)), `renderer shared client missing: ${p} (${desc})`);
+}
+
 // REPO-1.1: no active inventory doc may claim the old smoke runner path
 const inventoryDocs = [
   "docs/architecture/desktop-app-layout-inventory.md",

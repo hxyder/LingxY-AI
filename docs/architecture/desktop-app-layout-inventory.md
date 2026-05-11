@@ -28,7 +28,7 @@ src/desktop/
 │   ├── popup-card.js/css/html   # Popup card window
 │   ├── preview-window.js/html   # Preview window
 │   ├── preload.cjs              # Preload bridge
-│   ├── shared/                  # Shared renderer clients (5 files)
+│   ├── shared/                  # ✅ REPO-1.4: 4 shared clients (runtime-http, runtime-task, shell, echo)
 │   ├── preview/                 # Preview handlers
 │   └── console/                 # Console-specific clients
 ├── shared/
@@ -66,7 +66,7 @@ apps/desktop/
 2. **REPO-1.1** ✅ smoke runner moved to `smoke/desktop-gui-smoke-runner.mjs`
 3. **REPO-1.2** ✅ IPC modules moved from `tray/ipc/` → `main/ipc/`
 4. **REPO-1.3** ✅ 6 shell helpers moved from `tray/` → `shell/`
-5. **REPO-1.4** — classify + verify renderer shared clients under current `renderer/shared/` path (no path change; verify ownership before REPO-1.5 feature-folder moves)
+5. **REPO-1.4** ✅ 4 renderer shared clients classified/verified (no path change)
 6. **REPO-1.5** — reorganize renderer sub-windows into `renderer/console/`, `renderer/overlay/`, etc.
 7. **REPO-1.6** — final cleanup: remove any remaining compatibility barrels, update all imports
 
