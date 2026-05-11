@@ -65,6 +65,7 @@ const desktopContracts = [
   { path: "src/desktop/renderer/preload.cjs", desc: "preload bridge" },
   { path: "src/desktop/shared/manifest.mjs", desc: "IPC channels + shell manifest" },
   { path: "src/desktop/tray/ipc", desc: "IPC modules directory" },
+  { path: "src/desktop/smoke/desktop-gui-smoke-runner.mjs", desc: "smoke runner (REPO-1.1 target)" },
 ];
 for (const { path: p, desc } of desktopContracts) {
   assert(existsSync(path.join(root, p)), `desktop contract missing: ${p} (${desc})`);

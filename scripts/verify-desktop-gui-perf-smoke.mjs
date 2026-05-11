@@ -8,7 +8,7 @@ function read(path) {
 const contract = read("scripts/gui-smoke-perf-contract.mjs");
 const runner = read("scripts/run-electron-gui-smoke.mjs");
 const main = read("src/desktop/tray/electron-main.mjs");
-const smokeRunner = read("src/desktop/tray/desktop-gui-smoke-runner.mjs");
+const smokeRunner = read("src/desktop/smoke/desktop-gui-smoke-runner.mjs");
 const tests = read("tests/behavior/desktop-gui-perf-smoke.test.mjs");
 const packageJson = read("package.json");
 const manifest = read("scripts/check-manifest.mjs");

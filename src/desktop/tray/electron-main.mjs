@@ -39,7 +39,7 @@ import { createDesktopWindowActions } from "./desktop-window-actions.mjs";
 import { createShortcutRouter } from "./desktop-shortcut-router.mjs";
 import { createLinkBrowserWindowManager } from "./desktop-link-browser-window.mjs";
 import { createPreviewWindowManager } from "./desktop-preview-window-manager.mjs";
-import { createDesktopGuiSmokeRunner } from "./desktop-gui-smoke-runner.mjs";
+import { createDesktopGuiSmokeRunner } from "../smoke/desktop-gui-smoke-runner.mjs";
 import { installMediaPermissionHandlers } from "./desktop-permission-handler.mjs";
 import {
   buildOverlayPayloadFromFiles,

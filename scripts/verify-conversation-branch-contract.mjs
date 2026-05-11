@@ -202,7 +202,7 @@ function runEditHelperContract(store) {
   assert.match(consoleJs, /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/messages\/\$\{encodeURIComponent\(messageId\)\}\/edit/);
   assert.match(consoleJs, /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/\$\{mode\}/);
   const smokeRunner = readFileSync(new URL("../scripts/run-electron-gui-smoke.mjs", import.meta.url), "utf8");
-  const desktopSmokeRunner = readFileSync(new URL("../src/desktop/tray/desktop-gui-smoke-runner.mjs", import.meta.url), "utf8");
+  const desktopSmokeRunner = readFileSync(new URL("../src/desktop/smoke/desktop-gui-smoke-runner.mjs", import.meta.url), "utf8");
   const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
   assert.match(smokeRunner, /gui-smoke-conv/);
   assert.match(smokeRunner, /branchMatch[\s\S]*fork\|rewind/);

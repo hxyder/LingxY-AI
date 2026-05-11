@@ -108,7 +108,7 @@ const usageEvents = [
 {
   const consoleJs = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
   const overlayJs = readFileSync(new URL("../src/desktop/renderer/overlay.js", import.meta.url), "utf8");
-  const smokeRunner = readFileSync(new URL("../src/desktop/tray/desktop-gui-smoke-runner.mjs", import.meta.url), "utf8");
+  const smokeRunner = readFileSync(new URL("../src/desktop/smoke/desktop-gui-smoke-runner.mjs", import.meta.url), "utf8");
   const sharedCss = readFileSync(new URL("../src/desktop/renderer/shared-tasks.css", import.meta.url), "utf8");
   assert.match(consoleJs, /renderLlmUsagePanel\(detail\.events \?\? \[\]\)/);
   assert.match(consoleJs, /\$\{llmUsageBlock\}/);

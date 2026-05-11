@@ -18,7 +18,7 @@ const translate = read("src/service/executors/translate/translate-executor.mjs")
 const kimi = read("src/service/executors/kimi/kimi-cli-executor.mjs");
 const codeCliBridge = read("src/service/executors/agentic/code-cli-bridge.mjs");
 const desktopMain = read("src/desktop/tray/electron-main.mjs");
-const smokeRunner = read("src/desktop/tray/desktop-gui-smoke-runner.mjs");
+const smokeRunner = read("src/desktop/smoke/desktop-gui-smoke-runner.mjs");
 const interactionSmoke = read("scripts/verify-user-interaction-smoke.mjs");
 
 assert.match(fast, /async \*execute\(task,\s*\{\s*signal\s*\}\s*=\s*\{\}\)/u,
