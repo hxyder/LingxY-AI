@@ -142,15 +142,55 @@ src/desktop/renderer/
 2. Final stale-owner sweep
 3. Update all inventory docs
 
+## REPO-1.5a Console File Mapping (old → new)
+
+Existing `renderer/console/` already contains 3 client files; REPO-1.5a
+must preserve them and add the 16 moved console-*.mjs files.
+
+| Old path | New path |
+|----------|----------|
+| `renderer/console.js` | `renderer/console/console.js` |
+| `renderer/console.html` | `renderer/console/console.html` |
+| `renderer/console-account-connectors-view.mjs` | `renderer/console/account-connectors-view.mjs` |
+| `renderer/console-chat-attachments.mjs` | `renderer/console/chat-attachments.mjs` |
+| `renderer/console-chat-sidebar.mjs` | `renderer/console/chat-sidebar.mjs` |
+| `renderer/console-conversation-viewer.mjs` | `renderer/console/conversation-viewer.mjs` |
+| `renderer/console-file-content-index-panel.mjs` | `renderer/console/file-content-index-panel.mjs` |
+| `renderer/console-files-view.mjs` | `renderer/console/files-view.mjs` |
+| `renderer/console-floating-ui.mjs` | `renderer/console/floating-ui.mjs` |
+| `renderer/console-inbox-view.mjs` | `renderer/console/inbox-view.mjs` |
+| `renderer/console-mcp-view.mjs` | `renderer/console/mcp-view.mjs` |
+| `renderer/console-notes-model.mjs` | `renderer/console/notes-model.mjs` |
+| `renderer/console-projects-view.mjs` | `renderer/console/projects-view.mjs` |
+| `renderer/console-schedules-view.mjs` | `renderer/console/schedules-view.mjs` |
+| `renderer/console-task-detail.mjs` | `renderer/console/task-detail.mjs` |
+| `renderer/console-task-event-stream.mjs` | `renderer/console/task-event-stream.mjs` |
+| `renderer/console-task-list.mjs` | `renderer/console/task-list.mjs` |
+| `renderer/console-task-timeline.mjs` | `renderer/console/task-timeline.mjs` |
+| `renderer/preview-window.js` | `renderer/preview/preview-window.js` |
+| `renderer/preview-window.html` | `renderer/preview/preview-window.html` |
+
+Verifier coverage required for each old path → new path → compatibility barrel → barrel removal.
+
 ## Pre-Move Checklist (per sub-phase)
 
 - [ ] All `<script>` references in affected HTML files updated
 - [ ] All ESM `import` paths updated
+- [ ] Main-process HTML loading paths updated:
+  - `src/desktop/tray/desktop-window-config.mjs` (`buildRendererFileUrl`, `buildWindowUrl`)
+  - `src/desktop/tray/popup-card-manager.mjs` (popup-card.html load)
+  - `src/desktop/shell/desktop-preview-window-manager.mjs` (preview-window.html load)
 - [ ] Compatibility barrels created at old paths
-- [ ] `verify-desktop-renderer.mjs` updated and passing
-- [ ] `verify-renderer-direct-runtime-calls.mjs` updated and passing
+- [ ] All verifier flat-path references updated in the same PR (not deferred to REPO-1.6):
+  - `verify-desktop-renderer.mjs`
+  - `verify-renderer-direct-runtime-calls.mjs`
+  - `verify-ui-extras.mjs`
+  - `verify-overlay-composer.mjs`
+  - `verify-preview-window.mjs`
+  - Any other verifier that reads `src/desktop/renderer/<name>.js/html`
 - [ ] GUI smoke 44/44 (covers console, overlay, preview, popup)
-- [ ] No stale old-path references in active inventory docs
+- [ ] Stale-owner scan for old flat paths in active inventory docs + verifiers
+- [ ] Existing `renderer/console/` contents preserved (3 console client files)
 - [ ] Barrels removed after all references migrated
 
 ## Contracts That Must Not Change
