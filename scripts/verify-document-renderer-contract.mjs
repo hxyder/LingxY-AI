@@ -20,6 +20,7 @@ assert(!existsSync(path.join(root, "src/service/action_tools/tools/document-rend
 
 const docSrc = read(currentPath);
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
+const documentArtifactHelperSrc = read("src/service/capabilities/tools/document-artifact-helpers.mjs");
 
 assert(docSrc.includes("export function renderDocumentPreviewHtml"),
   "document-renderer.mjs must export renderDocumentPreviewHtml");
@@ -56,11 +57,11 @@ assert.deepEqual(generateDocument.required_capabilities, ["file_write"],
 assert.equal(generateDocument.requires_confirmation, false,
   "generate_document confirmation behavior must remain unchanged");
 
-assert(indexSrc.includes("await import(\"../../capabilities/tools/document-renderer.mjs\")"),
-  "index.mjs must dynamically import document-renderer from capabilities/tools/");
-assert(indexSrc.includes("writeDocumentPreviewSidecar"),
+assert(documentArtifactHelperSrc.includes("await import(\"./document-renderer.mjs\")"),
+  "document artifact helpers must dynamically import document-renderer from capabilities/tools/");
+assert(documentArtifactHelperSrc.includes("writeDocumentPreviewSidecar"),
   "generate_document must continue writing preview sidecars for previewable artifacts");
-assert(indexSrc.includes("prepareGeneratedDocumentCheckpoint"),
+assert(documentArtifactHelperSrc.includes("prepareGeneratedDocumentCheckpoint"),
   "generate_document must continue recording file reversibility checkpoints");
 assert(indexSrc.includes("preview_html_path"),
   "generate_document metadata must continue exposing preview_html_path");

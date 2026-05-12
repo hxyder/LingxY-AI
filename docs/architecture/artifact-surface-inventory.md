@@ -23,6 +23,8 @@ Status: verified against the current repository on 2026-05-09.
 | Preview registry | `src/service/preview/registry.mjs` | Service runtime |
 | Preview HTTP routes | `src/service/core/http-routes/preview-file-routes.mjs` | Service runtime |
 | File reversibility helpers | `src/service/capabilities/tools/file-reversibility.mjs` | Service runtime |
+| File mutation / execution tools | `src/service/capabilities/tools/file-mutation-execution-tools.mjs` | Service runtime |
+| Document artifact helpers | `src/service/capabilities/tools/document-artifact-helpers.mjs` | Service runtime |
 | Artifact path helper | `src/service/core/artifact-path-helper.mjs` | Service runtime (Phase 2E.1) |
 
 ## Artifact-Creating Tool Surfaces
@@ -57,7 +59,7 @@ Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 
 | File | Role |
 |------|------|
-| `src/service/action_tools/tools/index.mjs` | `OUTLINE_KINDS`, `KIND_EXTENSIONS`, `artifactKindFromTarget` |
+| `src/service/capabilities/tools/document-artifact-helpers.mjs` | `OUTLINE_KINDS`, `KIND_EXTENSIONS`, `artifactKindFromTarget` |
 | `src/service/core/store/artifact-metadata.mjs` | `inferArtifactKind` |
 | `src/service/core/artifact-action-contract.mjs` | `artifactRegistrationOptionsForPath` |
 | `src/service/core/policy/success-contract-validator.mjs` | `artifact_kind` validation |
@@ -71,7 +73,7 @@ Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 
 | File | Role |
 |------|------|
-| `src/service/action_tools/tools/index.mjs` | `resolveOutputDirForTool`, `ensureOutputDir`, `resolveSandboxedTarget` |
+| `src/service/core/artifact-path-helper.mjs` | `resolveOutputDirForTool`, `ensureOutputDir`, `resolveSandboxedTarget` |
 | `src/service/core/artifact-action-contract.mjs` | Path validation |
 | `src/service/store/artifact-store.mjs` | `inspectArtifactPath` |
 | `src/service/core/action-tool-submission.mjs` | `persistArtifacts` |
@@ -144,7 +146,7 @@ Worker: `src/service/workers/artifact-extract-worker.mjs`
    - `artifact-action-contract.mjs` `artifactRegistrationOptionsForPath` for metadata-aware registration
    - 4 submission files (`browser`, `context`, `file`, `image`) must call `registerArtifact` + `appendArtifact`
    - Broker/facade consolidation deferred — call sites are heterogeneous (different metadata sources, event handling)
-3. **Kind inference** — `artifactKindFromTarget` in tools/index.mjs is coupled to document generation tools; extraction deferred until high-risk tools (generate_document, write_file, edit_file) are stabilized.
+3. **Kind inference** — `artifactKindFromTarget` now lives in `src/service/capabilities/tools/document-artifact-helpers.mjs`; further consolidation should happen with the generate/render family.
 4. **Lineage, Transform, Extract** — already well-factored with dedicated services; no immediate consolidation needed.
 5. **Preview/Open/Reveal** — already thin; no immediate consolidation needed.
 6. **Fallback** — dedicated module exists but is sparsely referenced; ensure callers consistently use it.

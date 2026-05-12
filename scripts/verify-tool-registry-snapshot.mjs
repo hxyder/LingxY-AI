@@ -233,12 +233,14 @@ assert(indexSrc.includes("from \"../../capabilities/tools/memory-tools.mjs\""),
   "index.mjs must import memory-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/skill-install-tools.mjs\""),
   "index.mjs must import skill-install-tools.mjs from capabilities/tools/");
-assert(indexSrc.includes("await import(\"../../capabilities/tools/document-renderer.mjs\")"),
-  "index.mjs must dynamically import document-renderer.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/svg-sanitize.mjs\""),
   "index.mjs must import svg-sanitize.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/mermaid-assets.mjs\""),
   "index.mjs must import mermaid-assets.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/file-mutation-execution-tools.mjs\""),
+  "index.mjs must import file-mutation-execution-tools.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/document-artifact-helpers.mjs\""),
+  "index.mjs must import document-artifact-helpers.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/schemas/index.mjs\""),
   "index.mjs must import ACTION_TOOL_SCHEMAS from capabilities/schemas/");
 assert(existsSync(path.join(root, "src/service/capabilities/schemas/index.mjs")),
@@ -281,6 +283,8 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/desktop-capture-gui-tools.mjs",
   "src/service/action_tools/tools/desktop-launch-tools.mjs",
   "src/service/action_tools/tools/file-content-tools.mjs",
+  "src/service/action_tools/tools/file-mutation-execution-tools.mjs",
+  "src/service/action_tools/tools/document-artifact-helpers.mjs",
 ];
 for (const oldPath of cap1MovedPaths) {
   assert(!existsSync(path.join(root, oldPath)),
@@ -342,6 +346,48 @@ for (const ownerText of [
 ]) {
   assert(fileContentSrc.includes(ownerText), `file-content-tools.mjs missing ${ownerText}`);
   assert(!indexSrc.includes(ownerText), `index.mjs must not retain file-content owner text: ${ownerText}`);
+}
+
+const fileMutationSrc = read("src/service/capabilities/tools/file-mutation-execution-tools.mjs");
+for (const tool of ["WRITE_FILE_TOOL", "EDIT_FILE_TOOL", "RUN_SCRIPT_TOOL"]) {
+  assert(fileMutationSrc.includes(`export const ${tool}`),
+    `file-mutation-execution-tools.mjs must own ${tool}`);
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must not redefine extracted ${tool}`);
+}
+for (const ownerText of [
+  "async function resolveEditableTargetForEdit",
+  "function decodeWriteFileContent",
+  "const RUN_SCRIPT_LANGUAGES",
+  "function clampTimeout",
+  "async function spawnScript"
+]) {
+  assert(fileMutationSrc.includes(ownerText), `file-mutation-execution-tools.mjs missing ${ownerText}`);
+  assert(!indexSrc.includes(ownerText), `index.mjs must not retain file-mutation owner text: ${ownerText}`);
+}
+
+const documentArtifactHelperSrc = read("src/service/capabilities/tools/document-artifact-helpers.mjs");
+for (const ownerText of [
+  "export const OUTLINE_KINDS",
+  "export const KIND_EXTENSIONS",
+  "export const KIND_MIMES",
+  "export function artifactKindFromTarget",
+  "export function normalizeDocumentOutline",
+  "export async function writeDocumentPreviewSidecar",
+  "export async function invokeDocumentRenderer",
+  "await import(\"./document-renderer.mjs\")"
+]) {
+  assert(documentArtifactHelperSrc.includes(ownerText), `document-artifact-helpers.mjs missing ${ownerText}`);
+}
+for (const oldText of [
+  "async function resolveDocumentRendererScript",
+  "const OUTLINE_KINDS",
+  "function artifactKindFromTarget",
+  "function normalizeDocumentOutline",
+  "async function writeDocumentPreviewSidecar",
+  "async function invokeDocumentRenderer"
+]) {
+  assert(!indexSrc.includes(oldText), `index.mjs must not retain document-artifact helper text: ${oldText}`);
 }
 
 assert(!indexSrc.includes("NOOP_TOOLS"), "index.mjs must not retain NOOP_TOOLS coupling");

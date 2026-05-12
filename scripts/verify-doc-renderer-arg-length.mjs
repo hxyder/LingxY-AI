@@ -6,7 +6,8 @@
 // payload size is fine.
 //
 // This verifier:
-//   1. Static-checks the wiring (index.mjs uses -TextFile, writeFile'd temp).
+//   1. Static-checks the wiring (document artifact helpers use -TextFile,
+//      writeFile'd temp).
 //   2. Static-checks the PS script accepts -TextFile and rejects empty input.
 //   3. If PowerShell is available on the host (Windows), actually runs the
 //      script with a 50 KB body — well past the 8191-byte CLI limit — and
@@ -24,9 +25,9 @@ const execFileP = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// --- 1. Static wiring in index.mjs -----------------------------------
+// --- 1. Static wiring in document-artifact-helpers.mjs ----------------
 {
-  const src = await readFile(path.join(ROOT, "src/service/action_tools/tools/index.mjs"), "utf8");
+  const src = await readFile(path.join(ROOT, "src/service/capabilities/tools/document-artifact-helpers.mjs"), "utf8");
   assert.ok(src.includes("-TextFile"),
     "invokeDocumentRenderer must pass -TextFile to PowerShell (not -Text)");
   assert.ok(src.includes("lingxy-doc-"),

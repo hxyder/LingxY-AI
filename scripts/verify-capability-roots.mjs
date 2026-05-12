@@ -48,6 +48,8 @@ const capabilityRoots = [
   "src/service/capabilities/tools/desktop-capture-gui-tools.mjs",
   "src/service/capabilities/tools/desktop-launch-tools.mjs",
   "src/service/capabilities/tools/file-content-tools.mjs",
+  "src/service/capabilities/tools/file-mutation-execution-tools.mjs",
+  "src/service/capabilities/tools/document-artifact-helpers.mjs",
   "src/service/capabilities/tools/svg-sanitize.mjs",
   "src/service/capabilities/tools/mermaid-assets.mjs",
   "src/service/capabilities/tools/open-with-default-handler.mjs",
@@ -102,7 +104,8 @@ for (const tool of [
   "TAKE_SCREENSHOT_TOOL", "GUI_FIND_ELEMENT_TOOL", "GUI_CLICK_TOOL", "GUI_TYPE_TEXT_TOOL",
   "LAUNCH_APP_TOOL",
   "READ_FILE_TEXT_TOOL", "READ_FOLDER_TEXT_TOOL", "SEARCH_FILE_CONTENT_TOOL",
-  "INDEX_FILE_CONTENT_TOOL", "REGISTER_ARTIFACT_TOOL", "RESOLVE_OUTPUT_PATH_TOOL"
+  "INDEX_FILE_CONTENT_TOOL", "REGISTER_ARTIFACT_TOOL", "RESOLVE_OUTPUT_PATH_TOOL",
+  "WRITE_FILE_TOOL", "EDIT_FILE_TOOL", "RUN_SCRIPT_TOOL"
 ]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine extracted ${tool} (parallel implementation)`);

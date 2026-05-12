@@ -4,7 +4,7 @@ import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mj
 
 const root = process.cwd();
 const docPath = path.join(root, "docs/architecture/artifact-surface-inventory.md");
-const toolsPath = path.join(root, "src/service/action_tools/tools/index.mjs");
+const documentArtifactHelpersPath = path.join(root, "src/service/capabilities/tools/document-artifact-helpers.mjs");
 
 const requiredOwnerPaths = [
   "src/service/store/artifact-store.mjs",
@@ -23,6 +23,8 @@ const requiredOwnerPaths = [
   "src/service/core/http-routes/preview-file-routes.mjs",
   "src/service/capabilities/tools/file-reversibility.mjs",
   "src/service/capabilities/tools/file-content-tools.mjs",
+  "src/service/capabilities/tools/file-mutation-execution-tools.mjs",
+  "src/service/capabilities/tools/document-artifact-helpers.mjs",
   "src/service/core/artifact-path-helper.mjs"
 ];
 
@@ -66,9 +68,9 @@ for (const kind of documentedKinds) {
   assert(doc.includes(kind), `artifact inventory missing documented kind: ${kind}`);
 }
 
-const toolsSource = readFileSync(toolsPath, "utf8");
-const outlineKindsMatch = toolsSource.match(/const\s+OUTLINE_KINDS\s*=\s*new Set\(\[([^\]]+)\]\)/);
-assert(Boolean(outlineKindsMatch), "OUTLINE_KINDS declaration missing from tools index");
+const toolsSource = readFileSync(documentArtifactHelpersPath, "utf8");
+const outlineKindsMatch = toolsSource.match(/(?:export\s+)?const\s+OUTLINE_KINDS\s*=\s*new Set\(\[([^\]]+)\]\)/);
+assert(Boolean(outlineKindsMatch), "OUTLINE_KINDS declaration missing from document artifact helpers");
 if (outlineKindsMatch) {
   const actualKinds = [...outlineKindsMatch[1].matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
   assert(

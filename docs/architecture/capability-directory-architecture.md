@@ -1,14 +1,14 @@
 # Capability Directory Architecture
 
 Phase CAP-0 inventory of current capability roots and target `src/service/capabilities/**` layout.
-Status: inventory verified against the current repository on 2026-05-11 after CAP-5D file content/artifact migration.
+Status: inventory verified against the current repository on 2026-05-11 after CAP-5F write/edit/run migration.
 
 ## Current Capability Roots
 
 | Capability type | Current path(s) | Tools / modules |
 | --- | --- | --- |
 | Action tools (built-in, remaining old owner) | `src/service/action_tools/tools/` | `index.mjs` (aggregator) |
-| Capability-owned tools | `src/service/capabilities/tools/` | `browser-web-tools.mjs`, `desktop-capture-gui-tools.mjs`, `desktop-launch-tools.mjs`, `document-renderer.mjs`, `email-tools.mjs`, `file-content-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `mermaid-assets.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, `vision-analyze.mjs` |
+| Capability-owned tools | `src/service/capabilities/tools/` | `browser-web-tools.mjs`, `desktop-capture-gui-tools.mjs`, `desktop-launch-tools.mjs`, `document-artifact-helpers.mjs`, `document-renderer.mjs`, `email-tools.mjs`, `file-content-tools.mjs`, `file-mutation-execution-tools.mjs`, `file-read-tools.mjs`, `memory-tools.mjs`, `mermaid-assets.mjs`, `os-app-tools.mjs`, `scheduler-tools.mjs`, `skill-install-tools.mjs`, `svg-sanitize.mjs`, `vision-analyze.mjs` |
 | Action tool schemas | `src/service/capabilities/schemas/index.mjs` | All tool parameter schemas |
 | Action tool registry | `src/service/capabilities/registry/registry.mjs` | `createActionToolRegistry` |
 | Action tool types | `src/service/capabilities/registry/types.mjs` | `createActionResult` |
@@ -18,7 +18,7 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 | Connectors | `src/service/capabilities/connectors/` | Connector tool aggregator, connector plugins, account tools |
 | Providers | `src/service/capabilities/providers/` | Provider catalog, config, model discovery |
 | Code CLI adapters | `src/service/capabilities/code_cli/` | Code CLI adapter catalog, configured adapters, Kimi runtime probing |
-| Shared capability helpers | `src/service/capabilities/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs` |
+| Shared capability helpers | `src/service/capabilities/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs`, `document-artifact-helpers.mjs` |
 | Service core helpers | `src/service/core/` | `artifact-path-helper.mjs` (artifact boundary) |
 
 ## Target Architecture

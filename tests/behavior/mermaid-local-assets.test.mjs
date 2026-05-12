@@ -58,7 +58,10 @@ test("generated diagram HTML loads mermaid from the local bundle", async () => {
 });
 
 test("document HTML templates no longer embed a mermaid CDN URL", async () => {
-  const source = await readFile("src/service/action_tools/tools/index.mjs", "utf8");
+  const source = [
+    await readFile("src/service/action_tools/tools/index.mjs", "utf8"),
+    await readFile("src/service/capabilities/tools/document-artifact-helpers.mjs", "utf8")
+  ].join("\n");
   assert.doesNotMatch(source, /cdn\.jsdelivr\.net\/npm\/mermaid/i);
   const localTagUses = source.match(/renderMermaidScriptTag\(\)/g) ?? [];
   assert.ok(localTagUses.length >= 2, "PDF and standalone diagram templates should share the local mermaid asset helper");

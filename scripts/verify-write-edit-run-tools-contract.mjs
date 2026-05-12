@@ -6,20 +6,22 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  BUILTIN_ACTION_TOOLS,
+  BUILTIN_ACTION_TOOLS
+} from "../src/service/action_tools/tools/index.mjs";
+import {
   EDIT_FILE_TOOL,
   RUN_SCRIPT_TOOL,
   WRITE_FILE_TOOL
-} from "../src/service/action_tools/tools/index.mjs";
+} from "../src/service/capabilities/tools/file-mutation-execution-tools.mjs";
 import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// CAP-5F preflight verifier.
-// Current state: write/edit/run are still index-owned. The physical move must
-// update this verifier to require the capability owner and old inline absence.
+// CAP-5F verifier.
+// Post-move state: write/edit/run are owned by capabilities/tools and index.mjs
+// only aggregates and re-exports them.
 
 const aggregatorPath = "src/service/action_tools/tools/index.mjs";
 const targetOwnerPath = "src/service/capabilities/tools/file-mutation-execution-tools.mjs";
@@ -28,13 +30,14 @@ const boundaryPath = "docs/architecture/write-edit-run-tools-boundary.md";
 
 assert(existsSync(path.join(root, aggregatorPath)), `tool aggregator missing: ${aggregatorPath}`);
 assert(existsSync(path.join(root, boundaryPath)), `write/edit/run boundary doc missing: ${boundaryPath}`);
-assert(!existsSync(path.join(root, targetOwnerPath)),
-  `CAP-5F preflight must not create target owner before the physical move: ${targetOwnerPath}`);
+assert(existsSync(path.join(root, targetOwnerPath)),
+  `CAP-5F target owner missing after physical move: ${targetOwnerPath}`);
 assert(!existsSync(path.join(root, oldSplitOwnerPath)),
   `old split owner must not exist: ${oldSplitOwnerPath}`);
 
 const indexSrc = read(aggregatorPath);
-for (const requiredText of [
+const ownerSrc = read(targetOwnerPath);
+const ownerRequiredTexts = [
   "export const WRITE_FILE_TOOL = {",
   "export const EDIT_FILE_TOOL = {",
   "export const RUN_SCRIPT_TOOL = {",
@@ -56,9 +59,28 @@ for (const requiredText of [
   "windowsHide: true",
   "Math.min(20, Math.max(1, Math.floor(n)))",
   "artifactPaths: [absTarget]"
-]) {
-  assert(indexSrc.includes(requiredText), `index.mjs missing write/edit/run contract text: ${requiredText}`);
+];
+for (const requiredText of ownerRequiredTexts) {
+  assert(ownerSrc.includes(requiredText), `file-mutation owner missing write/edit/run contract text: ${requiredText}`);
 }
+for (const requiredText of [
+  "export const WRITE_FILE_TOOL = {",
+  "export const EDIT_FILE_TOOL = {",
+  "export const RUN_SCRIPT_TOOL = {",
+  "function decodeWriteFileContent",
+  "const RUN_SCRIPT_LANGUAGES",
+  "function clampTimeout",
+  "async function spawnScript",
+  "async function resolveEditableTargetForEdit",
+  "operation: args.overwrite ? \"overwrite_file\" : \"create_file\"",
+  "operation: \"edit_file\""
+]) {
+  assert(!indexSrc.includes(requiredText), `index.mjs must not retain old write/edit/run owner text: ${requiredText}`);
+}
+assert(indexSrc.includes("from \"../../capabilities/tools/file-mutation-execution-tools.mjs\""),
+  "index.mjs must import file-mutation-execution-tools.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/document-artifact-helpers.mjs\""),
+  "index.mjs must import shared document-artifact helpers from capabilities/tools/");
 
 const tools = new Map(BUILTIN_ACTION_TOOLS.map((tool) => [tool.id, tool]));
 const expected = [
@@ -69,7 +91,7 @@ const expected = [
 for (const [id, expectedTool, risk, requiresConfirmation, capabilities] of expected) {
   const tool = tools.get(id);
   assert(tool, `missing built-in tool ${id}`);
-  assert.equal(tool, expectedTool, `${id} must still be aggregated from index.mjs during preflight`);
+  assert.equal(tool, expectedTool, `${id} must be aggregated from file-mutation-execution-tools.mjs`);
   assert.equal(tool.risk_level, risk, `${id} risk level changed`);
   assert.equal(tool.requires_confirmation, requiresConfirmation, `${id} confirmation gate changed`);
   assert.deepEqual(tool.required_capabilities ?? [], capabilities, `${id} required capabilities changed`);
@@ -147,16 +169,15 @@ for (const requiredCommand of [
 const boundaryDoc = read(boundaryPath);
 for (const requiredText of [
   "Write Edit Run Tools Boundary",
-  "`src/service/action_tools/tools/index.mjs`",
   "`src/service/capabilities/tools/file-mutation-execution-tools.mjs`",
   "write_file",
   "edit_file",
   "run_script",
   "No-Touch Areas",
-  "Preflight only"
+  "Moved"
 ]) {
   assert(boundaryDoc.includes(requiredText),
     `write/edit/run boundary doc missing required text: ${requiredText}`);
 }
 
-console.log("[write-edit-run-tools] preflight contract verified");
+console.log("[write-edit-run-tools] contract verified");

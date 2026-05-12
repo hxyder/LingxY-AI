@@ -6,7 +6,11 @@ import path from "node:path";
 import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const checkpointModule = readFileSync("src/service/capabilities/tools/file-reversibility.mjs", "utf8");
-const tools = readFileSync("src/service/action_tools/tools/index.mjs", "utf8");
+const tools = [
+  readFileSync("src/service/action_tools/tools/index.mjs", "utf8"),
+  readFileSync("src/service/capabilities/tools/file-mutation-execution-tools.mjs", "utf8"),
+  readFileSync("src/service/capabilities/tools/document-artifact-helpers.mjs", "utf8")
+].join("\n");
 const taskRoutes = readFileSync("src/service/core/http-routes/task-routes.mjs", "utf8");
 const manifest = readFileSync("src/desktop/shared/manifest.mjs", "utf8");
 const preload = readFileSync("src/desktop/renderer/preload.cjs", "utf8");

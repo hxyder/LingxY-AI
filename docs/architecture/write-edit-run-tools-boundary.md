@@ -1,14 +1,15 @@
 # Write Edit Run Tools Boundary
 
-CAP high-risk inline family extraction preflight. Status: 2026-05-11,
-preflight locked; physical move not started.
+CAP high-risk inline family extraction. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/file-mutation-execution-tools.mjs` after
+static and runtime-contract preflight verification.
 
 ## Current State
 
-- Current owner: `src/service/action_tools/tools/index.mjs`
-- Target owner after physical move:
-  `src/service/capabilities/tools/file-mutation-execution-tools.mjs`
+- Current owner: `src/service/capabilities/tools/file-mutation-execution-tools.mjs`
 - Registry aggregator: `src/service/action_tools/tools/index.mjs`
+- Shared document helper owner:
+  `src/service/capabilities/tools/document-artifact-helpers.mjs`
 - Tool family:
   - `write_file`
   - `edit_file`
@@ -22,8 +23,7 @@ preflight locked; physical move not started.
 - Shared dependencies that must stay shared, not duplicated:
   - `src/service/core/artifact-path-helper.mjs`
   - `src/service/capabilities/tools/file-reversibility.mjs`
-  - document-rendering helpers currently still inline in
-    `src/service/action_tools/tools/index.mjs`
+  - `src/service/capabilities/tools/document-artifact-helpers.mjs`
 
 ## Contract
 
@@ -64,21 +64,15 @@ preflight locked; physical move not started.
 
 ## Verification
 
-- `scripts/verify-write-edit-run-tools-contract.mjs` currently locks the
-  preflight state: current owner, target owner absence, tool metadata, registry
-  order, helper/dependency presence, write/edit/run runtime smoke behavior,
+- `scripts/verify-write-edit-run-tools-contract.mjs` locks the moved owner,
+  shared helper owner, tool metadata, registry order, helper/dependency
+  presence, old inline body absence, write/edit/run runtime smoke behavior,
   file-reversibility coverage, approval-resume gate coverage, and this
   document.
-- Before physical migration, update the verifier in the same commit so it
-  requires:
-  - `src/service/capabilities/tools/file-mutation-execution-tools.mjs` exists;
-  - `src/service/action_tools/tools/index.mjs` imports the three tools from the
-    capability owner;
-  - old inline helper/tool definitions are absent from `index.mjs`;
-  - registry order and runtime behavior are unchanged.
 
 ## Decision
 
-Preflight only. The current owner remains
-`src/service/action_tools/tools/index.mjs`. Physical migration must be a
-separate CAP-5F move after this verifier and targeted gates pass.
+Moved. The current owner is
+`src/service/capabilities/tools/file-mutation-execution-tools.mjs`.
+`src/service/action_tools/tools/index.mjs` remains the live aggregator and must
+not reintroduce inline write/edit/run helper or tool bodies.
