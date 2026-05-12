@@ -1,32 +1,67 @@
 # Post Runtime Upgrade Roadmap
 
-This roadmap captures the work that was repeatedly mentioned in
-`FRAMEWORK_GAP_ANALYSIS.md`, `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md`, and the
-runtime/electron execution plans, but was intentionally deferred from the
-canonical memory/conversation/context/artifact/performance sequence.
+This roadmap is the tracked post-canonical execution board for work that was
+repeatedly requested but intentionally deferred from the canonical
+memory/conversation/context/artifact/performance sequence.
 
-The previous canonical sequence is complete. This file is the next execution
-board for desktop experience, generic graph resume, sub-agent runtime,
-multi-model execution, plugin/MCP marketplace work, privacy sandbox hardening,
-and long-term observability.
+Historical root audit files such as `FRAMEWORK_GAP_ANALYSIS.md` and
+`FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` can be used as background evidence, but
+they are not the authority for this board. The authority is the current program:
+tracked architecture docs, current source ownership, existing verifiers,
+behavior tests, GUI smoke coverage, and release gates.
+
+The previous canonical sequence and capability/tool owner reorganization are
+complete. This file is the next execution board for desktop experience,
+context/trace durability, generic graph resume, sub-agent runtime, multi-model
+execution, plugin/MCP marketplace work, privacy sandbox hardening, and long-term
+observability.
+
+## Current Status Snapshot
+
+Last updated: 2026-05-11.
+
+- Canonical runtime spine: complete.
+- Capability/tool owner cleanup: complete. `src/service/action_tools/tools/index.mjs`
+  is now an aggregator/re-export surface only; built-in tool implementations
+  live under `src/service/capabilities/tools/` or external capability
+  aggregators.
+- Current green gate: `npm run check:fast` passed 96/96 after CAP-5H.
+- Next execution board: this document.
+- Primary product gaps now shift from code ownership cleanup to user-visible
+  desktop completeness, context/trace persistence decisions, plugin/MCP trust,
+  sandbox governance, multi-model execution, and optional sub-agent runtime.
 
 ## Source Map
 
-| Area | Source references | Current state |
+| Area | Current program evidence | Current state |
 | --- | --- | --- |
-| True sub-agent runtime | `FRAMEWORK_GAP_ANALYSIS.md` sections 4.1, 5.1; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-022 | Not implemented; deferred until session/context/evals stabilized. |
-| Multi-model execution | `FRAMEWORK_GAP_ANALYSIS.md` sections 4.1, 5.7; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-025 | Role-routing summary exists; executor call sites do not yet switch per role. |
-| Generic HITL graph resume | `FRAMEWORK_GAP_ANALYSIS.md` section 3.4; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-006/FW-020 | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
-| Desktop/GUI completion | `FRAMEWORK_GAP_ANALYSIS.md` sections 3.5, 3.6, 3.8, 5.5; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-007/FW-008/FW-013/FW-014/FW-017/FW-030 | Real GUI smoke is strong but not complete; real mic/KWS, full WindowSession, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
-| Timeline/trace/export | `FRAMEWORK_GAP_ANALYSIS.md` sections 3.1, 5.6; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-010/FW-023/FW-024 | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
-| Memory governance next pass | `FRAMEWORK_GAP_ANALYSIS.md` section 5.3; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-019 | Editable memory exists; auto-learning proposals, review history, undo, and richer project scoping remain. |
+| True sub-agent runtime | `runtime-graph-*` verifiers exist; no child-run contract or UI trace exists. | Not implemented; deferred until session/context/evals stabilized. |
+| Multi-model execution | `verify-model-role-routing.mjs` exists; executor call sites still mostly use resolved provider/model directly. | Role-routing summary exists; executor call sites do not yet switch per role. |
+| Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
+| Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs. | Real GUI smoke is strong but not complete; real mic/KWS, full WindowSession, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
+| Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers. | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
+| Memory governance next pass | `verify-memory-governance.mjs`, `verify-user-memory-profile.mjs`, context compiler tests. | Editable memory exists; auto-learning proposals, review history, undo, and richer project scoping remain. |
 | SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
 | Permission/mode model | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` Wave 12; `lingxy_electron_js_codex_execution_plan.md` queue-class notes | `execution_mode` exists, privacy policy exists, and approvals exist; user-visible mode/tool-surface mapping remains incomplete. |
 | Sidecar decision record | `lingxy_electron_js_codex_execution_plan.md` PR-09/PR-19; sidecar decision gate | Sidecars are constrained by guardrails, but a dedicated decision-record template/verifier is still missing. |
 | Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | File reversibility checkpoint metadata exists; optional project-level git checkpoint mode remains deferred. |
-| Plugin/MCP marketplace | `FRAMEWORK_GAP_ANALYSIS.md` sections 5.9 and MCP ecosystem notes; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-027; `docs/task-runtime/MCP_INTEGRATION.md` | Skill/MCP trust primitives exist; discovery, trust preview, signatures, sharing UX, and external MCP governance remain. |
-| Privacy/sandbox hardening | `FRAMEWORK_GAP_ANALYSIS.md` section 5.8; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-026 | Privacy policy/broker foundation exists; OS-level sandbox/codesign boundaries and richer controls remain. |
-| Task/conversation/project IA migration | `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-028; `docs/architecture/current-codebase-structure-audit.md` | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
+| Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs. | Skill/MCP trust primitives exist; discovery, trust preview, signatures, sharing UX, and external MCP governance remain. |
+| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner. | Privacy policy/broker foundation exists; OS-level sandbox/codesign boundaries and richer controls remain. |
+| Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers. | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
+
+## Tracking Register
+
+| Phase | Status | Tracking rule |
+| --- | --- | --- |
+| PX-001 Roadmap/status hygiene | in progress | This roadmap must stay linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
+| RT-001 to RT-004 Runtime persistence/context/mode | pending | Start only after PX-001 is green. Each phase needs a verifier and measured decision record. |
+| DX-001 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
+| VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
+| GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
+| MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
+| PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
+| SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
+| OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
 
 ## Execution Rules
 

@@ -2742,3 +2742,32 @@ Decision:
 - CAP-4B physical move is ready to commit.
 - After CAP-4B is committed, the next valid phase is CAP-4C connector surface
   preflight, not a broad connector/provider move.
+
+## Codex Review: CAP-5H Closure And Post-Runtime Roadmap Tracking
+
+Date: 2026-05-11
+
+Status:
+- CAP-5H moved the last inline action-tool family out of
+  `src/service/action_tools/tools/index.mjs`.
+- `index.mjs` is now a built-in action-tool aggregator/re-export surface only.
+- `src/service/capabilities/tools/capability-creator-tools.mjs` owns
+  `draft_capability` and `save_capability_draft`.
+- `npm run check:fast` passed 96/96 after CAP-5H.
+
+Post-runtime next board:
+- Found and promoted `docs/architecture/post-runtime-upgrade-roadmap.md` as the
+  tracked board for the next workstream.
+- The roadmap now treats `FRAMEWORK_GAP_ANALYSIS.md` and
+  `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` as historical background only, not the
+  authority.
+- The next board focuses on desktop experience completion, context/trace
+  durability, plugin/MCP trust, sandbox governance, multi-model execution,
+  optional sub-agent runtime, and long-term observability.
+- Added `scripts/verify-post-runtime-roadmap.mjs` and wired it into full/fast
+  checks so the roadmap remains visible.
+
+Next valid work:
+- Start `PX-001` from `docs/architecture/post-runtime-upgrade-roadmap.md`, then
+  proceed in the recommended order unless a program-grounded audit changes the
+  order.
