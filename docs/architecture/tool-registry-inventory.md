@@ -34,8 +34,8 @@ is a live aggregator plus remaining inline high-risk families.
 | Family | Source module | Tool IDs |
 |--------|---------------|----------|
 | Browser / Web / Search / Translation | `src/service/capabilities/tools/browser-web-tools.mjs` (~280 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `translate_text` |
-| OS / App / File / Clipboard / Notify | `src/service/capabilities/tools/os-app-tools.mjs` (~175 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `notify` |
-| Email | `src/service/capabilities/tools/email-tools.mjs` (~50 lines) | `compose_email` |
+| OS / App / File / Clipboard / Notify | `src/service/capabilities/tools/os-app-tools.mjs` (~195 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `read_clipboard`, `notify` |
+| Email | `src/service/capabilities/tools/email-tools.mjs` (~70 lines) | `compose_email`, `send_email_smtp` |
 | Scheduler | `src/service/capabilities/tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
 | File Discovery / Read / Stat / Artifact | `src/service/capabilities/tools/file-read-tools.mjs` (~330 lines) | `stat_file`, `verify_file_exists`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact` |
 | File Content / Artifact Output | `src/service/capabilities/tools/file-content-tools.mjs` (~525 lines) | `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` |
@@ -51,13 +51,6 @@ is a live aggregator plus remaining inline high-risk families.
 | File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects) |
 | Document / Artifact / Diagram / SVG | `generate_document`, `render_diagram`, `render_svg` | ~680 | high (artifact-producing) |
 | Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
-
-### Deferred (still in `tools/index.mjs`, explicit reasons)
-
-| Tool | Reason |
-|------|--------|
-| `READ_CLIPBOARD_TOOL` | References `NOOP_TOOLS` array in index.mjs |
-| `SEND_EMAIL_SMTP_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 
 ### External families (aggregated into `BUILTIN_ACTION_TOOLS`)
 
@@ -76,7 +69,7 @@ is a live aggregator plus remaining inline high-risk families.
 2. OS / App / Clipboard / Notification: extracted in Phase 2D.2a + 2D.2b, moved to `capabilities/tools/` in CAP-1.
 3. Scheduler: extracted in Phase 2D.3, moved to `capabilities/tools/` in CAP-1.
 4. File Discovery / Read / Index: read/stat/artifact-lookup slice extracted in Phase 2D.4/2D.6, moved to `capabilities/tools/` in CAP-1; file-content/artifact-output slice moved in CAP-5D.
-5. Email: `compose_email` extracted in Phase 2D.5 and moved to `capabilities/tools/` in CAP-1; `send_email_smtp` remains a `NOOP_TOOLS` entry.
+5. Email: `compose_email` extracted in Phase 2D.5 and moved to `capabilities/tools/` in CAP-1; `send_email_smtp` moved to `email-tools.mjs` in CAP-5E to remove stale NOOP coupling.
 
 Do not move without a dedicated high-risk phase and targeted tests: `write_file`, `edit_file`, `run_script`, `generate_document`, `render_diagram`, `render_svg`, memory tools, vision tools, skill install tools, schemas, registry, policy, or type surfaces.
 

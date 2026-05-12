@@ -123,6 +123,26 @@ export const COPY_TO_CLIPBOARD_TOOL = {
   }
 };
 
+export const READ_CLIPBOARD_TOOL = {
+  id: "read_clipboard",
+  name: "Read Clipboard",
+  description: "Read the current clipboard content.",
+  parameters: ACTION_TOOL_SCHEMAS.read_clipboard,
+  risk_level: "medium",
+  required_capabilities: ["clipboard_read"],
+  requires_confirmation: false,
+  formatObservation(_, ctx = {}) {
+    return `Read clipboard contents: ${ctx.clipboardText ?? ""}`;
+  },
+  async execute(args = {}, ctx = {}) {
+    return createActionResult({
+      success: true,
+      observation: `Read clipboard contents: ${ctx.clipboardText ?? ""}`,
+      metadata: { tool_id: "read_clipboard" }
+    });
+  }
+};
+
 export const NOTIFY_TOOL = {
   id: "notify",
   name: "Notify",

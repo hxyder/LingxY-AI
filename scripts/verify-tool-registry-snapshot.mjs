@@ -163,7 +163,7 @@ assert(osAppSrc.includes("import { openWithDefaultHandler } from"),
   "os-app-tools.mjs must import openWithDefaultHandler from the shared module");
 assert(!osAppSrc.includes("function openWithDefaultHandler"),
   "os-app-tools.mjs must NOT define its own openWithDefaultHandler");
-for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "READ_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
   assert(osAppSrc.includes(`export const ${tool}`),
     `os-app-tools.mjs must own ${tool}`);
 }
@@ -172,7 +172,7 @@ for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL",
 const emailSrc = read("src/service/capabilities/tools/email-tools.mjs");
 assert(emailSrc.includes("import { openWithDefaultHandler } from"),
   "email-tools.mjs must import openWithDefaultHandler from the shared module");
-for (const tool of ["COMPOSE_EMAIL_TOOL"]) {
+for (const tool of ["COMPOSE_EMAIL_TOOL", "SEND_EMAIL_SMTP_TOOL"]) {
   assert(emailSrc.includes(`export const ${tool}`),
     `email-tools.mjs must own ${tool}`);
 }
@@ -204,7 +204,7 @@ for (const tool of ["OPEN_URL_TOOL", "WEB_SEARCH_TOOL", "TRANSLATE_TEXT_TOOL", "
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by browser-web-tools.mjs)`);
 }
-for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
+for (const tool of ["OPEN_FILE_TOOL", "REVEAL_IN_EXPLORER_TOOL", "FILE_OP_TOOL", "COPY_TO_CLIPBOARD_TOOL", "READ_CLIPBOARD_TOOL", "NOTIFY_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must NOT redefine ${tool} (owned by os-app-tools.mjs)`);
 }
@@ -344,8 +344,8 @@ for (const ownerText of [
   assert(!indexSrc.includes(ownerText), `index.mjs must not retain file-content owner text: ${ownerText}`);
 }
 
-assert(indexSrc.includes("READ_CLIPBOARD_TOOL"),
-  "index.mjs must still own deferred READ_CLIPBOARD_TOOL (NOOP_TOOLS reference)");
+assert(!indexSrc.includes("NOOP_TOOLS"), "index.mjs must not retain NOOP_TOOLS coupling");
+assert(!indexSrc.includes("TOOL_DEFINITIONS"), "index.mjs must not retain stale TOOL_DEFINITIONS coupling");
 
 if (!process.exitCode) {
   console.log("[tool-registry] built-in tool registry snapshot and source ownership verified.");

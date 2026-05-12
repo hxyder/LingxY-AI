@@ -6,15 +6,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { ACTION_TOOL_SCHEMAS } from "../../capabilities/schemas/index.mjs";
-import { createNoopTool } from "../tool-helper.mjs";
 import { createActionResult } from "../../capabilities/registry/types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import { CONNECTOR_ACTION_TOOLS } from "../../capabilities/connectors/tools/action-tool-aggregator.mjs";
 import { MEMORY_TOOLS } from "../../capabilities/tools/memory-tools.mjs";
 import { TRANSLATE_TEXT_TOOL, WEB_SEARCH_FETCH_TOOL, FETCH_URL_CONTENT_TOOL, OPEN_URL_TOOL, WEB_SEARCH_TOOL } from "../../capabilities/tools/browser-web-tools.mjs";
-import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, NOTIFY_TOOL } from "../../capabilities/tools/os-app-tools.mjs";
-import { COMPOSE_EMAIL_TOOL } from "../../capabilities/tools/email-tools.mjs";
+import { OPEN_FILE_TOOL, REVEAL_IN_EXPLORER_TOOL, FILE_OP_TOOL, COPY_TO_CLIPBOARD_TOOL, READ_CLIPBOARD_TOOL, NOTIFY_TOOL } from "../../capabilities/tools/os-app-tools.mjs";
+import { COMPOSE_EMAIL_TOOL, SEND_EMAIL_SMTP_TOOL } from "../../capabilities/tools/email-tools.mjs";
 import { CREATE_SCHEDULED_TASK_TOOL, LIST_SCHEDULED_TASKS_TOOL, DELETE_SCHEDULED_TASK_TOOL, PAUSE_SCHEDULED_TASK_TOOL } from "../../capabilities/tools/scheduler-tools.mjs";
 import { STAT_FILE_TOOL, VERIFY_FILE_EXISTS_TOOL, LIST_FILES_TOOL, GLOB_FILES_TOOL, FIND_RECENT_FILES_TOOL, GET_LATEST_ARTIFACT_TOOL } from "../../capabilities/tools/file-read-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "../../capabilities/tools/vision-analyze.mjs";
@@ -48,160 +47,6 @@ export {
   createLaunchAmbiguityResult,
   normalizeLaunchCandidates
 } from "../../capabilities/tools/desktop-launch-tools.mjs";
-
-const TOOL_DEFINITIONS = [
-  {
-    id: "open_url",
-    name: "Open URL",
-    description: "Open a URL in the user's default browser.",
-    parameters: ACTION_TOOL_SCHEMAS.open_url,
-    risk_level: "low",
-    required_capabilities: ["network"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Opened URL ${args.url}`;
-    }
-  },
-  {
-    id: "web_search",
-    name: "Web Search",
-    description: "Open a search results page with the user's preferred engine.",
-    parameters: ACTION_TOOL_SCHEMAS.web_search,
-    risk_level: "low",
-    required_capabilities: ["network"],
-    // P4-00: membership echoed for locality; canonical list lives in
-    // src/service/core/policy/policy-groups.mjs.
-    policy_group: "external_web_read",
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Opened web search for "${args.query}"`;
-    }
-  },
-  {
-    id: "compose_email",
-    name: "Compose Email",
-    description: "Open a mail draft with prefilled recipients, subject, and body.",
-    parameters: ACTION_TOOL_SCHEMAS.compose_email,
-    risk_level: "low",
-    required_capabilities: ["launch_app"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Prepared a draft email to ${(args.to ?? []).join(", ")}`;
-    }
-  },
-  {
-    id: "send_email_smtp",
-    name: "Send Email SMTP",
-    description: "Send an email directly over SMTP using user configuration.",
-    parameters: ACTION_TOOL_SCHEMAS.send_email_smtp,
-    risk_level: "high",
-    required_capabilities: ["network"],
-    requires_confirmation: true,
-    formatObservation(args) {
-      return `Sent SMTP email to ${(args.to ?? []).join(", ")}`;
-    }
-  },
-  {
-    id: "open_file",
-    name: "Open File",
-    description: "Open a local file with the associated application.",
-    parameters: ACTION_TOOL_SCHEMAS.open_file,
-    risk_level: "medium",
-    required_capabilities: ["file_read", "launch_app"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Opened file ${args.path}`;
-    }
-  },
-  {
-    id: "reveal_in_explorer",
-    name: "Reveal In Explorer",
-    description: "Reveal a local file in Explorer.",
-    parameters: ACTION_TOOL_SCHEMAS.reveal_in_explorer,
-    risk_level: "low",
-    required_capabilities: ["file_read"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Revealed ${args.path} in Explorer`;
-    }
-  },
-  {
-    id: "copy_to_clipboard",
-    name: "Copy To Clipboard",
-    description: "Write text to the system clipboard.",
-    parameters: ACTION_TOOL_SCHEMAS.copy_to_clipboard,
-    risk_level: "low",
-    required_capabilities: ["clipboard_write"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Copied ${String(args.content).length} characters to the clipboard`;
-    }
-  },
-  {
-    id: "notify",
-    name: "Notify",
-    description: "Show a local toast notification.",
-    parameters: ACTION_TOOL_SCHEMAS.notify,
-    risk_level: "low",
-    required_capabilities: ["notify"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Displayed notification "${args.title}"`;
-    }
-  },
-  {
-    id: "read_clipboard",
-    name: "Read Clipboard",
-    description: "Read the current clipboard content.",
-    parameters: ACTION_TOOL_SCHEMAS.read_clipboard,
-    risk_level: "medium",
-    required_capabilities: ["clipboard_read"],
-    requires_confirmation: false,
-    formatObservation(_, ctx) {
-      return `Read clipboard contents: ${ctx.clipboardText ?? ""}`;
-    }
-  },
-  {
-    id: "translate_text",
-    name: "Translate Text",
-    description: "Translate text using a free, no-key translation provider (MyMemory + Google web fallback).",
-    parameters: ACTION_TOOL_SCHEMAS.translate_text,
-    risk_level: "low",
-    required_capabilities: ["network"],
-    requires_confirmation: false,
-    formatObservation(args) {
-      const length = String(args.text ?? args.content ?? "").length;
-      return `Translated ${length} characters to ${args.target ?? "auto"}`;
-    }
-  },
-  {
-    id: "web_search_fetch",
-    name: "Web Search (fetch snippets)",
-    description: "Search the web via DuckDuckGo HTML (no API key) and return the top result snippets as text so the LLM can cite them.",
-    parameters: ACTION_TOOL_SCHEMAS.web_search_fetch,
-    risk_level: "low",
-    required_capabilities: ["network"],
-    // P4-00: see policy-groups.mjs.
-    policy_group: "external_web_read",
-    requires_confirmation: false,
-    formatObservation(args) {
-      return `Searched the web for "${args.query}"`;
-    }
-  }
-];
-
-const NOOP_TOOLS = TOOL_DEFINITIONS
-  .filter((definition) => definition.id !== "notify")
-  .map((definition) => createNoopTool(definition));
-
-// Open a URL or shell URI (mailto:, file:, http:) using the OS default handler.
-// On Windows we use PowerShell Start-Process which correctly handles `&` and `?`
-// in URLs (cmd.exe `start` does not — it interprets `&` as a command separator).
-import { openWithDefaultHandler } from "../../capabilities/tools/open-with-default-handler.mjs";
-
-export const SEND_EMAIL_SMTP_TOOL = NOOP_TOOLS.find((tool) => tool.id === "send_email_smtp");
-
-export const READ_CLIPBOARD_TOOL = NOOP_TOOLS.find((tool) => tool.id === "read_clipboard");
 
 /* ------------------------------------------------------------------------ */
 /* UCA-049 commit 2: universal tool belt                                     */

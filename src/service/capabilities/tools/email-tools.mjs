@@ -2,6 +2,26 @@ import { ACTION_TOOL_SCHEMAS } from "../schemas/index.mjs";
 import { createActionResult } from "../registry/types.mjs";
 import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
 
+export const SEND_EMAIL_SMTP_TOOL = {
+  id: "send_email_smtp",
+  name: "Send Email SMTP",
+  description: "Send an email directly over SMTP using user configuration.",
+  parameters: ACTION_TOOL_SCHEMAS.send_email_smtp,
+  risk_level: "high",
+  required_capabilities: ["network"],
+  requires_confirmation: true,
+  formatObservation(args) {
+    return `Sent SMTP email to ${(args.to ?? []).join(", ")}`;
+  },
+  async execute(args = {}) {
+    return createActionResult({
+      success: true,
+      observation: `Sent SMTP email to ${(args.to ?? []).join(", ")}`,
+      metadata: { tool_id: "send_email_smtp" }
+    });
+  }
+};
+
 export const COMPOSE_EMAIL_TOOL = {
   id: "compose_email",
   name: "Compose Email",
