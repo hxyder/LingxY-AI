@@ -4029,3 +4029,52 @@ Verification run by Codex:
   `total=5514ms`).
 - `npm run check:fast`: passed, 127/127 commands including 1064/1064 behavior
   tests.
+
+## Codex Update: CAPM-001 Capability Inventory Manager
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/service/capabilities/inventory/capability-inventory.mjs` as the
+  service-owned typed capability ledger for built-in tools, skills, MCP
+  servers, connector plugins, connector tools, providers/model roles, and
+  user-created drafts.
+- Exposed `GET /capabilities/inventory` through `ai-status-routes.mjs` and the
+  service endpoint manifest.
+- Updated Console marketplace management to consume the service inventory
+  first, without importing service internals from renderer code.
+- Added `docs/architecture/capability-inventory-manager.md`,
+  `scripts/verify-capability-inventory-manager.mjs`, and
+  `tests/behavior/capability-inventory-manager.test.mjs`.
+- Marked CAPM-001 complete in
+  `docs/architecture/post-runtime-product-gap-roadmap.md`.
+
+Contract notes:
+- Existing mutation owners remain unchanged: MCP toggles/config, plugin
+  enable/archive, skills, providers, and connector catalog routes still own
+  their behavior.
+- The inventory is secret-free and carries explicit owner, target layer, trust,
+  policy, enabled, archive/recovery, and management metadata.
+- Renderer code calls `/capabilities/inventory`; it does not read
+  `src/service/**` directly.
+
+Verification run by Codex:
+- `node --test tests/behavior/capability-inventory-manager.test.mjs`: passed,
+  3/3.
+- `node scripts/verify-capability-inventory-manager.mjs`: passed.
+- `node scripts/verify-http-route-inventory.mjs`: passed.
+- `node scripts/verify-marketplace-management-ui.mjs`: passed.
+- `node scripts/verify-runtime-wiring.mjs`: passed and hit
+  `/capabilities/inventory` on a real local runtime.
+- `npm run verify:desktop-gui-smoke`: passed, 49/49 checks
+  (`startup=474ms`, `first_window=474ms`, `interaction=5240ms`,
+  `total=5710ms`).
+- `npm run check:fast`: passed, 128/128 commands including 1067/1067 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed with line-ending warnings only.
+
+Next valid work:
+- Start `CAPM-002 Capability creation lifecycle`: templates, dry-run
+  validation, install preview, approval, activation, archive/recover, and no
+  auto-run of untrusted installed code.

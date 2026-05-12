@@ -30,6 +30,13 @@ const health = await healthResponse.json();
 assert.equal(health.ok, true);
 assert.equal(health.db_path.endsWith("uca.db"), true);
 
+const capabilityInventoryResponse = await fetch(`${listening.baseUrl}/capabilities/inventory`);
+assert.equal(capabilityInventoryResponse.ok, true);
+const capabilityInventoryPayload = await capabilityInventoryResponse.json();
+assert.equal(capabilityInventoryPayload.inventory.schemaVersion, "capability-inventory.v1");
+assert.equal(capabilityInventoryPayload.inventory.groups.some((group) => group.id === "built_in_tools"), true);
+assert.equal(capabilityInventoryPayload.inventory.entries.some((entry) => entry.group === "built_in_tools"), true);
+
 const createResponse = await fetch(`${listening.baseUrl}/task`, {
   method: "POST",
   headers: {

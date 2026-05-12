@@ -14,6 +14,7 @@ const html = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
 const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
 const roadmap = read("docs/architecture/post-runtime-maturity-roadmap.md");
+const productGapRoadmap = read("docs/architecture/post-runtime-product-gap-roadmap.md");
 
 for (const required of [
   "marketplaceManagementPanel",
@@ -41,6 +42,8 @@ for (const required of [
   "signatureState",
   "archiveState",
   "governance",
+  "fetchJsonWithFallback(\"/capabilities/inventory\"",
+  "state.workspace.capabilityInventory?.entries",
   "fetchJsonWithFallback(\"/plugins\"",
   "data-marketplace-plugin-toggle",
   "data-marketplace-plugin-archive",
@@ -60,6 +63,7 @@ for (const required of [
 
 assert.ok(roadmap.includes("PM-004 Marketplace management UI | complete"), "roadmap must mark PM-004 complete");
 assert.ok(roadmap.includes("node scripts/verify-marketplace-management-ui.mjs"), "roadmap must list PM-004 UI verifier");
+assert.ok(productGapRoadmap.includes("CAPM-001 Capability inventory manager | complete"), "product gap roadmap must mark CAPM-001 complete");
 
 const command = "node scripts/verify-marketplace-management-ui.mjs";
 assert.ok(CHECK_COMMANDS.includes(command), "check manifest must include marketplace management UI verifier");

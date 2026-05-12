@@ -4457,16 +4457,16 @@ function marketplaceTrustFields(entry = {}) {
     origin: preview.origin ?? trust.origin ?? entry.source ?? "unknown",
     signatureState: signature.state ?? trust.signatureState ?? entry.signatureState ?? "unsigned",
     archiveState: archive.state ?? entry.archiveState ?? (entry.status === "archived" ? "archived" : "active"),
-    warnings: Array.isArray(preview.warnings) ? preview.warnings : Array.isArray(trust.warnings) ? trust.warnings : [],
-    requiredReview: Boolean(preview.requiredUserReview ?? trust.userActionRequired),
-    trustState: trust.trustState ?? "unknown"
+    warnings: Array.isArray(entry.warnings) ? entry.warnings : Array.isArray(preview.warnings) ? preview.warnings : Array.isArray(trust.warnings) ? trust.warnings : [],
+    requiredReview: Boolean(entry.requiredReview ?? preview.requiredUserReview ?? trust.userActionRequired),
+    trustState: entry.trustState ?? trust.trustState ?? "unknown"
   };
 }
 
 function marketplaceCardHtml(entry = {}) {
   const fields = marketplaceTrustFields(entry);
   const title = entry.title ?? entry.displayName ?? entry.name ?? entry.id ?? "Marketplace item";
-  const subtitle = [entry.kind, fields.origin, entry.path ?? entry.entryPath ?? entry.directory ?? entry.command ?? entry.url]
+  const subtitle = [entry.group, entry.kind, fields.origin, entry.path ?? entry.entryPath ?? entry.directory ?? entry.command ?? entry.url]
     .filter(Boolean)
     .join(" · ");
   const governance = entry.governance
@@ -4474,7 +4474,10 @@ function marketplaceCardHtml(entry = {}) {
       ? { chip: "danger", label: "governance blocked" }
       : { chip: "ready", label: "governance allowed" }
     : null;
-  const enabled = entry.enabled !== false && entry.active !== false && entry.status !== "archived";
+  const enabled = entry.enabledState ? entry.enabledState === "enabled" : entry.enabled !== false && entry.active !== false && entry.status !== "archived";
+  const pluginId = entry.management?.pluginId ?? entry.id ?? "";
+  const canTogglePlugin = (entry.kind === "plugin" || entry.kind === "connector_plugin") && Boolean(entry.management?.toggleRoute ?? pluginId);
+  const canArchivePlugin = (entry.kind === "plugin" || entry.kind === "connector_plugin") && Boolean(entry.management?.archiveRoute ?? (entry.source !== "builtin" && pluginId));
   return `
     <div class="surface" style="padding:10px 12px;">
       <div class="row">
@@ -4491,10 +4494,10 @@ function marketplaceCardHtml(entry = {}) {
       ${fields.warnings.length ? `
         <p class="muted" style="margin-top:6px;font-size:11.5px;color:#b45309;">${escapeHtml(fields.warnings.join(", "))}</p>
       ` : ""}
-      ${entry.kind === "plugin" ? `
+      ${canTogglePlugin ? `
         <div class="toolbar" style="margin-top:8px;">
-          <button class="btn btn-sm btn-ghost" data-marketplace-plugin-toggle="${escapeHtml(entry.id ?? "")}" data-marketplace-plugin-enabled="${enabled ? "false" : "true"}">${enabled ? "Disable" : "Enable"}</button>
-          ${entry.source !== "builtin" ? `<button class="btn btn-sm btn-danger" data-marketplace-plugin-archive="${escapeHtml(entry.id ?? "")}">Archive</button>` : ""}
+          <button class="btn btn-sm btn-ghost" data-marketplace-plugin-toggle="${escapeHtml(pluginId)}" data-marketplace-plugin-enabled="${enabled ? "false" : "true"}">${enabled ? "Disable" : "Enable"}</button>
+          ${canArchivePlugin ? `<button class="btn btn-sm btn-danger" data-marketplace-plugin-archive="${escapeHtml(pluginId)}">Archive</button>` : ""}
         </div>
       ` : ""}
     </div>
@@ -4502,6 +4505,10 @@ function marketplaceCardHtml(entry = {}) {
 }
 
 function marketplaceEntries() {
+  const inventoryEntries = state.workspace.capabilityInventory?.entries;
+  if (Array.isArray(inventoryEntries) && inventoryEntries.length > 0) {
+    return inventoryEntries;
+  }
   const skills = (state.workspace.skills ?? []).map((skill) => ({
     ...skill,
     kind: "skill",
@@ -4544,7 +4551,7 @@ function renderMarketplaceManagement() {
   if (marketplaceCapabilityCount) marketplaceCapabilityCount.textContent = `${actionable}/${entries.length}`;
   if (marketplaceState) marketplaceState.textContent = `${entries.length} capabilities · ${actionable} need review or expose governance state`;
   if (entries.length === 0) {
-    renderEmpty(marketplaceCapabilityList, "No marketplace-managed skills, plugins, or MCP servers discovered.");
+    renderEmpty(marketplaceCapabilityList, "No capability inventory entries discovered.");
     return;
   }
   marketplaceCapabilityList.innerHTML = entries.map(marketplaceCardHtml).join("");
@@ -8255,7 +8262,7 @@ async function refreshWorkspace(options = {}) {
       const shouldLoadSettingsHeavyData = activeTabId === "settings";
 
       const previous = state.workspace ?? {};
-      const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, pluginsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
+      const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, capabilityInventoryP, mcpP, skillsP, pluginsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
         fetchJsonWithFallback("/health", previous.health ?? {}, "health"),
         fetchClientJsonWithFallback(() => consoleTaskClient.fetchTasks(), { tasks: previous.tasks ?? [] }, "tasks"),
         fetchJsonWithFallback("/approvals", { approvals: previous.approvals ?? [] }, "approvals"),
@@ -8269,6 +8276,7 @@ async function refreshWorkspace(options = {}) {
         fetchJsonWithFallback("/dag/executions", { executions: previous.dagExecutions ?? [] }, "dag-executions"),
         fetchJsonWithFallback("/ai/providers", { providers: previous.providers ?? [] }, "ai-providers"),
         fetchJsonWithFallback("/ai/code-cli", { adapters: previous.codeCliAdapters ?? [] }, "code-cli"),
+        fetchJsonWithFallback("/capabilities/inventory", { inventory: previous.capabilityInventory ?? null }, "capability-inventory"),
         fetchJsonWithFallback("/ai/mcp", { servers: previous.mcpServers ?? [] }, "mcp"),
         fetchJsonWithFallback("/ai/skills", { registries: previous.skillRegistries ?? [], skills: previous.skills ?? [] }, "skills"),
         fetchJsonWithFallback("/plugins", { plugins: previous.plugins ?? [] }, "plugins"),
@@ -8286,6 +8294,7 @@ async function refreshWorkspace(options = {}) {
         budget: budgetP.budget ?? null,
         providers: providersP.providers ?? [],
         codeCliAdapters: cliP.adapters ?? [],
+        capabilityInventory: capabilityInventoryP.inventory ?? previous.capabilityInventory ?? null,
         mcpServers: mcpP.servers ?? [],
         skillRegistries: skillsP.registries ?? [],
         skills: skillsP.skills ?? [],

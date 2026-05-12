@@ -24,7 +24,7 @@ const expectedOrder = [
 ];
 
 const expectedSummary = {
-  "ai-status-routes.mjs": { methods: ["GET", "PATCH"], literalCount: 5, regexCount: 2 },
+  "ai-status-routes.mjs": { methods: ["GET", "PATCH"], literalCount: 6, regexCount: 2 },
   "audio-routes.mjs": { methods: ["GET", "POST"], literalCount: 9, regexCount: 0 },
   "browser-context-routes.mjs": { methods: ["DELETE", "GET", "POST"], literalCount: 6, regexCount: 0 },
   "config-provider-routes.mjs": { methods: ["DELETE", "GET", "PATCH", "POST"], literalCount: 38, regexCount: 5 },

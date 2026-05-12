@@ -2,6 +2,7 @@ import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 import { refreshExternalMcpCatalogEntries } from "../../capabilities/connectors/core/mcp-catalog-bridge.mjs";
 import { createMcpEnvSecretRef } from "../../security/secret-store.mjs";
+import { buildRuntimeCapabilityInventory } from "../../capabilities/inventory/capability-inventory.mjs";
 
 const WRITABLE_BUILTIN_MCP_SOURCES = new Set(["builtin", "builtin_mit", "lingxy_internal"]);
 const REFERENCE_NAME_PATTERN = /^[A-Za-z0-9_.:/%-]+$/;
@@ -170,6 +171,13 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
         runtime,
         config
       })
+    });
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/capabilities/inventory") {
+    sendJson(response, 200, {
+      inventory: await buildRuntimeCapabilityInventory(runtime)
     });
     return true;
   }

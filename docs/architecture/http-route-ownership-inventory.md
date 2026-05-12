@@ -35,7 +35,7 @@ The current dispatcher checks route groups in this order:
 
 | Module | Methods | Literal routes | Regex routes | Owner scope |
 | --- | --- | ---: | ---: | --- |
-| `ai-status-routes.mjs` | GET, PATCH | 5 | 2 | provider/executor/MCP status |
+| `ai-status-routes.mjs` | GET, PATCH | 6 | 2 | provider/executor/MCP/capability inventory status |
 | `audio-routes.mjs` | GET, POST | 9 | 0 | Echo, TTS, transcription |
 | `browser-context-routes.mjs` | DELETE, GET, POST | 6 | 0 | browser context and overlay handoff |
 | `config-provider-routes.mjs` | DELETE, GET, PATCH, POST | 38 | 5 | config, provider, skills, MCP drafts, memory, email, memory review undo |

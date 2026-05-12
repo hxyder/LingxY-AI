@@ -15,10 +15,10 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 124/124 with 1057/1057
-  behavior tests after SH-004.
-- `npm run verify:desktop-gui-smoke` last passed 49/49 during DX-006 evidence
-  collection.
+- Current green gate: `npm run check:fast` passed 128/128 with 1067/1067
+  behavior tests after CAPM-001.
+- `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-001
+  visible Console inventory integration.
 - The next work must improve product capability, manageability, or real
   acceptance evidence; it must not repackage already-complete runtime phases as
   new work.
@@ -60,7 +60,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | DXR-002 Daily conversation/task/artifact GUI matrix | complete | Real Electron smoke must cover attach, follow-up, generate/edit/open, timeline inspection, cancellation/retry, and recovery paths before declaring desktop workflows complete. |
 | LAPI-001 Live provider acceptance harness | pending | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
 | CONN-001 Real connector/OAuth acceptance | pending | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
-| CAPM-001 Capability inventory manager | pending | Skills, MCP servers, plugins, connectors, and built-in tools must be browsable as separate typed inventories with ownership, trust, policy, and archive state. |
+| CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | pending | User-created skills/MCP/plugins must have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
 | SBOX-001 High-risk sandbox evidence pack | pending | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
 | MMX-001 Model role management surface | pending | Users must see and test planner/executor/reviewer/fast roles, health, cost, fallback, and feature-flag state without editing config files. |
@@ -211,11 +211,22 @@ Verification:
 
 ### CAPM-001: Capability Inventory Manager
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Make capabilities manageable the way mature harnesses manage extensions:
   users can see what exists, who owns it, whether it is trusted, and whether it
   can run.
+
+Implemented:
+
+- `src/service/capabilities/inventory/capability-inventory.mjs`
+- `GET /capabilities/inventory`
+- Console marketplace management reads the service-owned inventory first.
+- `docs/architecture/capability-inventory-manager.md`
+- `scripts/verify-capability-inventory-manager.mjs`
+- `tests/behavior/capability-inventory-manager.test.mjs`
 
 Required groups:
 
@@ -234,6 +245,8 @@ Acceptance:
 
 Verification:
 
+- `node scripts/verify-capability-inventory-manager.mjs`
+- `node --test tests/behavior/capability-inventory-manager.test.mjs`
 - Extend existing marketplace/capability verifiers before adding UI behavior.
 - Run Electron GUI smoke for visible Console changes.
 
