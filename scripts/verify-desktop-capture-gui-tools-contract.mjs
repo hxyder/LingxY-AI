@@ -10,16 +10,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// CAP inline high-risk screenshot/GUI preflight verifier.
-// This locks the current owner and behavior contracts before any extraction.
+// CAP desktop capture / GUI verifier.
+// This locks the moved owner and behavior contracts after extraction.
 
-const currentPath = "src/service/action_tools/tools/index.mjs";
-const futurePath = "src/service/capabilities/tools/desktop-capture-gui-tools.mjs";
-assert(existsSync(path.join(root, currentPath)), `current owner missing: ${currentPath}`);
-assert(!existsSync(path.join(root, futurePath)),
-  "desktop capture / GUI tools must not be physically moved during preflight");
+const aggregatorPath = "src/service/action_tools/tools/index.mjs";
+const ownerPath = "src/service/capabilities/tools/desktop-capture-gui-tools.mjs";
+assert(existsSync(path.join(root, aggregatorPath)), `tool aggregator missing: ${aggregatorPath}`);
+assert(existsSync(path.join(root, ownerPath)), `desktop capture / GUI owner missing: ${ownerPath}`);
 
-const indexSrc = read(currentPath);
+const indexSrc = read(aggregatorPath);
+const ownerSrc = read(ownerPath);
 for (const requiredText of [
   "export const TAKE_SCREENSHOT_TOOL",
   "export const GUI_FIND_ELEMENT_TOOL",
@@ -32,7 +32,13 @@ for (const requiredText of [
   "mime_type: \"image/png\"",
   "process.platform !== \"win32\""
 ]) {
-  assert(indexSrc.includes(requiredText), `desktop capture / GUI owner missing ${requiredText}`);
+  assert(ownerSrc.includes(requiredText), `desktop capture / GUI owner missing ${requiredText}`);
+}
+assert(indexSrc.includes("from \"../../capabilities/tools/desktop-capture-gui-tools.mjs\""),
+  "index.mjs must import desktop capture / GUI tools from capabilities/tools/");
+for (const movedTool of ["TAKE_SCREENSHOT_TOOL", "GUI_FIND_ELEMENT_TOOL", "GUI_CLICK_TOOL", "GUI_TYPE_TEXT_TOOL"]) {
+  assert(!indexSrc.includes(`export const ${movedTool} = {`),
+    `index.mjs must not redefine moved ${movedTool}`);
 }
 
 for (const schemaRef of [
@@ -41,7 +47,7 @@ for (const schemaRef of [
   "ACTION_TOOL_SCHEMAS.gui_click",
   "ACTION_TOOL_SCHEMAS.gui_type_text"
 ]) {
-  assert(indexSrc.includes(schemaRef), `desktop capture / GUI schema ref missing ${schemaRef}`);
+  assert(ownerSrc.includes(schemaRef), `desktop capture / GUI schema ref missing ${schemaRef}`);
 }
 
 const tools = new Map(BUILTIN_ACTION_TOOLS.map((tool) => [tool.id, tool]));
@@ -65,8 +71,7 @@ assert(existsSync(path.join(root, boundaryPath)), "desktop capture / GUI boundar
 const boundaryDoc = read(boundaryPath);
 for (const requiredText of [
   "Desktop Capture And GUI Tools Boundary",
-  "`src/service/action_tools/tools/index.mjs`",
-  "preflight only",
+  "`src/service/capabilities/tools/desktop-capture-gui-tools.mjs`",
   "take_screenshot",
   "gui_find_element",
   "gui_click",
@@ -77,4 +82,4 @@ for (const requiredText of [
     `desktop capture / GUI boundary doc missing required text: ${requiredText}`);
 }
 
-console.log("[desktop-capture-gui-tools] contract preflight verified");
+console.log("[desktop-capture-gui-tools] contract verified");

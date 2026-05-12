@@ -55,7 +55,7 @@ Status after CAP-1 low-risk/helper tool-family migration (2026-05-11). `tools/in
 | Tool | Reason |
 |------|--------|
 | `LAUNCH_APP_TOOL` | Depends on 200+ lines of Windows/Python launcher helpers |
-| `TAKE_SCREENSHOT_TOOL` | Depends on `ensureOutputDir`/`resolveOutputDirForTool` helpers in index.mjs |
+| `TAKE_SCREENSHOT_TOOL` | Owned by `src/service/capabilities/tools/desktop-capture-gui-tools.mjs`; depends on artifact output helpers |
 | `READ_CLIPBOARD_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 | `SEND_EMAIL_SMTP_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 

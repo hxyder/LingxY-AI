@@ -278,6 +278,7 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/mermaid-assets.mjs",
   "src/service/action_tools/tools/file-manifest-helpers.mjs",
   "src/service/action_tools/tools/open-with-default-handler.mjs",
+  "src/service/action_tools/tools/desktop-capture-gui-tools.mjs",
 ];
 for (const oldPath of cap1MovedPaths) {
   assert(!existsSync(path.join(root, oldPath)),
@@ -286,8 +287,15 @@ for (const oldPath of cap1MovedPaths) {
 // Remaining old-owner files are intentionally deferred:
 //   index.mjs — live aggregator and remaining inline-tool owner
 
+assert(indexSrc.includes("from \"../../capabilities/tools/desktop-capture-gui-tools.mjs\""),
+  "index.mjs must import desktop-capture-gui-tools.mjs from capabilities/tools/");
+for (const tool of ["TAKE_SCREENSHOT_TOOL", "GUI_FIND_ELEMENT_TOOL", "GUI_CLICK_TOOL", "GUI_TYPE_TEXT_TOOL"]) {
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must not redefine extracted ${tool}`);
+}
+
 // Deferred tools still in index.mjs must still be present
-for (const tool of ["LAUNCH_APP_TOOL", "TAKE_SCREENSHOT_TOOL"]) {
+for (const tool of ["LAUNCH_APP_TOOL"]) {
   assert(indexSrc.includes(`export const ${tool}`),
     `index.mjs must still own deferred ${tool}`);
 }

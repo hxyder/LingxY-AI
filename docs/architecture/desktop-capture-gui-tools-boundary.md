@@ -1,18 +1,19 @@
 # Desktop Capture And GUI Tools Boundary
 
-CAP inline high-risk family preflight. Status: 2026-05-11, preflight only.
-The screenshot and GUI automation tools have not been physically extracted from
-`src/service/action_tools/tools/index.mjs`.
+CAP inline high-risk family extraction. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/desktop-capture-gui-tools.mjs` after static
+preflight verification.
 
 ## Current State
 
-- Current owner: `src/service/action_tools/tools/index.mjs`
+- Current owner: `src/service/capabilities/tools/desktop-capture-gui-tools.mjs`
+- Registry aggregator: `src/service/action_tools/tools/index.mjs`
 - Tool family:
   - `take_screenshot`
   - `gui_find_element`
   - `gui_click`
   - `gui_type_text`
-- Shared helper functions still inline:
+- Shared helper functions:
   - `buildGuiFindScript`
   - `runGuiPsScript`
 - External script:
@@ -36,14 +37,15 @@ The screenshot and GUI automation tools have not been physically extracted from
 - Do not change IPC channels, HTTP routes, provider ids, storage schema, or
   artifact kinds.
 - Do not change tool ids, confirmation gates, risk levels, or schema keys.
-- Do not move this family in the preflight commit.
+- Do not move this family again without first updating this verifier and
+  preserving registry order, tool ids, risk levels, and confirmation gates.
 - Do not add a compatibility barrel or duplicate reachable implementation.
 
 ## Verification
 
-- `scripts/verify-desktop-capture-gui-tools-contract.mjs` locks the current
-  owner, inline helper functions, tool metadata, schema references, PowerShell
-  capture boundary, and this document.
+- `scripts/verify-desktop-capture-gui-tools-contract.mjs` locks the moved
+  owner, helper functions, tool metadata, schema references, PowerShell capture
+  boundary, aggregator import, old inline body absence, and this document.
 - `scripts/verify-action-tools.mjs` exercises `take_screenshot` with a stubbed
   capture command and verifies a non-empty PNG artifact.
 - GUI behavior remains covered by `npm run verify:desktop-gui-smoke` for shell
@@ -51,7 +53,7 @@ The screenshot and GUI automation tools have not been physically extracted from
 
 ## Decision
 
-Preflight only. The current owner remains
-`src/service/action_tools/tools/index.mjs`. A later extraction may move this
-family only after the verifier is updated to lock the moved owner, old inline
-body absence, and unchanged GUI/screenshot behavior.
+Moved. The current owner is
+`src/service/capabilities/tools/desktop-capture-gui-tools.mjs`.
+`src/service/action_tools/tools/index.mjs` remains the live aggregator and must
+not reintroduce inline screenshot or GUI tool bodies.
