@@ -403,6 +403,7 @@ export function createServiceBootstrap({
       getAIProviders: "/ai/providers",
       getCodeCliAdapters: "/ai/code-cli",
       getCapabilityInventory: "/capabilities/inventory",
+      getCapabilityLifecycle: "/capabilities/lifecycle",
       getMcpServers: "/ai/mcp",
       getSkillRegistries: "/ai/skills",
       getIntegrationConfig: "/config/integrations",

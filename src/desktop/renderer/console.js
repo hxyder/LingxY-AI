@@ -9257,10 +9257,26 @@ skillGitHubInstallBtn?.addEventListener("click", async () => {
   }
   const originalLabel = skillGitHubInstallBtn.textContent;
   skillGitHubInstallBtn.disabled = true;
-  skillGitHubInstallBtn.textContent = "安装中…";
-  if (skillGitHubInstallState) skillGitHubInstallState.textContent = "正在 git clone…";
+  skillGitHubInstallBtn.textContent = "预览中…";
+  if (skillGitHubInstallState) skillGitHubInstallState.textContent = "正在预览第三方 Skill…";
   try {
-    const response = await consoleSkillsClient.installFromGitHub(url);
+    const previewResponse = await consoleSkillsClient.previewInstallFromGitHub(url);
+    const preview = previewResponse.payload ?? {};
+    if (!preview?.ok) {
+      const detail = preview?.errors?.[0]?.message ?? preview?.error ?? "preview_failed";
+      if (skillGitHubInstallState) skillGitHubInstallState.textContent = `预览失败：${detail}`;
+      showConsoleToast(`预览失败：${detail}`, { kind: "err" });
+      return;
+    }
+    const label = preview.source?.sourceRef ?? url;
+    const accepted = confirm(`安装第三方 Skill？\n\n${label}\n\n安装会写入本地 skills 目录，并把该 Skill 加入可用能力。`);
+    if (!accepted) {
+      if (skillGitHubInstallState) skillGitHubInstallState.textContent = "已取消安装。";
+      return;
+    }
+    skillGitHubInstallBtn.textContent = "安装中…";
+    if (skillGitHubInstallState) skillGitHubInstallState.textContent = "正在 git clone…";
+    const response = await consoleSkillsClient.installFromGitHub(url, { previewAccepted: true });
     const data = response.payload ?? {};
     if (data?.ok) {
       if (skillGitHubInstallState) {

@@ -37,6 +37,12 @@ assert.equal(capabilityInventoryPayload.inventory.schemaVersion, "capability-inv
 assert.equal(capabilityInventoryPayload.inventory.groups.some((group) => group.id === "built_in_tools"), true);
 assert.equal(capabilityInventoryPayload.inventory.entries.some((entry) => entry.group === "built_in_tools"), true);
 
+const capabilityLifecycleResponse = await fetch(`${listening.baseUrl}/capabilities/lifecycle`);
+assert.equal(capabilityLifecycleResponse.ok, true);
+const capabilityLifecyclePayload = await capabilityLifecycleResponse.json();
+assert.equal(capabilityLifecyclePayload.lifecycle.schemaVersion, "capability-creation-lifecycle.v1");
+assert.equal(capabilityLifecyclePayload.lifecycle.families.some((family) => family.id === "connector_plugin"), true);
+
 const createResponse = await fetch(`${listening.baseUrl}/task`, {
   method: "POST",
   headers: {

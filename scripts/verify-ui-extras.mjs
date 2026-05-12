@@ -163,7 +163,9 @@ assert.ok(/createConsoleNotesRuntimeClient/.test(consoleJs)
     && /\/chat\/complete/.test(consoleNotesRuntimeClient),
   "notes runtime reads: console notes runtime request construction must stay in the notes runtime client");
 assert.ok(/createConsoleSkillsClient/.test(consoleJs)
+    && /consoleSkillsClient\.previewInstallFromGitHub/.test(consoleJs)
     && /consoleSkillsClient\.installFromGitHub/.test(consoleJs)
+    && /\/skills\/install\/github\/preview/.test(consoleSkillsClient)
     && /\/skills\/install\/github/.test(consoleSkillsClient),
   "skills install: GitHub install request construction must stay in the skills client");
 assert.ok(/saveProjectStoreViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.saveProjectStore/.test(consoleJs),

@@ -251,6 +251,7 @@ export const CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-desktop-product-evidence-pack.mjs",
   "node scripts/verify-desktop-gui-daily-workflow-coverage.mjs",
   "node scripts/verify-capability-inventory-manager.mjs",
+  "node scripts/verify-capability-creation-lifecycle.mjs",
   "node scripts/verify-user-interaction-smoke.mjs",
   "node scripts/verify-desktop-gui-perf-smoke.mjs",
   "node scripts/verify-security-policy.mjs",
@@ -391,6 +392,7 @@ export const FAST_CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-desktop-product-evidence-pack.mjs",
   "node scripts/verify-desktop-gui-daily-workflow-coverage.mjs",
   "node scripts/verify-capability-inventory-manager.mjs",
+  "node scripts/verify-capability-creation-lifecycle.mjs",
   "node scripts/verify-user-interaction-smoke.mjs",
   "node scripts/verify-desktop-gui-perf-smoke.mjs"
 ]);

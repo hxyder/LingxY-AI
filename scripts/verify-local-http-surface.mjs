@@ -153,6 +153,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "DELETE", "/config/user-memory/memories/*", {
+    domain: "user_memory",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "DELETE", "/config/mcp/servers/*", {
     domain: "mcp_config",
     effect: "config_mutation",
@@ -213,6 +219,24 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "POST", "/config/user-memory/proposals", {
+    domain: "user_memory",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/^\\/config\\/user-memory\\/proposals\\/([^/]+)$/", {
+    domain: "user_memory",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/^\\/config\\/user-memory\\/reviews\\/([^/]+)\\/undo$/", {
+    domain: "user_memory",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/mcp/servers", {
     domain: "mcp_config",
     effect: "config_mutation",
@@ -264,6 +288,12 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/skills/install/github", {
     domain: "skills_config",
     effect: "local_install",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/skills/install/github/preview", {
+    domain: "skills_config",
+    effect: "install_preview",
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
@@ -397,6 +427,12 @@ const expectedSurfaces = [
   surface("connector-routes.mjs", "POST", "/plugins/install", {
     domain: "plugins",
     effect: "plugin_install",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("connector-routes.mjs", "POST", "/plugins/install/preview", {
+    domain: "plugins",
+    effect: "plugin_install_preview",
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),

@@ -55,6 +55,7 @@ for (const required of [
 
 for (const required of [
   "method === \"GET\" && url.pathname === \"/plugins\"",
+  "method === \"POST\" && url.pathname === \"/plugins/install/preview\"",
   "method === \"DELETE\" && /^\\/plugins\\/[^/]+$/.test(url.pathname)",
   "method === \"PATCH\" && /^\\/plugins\\/[^/]+\\/enabled$/.test(url.pathname)"
 ]) {

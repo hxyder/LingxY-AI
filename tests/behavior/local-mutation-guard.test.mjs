@@ -208,9 +208,13 @@ function makePluginRuntime() {
         calls.push({ method: "list" });
         return plugins;
       },
+      previewInstall(body) {
+        calls.push({ method: "previewInstall", body });
+        return { plugin: { id: "preview", enabled: false } };
+      },
       async install(body) {
         calls.push({ method: "install", body });
-        return { id: "installed", enabled: true };
+        return { id: "installed", enabled: false };
       },
       async uninstall(pluginId) {
         calls.push({ method: "uninstall", pluginId });
@@ -918,6 +922,26 @@ test("skills file mutation routes reject disallowed actors before local file wri
   assert.equal(blockedCreate.statusCode, 403);
   assert.equal(blockedCreate.payload.error, "desktop_actor_required");
 
+  const blockedGitHubPreview = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/install/github/preview",
+    actor: "browser_page",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { url: "https://github.com/acme/skills" }
+  });
+  assert.equal(blockedGitHubPreview.statusCode, 403);
+  assert.equal(blockedGitHubPreview.payload.error, "desktop_actor_required");
+
+  const previewRequired = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/install/github",
+    actor: "desktop_console",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { url: "https://github.com/acme/skills" }
+  });
+  assert.equal(previewRequired.statusCode, 428);
+  assert.equal(previewRequired.payload.error, "skill_install_preview_required");
+
   const blockedDuplicate = await configProviderRoute({
     method: "POST",
     pathname: "/skills/duplicate",
@@ -1097,6 +1121,7 @@ test("approval mutation routes reject unknown desktop actors before scheduler ca
 
 test("plugin mutation routes reject unknown desktop actors before registry calls", async () => {
   const cases = [
+    { method: "POST", pathname: "/plugins/install/preview", body: { sourcePath: "E:/plugins/demo" } },
     { method: "POST", pathname: "/plugins/install", body: { sourcePath: "E:/plugins/demo" } },
     { method: "DELETE", pathname: "/plugins/demo" },
     { method: "PATCH", pathname: "/plugins/demo/enabled", body: { enabled: false } },
@@ -1116,6 +1141,17 @@ test("plugin mutation routes reject unknown desktop actors before registry calls
 });
 
 test("plugin mutation routes allow trusted desktop actors", async () => {
+  const preview = await pluginRoute({
+    method: "POST",
+    pathname: "/plugins/install/preview",
+    actor: "desktop_console",
+    body: { sourcePath: "E:/plugins/demo" }
+  });
+  assert.equal(preview.statusCode, 200);
+  assert.deepEqual(preview.runtime.calls, [
+    { method: "previewInstall", body: { sourcePath: "E:/plugins/demo" } }
+  ]);
+
   const install = await pluginRoute({
     method: "POST",
     pathname: "/plugins/install",

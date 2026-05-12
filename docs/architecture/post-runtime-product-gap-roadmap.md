@@ -15,10 +15,12 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 128/128 with 1067/1067
-  behavior tests after CAPM-001.
-- `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-001
-  visible Console inventory integration.
+- Current green gate: `npm run check:fast` passed 129/129 with 1070/1070
+  behavior tests after CAPM-002.
+- `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-002
+  visible Console skill-install preview integration. The first CAPM-002 GUI
+  smoke attempt hit the known task-list keyboard focus timing failure and the
+  immediate rerun passed.
 - The next work must improve product capability, manageability, or real
   acceptance evidence; it must not repackage already-complete runtime phases as
   new work.
@@ -61,7 +63,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | LAPI-001 Live provider acceptance harness | pending | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
 | CONN-001 Real connector/OAuth acceptance | pending | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
-| CAPM-002 Capability creation lifecycle | pending | User-created skills/MCP/plugins must have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
+| CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
 | SBOX-001 High-risk sandbox evidence pack | pending | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
 | MMX-001 Model role management surface | pending | Users must see and test planner/executor/reviewer/fast roles, health, cost, fallback, and feature-flag state without editing config files. |
 | MMX-002 Budgeted fallback and cascade evidence | pending | Any model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
@@ -252,10 +254,24 @@ Verification:
 
 ### CAPM-002: Capability Creation Lifecycle
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Let users add new skills, MCP servers, and plugins safely without turning the
   filesystem into an unmanaged extension pile.
+
+Implemented:
+
+- `src/service/capabilities/lifecycle/capability-creation-lifecycle.mjs`
+- `GET /capabilities/lifecycle`
+- `POST /skills/install/github/preview`
+- `POST /plugins/install/preview`
+- GitHub skill install now requires `previewAccepted: true`.
+- Installed connector plugins start disabled until `PATCH /plugins/:id/enabled`.
+- `docs/architecture/capability-creation-lifecycle.md`
+- `scripts/verify-capability-creation-lifecycle.mjs`
+- `tests/behavior/capability-creation-lifecycle.test.mjs`
 
 Required stages:
 
@@ -268,6 +284,8 @@ Required stages:
 
 Verification:
 
+- `node scripts/verify-capability-creation-lifecycle.mjs`
+- `node --test tests/behavior/capability-creation-lifecycle.test.mjs`
 - Existing skill/MCP/plugin install verifiers plus new lifecycle tests.
 - No auto-run of untrusted installed code.
 

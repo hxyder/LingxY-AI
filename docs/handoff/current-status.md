@@ -4078,3 +4078,57 @@ Next valid work:
 - Start `CAPM-002 Capability creation lifecycle`: templates, dry-run
   validation, install preview, approval, activation, archive/recover, and no
   auto-run of untrusted installed code.
+
+## Codex Update: CAPM-002 Capability Creation Lifecycle
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/service/capabilities/lifecycle/capability-creation-lifecycle.mjs`
+  as the service-owned lifecycle contract for skills, MCP servers, and
+  connector plugins.
+- Exposed `GET /capabilities/lifecycle`.
+- Added `POST /skills/install/github/preview`; GitHub skill install now
+  requires `previewAccepted: true` before cloning.
+- Added `POST /plugins/install/preview`; connector plugin installs now start
+  disabled until an explicit `PATCH /plugins/:id/enabled`.
+- Updated Console skill GitHub install to preview, show user confirmation, then
+  install with preview acceptance.
+- Added `docs/architecture/capability-creation-lifecycle.md`,
+  `scripts/verify-capability-creation-lifecycle.mjs`, and
+  `tests/behavior/capability-creation-lifecycle.test.mjs`.
+- Updated the local HTTP surface inventory for previously uninventoried
+  user-memory mutation routes while extending it for the new preview routes.
+
+Contract notes:
+- Capability creation now follows template/dry-run, install preview, user
+  approval, activation, and archive/recovery stages.
+- Untrusted connector plugins no longer become runnable immediately after
+  install.
+- Skill preview validates source shape and trust/policy impact without cloning
+  or reading secrets.
+- MCP keeps the existing plan/preview/run/draft-import/enable split.
+
+Verification run by Codex:
+- `node --test tests/behavior/capability-creation-lifecycle.test.mjs tests/behavior/local-mutation-guard.test.mjs`:
+  passed, 46/46.
+- `node scripts/verify-capability-creation-lifecycle.mjs`: passed.
+- `node scripts/verify-plugin-registry.mjs`: passed.
+- `node scripts/verify-http-route-inventory.mjs`: passed.
+- `node scripts/verify-local-http-surface.mjs`: passed.
+- `node scripts/verify-runtime-wiring.mjs`: passed and hit
+  `/capabilities/lifecycle` on a real local runtime.
+- `npm run verify:desktop-gui-smoke`: first attempt failed with the known
+  `overlay_task_list_keyboard_open_failed` focus timing issue; immediate rerun
+  passed 49/49 (`startup=542ms`, `first_window=542ms`, `interaction=5038ms`,
+  `total=5577ms`).
+- `npm run check:fast`: passed, 129/129 commands including 1070/1070 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed with line-ending warnings only.
+
+Next valid work:
+- Start `LAPI-001 Live provider acceptance harness`, because CAPM-001 and
+  CAPM-002 now cover the capability management foundation and the remaining
+  product gaps move into opt-in real provider/OAuth/sandbox/model/context
+  evidence.

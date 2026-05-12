@@ -245,6 +245,7 @@
     "verify:desktop-product-evidence-pack": "node scripts/verify-desktop-product-evidence-pack.mjs",
     "verify:desktop-gui-daily-workflow-coverage": "node scripts/verify-desktop-gui-daily-workflow-coverage.mjs",
     "verify:capability-inventory-manager": "node scripts/verify-capability-inventory-manager.mjs",
+    "verify:capability-creation-lifecycle": "node scripts/verify-capability-creation-lifecycle.mjs",
     "verify:user-interaction-smoke": "node scripts/verify-user-interaction-smoke.mjs",
     "verify:desktop-gui-smoke": "node scripts/run-electron-gui-smoke.mjs",
     "verify:desktop-gui-perf-smoke": "node scripts/verify-desktop-gui-perf-smoke.mjs",

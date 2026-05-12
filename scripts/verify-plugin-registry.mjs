@@ -94,25 +94,30 @@ assert.ok(list.some((plugin) => plugin.id === "microsoft"));
 assert.ok(!list.some((plugin) => plugin.id === "demo"));
 
 // Install.
+const preview = runtime.pluginRegistry.previewInstall({ sourcePath: sourceDir });
+assert.equal(preview.plugin.id, "demo");
+assert.equal(preview.plugin.enabled, false);
+assert.ok(preview.trustPreview.requiredUserReview, "third-party plugin preview must require review");
+
 const installed = await runtime.pluginRegistry.install({ sourcePath: sourceDir });
 assert.equal(installed.id, "demo");
-assert.equal(installed.enabled, true);
+assert.equal(installed.enabled, false);
 assert.ok(existsSync(path.join(pluginsDir, "demo", "plugin.json")));
 
 list = runtime.pluginRegistry.list();
-assert.ok(list.some((plugin) => plugin.id === "demo" && plugin.source === "installed"));
+assert.ok(list.some((plugin) => plugin.id === "demo" && plugin.source === "installed" && plugin.enabled === false));
 
-// Catalog now exposes the plugin's tools + workflows.
+// Catalog does not expose the plugin's tools + workflows until explicit activation.
 const toolAfterInstall = runtime.connectorCatalog.getTool("demo.app.ping");
-assert.ok(toolAfterInstall, "plugin tool must appear in catalog after install");
+assert.equal(toolAfterInstall, null, "plugin tool must not appear until explicit activation");
 const workflowAfterInstall = runtime.connectorCatalog.getWorkflow("demo.app.ping_flow");
-assert.ok(workflowAfterInstall, "plugin workflow must appear in catalog after install");
+assert.equal(workflowAfterInstall, null, "plugin workflow must not appear until explicit activation");
 
-// Disable.
+// Enable, disable, re-enable, then uninstall.
+runtime.pluginRegistry.setEnabled("demo", true);
+assert.ok(runtime.connectorCatalog.getTool("demo.app.ping"), "enabled plugin tool must appear");
 runtime.pluginRegistry.setEnabled("demo", false);
 assert.equal(runtime.connectorCatalog.getTool("demo.app.ping"), null, "disabled plugin tool must disappear");
-
-// Re-enable, then uninstall.
 runtime.pluginRegistry.setEnabled("demo", true);
 assert.ok(runtime.connectorCatalog.getTool("demo.app.ping"), "re-enabled plugin tool must reappear");
 const removed = await runtime.pluginRegistry.uninstall("demo");

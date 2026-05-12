@@ -3,13 +3,21 @@ export function createConsoleSkillsClient({ httpClient } = {}) {
     throw new TypeError("createConsoleSkillsClient requires httpClient.fetchJsonResponse.");
   }
 
-  function installFromGitHub(url) {
-    return httpClient.fetchJsonResponse("/skills/install/github", {
+  function previewInstallFromGitHub(url) {
+    return httpClient.fetchJsonResponse("/skills/install/github/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ url })
     });
   }
 
-  return { installFromGitHub };
+  function installFromGitHub(url, options = {}) {
+    return httpClient.fetchJsonResponse("/skills/install/github", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url, previewAccepted: options.previewAccepted === true })
+    });
+  }
+
+  return { installFromGitHub, previewInstallFromGitHub };
 }

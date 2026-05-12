@@ -35,11 +35,11 @@ The current dispatcher checks route groups in this order:
 
 | Module | Methods | Literal routes | Regex routes | Owner scope |
 | --- | --- | ---: | ---: | --- |
-| `ai-status-routes.mjs` | GET, PATCH | 6 | 2 | provider/executor/MCP/capability inventory status |
+| `ai-status-routes.mjs` | GET, PATCH | 7 | 2 | provider/executor/MCP/capability inventory and lifecycle status |
 | `audio-routes.mjs` | GET, POST | 9 | 0 | Echo, TTS, transcription |
 | `browser-context-routes.mjs` | DELETE, GET, POST | 6 | 0 | browser context and overlay handoff |
-| `config-provider-routes.mjs` | DELETE, GET, PATCH, POST | 38 | 5 | config, provider, skills, MCP drafts, memory, email, memory review undo |
-| `connector-routes.mjs` | DELETE, GET, PATCH, POST | 7 | 15 | connector catalog, plugins, connected accounts |
+| `config-provider-routes.mjs` | DELETE, GET, PATCH, POST | 39 | 5 | config, provider, skills, MCP drafts, memory, email, memory review undo |
+| `connector-routes.mjs` | DELETE, GET, PATCH, POST | 8 | 15 | connector catalog, plugins, connected accounts |
 | `mcp-install-routes.mjs` | POST | 3 | 0 | MCP install planning and execution |
 | `note-project-conversation-routes.mjs` | DELETE, GET, PATCH, POST | 8 | 10 | notes, projects, conversations |
 | `office-routes.mjs` | GET, POST | 3 | 0 | Office add-in setup and static assets |

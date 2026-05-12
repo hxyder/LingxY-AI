@@ -32,6 +32,7 @@ import {
   writeSkillMarkdownWithBackup
 } from "../../capabilities/skills/lifecycle.mjs";
 import { installSkillFromGitHub } from "../../capabilities/skills/github-install.mjs";
+import { previewGitHubSkillInstall } from "../../capabilities/lifecycle/capability-creation-lifecycle.mjs";
 import { skillStateKey } from "../../capabilities/skills/registry.mjs";
 import { validateSkillRegistryDescriptor } from "../../capabilities/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
@@ -908,6 +909,24 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     return true;
   }
 
+  if (method === "POST" && url.pathname === "/skills/install/github/preview") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    let body;
+    try {
+      body = await readJsonBody(request, { maxBytes: 4096 });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: "invalid_json", message: String(error?.message ?? error) });
+      return true;
+    }
+    body = body && typeof body === "object" ? body : {};
+    const result = previewGitHubSkillInstall({
+      url: body.url,
+      branch: typeof body.branch === "string" ? body.branch : null
+    });
+    sendJson(response, result.ok ? 200 : 400, result);
+    return true;
+  }
+
   if (method === "POST" && url.pathname === "/skills/install/github") {
     if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     let body;
@@ -918,6 +937,18 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       return true;
     }
     body = body && typeof body === "object" ? body : {};
+    if (body.previewAccepted !== true) {
+      sendJson(response, 428, {
+        ok: false,
+        error: "skill_install_preview_required",
+        message: "Preview and accept the third-party skill install before installing.",
+        preview: previewGitHubSkillInstall({
+          url: body.url,
+          branch: typeof body.branch === "string" ? body.branch : null
+        })
+      });
+      return true;
+    }
     const result = await installSkillFromGitHub({
       url: body.url,
       branch: typeof body.branch === "string" ? body.branch : null,

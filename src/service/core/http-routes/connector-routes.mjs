@@ -125,6 +125,18 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
       return true;
     }
 
+    if (method === "POST" && url.pathname === "/plugins/install/preview") {
+      if (!requireDesktopActor({ request, response })) return true;
+      const body = await readJsonBody(request);
+      try {
+        const preview = runtime.pluginRegistry.previewInstall(body);
+        sendJson(response, 200, { ok: true, ...preview });
+      } catch (error) {
+        sendJson(response, 400, { error: "preview_failed", message: error.message });
+      }
+      return true;
+    }
+
     if (method === "POST" && url.pathname === "/plugins/install") {
       if (!requireDesktopActor({ request, response })) return true;
       const body = await readJsonBody(request);

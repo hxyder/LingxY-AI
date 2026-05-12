@@ -259,7 +259,7 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
 
     const state = readStateFile(dir);
     state[manifest.id] = {
-      enabled: true,
+      enabled: false,
       installedAt: new Date().toISOString(),
       version: manifest.version ?? "0.0.0",
       signatureState: normalizeMarketplaceDistribution({
