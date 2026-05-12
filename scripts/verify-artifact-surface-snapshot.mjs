@@ -25,6 +25,7 @@ const requiredOwnerPaths = [
   "src/service/capabilities/tools/file-content-tools.mjs",
   "src/service/capabilities/tools/file-mutation-execution-tools.mjs",
   "src/service/capabilities/tools/document-artifact-helpers.mjs",
+  "src/service/capabilities/tools/document-render-tools.mjs",
   "src/service/core/artifact-path-helper.mjs"
 ];
 

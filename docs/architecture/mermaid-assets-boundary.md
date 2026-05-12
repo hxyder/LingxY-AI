@@ -10,8 +10,10 @@ preflight verification.
 - Public API: `resolveMermaidScriptSrc`, `MERMAID_SCRIPT_SRC`,
   `renderMermaidScriptTag`
 - Callers:
-  - `src/service/action_tools/tools/index.mjs` for PDF/HTML and
+  - `src/service/capabilities/tools/document-render-tools.mjs` for
     `render_diagram` HTML templates.
+  - `src/service/capabilities/tools/document-artifact-helpers.mjs` for
+    PDF/HTML templates.
   - `src/service/capabilities/tools/document-renderer.mjs` for document preview
     HTML.
   - `src/service/executors/kimi/output-format.mjs` for Kimi HTML previews.

@@ -21,6 +21,7 @@ assert(!existsSync(path.join(root, "src/service/action_tools/tools/document-rend
 const docSrc = read(currentPath);
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
 const documentArtifactHelperSrc = read("src/service/capabilities/tools/document-artifact-helpers.mjs");
+const documentRenderToolSrc = read("src/service/capabilities/tools/document-render-tools.mjs");
 
 assert(docSrc.includes("export function renderDocumentPreviewHtml"),
   "document-renderer.mjs must export renderDocumentPreviewHtml");
@@ -63,9 +64,23 @@ assert(documentArtifactHelperSrc.includes("writeDocumentPreviewSidecar"),
   "generate_document must continue writing preview sidecars for previewable artifacts");
 assert(documentArtifactHelperSrc.includes("prepareGeneratedDocumentCheckpoint"),
   "generate_document must continue recording file reversibility checkpoints");
-assert(indexSrc.includes("preview_html_path"),
+assert(indexSrc.includes("from \"../../capabilities/tools/document-render-tools.mjs\""),
+  "index.mjs must aggregate generate/render tools from the capability owner");
+assert(documentRenderToolSrc.includes("export const GENERATE_DOCUMENT_TOOL"),
+  "document-render-tools must own generate_document");
+assert(documentRenderToolSrc.includes("export const RENDER_DIAGRAM_TOOL"),
+  "document-render-tools must own render_diagram");
+assert(documentRenderToolSrc.includes("export const RENDER_SVG_TOOL"),
+  "document-render-tools must own render_svg");
+assert(!indexSrc.includes("export const GENERATE_DOCUMENT_TOOL = {"),
+  "index.mjs must not retain the generate_document implementation");
+assert(!indexSrc.includes("export const RENDER_DIAGRAM_TOOL = {"),
+  "index.mjs must not retain the render_diagram implementation");
+assert(!indexSrc.includes("export const RENDER_SVG_TOOL = {"),
+  "index.mjs must not retain the render_svg implementation");
+assert(documentRenderToolSrc.includes("preview_html_path"),
   "generate_document metadata must continue exposing preview_html_path");
-assert(indexSrc.includes("needs_pdf_conversion"),
+assert(documentRenderToolSrc.includes("needs_pdf_conversion"),
   "PDF fallback contract must continue exposing needs_pdf_conversion");
 
 const boundaryPath = "docs/architecture/document-renderer-boundary.md";

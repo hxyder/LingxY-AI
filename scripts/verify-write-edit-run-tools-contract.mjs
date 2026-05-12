@@ -79,8 +79,8 @@ for (const requiredText of [
 }
 assert(indexSrc.includes("from \"../../capabilities/tools/file-mutation-execution-tools.mjs\""),
   "index.mjs must import file-mutation-execution-tools.mjs from capabilities/tools/");
-assert(indexSrc.includes("from \"../../capabilities/tools/document-artifact-helpers.mjs\""),
-  "index.mjs must import shared document-artifact helpers from capabilities/tools/");
+assert(ownerSrc.includes("from \"./document-artifact-helpers.mjs\""),
+  "file-mutation owner must import shared document-artifact helpers from capabilities/tools/");
 
 const tools = new Map(BUILTIN_ACTION_TOOLS.map((tool) => [tool.id, tool]));
 const expected = [

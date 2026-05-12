@@ -233,14 +233,10 @@ assert(indexSrc.includes("from \"../../capabilities/tools/memory-tools.mjs\""),
   "index.mjs must import memory-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/skill-install-tools.mjs\""),
   "index.mjs must import skill-install-tools.mjs from capabilities/tools/");
-assert(indexSrc.includes("from \"../../capabilities/tools/svg-sanitize.mjs\""),
-  "index.mjs must import svg-sanitize.mjs from capabilities/tools/");
-assert(indexSrc.includes("from \"../../capabilities/tools/mermaid-assets.mjs\""),
-  "index.mjs must import mermaid-assets.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/file-mutation-execution-tools.mjs\""),
   "index.mjs must import file-mutation-execution-tools.mjs from capabilities/tools/");
-assert(indexSrc.includes("from \"../../capabilities/tools/document-artifact-helpers.mjs\""),
-  "index.mjs must import document-artifact-helpers.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/document-render-tools.mjs\""),
+  "index.mjs must import document-render-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/schemas/index.mjs\""),
   "index.mjs must import ACTION_TOOL_SCHEMAS from capabilities/schemas/");
 assert(existsSync(path.join(root, "src/service/capabilities/schemas/index.mjs")),
@@ -285,6 +281,7 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/file-content-tools.mjs",
   "src/service/action_tools/tools/file-mutation-execution-tools.mjs",
   "src/service/action_tools/tools/document-artifact-helpers.mjs",
+  "src/service/action_tools/tools/document-render-tools.mjs",
 ];
 for (const oldPath of cap1MovedPaths) {
   assert(!existsSync(path.join(root, oldPath)),
@@ -388,6 +385,22 @@ for (const oldText of [
   "async function invokeDocumentRenderer"
 ]) {
   assert(!indexSrc.includes(oldText), `index.mjs must not retain document-artifact helper text: ${oldText}`);
+}
+
+const documentRenderToolSrc = read("src/service/capabilities/tools/document-render-tools.mjs");
+for (const tool of ["GENERATE_DOCUMENT_TOOL", "RENDER_DIAGRAM_TOOL", "RENDER_SVG_TOOL"]) {
+  assert(documentRenderToolSrc.includes(`export const ${tool}`),
+    `document-render-tools.mjs must own ${tool}`);
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must not redefine extracted ${tool}`);
+}
+for (const ownerText of [
+  "preview_html_path",
+  "needs_pdf_conversion",
+  "renderMermaidScriptTag()",
+  "sanitizeSvgMarkup(args.svg"
+]) {
+  assert(documentRenderToolSrc.includes(ownerText), `document-render-tools.mjs missing ${ownerText}`);
 }
 
 assert(!indexSrc.includes("NOOP_TOOLS"), "index.mjs must not retain NOOP_TOOLS coupling");

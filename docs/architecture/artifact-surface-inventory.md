@@ -25,6 +25,7 @@ Status: verified against the current repository on 2026-05-09.
 | File reversibility helpers | `src/service/capabilities/tools/file-reversibility.mjs` | Service runtime |
 | File mutation / execution tools | `src/service/capabilities/tools/file-mutation-execution-tools.mjs` | Service runtime |
 | Document artifact helpers | `src/service/capabilities/tools/document-artifact-helpers.mjs` | Service runtime |
+| Document render tools | `src/service/capabilities/tools/document-render-tools.mjs` | Service runtime |
 | Artifact path helper | `src/service/core/artifact-path-helper.mjs` | Service runtime (Phase 2E.1) |
 
 ## Artifact-Creating Tool Surfaces
@@ -60,6 +61,7 @@ Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 | File | Role |
 |------|------|
 | `src/service/capabilities/tools/document-artifact-helpers.mjs` | `OUTLINE_KINDS`, `KIND_EXTENSIONS`, `artifactKindFromTarget` |
+| `src/service/capabilities/tools/document-render-tools.mjs` | `generate_document`, `render_diagram`, `render_svg` artifact write paths |
 | `src/service/core/store/artifact-metadata.mjs` | `inferArtifactKind` |
 | `src/service/core/artifact-action-contract.mjs` | `artifactRegistrationOptionsForPath` |
 | `src/service/core/policy/success-contract-validator.mjs` | `artifact_kind` validation |
@@ -146,7 +148,7 @@ Worker: `src/service/workers/artifact-extract-worker.mjs`
    - `artifact-action-contract.mjs` `artifactRegistrationOptionsForPath` for metadata-aware registration
    - 4 submission files (`browser`, `context`, `file`, `image`) must call `registerArtifact` + `appendArtifact`
    - Broker/facade consolidation deferred — call sites are heterogeneous (different metadata sources, event handling)
-3. **Kind inference** — `artifactKindFromTarget` now lives in `src/service/capabilities/tools/document-artifact-helpers.mjs`; further consolidation should happen with the generate/render family.
+3. **Kind inference** — `artifactKindFromTarget` now lives in `src/service/capabilities/tools/document-artifact-helpers.mjs`; generate/render tool writes now live in `src/service/capabilities/tools/document-render-tools.mjs`.
 4. **Lineage, Transform, Extract** — already well-factored with dedicated services; no immediate consolidation needed.
 5. **Preview/Open/Reveal** — already thin; no immediate consolidation needed.
 6. **Fallback** — dedicated module exists but is sparsely referenced; ensure callers consistently use it.

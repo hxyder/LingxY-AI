@@ -9,8 +9,10 @@ preflight verification.
 - File: `src/service/capabilities/tools/svg-sanitize.mjs`
 - Public API: `sanitizeSvgMarkup`, `isSafeSvgMarkup`
 - Callers:
-  - `src/service/action_tools/tools/index.mjs` for `render_svg` and document
-    outline SVG components.
+  - `src/service/capabilities/tools/document-render-tools.mjs` for
+    `render_svg`.
+  - `src/service/capabilities/tools/document-artifact-helpers.mjs` for PDF/HTML
+    document outline SVG components.
   - `src/service/capabilities/tools/document-renderer.mjs` for document preview
     embedded SVG components.
   - `src/service/executors/tool_using/tool-call-validator.mjs` for

@@ -42,10 +42,13 @@ for (const required of [
 }
 
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
-assert(indexSrc.includes("from \"../../capabilities/tools/svg-sanitize.mjs\""),
-  "index.mjs must import sanitizer from capabilities/tools/");
-assert(indexSrc.includes("RENDER_SVG_TOOL"),
-  "index.mjs must still own render_svg until its own tool-family extraction");
+const documentRenderToolSrc = read("src/service/capabilities/tools/document-render-tools.mjs");
+assert(indexSrc.includes("from \"../../capabilities/tools/document-render-tools.mjs\""),
+  "index.mjs must aggregate render_svg from the document-render tool owner");
+assert(documentRenderToolSrc.includes("from \"./svg-sanitize.mjs\""),
+  "document-render-tools must import sanitizer from capabilities/tools/");
+assert(documentRenderToolSrc.includes("export const RENDER_SVG_TOOL"),
+  "document-render-tools must own render_svg after CAP-5G extraction");
 
 const docRendererSrc = read("src/service/capabilities/tools/document-renderer.mjs");
 assert(docRendererSrc.includes("from \"./svg-sanitize.mjs\""),

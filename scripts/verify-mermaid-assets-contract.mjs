@@ -38,10 +38,13 @@ assert(!/from\s+["'][^"']*desktop\//u.test(assetSrc),
   "mermaid-assets must not import desktop code");
 
 const indexSrc = read("src/service/action_tools/tools/index.mjs");
-assert(indexSrc.includes("from \"../../capabilities/tools/mermaid-assets.mjs\""),
-  "index.mjs must import Mermaid assets from capabilities/tools/");
-assert(indexSrc.includes("renderMermaidScriptTag()"),
-  "index.mjs must use shared Mermaid script tag helper");
+const documentRenderToolSrc = read("src/service/capabilities/tools/document-render-tools.mjs");
+assert(indexSrc.includes("from \"../../capabilities/tools/document-render-tools.mjs\""),
+  "index.mjs must aggregate render_diagram from the document-render tool owner");
+assert(documentRenderToolSrc.includes("from \"./mermaid-assets.mjs\""),
+  "document-render-tools must import Mermaid assets from capabilities/tools/");
+assert(documentRenderToolSrc.includes("renderMermaidScriptTag()"),
+  "document-render-tools must use shared Mermaid script tag helper");
 
 const docRendererSrc = read("src/service/capabilities/tools/document-renderer.mjs");
 assert(docRendererSrc.includes("from \"./mermaid-assets.mjs\""),
