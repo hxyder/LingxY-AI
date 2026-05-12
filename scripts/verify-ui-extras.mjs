@@ -37,6 +37,7 @@ const consoleConnectorsClient = read("src/desktop/renderer/console/console-conne
 const consoleNotesRuntimeClient = read("src/desktop/renderer/console/console-notes-runtime-client.mjs");
 const consoleSkillsClient = read("src/desktop/renderer/console/console-skills-client.mjs");
 const echoRuntimeClient = read("src/desktop/renderer/shared/echo-runtime-client.mjs");
+const runtimePreflightClient = read("src/desktop/renderer/shared/runtime-preflight-client.mjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
 const capabilityChecklist = read("src/desktop/renderer/capability-checklist.mjs");
@@ -348,15 +349,18 @@ assert.ok(/installRequired/.test(consoleMcpView) && /installSource/.test(console
 assert.ok(/mcp-install-btn/.test(consoleMcpView) && /mcp-install-btn/.test(sharedCss),
   "mcp install: .mcp-install-btn class or CSS missing");
 assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button missing");
-assert.ok(/\/config\/mcp\/test/.test(consoleJs), "mcp preflight: console must call /config/mcp/test");
+assert.ok(/consolePreflightClient\.testMcpServerConfig/.test(consoleJs)
+    && /\/config\/mcp\/test/.test(runtimePreflightClient),
+  "mcp preflight: console must use runtime preflight client for /config/mcp/test");
 assert.ok(/id="mcpInstallPackageDir"/.test(consoleHtml) && /id="mcpInstallPreviewBtn"/.test(consoleHtml),
   "mcp install preview: packageDir input and preview button missing");
 assert.ok(/id="mcpInstallSource"/.test(consoleHtml) && /id="mcpInstallPlanBtn"/.test(consoleHtml),
   "mcp install plan: source input and plan button missing");
 assert.ok(/id="mcpInstallRunBtn"/.test(consoleHtml) && /id="mcpInstallRunState"/.test(consoleHtml),
   "mcp install run: install button and state missing");
-assert.ok(/\/config\/mcp\/install\/plan/.test(consoleJs),
-  "mcp install plan: console must call dry-run plan endpoint");
+assert.ok(/consolePreflightClient\.planMcpInstall/.test(consoleJs)
+    && /\/config\/mcp\/install\/plan/.test(runtimePreflightClient),
+  "mcp install plan: console must use runtime preflight client for dry-run plan endpoint");
 assert.ok(/applyMcpInstallPlanToForm/.test(consoleJs) && /Install is not executed here/.test(consoleJs),
   "mcp install plan: plan must populate packageDir without executing install");
 assert.ok(/runMcpInstallSource/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.runMcpInstall/.test(consoleJs),
@@ -487,8 +491,8 @@ assert.ok(/project_id:\s*projectId/.test(overlayJs) && /selectionMetadata:\s*\{[
 assert.ok(/selection_metadata:\s*\{[\s\S]{0,140}project_id:\s*projectId/.test(overlayJs),
   "overlay projects: contextPacket.selection_metadata must carry project_id");
 assert.ok(/const\s+taskBody\s*=\s*attachOverlayProjectScope\(\s*(?:attachOverlaySubmissionMetadata\(\s*)?\{\s*[\s\S]{0,220}\.\.\.payload/.test(overlayJs)
-    && /body:\s*JSON\.stringify\(taskBody\)/.test(overlayJs),
-  "overlay projects: main /task submission must wrap the request body with project scope");
+    && /overlaySubmissionClient\.submitTask\(taskBody\)/.test(overlayJs),
+  "overlay projects: main /task submission must wrap the runtime-client request body with project scope");
 assert.ok(/const\s+clarifyPayload\s*=\s*attachOverlayProjectScope\(\{/.test(overlayJs),
   "overlay projects: /task/clarify submissions must preserve project scope");
 assert.ok(/const\s+taskBody\s*=\s*attachOverlayProjectScope\(\s*(?:attachOverlaySubmissionMetadata\(payload\)|payload)\s*\)/.test(overlayJs),
@@ -856,7 +860,9 @@ assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/email\/digest\/check`\s*,\s*
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");
-assert.ok(/\/config\/skills\/test/.test(consoleJs), "skill preflight: console must call /config/skills/test");
+assert.ok(/consolePreflightClient\.testSkillRegistryConfig/.test(consoleJs)
+    && /\/config\/skills\/test/.test(runtimePreflightClient),
+  "skill preflight: console must use runtime preflight client for /config/skills/test");
 assert.ok(/function setPreflightState\s*\(/.test(consoleJs), "preflight state: helper missing");
 assert.ok((consoleJs.match(/setPreflightState\s*\(/g) ?? []).length >= 8,
   "preflight state: MCP/Skill test and save paths must use setPreflightState");

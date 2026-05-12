@@ -209,6 +209,48 @@ Next valid work:
   frontend framework rewrite and prove no direct service/runtime imports or
   duplicated mutation helpers remain.
 
+## Codex Review: DX-003 Renderer Runtime Client Consolidation
+
+Date: 2026-05-12
+
+Status:
+- DX-003 is complete as the first renderer runtime mutation consolidation
+  slice.
+
+Scope:
+- Added `src/desktop/renderer/shared/runtime-submission-client.mjs` as the
+  shared renderer mutation client for task submission, task clarification,
+  conversation creation, and conversation model overrides.
+- Added `src/desktop/renderer/shared/runtime-user-memory-client.mjs` for
+  user-memory save/proposal/delete mutations.
+- Added `src/desktop/renderer/shared/runtime-preflight-client.mjs` for
+  MCP/skill preflight, MCP install planning, and DAG preview mutations.
+- Migrated Console and Overlay `/task` and `/task/clarify` mutation call sites
+  to the shared client.
+- Migrated Console conversation creation and model override mutation call sites
+  to the shared client.
+- Migrated Console user-memory, MCP/skill preflight, MCP install planning, and
+  DAG preview mutation call sites to shared clients.
+- Added behavior tests for all three new renderer runtime clients.
+- Added `scripts/verify-renderer-runtime-client-consolidation.mjs` and wired it
+  into full and fast check manifests.
+
+Verification:
+- `node --test tests/behavior/runtime-submission-client.test.mjs tests/behavior/runtime-user-memory-client.test.mjs tests/behavior/runtime-preflight-client.test.mjs`: passed, 5/5.
+- `node scripts/verify-renderer-runtime-client-consolidation.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-console-runtime-client.mjs`: passed.
+- `node scripts/verify-ui-extras.mjs`: passed after updating stale verifier
+  expectations from page-script endpoint ownership to runtime-client endpoint
+  ownership.
+- `node scripts/verify-console-rendered-workspace.mjs`: passed after updating
+  stale desktop shell/runtime-client expectations.
+- `npm run check:fast`: passed, 104/104; behavior tests passed, 998/998.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Next valid work:
+- Commit DX-003 and start DX-004 keyboard-only/a11y GUI pass.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

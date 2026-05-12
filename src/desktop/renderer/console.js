@@ -12,6 +12,16 @@ import {
   createRuntimeTaskClient
 } from "./shared/runtime-task-client.mjs";
 import {
+  createRuntimeSubmissionClient,
+  runtimeJsonOptions
+} from "./shared/runtime-submission-client.mjs";
+import {
+  createRuntimeUserMemoryClient
+} from "./shared/runtime-user-memory-client.mjs";
+import {
+  createRuntimePreflightClient
+} from "./shared/runtime-preflight-client.mjs";
+import {
   createRendererShellClient
 } from "./shared/shell-client.mjs";
 import {
@@ -878,6 +888,18 @@ const consoleRuntimeHttpClient = createRuntimeHttpClient({
 });
 const consoleTaskClient = createRuntimeTaskClient({
   httpClient: consoleRuntimeHttpClient
+});
+const consoleSubmissionClient = createRuntimeSubmissionClient({
+  httpClient: consoleRuntimeHttpClient,
+  actor: "desktop_console"
+});
+const consoleUserMemoryClient = createRuntimeUserMemoryClient({
+  httpClient: consoleRuntimeHttpClient,
+  actor: "desktop_console"
+});
+const consolePreflightClient = createRuntimePreflightClient({
+  httpClient: consoleRuntimeHttpClient,
+  actor: "desktop_console"
 });
 const consoleConnectorsClient = createConsoleConnectorsClient({
   httpClient: consoleRuntimeHttpClient
@@ -3148,22 +3170,18 @@ async function submitConsoleChat() {
   consoleChatState.textContent = "Submitting...";
   appendConsoleChatMessage("system", "已收到请求，正在创建任务…");
   try {
-    const result = await fetchJson("/task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sourceApp: "uca.console.chat",
-        captureMode: "desktop_console_chat",
-        sourceType: "clipboard",
-        text: "",
-        userCommand: text,
-        executionMode: "interactive",
-        background: true,
-        client_message_id: clientMessageId,
-        ...(conversationId ? { conversation_id: conversationId } : {}),
-        ...(projectId ? { project_id: projectId, selectionMetadata: { project_id: projectId } } : {}),
-        ...consoleChatAttachmentPayload(attachedFilePaths)
-      })
+    const result = await consoleSubmissionClient.submitTask({
+      sourceApp: "uca.console.chat",
+      captureMode: "desktop_console_chat",
+      sourceType: "clipboard",
+      text: "",
+      userCommand: text,
+      executionMode: "interactive",
+      background: true,
+      client_message_id: clientMessageId,
+      ...(conversationId ? { conversation_id: conversationId } : {}),
+      ...(projectId ? { project_id: projectId, selectionMetadata: { project_id: projectId } } : {}),
+      ...consoleChatAttachmentPayload(attachedFilePaths)
     });
     const taskId = result.task?.task_id;
     const replyConvId = result.task?.conversation_id;
@@ -3948,7 +3966,7 @@ function renderGovernedMemoryList(profile = {}) {
           if (!id || !userMemoryState) return;
           userMemoryState.textContent = "Deleting memory...";
           try {
-            const result = await fetchJson(`/config/user-memory/memories/${encodeURIComponent(id)}`, desktopJsonOptions("DELETE", {}));
+            const result = await consoleUserMemoryClient.deleteMemory(id);
             state.workspace.userMemory = result.userMemory ?? state.workspace.userMemory;
             renderUserMemorySettings();
           } catch (error) {
@@ -3983,10 +4001,7 @@ function renderGovernedMemoryList(profile = {}) {
           const action = btn.dataset.memoryReject ? "reject" : "approve";
           userMemoryState.textContent = `${action === "approve" ? "Approving" : "Rejecting"} proposal...`;
           try {
-            const result = await fetchJson(
-              `/config/user-memory/proposals/${encodeURIComponent(proposalId)}`,
-              desktopJsonOptions("POST", { action })
-            );
+            const result = await consoleUserMemoryClient.decideProposal(proposalId, action);
             state.workspace.userMemory = result.userMemory ?? state.workspace.userMemory;
             renderUserMemorySettings();
           } catch (error) {
@@ -4022,7 +4037,7 @@ async function saveUserMemorySettings() {
       approvedMemories: state.workspace.userMemory?.approvedMemories ?? [],
       proposals: state.workspace.userMemory?.proposals ?? []
     };
-    const result = await fetchJson("/config/user-memory", desktopJsonOptions("POST", payload));
+    const result = await consoleUserMemoryClient.saveUserMemory(payload);
     state.workspace.userMemory = result.userMemory ?? payload;
     renderUserMemorySettings();
     userMemoryState.textContent = "Saved.";
@@ -8008,17 +8023,13 @@ taskComposer.addEventListener("submit", async (event) => {
   event.preventDefault();
   submitState.textContent = "Submitting...";
   try {
-    const result = await fetchJson("/task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sourceApp: "uca.console.desktop",
-        captureMode: "desktop_console",
-        sourceType: "clipboard",
-        text: "",
-        userCommand: commandInput.value || "Process this text",
-        executionMode: "interactive"
-      })
+    const result = await consoleSubmissionClient.submitTask({
+      sourceApp: "uca.console.desktop",
+      captureMode: "desktop_console",
+      sourceType: "clipboard",
+      text: "",
+      userCommand: commandInput.value || "Process this text",
+      executionMode: "interactive"
     });
     submitState.textContent = `Submitted ${result.task.task_id}`;
     commandInput.value = "";
@@ -8324,11 +8335,7 @@ document.addEventListener("keydown", (event) => {
       // failed the empty-command guard — server returned
       // { ok:false, error:"missing_user_command" } and nothing reached
       // the task store, so New task appeared to do nothing.
-      const result = await fetchJson("/task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userCommand: text, sourceApp: "console.palette" })
-      });
+      const result = await consoleSubmissionClient.submitTask({ userCommand: text, sourceApp: "console.palette" });
       if (result && result.ok === false) {
         greeting.textContent = result.message || result.error || "Submission failed.";
         return;
@@ -9090,21 +9097,13 @@ function formatMcpPreflightErrors(errors = []) {
 }
 
 async function preflightMcpServerConfig() {
-  return fetchJson("/config/mcp/test", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildMcpServerPayloadFromForm())
-  });
+  return consolePreflightClient.testMcpServerConfig(buildMcpServerPayloadFromForm());
 }
 
 async function planMcpInstallSource() {
-  return fetchJson("/config/mcp/install/plan", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      source: mcpInstallSource?.value?.trim() ?? "",
-      id: mcpServerId?.value?.trim() ?? ""
-    })
+  return consolePreflightClient.planMcpInstall({
+    source: mcpInstallSource?.value?.trim() ?? "",
+    id: mcpServerId?.value?.trim() ?? ""
   });
 }
 
@@ -9945,11 +9944,7 @@ function formatSkillPreflightErrors(errors = []) {
 }
 
 async function preflightSkillRegistryConfig() {
-  return fetchJson("/config/skills/test", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildSkillRegistryPayloadFromForm())
-  });
+  return consolePreflightClient.testSkillRegistryConfig(buildSkillRegistryPayloadFromForm());
 }
 
 skillRegistryTestBtn?.addEventListener("click", async () => {
@@ -10184,7 +10179,7 @@ previewDagButton?.addEventListener("click", async () => {
   if (dagPreview) dagPreview.textContent = "Validating...";
   try {
     const graph = JSON.parse(raw);
-    const result = await fetchJson("/dag/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }) });
+    const result = await consolePreflightClient.previewDag(graph);
     if (dagPreview) dagPreview.textContent = JSON.stringify(result.validation ?? result, null, 2);
   } catch (error) {
     if (dagPreview) dagPreview.textContent = `Failed: ${error.message}`;
@@ -10762,7 +10757,7 @@ async function createConversationBranchRequest({
   const payload = mode === "edit"
     ? { content }
     : { through_message_id: messageId };
-  return fetchJson(endpoint, desktopJsonOptions("POST", payload));
+  return fetchJson(endpoint, runtimeJsonOptions("POST", payload, { actor: "desktop_console" }));
 }
 
 async function createConversationBranchFromChat({
@@ -11814,34 +11809,14 @@ function updateChatModelChip() {
 }
 updateChatModelChip();
 
-function desktopJsonOptions(method, body = {}) {
-  return {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Lingxy-Desktop-Actor": "desktop_console"
-    },
-    body: JSON.stringify(body)
-  };
-}
-
-function desktopMutationOptions(method) {
-  return {
-    method,
-    headers: {
-      "X-Lingxy-Desktop-Actor": "desktop_console"
-    }
-  };
-}
-
 async function ensureConsoleConversationForModelOverride() {
   const currentId = consoleActiveConversation?.conversation_id ?? cacheCreateConversationId();
-  const payload = await fetchJson("/conversations", desktopJsonOptions("POST", {
+  const payload = await consoleSubmissionClient.createConversation({
     conversation_id: currentId,
     project_id: getConsoleChatSubmitProjectId(),
     title: consoleActiveConversation?.title ?? null,
     metadata: consoleActiveConversation?.metadata ?? {}
-  }));
+  });
   const conv = payload.conversation ?? { conversation_id: currentId };
   consoleActiveConversation = cacheEnsureBackendFields({
     ...consoleActiveConversation,
@@ -12025,10 +12000,7 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
   });
   popover.querySelector("[data-model-clear]")?.addEventListener("click", async () => {
     const conv = await ensureConsoleConversationForModelOverride();
-    const cleared = await fetchJson(
-      `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
-      desktopMutationOptions("DELETE")
-    );
+    const cleared = await consoleSubmissionClient.clearConversationModel(conv.conversation_id);
     consoleActiveConversation = cacheEnsureBackendFields({
       ...consoleActiveConversation,
       metadata: cleared.conversation?.metadata ?? {}
@@ -12042,15 +12014,12 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
     const reasoningSelect = popover.querySelector("[data-model-reasoning]");
     const model = `${input?.value ?? ""}`.trim();
     const conv = await ensureConsoleConversationForModelOverride();
-    const saved = await fetchJson(
-      `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
-      desktopJsonOptions("PATCH", {
-        providerId: selectedProvider.id,
-        model,
-        mode: "default",
-        reasoningEffort: `${reasoningSelect?.value ?? ""}`.trim() || undefined
-      })
-    );
+    const saved = await consoleSubmissionClient.updateConversationModel(conv.conversation_id, {
+      providerId: selectedProvider.id,
+      model,
+      mode: "default",
+      reasoningEffort: `${reasoningSelect?.value ?? ""}`.trim() || undefined
+    });
     consoleActiveConversation = cacheEnsureBackendFields({
       ...consoleActiveConversation,
       metadata: saved.conversation?.metadata ?? { modelOverride: saved.modelOverride ?? null }

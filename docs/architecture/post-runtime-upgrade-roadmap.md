@@ -25,8 +25,9 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 103/103 after DX-002
-  desktop IPC boundary verification was added; `npm run verify:desktop-gui-smoke`
+- Current green gate: `npm run check:fast` passed 104/104 after DX-003
+  renderer runtime client consolidation was added.
+  `npm run verify:desktop-gui-smoke`
   passed 44/44.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
@@ -59,7 +60,8 @@ Last updated: 2026-05-12.
 | RT-001 to RT-004 Runtime persistence/context/mode | complete | RT-001, RT-002, RT-003, and RT-004 are complete with direct-write/compact-trace/mode-contract verifiers. |
 | DX-001 Desktop WindowSession | complete | Window owner state, preview stale-delta rejection, popup owner tracking, and GUI smoke coverage are locked by `verify-window-session-state-machine.mjs`. |
 | DX-002 Desktop IPC boundary | complete | `electron-main.mjs` is locked as lifecycle/composition only; 112 IPC registrations live under `src/desktop/main/ipc/` and are guarded against duplicates and large handlers. |
-| DX-003 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
+| DX-003 Renderer runtime client consolidation | complete | Console and Overlay runtime mutations are routed through shared renderer clients and locked by `verify-renderer-runtime-client-consolidation.mjs`. |
+| DX-004 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
@@ -356,23 +358,32 @@ Decision:
 
 ### DX-003: Renderer Runtime Client Consolidation
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Move direct renderer `fetch` mutations into typed runtime clients for Console,
   Overlay, and panel modules.
 - Keep UI state in renderers; keep runtime semantics in service/client modules.
 - Do not add a heavy frontend framework rewrite.
+- Completed first consolidation slice covers task submission/clarification,
+  conversation creation/model overrides, user-memory mutations, MCP/skill
+  preflight, MCP install planning, and DAG preview.
 
 Acceptance:
 
 - Console/Overlay no longer each own ad hoc copies of runtime mutation logic.
 - Service routes used by UI have a shared client contract and tests.
 - Old duplicated request helpers are removed or archived after replacement.
+- Page scripts call `runtime-submission-client`,
+  `runtime-user-memory-client`, and `runtime-preflight-client`; those clients
+  own the runtime mutation endpoints.
 
 Verification:
 
 - `node scripts/verify-desktop-renderer.mjs`
 - `node scripts/verify-console-runtime-client.mjs`
+- `node scripts/verify-renderer-runtime-client-consolidation.mjs`
 - New client contract behavior tests.
 
 ### DX-004: Keyboard-Only And A11y GUI Pass

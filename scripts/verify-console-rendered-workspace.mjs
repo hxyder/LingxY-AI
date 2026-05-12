@@ -37,6 +37,7 @@ assert.equal(consoleHtml.includes("Office Add-ins"), true);
 assert.equal(consoleHtml.includes("Email Accounts"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
+const runtimePreflightClient = await read("src/desktop/renderer/shared/runtime-preflight-client.mjs");
 const taskTimelineJs = await read("src/desktop/renderer/console-task-timeline.mjs");
 const taskEventControllerJs = await read("src/desktop/renderer/console-task-event-stream.mjs");
 const projectColorsIndex = consoleJs.indexOf("const PROJECT_COLORS");
@@ -68,7 +69,8 @@ assertConsoleFetches("/templates");
 assert.equal(consoleJs.includes("importTemplateViaShell"), true);
 assertConsoleFetches("/budget");
 assertConsoleFetches("/dag/executions");
-assert.equal(consoleJs.includes('fetchJson("/dag/preview"'), true);
+assert.equal(consoleJs.includes("consolePreflightClient.previewDag"), true);
+assert.equal(runtimePreflightClient.includes('"/dag/preview"'), true);
 // UCA-121: /history/search call retired along with the Memory tab.
 assertConsoleFetches("/security/state");
 assertConsoleFetches("/audit-log");
@@ -76,7 +78,7 @@ assertConsoleFetches("/config/email/settings");
 assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
 assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
 assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);
-assert.equal(consoleJs.includes('window.ucaShell.showWindow("overlay")'), true);
+assert.equal(consoleJs.includes('consoleShellClient.showWindow("overlay")'), true);
 assert.equal(consoleJs.includes("selectedTaskEventController.ensure"), true);
 assert.equal(consoleJs.includes('from "./console-task-event-stream.mjs"'), true);
 assert.equal(taskEventControllerJs.includes("handleSelectedTaskEventFrame"), true);

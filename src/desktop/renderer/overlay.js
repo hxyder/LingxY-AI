@@ -33,6 +33,9 @@ import {
   createRuntimeTaskClient
 } from "./shared/runtime-task-client.mjs";
 import {
+  createRuntimeSubmissionClient
+} from "./shared/runtime-submission-client.mjs";
+import {
   createRendererShellClient
 } from "./shared/shell-client.mjs";
 import {
@@ -189,6 +192,10 @@ const overlayRuntimeHttpClient = createRuntimeHttpClient({
 });
 const overlayTaskClient = createRuntimeTaskClient({
   httpClient: overlayRuntimeHttpClient
+});
+const overlaySubmissionClient = createRuntimeSubmissionClient({
+  httpClient: overlayRuntimeHttpClient,
+  actor: "desktop_overlay"
 });
 const overlayShellClient = createRendererShellClient();
 const overlayEchoClient = createEchoRuntimeClient({
@@ -2239,11 +2246,7 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
         client_message_id: answerClientMessageId
       });
       delete clarifyPayload.userCommand;
-      const result = await fetchJson("/task/clarify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...clarifyPayload, background: true })
-      });
+      const result = await overlaySubmissionClient.clarifyTask({ ...clarifyPayload, background: true });
       if (result.task?.task_id) {
         activeTaskId = result.task.task_id;
         lastTask = result.task;
@@ -5092,11 +5095,7 @@ async function submitTask() {
         conversation_id: continuationConversationId ?? conversationState?.id ?? null,
         client_message_id: clientMessageId
       }));
-      result = await fetchJson("/task", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(taskBody)
-      });
+      result = await overlaySubmissionClient.submitTask(taskBody);
     } catch (err) {
       markPendingMessageFailed(clientMessageId, err);
       throw err;
@@ -7931,11 +7930,7 @@ ${sourceAssistRequirement}`;
 
   try {
     const taskBody = attachOverlayProjectScope(attachOverlaySubmissionMetadata(payload));
-    const result = await fetchJson("/task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(taskBody)
-    });
+    const result = await overlaySubmissionClient.submitTask(taskBody);
 
     if (result.type === "clarification_needed") {
       showClarificationBubble(userVisibleCommand, result.question, taskBody);

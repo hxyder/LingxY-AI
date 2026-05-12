@@ -81,6 +81,11 @@ for (const required of [
   "docs/architecture/desktop-ipc-boundaries.md",
   "node scripts/verify-desktop-ipc-boundaries.mjs",
   "`electron-main.mjs` is locked as lifecycle/composition only",
+  "DX-003 Renderer runtime client consolidation",
+  "node scripts/verify-renderer-runtime-client-consolidation.mjs",
+  "runtime-submission-client",
+  "runtime-user-memory-client",
+  "runtime-preflight-client",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
