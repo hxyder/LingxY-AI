@@ -7,7 +7,7 @@ import { createSqliteStore } from "../src/service/core/store/sqlite-store.mjs";
 import {
   googleScopesToCapabilities,
   microsoftScopesToCapabilities
-} from "../src/service/connectors/core/capability-mapper.mjs";
+} from "../src/service/capabilities/connectors/core/capability-mapper.mjs";
 import {
   getAccountById,
   getOAuthTokenRecord,
@@ -16,21 +16,21 @@ import {
   setDefaultAccount,
   upsertConnectedAccount,
   upsertReauthRequest
-} from "../src/service/connectors/core/account-registry.mjs";
+} from "../src/service/capabilities/connectors/core/account-registry.mjs";
 import {
   getValidAccessToken,
   migrateLegacyConnectorTokens
-} from "../src/service/connectors/core/token-manager.mjs";
-import { resolveAccount } from "../src/service/connectors/core/account-router.mjs";
+} from "../src/service/capabilities/connectors/core/token-manager.mjs";
+import { resolveAccount } from "../src/service/capabilities/connectors/core/account-router.mjs";
 import {
   ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL,
   ACCOUNT_LIST_EMAILS_TOOL
-} from "../src/service/connectors/tools/read-tools.mjs";
+} from "../src/service/capabilities/connectors/tools/read-tools.mjs";
 import {
   ACCOUNT_CREATE_EVENT_TOOL,
   ACCOUNT_SEND_EMAIL_TOOL,
   ACCOUNT_UPLOAD_FILE_TOOL
-} from "../src/service/connectors/tools/write-tools.mjs";
+} from "../src/service/capabilities/connectors/tools/write-tools.mjs";
 import { evaluateToolRisk } from "../src/service/capabilities/registry/risk_matrix.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

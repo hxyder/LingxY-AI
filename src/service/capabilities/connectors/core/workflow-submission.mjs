@@ -7,7 +7,7 @@ import {
   markTaskFailed,
   markTaskSucceeded,
   updateTask
-} from "../../core/task-runtime.mjs";
+} from "../../../core/task-runtime.mjs";
 import { runConnectorWorkflow } from "./workflow-dispatcher.mjs";
 
 function buildContextPacket({ workflowId, userCommand = "" }) {

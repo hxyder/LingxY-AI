@@ -9,8 +9,8 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const coreDir = path.join(repoRoot, "src", "service", "core");
 const connectorWorkflowSubmission = {
   name: "workflow-submission.mjs",
-  relativePath: "src/service/connectors/core/workflow-submission.mjs",
-  fullPath: path.join(repoRoot, "src", "service", "connectors", "core", "workflow-submission.mjs")
+  relativePath: "src/service/capabilities/connectors/core/workflow-submission.mjs",
+  fullPath: path.join(repoRoot, "src", "service", "capabilities", "connectors", "core", "workflow-submission.mjs")
 };
 
 const expectedSubmissionFiles = new Set([
@@ -37,7 +37,7 @@ const expectedClassifications = Object.freeze({
   },
   "browser-submission.mjs": {
     directPolicyGuard: false,
-    usesActionToolRegistry: false,
+    usesActionToolRegistry: true,
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
@@ -57,7 +57,7 @@ const expectedClassifications = Object.freeze({
   },
   "context-submission.mjs": {
     directPolicyGuard: false,
-    usesActionToolRegistry: false,
+    usesActionToolRegistry: true,
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,

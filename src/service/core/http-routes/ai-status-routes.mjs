@@ -1,6 +1,6 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
-import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
+import { refreshExternalMcpCatalogEntries } from "../../capabilities/connectors/core/mcp-catalog-bridge.mjs";
 import { createMcpEnvSecretRef } from "../../security/secret-store.mjs";
 
 const WRITABLE_BUILTIN_MCP_SOURCES = new Set(["builtin", "builtin_mit", "lingxy_internal"]);

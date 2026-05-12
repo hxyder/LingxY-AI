@@ -10,7 +10,7 @@
  *      account_list_* action tools so older contracts still work.
  */
 
-import { detectConnectorCapabilityIntent } from "../../../connectors/core/connector-intent.mjs";
+import { detectConnectorCapabilityIntent } from "../../../capabilities/connectors/core/connector-intent.mjs";
 
 /**
  * @param {string} text

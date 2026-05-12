@@ -119,8 +119,8 @@
 | Layer 3 Concurrency policy | 缺失 | **新建 `dag/concurrency-policy.mjs`** + 契约 schema 加 `concurrency` + `session_key` 字段 |
 | Layer 3 Replan Hook | 缺失（agent-loop 内有 ReAct 重试，跨工具没有） | **新建 `dag/replan-hook.mjs`**：`on_failure: "replan"` 的 node 失败时回喂 LLM |
 | Layer 4 Action tools | [`action_tools/*`](src/service/action_tools/) | **保留** |
-| Layer 4 Workflow dispatcher | [`connectors/core/workflow-dispatcher.mjs`](src/service/connectors/core/workflow-dispatcher.mjs) | **保留** |
-| Layer 4 MCP bridge | [`connectors/core/mcp-catalog-bridge.mjs`](src/service/connectors/core/mcp-catalog-bridge.mjs)（已写但未接入 service-bootstrap）| **需要接入**（P0-2 原来就在单子上） |
+| Layer 4 Workflow dispatcher | [`connectors/core/workflow-dispatcher.mjs`](src/service/capabilities/connectors/core/workflow-dispatcher.mjs) | **保留** |
+| Layer 4 MCP bridge | [`connectors/core/mcp-catalog-bridge.mjs`](src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs)（已写但未接入 service-bootstrap）| **需要接入**（P0-2 原来就在单子上） |
 | Layer 4 Skill runtime | [`capabilities/skills/`](src/service/capabilities/skills/) 只有 builtin + registry，没有"跑一个 Skill"的 runtime | **新建 skill executor**：执行单个 Skill、管 session_key、返回结果 |
 | Layer 5 Timeline UI | overlay.js + console.js 已接完 SSE | **保留**，新事件类型（`dag_node_started` 等）继续走同一通道 |
 

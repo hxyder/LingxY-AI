@@ -20,7 +20,7 @@ import {
   inferConnectorProvider,
   matchWorkflowByTrigger,
   extractWorkflowInput
-} from "../../../connectors/core/connector-intent.mjs";
+} from "../../../capabilities/connectors/core/connector-intent.mjs";
 import {
   fallbackReadToolForCapability,
   inferCapabilityFromText,

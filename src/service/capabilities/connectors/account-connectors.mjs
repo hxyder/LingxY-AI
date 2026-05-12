@@ -24,7 +24,7 @@ import {
   saveOAuthTokenRecord,
   upsertConnectedAccount
 } from "./core/account-registry.mjs";
-import { fetchExternal } from "../core/external-call.mjs";
+import { fetchExternal } from "../../core/external-call.mjs";
 
 const SERVICE_NAME = "UCA.AccountConnector";
 const ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS = 120_000;

@@ -11,7 +11,7 @@ import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { cacheableSystemMessage } from "../shared/prompt-cache.mjs";
 import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
-import { fetchExternal } from "../../core/external-call.mjs";
+import { fetchExternal, fetchExternalResponse } from "../../core/external-call.mjs";
 import { emitTaskEvent as emitRuntimeTaskEvent } from "../../core/task-runtime.mjs";
 import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
 
@@ -26,23 +26,13 @@ function withFastCacheablePrefix(messages = []) {
   return [cacheableSystemMessage(FAST_CACHEABLE_SYSTEM_PREFIX), ...messages];
 }
 
-function wait(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function fetchWithFastRetry(url, init = {}) {
-  let lastResponse = null;
-  const requestInit = { ...(init ?? {}) };
-  if (!requestInit.signal) {
-    requestInit.signal = new AbortController().signal;
-  }
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const response = await fetch(url, requestInit);
-    if (response.ok || response.status < 500 || attempt >= 2) return response;
-    lastResponse = response;
-    await wait(100);
-  }
-  return lastResponse;
+  return fetchExternalResponse(url, init, {
+    timeoutMs: FAST_API_FETCH_TIMEOUT_MS,
+    retries: 2,
+    delayMs: 100,
+    label: "fast_executor.adapter_fetch"
+  });
 }
 
 /**

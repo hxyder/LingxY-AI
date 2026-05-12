@@ -4,12 +4,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
-import { refreshExternalMcpCatalogEntries } from "../src/service/connectors/core/mcp-catalog-bridge.mjs";
+import { createConnectorCatalog } from "../src/service/capabilities/connectors/core/catalog.mjs";
+import { refreshExternalMcpCatalogEntries } from "../src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs";
 import {
   CONNECTOR_CATALOG_GET_TOOL,
   CONNECTOR_CATALOG_SEARCH_TOOL
-} from "../src/service/connectors/tools/catalog-tools.mjs";
+} from "../src/service/capabilities/connectors/tools/catalog-tools.mjs";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { createPersistentRuntime } from "../src/service/core/persistent-runtime.mjs";
 

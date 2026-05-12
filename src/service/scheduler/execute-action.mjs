@@ -4,7 +4,7 @@ import { submitActionToolTask } from "../core/action-tool-submission.mjs";
 import {
   resumeConnectorWorkflowTask,
   submitConnectorWorkflowTask
-} from "../connectors/core/workflow-submission.mjs";
+} from "../capabilities/connectors/core/workflow-submission.mjs";
 import { buildSideEffectContract } from "../core/policy/side-effect-contracts.mjs";
 import {
   emitTaskEvent,

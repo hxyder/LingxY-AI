@@ -42,8 +42,8 @@ Product callers that currently depend on this surface:
 | `src/service/core/capability-creator/index.mjs` | descriptor validation for MCP drafts |
 | `src/service/action_tools/tools/index.mjs` | MCP draft directory resolution for capability drafts |
 | `src/service/executors/agentic/planner.mjs` | planner-visible MCP action tools |
-| `src/service/connectors/core/mcp-catalog-bridge.mjs` | external MCP catalog bridge |
-| `src/service/connectors/core/workflow-dispatcher.mjs` | external MCP tool execution through local policy |
+| `src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs` | external MCP catalog bridge |
+| `src/service/capabilities/connectors/core/workflow-dispatcher.mjs` | external MCP tool execution through local policy |
 | `src/service/core/persistent-runtime.mjs` | MCP client disconnect on shutdown |
 | `src/service/core/service-bootstrap.mjs` | MCP auto-install and endpoint metadata |
 | `scripts/start-lingxy-mcp-server.mjs` | internal MCP stdio server entrypoint |

@@ -3,8 +3,8 @@ import { mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
-import { createPluginRegistry } from "../src/service/connectors/core/plugin-registry.mjs";
+import { createConnectorCatalog } from "../src/service/capabilities/connectors/core/catalog.mjs";
+import { createPluginRegistry } from "../src/service/capabilities/connectors/core/plugin-registry.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");

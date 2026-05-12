@@ -7,7 +7,7 @@
  * into catalog calls.
  */
 
-import { runConnectorWorkflow } from "../../../connectors/core/workflow-dispatcher.mjs";
+import { runConnectorWorkflow } from "../../connectors/core/workflow-dispatcher.mjs";
 
 function mcpToolNameForWorkflow(workflow) {
   const id = String(workflow.id ?? "").replace(/[^A-Za-z0-9]+/g, "_");

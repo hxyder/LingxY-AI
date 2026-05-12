@@ -30,7 +30,7 @@ const capabilityRoots = [
   // MCP
   "src/service/capabilities/mcp",
   // Connectors
-  "src/service/connectors",
+  "src/service/capabilities/connectors",
   // Providers
   "src/service/ai/providers",
   // Extracted tool families and capability-owned helpers

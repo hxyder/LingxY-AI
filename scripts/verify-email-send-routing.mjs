@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isConnectorDomainRequest } from "../src/service/connectors/core/connector-intent.mjs";
+import { isConnectorDomainRequest } from "../src/service/capabilities/connectors/core/connector-intent.mjs";
 import { classifyGoal, createTaskSpec } from "../src/service/core/task-spec.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

@@ -39,7 +39,7 @@ export function createNodeDispatcher({ runtime }) {
     }
 
     if (node.kind === "workflow") {
-      const { runConnectorWorkflow } = await import("../connectors/core/workflow-dispatcher.mjs");
+      const { runConnectorWorkflow } = await import("../capabilities/connectors/core/workflow-dispatcher.mjs");
       const result = await runConnectorWorkflow({
         runtime,
         workflowId: node.workflowId,

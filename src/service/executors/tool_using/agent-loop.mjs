@@ -10,7 +10,7 @@ import {
   isConnectorAccountIdentityRequest,
   isConnectorDomainRequest,
   matchWorkflowByTrigger
-} from "../../connectors/core/connector-intent.mjs";
+} from "../../capabilities/connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { resolveProviderForTask } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";

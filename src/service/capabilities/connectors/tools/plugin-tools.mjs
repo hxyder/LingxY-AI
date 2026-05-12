@@ -1,4 +1,4 @@
-import { createActionResult } from "../../capabilities/registry/types.mjs";
+import { createActionResult } from "../../registry/types.mjs";
 
 /**
  * connector_plugin_manage — expose list/enable/disable/reload to the model.

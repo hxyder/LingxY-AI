@@ -170,7 +170,7 @@ The target architecture has been added to `linxi_codebase_reorganization_executi
 Important direction:
 - Tools, skills, MCP, connectors, providers, and code-cli adapters should eventually live under a clean `src/service/capabilities/**` source layout.
 - Built-in source capabilities belong in source directories; user-installed skills/MCP/tools/connectors must live under runtime data paths, not under `src/`.
-- Legacy paths such as `src/service/action_tools/**`, `src/service/ai/skills/**`, `src/service/ai/mcp/**`, and `src/service/connectors/**` may become compatibility barrels during migration, but they must not contain parallel implementations after the new owner is verified.
+- Legacy paths such as `src/service/action_tools/**`, `src/service/ai/skills/**`, `src/service/ai/mcp/**`, and the former service-root connector owner may become compatibility barrels during migration, but they must not contain parallel implementations after the new owner is verified.
 
 Do not jump directly into the full `src/service/capabilities/**` migration yet.
 

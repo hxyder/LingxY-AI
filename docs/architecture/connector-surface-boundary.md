@@ -2,49 +2,52 @@
 
 Date: 2026-05-11
 
-This inventory locks the CAP-4C connector runtime surface before moving it into
+This inventory locks the CAP-4C connector runtime surface after moving it into
 `src/service/capabilities/connectors/`.
 
 ## Current Owner
 
 Current connector runtime owner:
 
-`src/service/connectors/`
+`src/service/capabilities/connectors/`
 
 Target connector runtime owner:
 
 `src/service/capabilities/connectors/`
 
+Former owner: the old service-root connector directory. It is now forbidden and
+is checked by `verify-connector-surface-contract.mjs`.
+
 Files:
 
 | Path | Responsibility | Target layer |
 |---|---|---|
-| `src/service/connectors/account-connectors.mjs` | OAuth config, provider auth start/callback, disconnect, status, connector reads | service/capabilities/connectors |
-| `src/service/connectors/core/account-registry.mjs` | Connected account persistence, defaults, token records, reauth records | service/capabilities/connectors/core |
-| `src/service/connectors/core/account-router.mjs` | Provider/account selection for email, file, and calendar capabilities | service/capabilities/connectors/core |
-| `src/service/connectors/core/capability-mapper.mjs` | Google/Microsoft OAuth scope to capability map | service/capabilities/connectors/core |
-| `src/service/connectors/core/catalog.mjs` | Connector catalog aggregation for contracts and workflows | service/capabilities/connectors/core |
-| `src/service/connectors/core/connector-intent.mjs` | Connector intent/provider/limit/workflow inference helpers | service/capabilities/connectors/core |
-| `src/service/connectors/core/contract-loader.mjs` | Connector contract/workflow JSON discovery | service/capabilities/connectors/core |
-| `src/service/connectors/core/mcp-catalog-bridge.mjs` | External MCP catalog entry refresh bridge | service/capabilities/connectors/core |
-| `src/service/connectors/core/plugin-registry.mjs` | External connector plugin registry | service/capabilities/connectors/core |
-| `src/service/connectors/core/reauth-manager.mjs` | Missing-scope and reauth-required result shaping | service/capabilities/connectors/core |
-| `src/service/connectors/core/token-manager.mjs` | OAuth token refresh and legacy token migration | service/capabilities/connectors/core |
-| `src/service/connectors/core/types.mjs` | Connector provider/capability constants and account normalization | service/capabilities/connectors/core |
-| `src/service/connectors/core/validators.mjs` | Connector contract value/object validators | service/capabilities/connectors/core |
-| `src/service/connectors/core/workflow-dispatcher.mjs` | Built-in/external connector workflow execution | service/capabilities/connectors/core |
-| `src/service/connectors/core/workflow-submission.mjs` | Connector workflow task submission/resume | service/capabilities/connectors/core |
-| `src/service/connectors/google/google-connector.mjs` | Google Gmail/Drive/Calendar provider adapter | service/capabilities/connectors/google |
-| `src/service/connectors/google/contracts/*.json` | Google connector catalog contracts | service/capabilities/connectors/google/contracts |
-| `src/service/connectors/google/workflows/*.json` | Google connector workflow definitions | service/capabilities/connectors/google/workflows |
-| `src/service/connectors/microsoft/microsoft-connector.mjs` | Microsoft Outlook/OneDrive/Calendar provider adapter | service/capabilities/connectors/microsoft |
-| `src/service/connectors/microsoft/contracts/*.json` | Microsoft connector catalog contracts | service/capabilities/connectors/microsoft/contracts |
-| `src/service/connectors/microsoft/workflows/*.json` | Microsoft connector workflow definitions | service/capabilities/connectors/microsoft/workflows |
-| `src/service/connectors/tools/action-tool-aggregator.mjs` | Single connector action-tool aggregation point | service/capabilities/connectors/tools |
-| `src/service/connectors/tools/catalog-tools.mjs` | Connector catalog and workflow action tools | service/capabilities/connectors/tools |
-| `src/service/connectors/tools/plugin-tools.mjs` | Connector plugin management action tool | service/capabilities/connectors/tools |
-| `src/service/connectors/tools/read-tools.mjs` | Connected account, email, file, and calendar read tools | service/capabilities/connectors/tools |
-| `src/service/connectors/tools/write-tools.mjs` | Email send, file upload, and calendar write tools | service/capabilities/connectors/tools |
+| `src/service/capabilities/connectors/account-connectors.mjs` | OAuth config, provider auth start/callback, disconnect, status, connector reads | service/capabilities/connectors |
+| `src/service/capabilities/connectors/core/account-registry.mjs` | Connected account persistence, defaults, token records, reauth records | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/account-router.mjs` | Provider/account selection for email, file, and calendar capabilities | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/capability-mapper.mjs` | Google/Microsoft OAuth scope to capability map | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/catalog.mjs` | Connector catalog aggregation for contracts and workflows | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/connector-intent.mjs` | Connector intent/provider/limit/workflow inference helpers | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/contract-loader.mjs` | Connector contract/workflow JSON discovery | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs` | External MCP catalog entry refresh bridge | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/plugin-registry.mjs` | External connector plugin registry | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/reauth-manager.mjs` | Missing-scope and reauth-required result shaping | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/token-manager.mjs` | OAuth token refresh and legacy token migration | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/types.mjs` | Connector provider/capability constants and account normalization | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/validators.mjs` | Connector contract value/object validators | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/workflow-dispatcher.mjs` | Built-in/external connector workflow execution | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/core/workflow-submission.mjs` | Connector workflow task submission/resume | service/capabilities/connectors/core |
+| `src/service/capabilities/connectors/google/google-connector.mjs` | Google Gmail/Drive/Calendar provider adapter | service/capabilities/connectors/google |
+| `src/service/capabilities/connectors/google/contracts/*.json` | Google connector catalog contracts | service/capabilities/connectors/google/contracts |
+| `src/service/capabilities/connectors/google/workflows/*.json` | Google connector workflow definitions | service/capabilities/connectors/google/workflows |
+| `src/service/capabilities/connectors/microsoft/microsoft-connector.mjs` | Microsoft Outlook/OneDrive/Calendar provider adapter | service/capabilities/connectors/microsoft |
+| `src/service/capabilities/connectors/microsoft/contracts/*.json` | Microsoft connector catalog contracts | service/capabilities/connectors/microsoft/contracts |
+| `src/service/capabilities/connectors/microsoft/workflows/*.json` | Microsoft connector workflow definitions | service/capabilities/connectors/microsoft/workflows |
+| `src/service/capabilities/connectors/tools/action-tool-aggregator.mjs` | Single connector action-tool aggregation point | service/capabilities/connectors/tools |
+| `src/service/capabilities/connectors/tools/catalog-tools.mjs` | Connector catalog and workflow action tools | service/capabilities/connectors/tools |
+| `src/service/capabilities/connectors/tools/plugin-tools.mjs` | Connector plugin management action tool | service/capabilities/connectors/tools |
+| `src/service/capabilities/connectors/tools/read-tools.mjs` | Connected account, email, file, and calendar read tools | service/capabilities/connectors/tools |
+| `src/service/capabilities/connectors/tools/write-tools.mjs` | Email send, file upload, and calendar write tools | service/capabilities/connectors/tools |
 
 ## Active Callers
 
@@ -54,7 +57,7 @@ Product callers that currently depend on this surface:
 |---|---|
 | `src/service/action_tools/tools/index.mjs` | `CONNECTOR_ACTION_TOOLS` aggregation |
 | `src/service/core/http-routes/connector-routes.mjs` | `/connectors/*`, `/plugins/*`, OAuth callback routes, catalog/workflow/account routes |
-| `src/service/core/service-bootstrap.mjs` | connector catalog, plugin registry, legacy token migration |
+| `src/service/core/service-bootstrap.mjs` | connector catalog and plugin registry |
 | `src/service/core/persistent-runtime.mjs` | connector runtime shutdown/state ownership |
 | `src/service/email/accounts.mjs` | connected account email integration |
 | `src/service/executors/tool_using/planners/connector.mjs` | connector workflow planning |
@@ -91,10 +94,10 @@ The verifier locks these contracts:
 
 ## Current Shape
 
-The CAP-4C preflight shape is:
+The CAP-4C physical shape is:
 
 ```text
-src/service/connectors/
+src/service/capabilities/connectors/
   account-connectors.mjs
   core/
     account-registry.mjs
@@ -127,11 +130,12 @@ src/service/connectors/
     write-tools.mjs
 ```
 
-Completion rules for the physical move:
+Completion rules:
 
 - Every active import in product code, tests, scripts, and active docs must
   point at `src/service/capabilities/connectors/`.
-- `src/service/connectors/` must not remain as a compatibility barrel.
+- The old service-root connector directory must not remain as a compatibility
+  barrel.
 - `verify-connector-surface-contract.mjs`, `verify-capability-roots.mjs`,
   `verify-structure.mjs`, `verify-service-core.mjs`,
   `verify-unified-connectors.mjs`, `verify-connector-catalog.mjs`,

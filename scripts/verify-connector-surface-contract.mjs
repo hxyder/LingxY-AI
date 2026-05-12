@@ -35,11 +35,11 @@ function assertConst(moduleNamespace, rel, name) {
   assert(Object.hasOwn(moduleNamespace, name), `${rel} must export ${name}`);
 }
 
-// CAP-4C preflight: lock the current connector runtime surface before the
-// physical move to capabilities/connectors.
+// CAP-4C: lock the moved connector runtime surface under
+// capabilities/connectors.
 
-const ownerDir = "src/service/connectors";
-const targetDir = "src/service/capabilities/connectors";
+const ownerDir = "src/service/capabilities/connectors";
+const oldOwnerDir = "src/service/connectors";
 const expectedFiles = [
   "account-connectors.mjs",
   "core/account-registry.mjs",
@@ -78,8 +78,8 @@ const expectedFiles = [
 ];
 
 assert(existsSync(path.join(root, ownerDir)), `connector owner dir missing: ${ownerDir}`);
-assert(!existsSync(path.join(root, targetDir)),
-  `${targetDir} must not exist before CAP-4C physical move`);
+assert(!existsSync(path.join(root, oldOwnerDir)),
+  `${oldOwnerDir} must not exist after CAP-4C physical move`);
 for (const file of expectedFiles) {
   assert(existsSync(path.join(root, ownerDir, file)), `connector owner file missing: ${ownerDir}/${file}`);
 }
@@ -300,7 +300,7 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
 }
 
 const actionTools = read("src/service/action_tools/tools/index.mjs");
-assert(actionTools.includes("../../connectors/tools/action-tool-aggregator.mjs"),
+assert(actionTools.includes("../../capabilities/connectors/tools/action-tool-aggregator.mjs"),
   "action tool registry must delegate connector tools to action-tool-aggregator.mjs");
 for (const tool of [
   "ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL",
@@ -314,13 +314,13 @@ for (const tool of [
 
 const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
 for (const needle of [
-  "../../connectors/tools/read-tools.mjs",
-  "../../connectors/google/google-connector.mjs",
-  "../../connectors/microsoft/microsoft-connector.mjs",
-  "../../connectors/account-connectors.mjs",
-  "../../connectors/core/account-registry.mjs",
-  "../../connectors/core/workflow-submission.mjs",
-  "../../connectors/core/mcp-catalog-bridge.mjs",
+  "../../capabilities/connectors/tools/read-tools.mjs",
+  "../../capabilities/connectors/google/google-connector.mjs",
+  "../../capabilities/connectors/microsoft/microsoft-connector.mjs",
+  "../../capabilities/connectors/account-connectors.mjs",
+  "../../capabilities/connectors/core/account-registry.mjs",
+  "../../capabilities/connectors/core/workflow-submission.mjs",
+  "../../capabilities/connectors/core/mcp-catalog-bridge.mjs",
   'url.pathname === "/connectors/catalog"',
   'url.pathname === "/connectors/connected-accounts"',
   'url.pathname === "/plugins"',
@@ -331,18 +331,18 @@ for (const needle of [
 
 const bootstrap = read("src/service/core/service-bootstrap.mjs");
 for (const needle of [
-  "../connectors/core/catalog.mjs",
-  "../connectors/core/plugin-registry.mjs"
+  "../capabilities/connectors/core/catalog.mjs",
+  "../capabilities/connectors/core/plugin-registry.mjs"
 ]) {
   assert(bootstrap.includes(needle), `service-bootstrap.mjs must retain connector owner wiring ${needle}`);
 }
 
 assert(read("src/service/capabilities/mcp/internal-server/connector-mcp-server.mjs")
-  .includes("../../../connectors/core/workflow-dispatcher.mjs"),
+  .includes("../../connectors/core/workflow-dispatcher.mjs"),
   "internal MCP server must delegate workflow execution to connector dispatcher");
-assert(read(`${ownerDir}/core/mcp-catalog-bridge.mjs`).includes("../../capabilities/mcp/client-bridge.mjs"),
+assert(read(`${ownerDir}/core/mcp-catalog-bridge.mjs`).includes("../../mcp/client-bridge.mjs"),
   "MCP catalog bridge must delegate to MCP client bridge");
-assert(read(`${ownerDir}/core/workflow-dispatcher.mjs`).includes("../../capabilities/mcp/client-bridge.mjs"),
+assert(read(`${ownerDir}/core/workflow-dispatcher.mjs`).includes("../../mcp/client-bridge.mjs"),
   "connector workflow dispatcher must execute external MCP via client bridge");
 
 const boundaryDoc = "docs/architecture/connector-surface-boundary.md";

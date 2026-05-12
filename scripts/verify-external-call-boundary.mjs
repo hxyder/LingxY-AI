@@ -31,7 +31,7 @@ assert.equal(existsSync(path.join(repoRoot, "tests/behavior/external-call.test.m
 
 const roots = [
   path.join(repoRoot, "src/service/executors"),
-  path.join(repoRoot, "src/service/connectors")
+  path.join(repoRoot, "src/service/capabilities/connectors")
 ].filter((dir) => statSync(dir, { throwIfNoEntry: false })?.isDirectory());
 
 const actual = new Map();

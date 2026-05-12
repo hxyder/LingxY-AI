@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { runConnectorWorkflow } from "../../src/service/connectors/core/workflow-dispatcher.mjs";
+import { runConnectorWorkflow } from "../../src/service/capabilities/connectors/core/workflow-dispatcher.mjs";
 import { buildScheduledSideEffectAuthorization } from "../../src/service/scheduler/execute-action.mjs";
 
 function makeScheduledTask({ authorized = true } = {}) {

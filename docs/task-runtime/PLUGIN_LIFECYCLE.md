@@ -1,6 +1,6 @@
 # Plugin Lifecycle
 
-LingxY's connector plugins are the unit of distribution for a provider. A plugin bundles contract JSON, workflow JSON, and optionally an external MCP server descriptor. Built-in providers (Google, Microsoft) are shipped as code under `src/service/connectors/<provider>/` and show up in the plugin registry as `source: "builtin"`. Third-party plugins live in `<userData>/plugins/<pluginId>/` and show up as `source: "installed"`.
+LingxY's connector plugins are the unit of distribution for a provider. A plugin bundles contract JSON, workflow JSON, and optionally an external MCP server descriptor. Built-in providers (Google, Microsoft) are shipped as code under `src/service/capabilities/connectors/<provider>/` and show up in the plugin registry as `source: "builtin"`. Third-party plugins live in `<userData>/plugins/<pluginId>/` and show up as `source: "installed"`.
 
 For the higher-level architecture see [ARCHITECTURE.md](ARCHITECTURE.md). For MCP bridging see [MCP_INTEGRATION.md](MCP_INTEGRATION.md).
 

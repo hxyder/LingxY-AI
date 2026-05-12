@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
+import { createConnectorCatalog } from "../src/service/capabilities/connectors/core/catalog.mjs";
 import {
   extractWorkflowInput,
   matchWorkflowByTrigger
-} from "../src/service/connectors/core/connector-intent.mjs";
+} from "../src/service/capabilities/connectors/core/connector-intent.mjs";
 import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";

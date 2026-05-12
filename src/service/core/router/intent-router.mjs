@@ -48,7 +48,7 @@ const RULES = [
 
 // UCA-051/052: import goal classification from task-spec
 import { classifyGoal } from "../task-spec.mjs";
-import { isConnectorDomainRequest } from "../../connectors/core/connector-intent.mjs";
+import { isConnectorDomainRequest } from "../../capabilities/connectors/core/connector-intent.mjs";
 import { extractLaunchAppCandidates, extractPureLaunchApp } from "./fast-path-router.mjs";
 
 /* ------------------------------------------------------------------------ */

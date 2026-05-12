@@ -1,9 +1,9 @@
-import { createActionResult } from "../../capabilities/registry/types.mjs";
-import { evaluateToolRisk } from "../../capabilities/registry/risk_matrix.mjs";
+import { createActionResult } from "../../registry/types.mjs";
+import { evaluateToolRisk } from "../../registry/risk_matrix.mjs";
 import {
   applySideEffectContractToWorkflowInput,
   policyGroupsForConnectorWorkflow
-} from "../../core/policy/side-effect-contracts.mjs";
+} from "../../../core/policy/side-effect-contracts.mjs";
 
 function nowMs() {
   return Date.now();
@@ -224,7 +224,7 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
       return { status: "failed", error: `External MCP server not registered: ${serverId}` };
     }
     try {
-      const { getMcpClient } = await import("../../capabilities/mcp/client-bridge.mjs");
+      const { getMcpClient } = await import("../../mcp/client-bridge.mjs");
       const client = runtime.__mcpClientOverride?.(serverId) ?? await getMcpClient(mcpServer);
       if (!client) {
         return { status: "failed", error: `External MCP client unavailable for server: ${serverId}` };

@@ -9,7 +9,7 @@
  *       TaskSpec → (task-runtime) → ExecutionPlan → executor
  */
 
-import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
+import { isConnectorDomainRequest } from "../capabilities/connectors/core/connector-intent.mjs";
 import { extractLaunchAppCandidates, extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
 import { resolveToolPolicy, buildExternalWebReadPolicy, shouldConsultSemanticRouter } from "./policy/tool-policy-resolver.mjs";

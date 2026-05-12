@@ -2,9 +2,9 @@ import {
   ACCOUNT_LIST_EMAILS_TOOL,
   ACCOUNT_LIST_EVENTS_TOOL,
   ACCOUNT_LIST_FILES_TOOL
-} from "../../connectors/tools/read-tools.mjs";
-import { getGoogleMessage } from "../../connectors/google/google-connector.mjs";
-import { getMicrosoftMessage } from "../../connectors/microsoft/microsoft-connector.mjs";
+} from "../../capabilities/connectors/tools/read-tools.mjs";
+import { getGoogleMessage } from "../../capabilities/connectors/google/google-connector.mjs";
+import { getMicrosoftMessage } from "../../capabilities/connectors/microsoft/microsoft-connector.mjs";
 import {
   startMicrosoftAuth,
   startGoogleAuth,
@@ -13,16 +13,16 @@ import {
   getConnectorStatus,
   loadConnectorConfig,
   saveConnectorConfig
-} from "../../connectors/account-connectors.mjs";
+} from "../../capabilities/connectors/account-connectors.mjs";
 import {
   deleteConnectedAccount,
   getAccountById,
   listUserAccounts,
   setDefaultAccount,
   upsertConnectedAccount
-} from "../../connectors/core/account-registry.mjs";
-import { submitConnectorWorkflowTask } from "../../connectors/core/workflow-submission.mjs";
-import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
+} from "../../capabilities/connectors/core/account-registry.mjs";
+import { submitConnectorWorkflowTask } from "../../capabilities/connectors/core/workflow-submission.mjs";
+import { refreshExternalMcpCatalogEntries } from "../../capabilities/connectors/core/mcp-catalog-bridge.mjs";
 import { sendJson, sendHtml, readJsonBody } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 

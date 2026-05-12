@@ -154,7 +154,7 @@ Their current equivalents are:
 | `src/service/executors/` | Fast, tool-using, agentic, Kimi/code-CLI, multimodal, translate executors; prompt building, provider calls, tool loop, finalization, validation. |
 | `src/service/action_tools/` | Built-in action tool registry, tool schemas, policy/risk, file/artifact/document/search/browser/system/scheduler/GUI/capability tools. |
 | `src/service/ai/` | Provider catalogs/status/discovery, configured providers, code CLI runtime, MCP clients/install, skills lifecycle, integration runtime, onboarding suggestions. |
-| `src/service/connectors/` | Connector catalog, account registry/routing, Google/Microsoft connectors, workflow dispatcher, connector tools. |
+| `src/service/capabilities/connectors/` | Connector catalog, account registry/routing, Google/Microsoft connectors, workflow dispatcher, connector tools. |
 | `src/service/scheduler/` | Schedule store, lifecycle, trigger parsing, dispatch, approval resume, reminder watcher, pending approvals. |
 | `src/service/store/` and `src/service/core/store/` | Artifact store, notes store, SQLite schema/store, memory store scaffold, migrations, search index. |
 | `src/service/extractors/` | File/page/PDF/image extractors and OCR helpers; current extraction is service-owned but not in a dedicated worker layer. |
@@ -333,7 +333,7 @@ Tool registry and built-in tool definitions:
 - `src/service/capabilities/tools/memory-tools.mjs`
 - `src/service/capabilities/tools/skill-install-tools.mjs`
 - `src/service/capabilities/tools/vision-analyze.mjs`
-- `src/service/connectors/tools/*.mjs`
+- `src/service/capabilities/connectors/tools/*.mjs`
 
 Major built-in tool ids found:
 
@@ -367,7 +367,7 @@ Tool execution paths:
   `src/service/executors/agentic/tool-execution.mjs` execute tool calls and
   emit tool events.
 - Connector tools aggregate from:
-  `src/service/connectors/tools/action-tool-aggregator.mjs`.
+  `src/service/capabilities/connectors/tools/action-tool-aggregator.mjs`.
 
 Risk: tool policy/filtering is split across `capabilities/registry/policy-guard.mjs`,
 `capabilities/registry/risk_matrix.mjs`,

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { submitConnectorWorkflowTask } from "../../src/service/connectors/core/workflow-submission.mjs";
+import { submitConnectorWorkflowTask } from "../../src/service/capabilities/connectors/core/workflow-submission.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 
 function createRuntime({ workflow }) {

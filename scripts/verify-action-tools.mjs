@@ -13,8 +13,8 @@ import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
-import { googleScopesToCapabilities } from "../src/service/connectors/core/capability-mapper.mjs";
-import { upsertConnectedAccount } from "../src/service/connectors/core/account-registry.mjs";
+import { googleScopesToCapabilities } from "../src/service/capabilities/connectors/core/capability-mapper.mjs";
+import { upsertConnectedAccount } from "../src/service/capabilities/connectors/core/account-registry.mjs";
 import { buildToolCallConfirmViewModel } from "../src/desktop/console/tool-call-confirm/view-model.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

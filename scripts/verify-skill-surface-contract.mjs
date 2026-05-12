@@ -166,8 +166,8 @@ const forbiddenOwnerImports = [
   "electron",
   "../providers/",
   "../mcp/",
-  "../../connectors/",
-  "src/service/connectors/",
+  "../../capabilities/connectors/",
+  "src/service/capabilities/connectors/",
   "src/service/ai/providers/",
   "src/service/capabilities/mcp/"
 ];

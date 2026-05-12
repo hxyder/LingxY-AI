@@ -10,7 +10,7 @@ import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const stateModule = readFileSync("src/service/scheduler/approval-resume-state.mjs", "utf8");
 const approvals = readFileSync("src/service/scheduler/pending-approvals.mjs", "utf8");
-const workflowSubmission = readFileSync("src/service/connectors/core/workflow-submission.mjs", "utf8");
+const workflowSubmission = readFileSync("src/service/capabilities/connectors/core/workflow-submission.mjs", "utf8");
 const executeAction = readFileSync("src/service/scheduler/execute-action.mjs", "utf8");
 const schedulerEngine = readFileSync("src/service/scheduler/engine.mjs", "utf8");
 const behavior = readFileSync("tests/behavior/approval-resume-state.test.mjs", "utf8");

@@ -11,7 +11,7 @@ import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../capabilities/mcp/descriptor-validation.mjs";
 import { createConfiguredMCPServer } from "../../capabilities/mcp/configured.mjs";
 import { listMcpDrafts, readMcpDraft } from "../../capabilities/mcp/drafts.mjs";
-import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
+import { refreshExternalMcpCatalogEntries } from "../../capabilities/connectors/core/mcp-catalog-bridge.mjs";
 import {
   removeProviderOnboardingSuggestions,
   updateProviderOnboardingSuggestionStatus

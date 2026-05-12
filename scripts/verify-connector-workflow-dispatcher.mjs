@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { createActionResult } from "../src/service/capabilities/registry/types.mjs";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { createPersistentRuntime } from "../src/service/core/persistent-runtime.mjs";
-import { submitConnectorWorkflowTask } from "../src/service/connectors/core/workflow-submission.mjs";
-import { CONNECTOR_WORKFLOW_RUN_TOOL } from "../src/service/connectors/tools/catalog-tools.mjs";
+import { submitConnectorWorkflowTask } from "../src/service/capabilities/connectors/core/workflow-submission.mjs";
+import { CONNECTOR_WORKFLOW_RUN_TOOL } from "../src/service/capabilities/connectors/tools/catalog-tools.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");

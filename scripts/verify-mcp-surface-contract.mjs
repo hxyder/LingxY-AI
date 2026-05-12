@@ -217,9 +217,9 @@ for (const needle of [
 
 assert(read("src/service/executors/agentic/planner.mjs").includes("../../capabilities/mcp/client-bridge.mjs"),
   "agentic planner must still load MCP action tools through client-bridge");
-assert(read("src/service/connectors/core/mcp-catalog-bridge.mjs").includes("../../capabilities/mcp/client-bridge.mjs"),
+assert(read("src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs").includes("../../mcp/client-bridge.mjs"),
   "MCP catalog bridge must still delegate to client-bridge");
-assert(read("src/service/connectors/core/workflow-dispatcher.mjs").includes("../../capabilities/mcp/client-bridge.mjs"),
+assert(read("src/service/capabilities/connectors/core/workflow-dispatcher.mjs").includes("../../mcp/client-bridge.mjs"),
   "workflow dispatcher must still execute external MCP via client-bridge");
 assert(read("src/service/core/persistent-runtime.mjs").includes("../capabilities/mcp/client-bridge.mjs"),
   "persistent runtime must disconnect MCP clients on shutdown");

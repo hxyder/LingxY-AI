@@ -17,7 +17,7 @@ import {
   detectConnectorCapabilityIntent,
   inferCalendarTimeWindow,
   isConnectorDomainRequest
-} from "../src/service/connectors/core/connector-intent.mjs";
+} from "../src/service/capabilities/connectors/core/connector-intent.mjs";
 import { classifyGoal, createTaskSpec } from "../src/service/core/task-spec.mjs";
 import { planConnectorToolCall } from "../src/service/executors/tool_using/planners/connector.mjs";
 import { inferCapabilityFromText } from "../src/service/executors/tool_using/planners/connector-helpers.mjs";

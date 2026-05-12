@@ -13,7 +13,7 @@ import {
   listCalendarEvents,
   startGoogleAuth,
   startMicrosoftAuth
-} from "../../src/service/connectors/account-connectors.mjs";
+} from "../../src/service/capabilities/connectors/account-connectors.mjs";
 
 async function withTokenRuntime(type, tokens, connectorConfig, fn) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "uca-account-connectors-"));

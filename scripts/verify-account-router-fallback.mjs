@@ -10,7 +10,7 @@
 
 import assert from "node:assert/strict";
 
-import { resolveAccount } from "../src/service/connectors/core/account-router.mjs";
+import { resolveAccount } from "../src/service/capabilities/connectors/core/account-router.mjs";
 
 const accounts = [
   {

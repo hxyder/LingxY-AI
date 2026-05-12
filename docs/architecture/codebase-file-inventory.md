@@ -203,10 +203,10 @@ Legend:
 
 | Path | Current responsibility | Suspected target layer | Misplaced | Dependencies/imports | Risk | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| `src/service/connectors/core/*.mjs` | Connector catalog, account registry/router, workflow dispatcher, token/reauth, contract loader. | service/connectors | no | Google/Microsoft/connectors tools. | high | Side-effect and auth sensitive. |
-| `src/service/connectors/google/google-connector.mjs` | Google connector implementation. | service/connectors | no | OAuth/API fetch. | high | External side effects. |
-| `src/service/connectors/microsoft/microsoft-connector.mjs` | Microsoft connector implementation. | service/connectors | no | Graph API. | high | External side effects. |
-| `src/service/connectors/tools/*.mjs` | Connector action tool wrappers/aggregator. | service/tools/connectors | no | Connector catalog/workflows. | high | Tool-call surface. |
+| `src/service/capabilities/connectors/core/*.mjs` | Connector catalog, account registry/router, workflow dispatcher, token/reauth, contract loader. | service/connectors | no | Google/Microsoft/connectors tools. | high | Side-effect and auth sensitive. |
+| `src/service/capabilities/connectors/google/google-connector.mjs` | Google connector implementation. | service/connectors | no | OAuth/API fetch. | high | External side effects. |
+| `src/service/capabilities/connectors/microsoft/microsoft-connector.mjs` | Microsoft connector implementation. | service/connectors | no | Graph API. | high | External side effects. |
+| `src/service/capabilities/connectors/tools/*.mjs` | Connector action tool wrappers/aggregator. | service/tools/connectors | no | Connector catalog/workflows. | high | Tool-call surface. |
 | `src/service/scheduler/*.mjs` | Schedule lifecycle, store, dispatch, NL parsing, approval resume, reminders. | service/scheduler | no | Task submission, approvals, store. | high | Runtime task source. |
 | `src/service/memory/user-profile.mjs` | User memory profile read/apply. | service/memory | no | Config store/context. | high | Next MX work likely touches this. |
 | `src/service/embeddings/*.mjs` | Embedding store/search/semantic local BGE. | service/memory/search | no | Files/config/optional models. | medium/high | Potential heavy/background lane. |

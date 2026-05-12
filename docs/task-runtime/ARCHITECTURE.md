@@ -28,9 +28,9 @@ The replacement is a layered dispatch that keeps the fast paths fast and makes s
 | Skills | reusable reasoning/work instructions rendered into prompts | [src/service/capabilities/skills/](../../src/service/capabilities/skills/) | OAuth, account state, provider APIs, service execution |
 | MCP adapters | external MCP server transport, discovery, bridge | [src/service/capabilities/mcp/](../../src/service/capabilities/mcp/) | provider-specific business rules, confirmation bypass |
 | Action tools | local execution primitives, schema validation, risk matrix | [src/service/action_tools/](../../src/service/action_tools/) | Gmail/Calendar/Drive semantics |
-| Connectors | provider accounts, scopes, service contracts, workflows | [src/service/connectors/\<provider\>/](../../src/service/connectors/) | generic planner behavior |
-| Connector core | shared account routing, token status, validators, dispatcher | [src/service/connectors/core/](../../src/service/connectors/core/) | provider-specific payload shaping |
-| Workflows | deterministic multi-step service flows | [src/service/connectors/\<provider\>/workflows/](../../src/service/connectors/) | broad open-ended planning |
+| Connectors | provider accounts, scopes, service contracts, workflows | [src/service/capabilities/connectors/\<provider\>/](../../src/service/capabilities/connectors/) | generic planner behavior |
+| Connector core | shared account routing, token status, validators, dispatcher | [src/service/capabilities/connectors/core/](../../src/service/capabilities/connectors/core/) | provider-specific payload shaping |
+| Workflows | deterministic multi-step service flows | [src/service/capabilities/connectors/\<provider\>/workflows/](../../src/service/capabilities/connectors/) | broad open-ended planning |
 
 Rules:
 
@@ -73,8 +73,8 @@ src/service/
 
 One discovery pipeline, multiple sources:
 
-1. Load internal connector manifests from `src/service/connectors/<provider>/contracts/*.json`.
-2. Load workflow templates from `src/service/connectors/<provider>/workflows/*.json`.
+1. Load internal connector manifests from `src/service/capabilities/connectors/<provider>/contracts/*.json`.
+2. Load workflow templates from `src/service/capabilities/connectors/<provider>/workflows/*.json`.
 3. Load installed external plugin manifests from `<userdata>/plugins/<pluginId>/plugin.json`.
 4. Map enabled external MCP servers into catalog entries via `mcp-catalog-bridge`.
 5. Register callable operations in the catalog with risk + confirmation metadata attached.
@@ -82,7 +82,7 @@ One discovery pipeline, multiple sources:
 ```text
 createServiceBootstrap()
   -> runtime.connectorCatalog
-  -> loads provider contracts/workflows from src/service/connectors/<provider>/
+  -> loads provider contracts/workflows from src/service/capabilities/connectors/<provider>/
   -> merges enabled plugins from <userdata>/plugins/
   -> exposes summaries via GET /connectors/catalog
   -> exposes full contracts via GET /connectors/catalog/tools/:id and /workflows/:id
@@ -135,7 +135,7 @@ Dispatcher emits `step_started`, `tool_call_proposed`, `tool_call_completed`, `p
 
 Workflows must validate meaningful output, not field presence.
 
-Validators (`src/service/connectors/core/validators.mjs`):
+Validators (`src/service/capabilities/connectors/core/validators.mjs`):
 
 - `nonempty_string`
 - `email[]`

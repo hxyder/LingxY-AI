@@ -28,28 +28,28 @@ See [ARCHITECTURE.md#1-why-this-shape](ARCHITECTURE.md#1-why-this-shape) for the
 
 Provider-neutral connector catalog:
 
-- `src/service/connectors/core/catalog.mjs`
-- `src/service/connectors/core/contract-loader.mjs`
-- `src/service/connectors/core/validators.mjs`
-- `src/service/connectors/core/workflow-dispatcher.mjs`
-- `src/service/connectors/core/workflow-submission.mjs`
-- `src/service/connectors/tools/catalog-tools.mjs`
+- `src/service/capabilities/connectors/core/catalog.mjs`
+- `src/service/capabilities/connectors/core/contract-loader.mjs`
+- `src/service/capabilities/connectors/core/validators.mjs`
+- `src/service/capabilities/connectors/core/workflow-dispatcher.mjs`
+- `src/service/capabilities/connectors/core/workflow-submission.mjs`
+- `src/service/capabilities/connectors/tools/catalog-tools.mjs`
 
 HTTP surface (now in `src/service/core/http-routes/connector-routes.mjs`):
 
 - `GET /connectors/catalog`, `GET /connectors/catalog/tools/:id`, `GET /connectors/catalog/workflows/:id`
 - `POST /connectors/catalog/workflows/:id/run`
 
-Google Workspace contracts + workflows (`src/service/connectors/google/`) cover Gmail, Calendar, and Drive. They demonstrate the framework; Microsoft parity and external plugin CRUD arrive in this iteration.
+Google Workspace contracts + workflows (`src/service/capabilities/connectors/google/`) cover Gmail, Calendar, and Drive. They demonstrate the framework; Microsoft parity and external plugin CRUD arrive in this iteration.
 
 ## What shipped in this iteration
 
-- Modularization: connector routes extracted to `src/service/core/http-routes/connector-routes.mjs`; all connector action tools aggregated under `src/service/connectors/tools/action-tool-aggregator.mjs`.
+- Modularization: connector routes extracted to `src/service/core/http-routes/connector-routes.mjs`; all connector action tools aggregated under `src/service/capabilities/connectors/tools/action-tool-aggregator.mjs`.
 - Microsoft contracts: `contracts/microsoft.connector.json`, `outlook.tools.json`, `outlook-calendar.tools.json`, `onedrive.tools.json`; workflows `outlook.draft-confirm-send.json` and `outlook-calendar.create-confirm.json`.
 - `agent-loop.mjs` dispatch is workflow-first: matches `triggerPatterns` in the catalog and calls `connector_workflow_run` before falling back to read/write action tools.
 - Internal stdio MCP server (`lingxy-connectors`) + CLI entry `scripts/start-lingxy-mcp-server.mjs`.
-- Plugin registry (`src/service/connectors/core/plugin-registry.mjs`) + install/enable/disable/uninstall/reload HTTP routes + `connector_plugin_manage` model-visible tool.
-- External MCP → catalog bridge (`src/service/connectors/core/mcp-catalog-bridge.mjs`) and dispatcher's new `execution.kind === "external_mcp"` branch.
+- Plugin registry (`src/service/capabilities/connectors/core/plugin-registry.mjs`) + install/enable/disable/uninstall/reload HTTP routes + `connector_plugin_manage` model-visible tool.
+- External MCP → catalog bridge (`src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs`) and dispatcher's new `execution.kind === "external_mcp"` branch.
 - New verify scripts: `verify-microsoft-contracts`, `verify-plugin-registry`, `verify-internal-mcp-server`, `verify-workflow-first-dispatch`; wired into `npm run check`.
 
 ## Performance guardrails (unchanged)

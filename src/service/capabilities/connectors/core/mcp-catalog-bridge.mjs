@@ -8,7 +8,7 @@
  * directly into the agent loop.
  */
 
-import { connectMcpServer } from "../../capabilities/mcp/client-bridge.mjs";
+import { connectMcpServer } from "../../mcp/client-bridge.mjs";
 
 const DEFAULT_RISK = "medium";
 

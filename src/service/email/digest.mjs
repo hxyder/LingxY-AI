@@ -7,9 +7,9 @@ import { summarizeEmail } from "./summarizer.mjs";
 import { extractEmailIntent } from "./intent-extractor.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
 import { requireFeature } from "../core/feature-flags.mjs";
-import { listUserAccounts } from "../connectors/core/account-registry.mjs";
-import { listGoogleEmails } from "../connectors/google/google-connector.mjs";
-import { listMicrosoftEmails } from "../connectors/microsoft/microsoft-connector.mjs";
+import { listUserAccounts } from "../capabilities/connectors/core/account-registry.mjs";
+import { listGoogleEmails } from "../capabilities/connectors/google/google-connector.mjs";
+import { listMicrosoftEmails } from "../capabilities/connectors/microsoft/microsoft-connector.mjs";
 
 function resolveStatePath(runtime) {
   const baseDir = runtime?.paths?.dataDir

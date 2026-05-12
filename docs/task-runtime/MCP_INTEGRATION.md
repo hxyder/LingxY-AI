@@ -35,7 +35,7 @@ The descriptor also exists in `src/service/capabilities/mcp/builtin.mjs` as the 
 
 ## 2. External MCP catalog bridge
 
-`src/service/connectors/core/mcp-catalog-bridge.mjs` registers tools from an enabled external MCP server *as catalog entries* rather than raw action tools.
+`src/service/capabilities/connectors/core/mcp-catalog-bridge.mjs` registers tools from an enabled external MCP server *as catalog entries* rather than raw action tools.
 
 For each MCP tool discovered by `client-bridge.connectMcpServer()`:
 

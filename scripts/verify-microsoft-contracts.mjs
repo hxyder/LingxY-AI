@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
-import { validateConnectorObject } from "../src/service/connectors/core/validators.mjs";
+import { createConnectorCatalog } from "../src/service/capabilities/connectors/core/catalog.mjs";
+import { validateConnectorObject } from "../src/service/capabilities/connectors/core/validators.mjs";
 
 const catalog = createConnectorCatalog();
 const providers = catalog.listProviders();

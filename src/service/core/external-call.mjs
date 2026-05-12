@@ -143,6 +143,36 @@ export async function fetchExternal(url, init = {}, {
   );
 }
 
+export async function fetchExternalResponse(url, init = {}, {
+  timeoutMs = 30_000,
+  retries = 2,
+  delayMs = 100,
+  label = "external_fetch",
+  signal = null
+} = {}) {
+  const requestInit = { ...(init ?? {}) };
+  const parentSignal = signal ?? requestInit.signal ?? null;
+  delete requestInit.signal;
+
+  let lastResponse = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const response = await withTimeout(async ({ signal: requestSignal }) => fetch(url, {
+      ...requestInit,
+      signal: requestSignal
+    }), {
+      timeoutMs,
+      label,
+      signal: parentSignal
+    });
+    if (response.ok || response.status < 500 || attempt >= retries) {
+      return response;
+    }
+    lastResponse = response;
+    await wait(typeof delayMs === "function" ? delayMs({ attempt, response, label }) : delayMs);
+  }
+  return lastResponse;
+}
+
 function appendDiagnostic(stderr, diagnostic) {
   if (!diagnostic) return stderr ?? "";
   if (!stderr) return diagnostic;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
+import { createConnectorCatalog } from "../src/service/capabilities/connectors/core/catalog.mjs";
 import { createActionToolRegistry } from "../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { createConnectorMcpServer } from "../src/service/capabilities/mcp/internal-server/connector-mcp-server.mjs";

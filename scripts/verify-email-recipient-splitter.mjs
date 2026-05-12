@@ -23,7 +23,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 
-import { ACCOUNT_SEND_EMAIL_TOOL } from "../src/service/connectors/tools/write-tools.mjs";
+import { ACCOUNT_SEND_EMAIL_TOOL } from "../src/service/capabilities/connectors/tools/write-tools.mjs";
 
 let pass = 0;
 let fail = 0;

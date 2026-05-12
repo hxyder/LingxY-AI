@@ -5,6 +5,7 @@ import {
   ExternalCallHttpError,
   ExternalCallTimeoutError,
   fetchExternal,
+  fetchExternalResponse,
   spawnExternal,
   withRetry,
   withTimeout
@@ -123,6 +124,29 @@ test("fetchExternal preserves HTTP error status when retries are exhausted", asy
         return true;
       }
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("fetchExternalResponse retries 5xx but returns the final response for adapter callers", async () => {
+  const originalFetch = globalThis.fetch;
+  const calls = [];
+  try {
+    globalThis.fetch = async () => {
+      calls.push(true);
+      return new Response(calls.length < 3 ? "temporarily unavailable" : "still unavailable", { status: 503 });
+    };
+
+    const response = await fetchExternalResponse("https://example.invalid/chat", {}, {
+      retries: 2,
+      delayMs: 0,
+      label: "fake_response_fetch"
+    });
+
+    assert.equal(calls.length, 3);
+    assert.equal(response.status, 503);
+    assert.equal(await response.text(), "still unavailable");
   } finally {
     globalThis.fetch = originalFetch;
   }

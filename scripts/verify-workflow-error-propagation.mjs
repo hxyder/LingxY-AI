@@ -18,7 +18,7 @@
 
 import assert from "node:assert/strict";
 
-import { runConnectorWorkflow } from "../src/service/connectors/core/workflow-dispatcher.mjs";
+import { runConnectorWorkflow } from "../src/service/capabilities/connectors/core/workflow-dispatcher.mjs";
 
 let pass = 0;
 let fail = 0;

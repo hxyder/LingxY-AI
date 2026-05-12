@@ -17,7 +17,7 @@
  *   - It has zero side effects — easy to unit-test without the runtime.
  */
 
-import { matchWorkflowByTrigger, extractWorkflowInput } from "../../../connectors/core/connector-intent.mjs";
+import { matchWorkflowByTrigger, extractWorkflowInput } from "../../../capabilities/connectors/core/connector-intent.mjs";
 import { detect as detectExplicitSearch } from "../../../core/intent/signals/explicit-search.mjs";
 import { extractUrl, extractLaunchAppName } from "./launch-helpers.mjs";
 
