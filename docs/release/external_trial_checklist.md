@@ -89,6 +89,7 @@ Trial channel baseline: `0.1.0-trial.1`
 - Side-effect approval result: `pass / partial / fail`
 - Artifact quality result: `pass / partial / fail`
 - MCP/skills result: `pass / partial / fail`
+- Marketplace governance result: `pass / partial / fail`
 - Packaging result: `pass / partial / fail`
 - Recovery result: `pass / partial / fail`
 - Recommended next action:

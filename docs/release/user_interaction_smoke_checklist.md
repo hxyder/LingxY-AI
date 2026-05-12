@@ -15,7 +15,7 @@ manual pass row here or it should be hidden/marked experimental before release.
 | Overlay chat | Type, attach files by drag/drop, stop/retry/regenerate, copy tool output, add answer to notes | Streaming stays pinned to bottom, tool cards remain compact/collapsible, file chips attach without opening files, retry/regenerate is scoped to the task. |
 | Console chat | Switch conversations, create a new chat, pick current model, attach files, collapse/expand sidebar | No blank dead panel, model picker shows configured and setup-needed providers, conversation history does not flicker during refresh. |
 | Tasks | Open task detail, filter status/type, expand timeline, preview artifacts, delete/restore | Task status and timeline match backend events; generated artifacts open from the task and conversation. |
-| Settings | Configure provider, test connection, manage routing, configure MCP/skills/connectors | Secret values are not echoed; missing config is actionable; disabling a provider/tool does not leave stale UI as available. |
+| Settings | Configure provider, test connection, manage routing, configure MCP/skills/connectors, review marketplace governance, filter/undo memory | Secret values are not echoed; missing config is actionable; disabling a provider/tool does not leave stale UI as available. |
 
 ## Voice and Audio
 

@@ -37,7 +37,7 @@ protocol in `AGENTS.md`.
 | SA-003 Planner-selected delegation enablement audit | pending | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
 | PM-004 Marketplace management UI | complete | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
 | SH-004 OS sandbox implementation decision | pending | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
-| DX-006 Desktop product acceptance matrix | pending | Broaden manual/real GUI acceptance for daily desktop workflows beyond foundational smoke. |
+| DX-006 Desktop product acceptance matrix | complete | Broaden manual/real GUI acceptance for daily desktop workflows beyond foundational smoke. |
 
 ## MR-001: Memory Review History And Undo
 
@@ -141,3 +141,33 @@ Verification:
 - `node scripts/verify-marketplace-trust-model.mjs`
 - `node scripts/verify-marketplace-distribution-policy.mjs`
 - `node scripts/verify-mcp-governance-policy.mjs`
+
+## DX-006: Desktop Product Acceptance Matrix
+
+Status: complete as of 2026-05-12.
+
+Scope:
+
+- Add `docs/release/desktop_product_acceptance_matrix.md` as the daily desktop
+  workflow acceptance gate above foundational smoke.
+- Tie first-run setup, conversation continuity, task operations, artifact
+  workflow, memory governance, marketplace governance, scheduler/approvals,
+  connectors, browser/Office, native Windows entry, recovery, diagnostics,
+  performance, and accessibility to automated and manual evidence.
+- Link the new matrix from the release functional acceptance matrix.
+- Record marketplace governance as a release outcome row.
+
+Acceptance:
+
+- Visible desktop workflow changes must name row-specific verifier coverage and
+  a manual/real evidence path.
+- `check:fast` alone is explicitly insufficient for user-visible desktop
+  workflow changes.
+- Electron GUI smoke remains the real desktop UI gate when Electron is
+  available.
+
+Verification:
+
+- `node scripts/verify-desktop-product-acceptance-matrix.mjs`
+- `node scripts/verify-functional-acceptance.mjs`
+- `node scripts/verify-user-interaction-smoke.mjs`

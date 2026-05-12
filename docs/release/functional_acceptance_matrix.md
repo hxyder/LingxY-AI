@@ -7,7 +7,9 @@ to automated verification and manual smoke passes.
 Rule: a feature can stay in README as a shipped capability only when it has at least one automated verifier and a clear manual pass path for release testing.
 
 For click-by-click visual and interaction coverage, pair this matrix with
-`docs/release/user_interaction_smoke_checklist.md`.
+`docs/release/user_interaction_smoke_checklist.md`. For daily desktop workflow
+coverage beyond foundational smoke, pair it with
+`docs/release/desktop_product_acceptance_matrix.md`.
 
 ## Automated Coverage
 
@@ -49,6 +51,7 @@ installer trust prompts.
 | Side-effect approval | Draft/send email through a configured account, verify approval cards show recipients/subject/body before sending, and reject/approve paths are both visible. |
 | Artifact quality | Generate one DOCX, one PPTX, one spreadsheet, one HTML/PDF report, and one diagram-rich report; open each artifact locally and inspect formatting, tables, images/diagrams, and conversation attachment links. |
 | MCP/skills | Install or configure one MCP server in a sandbox, create/edit one skill, and verify the tool/skill appears in the planner-visible capability list. |
+| Marketplace governance | Review skill/plugin/MCP trust, signature, archive, and governance state; disable/archive a disposable plugin or document why no disposable plugin is available. |
 | Packaging | Run `npm run pack` or the Release Artifacts workflow, inspect unsigned-installer warnings, verify checksums and bundled `THIRD_PARTY_LICENSES.md`, then launch the packaged app. |
 | Recovery | Kill the runtime during a task and during a browser extension action, restart, confirm task state, logs, diagnostics export, and user-visible failure wording are understandable. |
 

@@ -3791,3 +3791,48 @@ Decision:
 - PM-004 is ready to commit.
 - Next recommended work is DX-006 Desktop product acceptance matrix: broaden
   manual/real GUI coverage for daily workflows beyond the current smoke gates.
+
+## Codex Review: DX-006 Desktop Product Acceptance Matrix
+
+Date: 2026-05-12
+
+Scope:
+- Added `docs/release/desktop_product_acceptance_matrix.md` as a daily desktop
+  workflow acceptance gate above foundational smoke.
+- Linked first-run setup, conversation continuity, task operations, artifacts,
+  memory governance, marketplace governance, scheduler/approvals, connectors,
+  browser/Office, native Windows entry, recovery, diagnostics, performance, and
+  accessibility to automated gates and manual/real evidence.
+- Linked the new matrix from `docs/release/functional_acceptance_matrix.md`.
+- Added Marketplace governance to the manual release outcome rows.
+- Added `verify:memory-review-history`, `verify:memory-scope-filters`, and
+  `verify:marketplace-management-ui` npm scripts plus
+  `scripts/verify-desktop-product-acceptance-matrix.mjs`.
+
+Contract notes:
+- This is a release/process gate and does not change runtime behavior, IPC
+  channels, HTTP routes, tool ids, artifact kinds, provider ids, provider calls,
+  or storage schema.
+- The new matrix explicitly states that `npm run check:fast` alone is not enough
+  for user-visible desktop workflow changes.
+
+Verification run by Codex:
+- `node scripts/verify-desktop-product-acceptance-matrix.mjs`: passed.
+- `node scripts/verify-functional-acceptance.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `node scripts/verify-post-runtime-maturity-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed, 49/49 checks
+  (`startup=491ms`, `first_window=491ms`, `interaction=5220ms`,
+  `total=5705ms`).
+- `npm run check:fast`: passed, 122/122 commands including 1049/1049 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed; only existing line-ending normalization warnings
+  were reported.
+
+Decision:
+- DX-006 is ready to commit.
+- Remaining maturity-board items are SA-003 and SH-004. Recommended next work is
+  SA-003 planner-selected delegation enablement audit, because it can stay
+  mostly verifier/eval driven before changing runtime delegation behavior.

@@ -114,6 +114,7 @@ const manualRows = [
   "Side-effect approval",
   "Artifact quality",
   "MCP/skills",
+  "Marketplace governance",
   "Packaging",
   "Recovery"
 ];
@@ -137,6 +138,8 @@ assert.equal(releaseChecklist.includes("functional_acceptance_matrix.md"), true,
   "GitHub release checklist must point maintainers to the functional acceptance matrix");
 assert.equal(matrix.includes("user_interaction_smoke_checklist.md"), true,
   "functional acceptance matrix must point to the user interaction smoke checklist");
+assert.equal(matrix.includes("desktop_product_acceptance_matrix.md"), true,
+  "functional acceptance matrix must point to the desktop product acceptance matrix");
 assert.equal(userInteractionChecklist.includes("Voice and Audio"), true,
   "user interaction smoke checklist must cover voice and audio");
 assert.equal(userInteractionChecklist.includes("Browser Extension"), true,
