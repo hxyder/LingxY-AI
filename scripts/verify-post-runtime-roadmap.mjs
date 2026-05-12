@@ -73,7 +73,11 @@ for (const required of [
   "node scripts/verify-context-trace-budget.mjs",
   "compact task metadata is the canonical context trace storage",
   "docs/architecture/permission-mode-model.md",
-  "node scripts/verify-permission-mode-model.mjs"
+  "node scripts/verify-permission-mode-model.mjs",
+  "docs/architecture/window-session-state-machine.md",
+  "node scripts/verify-window-session-state-machine.mjs",
+  "Window owner state, preview stale-delta rejection, popup owner tracking",
+  "This phase intentionally does not split more IPC handlers"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
 }

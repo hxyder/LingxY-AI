@@ -132,6 +132,46 @@ Next valid work:
   Console / Preview / Popup ownership through service/desktop boundary modules,
   and prove stale task/window events are rejected before broader UI cleanup.
 
+## Codex Update: DX-001 WindowSession State Machine
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/desktop/shared/window-session-state.mjs` as the shared desktop
+  owner model for managed windows, task/conversation owners, preview bindings,
+  popup-card owners, background/system task ownership, and stale event records.
+- Wired Electron shell, preview manager, preview IPC, and popup-card manager to
+  use one injected WindowSession object.
+- Preview init now binds owner state; preview delta/commit IPC returns stale
+  owner rejection decisions when payloads target a different task/conversation.
+- Added `docs/architecture/window-session-state-machine.md`,
+  `scripts/verify-window-session-state-machine.mjs`, and
+  `tests/behavior/window-session-state.test.mjs`.
+
+Decision:
+- DX-001 is complete as the first WindowSession implementation.
+- This phase does not split remaining IPC handlers; DX-002 owns IPC boundary
+  extraction under `src/desktop/main/ipc/` while preserving channel names.
+- No storage schema, HTTP route, tool id, artifact kind, provider id, or IPC
+  channel name changed.
+
+Verification:
+- `node --test tests/behavior/window-session-state.test.mjs`: passed, 3/3.
+- `node scripts/verify-window-session-state-machine.mjs`: passed.
+- `node scripts/verify-desktop-shell.mjs`: passed.
+- `node scripts/verify-preview-window.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-popup-card-fit.mjs`: passed.
+- `npm run check:fast`: passed, 102/102; behavior tests passed, 993/993.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Next valid work:
+- Start DX-002 Electron Main IPC Boundary Split.
+- First inventory the remaining inline `ipcMain.handle/on` groups in
+  `src/desktop/tray/electron-main.mjs`, then extract one cohesive group at a
+  time into `src/desktop/main/ipc/` with targeted static verifier coverage and
+  a full GUI smoke gate before completion.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

@@ -25,8 +25,9 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 101/101 after RT-004
-  permission mode model verification was added.
+- Current green gate: `npm run check:fast` passed 102/102 after DX-001
+  WindowSession verification was added; `npm run verify:desktop-gui-smoke`
+  passed 44/44.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -39,7 +40,7 @@ Last updated: 2026-05-12.
 | True sub-agent runtime | `runtime-graph-*` verifiers exist; no child-run contract or UI trace exists. | Not implemented; deferred until session/context/evals stabilized. |
 | Multi-model execution | `verify-model-role-routing.mjs` exists; executor call sites still mostly use resolved provider/model directly. | Role-routing summary exists; executor call sites do not yet switch per role. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
-| Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs. | Real GUI smoke is strong but not complete; real mic/KWS, full WindowSession, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
+| Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`. | Real GUI smoke is strong and DX-001 now owns preview/popup/window owner state; real mic/KWS, keyboard-only settings/approval, first-run GUI, richer preview fidelity, and IPC boundary cleanup remain. |
 | Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers. | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
 | Memory governance next pass | `verify-memory-governance.mjs`, `verify-user-memory-profile.mjs`, context compiler tests. | Editable memory exists; auto-learning proposals, review history, undo, and richer project scoping remain. |
 | SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
@@ -56,7 +57,8 @@ Last updated: 2026-05-12.
 | --- | --- | --- |
 | PX-001 Roadmap/status hygiene | complete | This roadmap is linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
 | RT-001 to RT-004 Runtime persistence/context/mode | complete | RT-001, RT-002, RT-003, and RT-004 are complete with direct-write/compact-trace/mode-contract verifiers. |
-| DX-001 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
+| DX-001 Desktop WindowSession | complete | Window owner state, preview stale-delta rejection, popup owner tracking, and GUI smoke coverage are locked by `verify-window-session-state-machine.mjs`. |
+| DX-002 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
@@ -278,6 +280,8 @@ Decision:
 
 ### DX-001: WindowSession State Machine
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Define a typed `WindowSession` state model for Overlay, Console, Preview,
@@ -298,8 +302,20 @@ Acceptance:
 Verification:
 
 - `npm run verify:desktop-gui-smoke`
-- New `verify-window-session-state-machine`
+- `node scripts/verify-window-session-state-machine.mjs`
 - Behavior tests for state transitions and stale-event rejection.
+
+Decision:
+
+- See `docs/architecture/window-session-state-machine.md`.
+- `src/desktop/shared/window-session-state.mjs` is the shared desktop owner
+  contract for managed windows, task/conversation owners, preview bindings,
+  popup-card owners, background/system task ownership, and stale event records.
+- Electron shell creates one `WindowSession` and injects it into preview and
+  popup managers; preview delta/commit IPC returns stale-owner rejection
+  decisions instead of always reporting success.
+- This phase intentionally does not split more IPC handlers; DX-002 owns that
+  boundary work.
 
 ### DX-002: Electron Main IPC Boundary Split
 

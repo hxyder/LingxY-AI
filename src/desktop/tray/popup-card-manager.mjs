@@ -42,7 +42,7 @@ function estimateCardHeight(payload) {
   return Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, estimated));
 }
 
-export function createPopupCardManager({ BrowserWindow, screen, resolveServiceBaseUrl, createBrandedBrowserWindow }) {
+export function createPopupCardManager({ BrowserWindow, screen, resolveServiceBaseUrl, createBrandedBrowserWindow, windowSession = null }) {
   // Brand-icon wiring is mandatory: callers must pass
   //   createBrandedBrowserWindow(BrowserWindow, options) → BrowserWindow
   // so popup cards inherit the canonical taskbar/title icon. Round-3
@@ -172,6 +172,7 @@ export function createPopupCardManager({ BrowserWindow, screen, resolveServiceBa
       settledAction: null
     };
     cards.set(cardId, entry);
+    windowSession?.registerPopup?.(cardId, payload);
 
     const initPayload = { cardId, ...payload };
     pendingInit.set(cardId, initPayload);
@@ -187,6 +188,7 @@ export function createPopupCardManager({ BrowserWindow, screen, resolveServiceBa
     window.on("closed", () => {
       cards.delete(cardId);
       pendingInit.delete(cardId);
+      windowSession?.unregisterPopup?.(cardId);
       reflowStack();
     });
 
@@ -202,6 +204,7 @@ export function createPopupCardManager({ BrowserWindow, screen, resolveServiceBa
     } catch { /* ignore */ }
     cards.delete(cardId);
     pendingInit.delete(cardId);
+    windowSession?.unregisterPopup?.(cardId);
     reflowStack();
     return true;
   }

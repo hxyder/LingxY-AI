@@ -6,7 +6,9 @@ export function createPreviewWindowManager({
   buildRendererFileUrl,
   PRELOAD_PATH,
   resolvedServiceBaseUrl,
-  quitting
+  quitting,
+  windowSession = null,
+  previewInitChannel = "uca:preview-window-init"
 } = {}) {
   if (!BrowserWindow) throw new TypeError("createPreviewWindowManager requires BrowserWindow.");
   if (!brandIcons?.createBrandedBrowserWindow) throw new TypeError("createPreviewWindowManager requires brandIcons.");
@@ -86,7 +88,17 @@ export function createPreviewWindowManager({
   }
 
   function sendToPreview(channel, payload, { coalesce = false } = {}) {
+    const isPreviewInit = channel === previewInitChannel;
+    if (windowSession && !isPreviewInit) {
+      const decision = windowSession.acceptPreviewPayload?.(payload, { bind: false });
+      if (decision && !decision.allowed) {
+        return { ok: false, rejected: true, reason: decision.reason };
+      }
+    }
     const win = showPreviewWindowIfHidden();
+    if (windowSession && isPreviewInit) {
+      windowSession.acceptPreviewPayload?.(payload, { bind: true });
+    }
     if (win.webContents.isLoading()) {
       previewPendingByChannel.set(channel, payload);
       if (!previewFlushBound) {
@@ -96,9 +108,10 @@ export function createPreviewWindowManager({
           flushPreviewPending();
         });
       }
-      return;
+      return { ok: true, queued: true };
     }
     try { win.webContents.send(channel, payload); } catch { /* ignore */ }
+    return { ok: true };
   }
 
   function getPreviewWindow() { return previewWindow; }

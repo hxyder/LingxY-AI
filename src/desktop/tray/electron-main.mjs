@@ -1,6 +1,7 @@
 import path from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
+import { createWindowSessionState } from "../shared/window-session-state.mjs";
 import { createPersistentRuntime } from "../../service/core/persistent-runtime.mjs";
 import { createPopupCardManager } from "./popup-card-manager.mjs";
 import { BRAND_AUMID, createBrandIconResolver } from "./brand-icons.mjs";
@@ -138,6 +139,7 @@ export function createElectronShellRuntime({
   const notificationDir = resolveNotificationDir();
   const notificationFilePattern = NOTIFICATION_FILE_PATTERN;
   let tray = null;
+  const windowSession = createWindowSessionState();
   let quitting = false;
   let resolvedServiceBaseUrl = serviceBaseUrl;
   let embeddedServiceRuntime = null;
@@ -414,6 +416,7 @@ export function createElectronShellRuntime({
       }
       lockWindowRendererZoom(windowDef, browserWindow);
       applyWindowPresentation(windowDef.id, browserWindow);
+      windowSession.bindWindow(windowDef.id, { surface: windowDef.id });
       installWindowLifecycleHandlers({
         browserWindow, windowDef,
         quitting: () => quitting,
@@ -585,7 +588,8 @@ export function createElectronShellRuntime({
         BrowserWindow,
         screen,
         resolveServiceBaseUrl: () => resolvedServiceBaseUrl,
-        createBrandedBrowserWindow: brandIcons.createBrandedBrowserWindow
+        createBrandedBrowserWindow: brandIcons.createBrandedBrowserWindow,
+        windowSession
       });
       registerPopupCardIpc({
         ipcMain,
@@ -790,6 +794,8 @@ export function createElectronShellRuntime({
         PRELOAD_PATH,
         resolvedServiceBaseUrl: () => resolvedServiceBaseUrl ?? "",
         quitting: () => quitting,
+        windowSession,
+        previewInitChannel: IPC_CHANNELS.previewWindowInit
       });
 
       const { sendToPreview, getPreviewWindow, hidePreviewWindow, setPreviewWindowPinned } = previewWindowManager;

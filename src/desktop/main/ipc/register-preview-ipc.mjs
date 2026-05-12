@@ -14,18 +14,15 @@ export function registerPreviewIpc({
   if (typeof setPreviewWindowPinned !== "function") throw new Error("setPreviewWindowPinned is required.");
 
   ipcMain.handle(IPC_CHANNELS.previewWindowShow, (_event, payload = {}) => {
-    sendToPreview(IPC_CHANNELS.previewWindowInit, payload);
-    return { ok: true };
+    return sendToPreview(IPC_CHANNELS.previewWindowInit, payload) ?? { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.previewWindowAppendDelta, (_event, payload = {}) => {
-    sendToPreview(IPC_CHANNELS.previewWindowDelta, payload, { coalesce: true });
-    return { ok: true };
+    return sendToPreview(IPC_CHANNELS.previewWindowDelta, payload, { coalesce: true }) ?? { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.previewWindowCommit, (_event, payload = {}) => {
-    sendToPreview(IPC_CHANNELS.previewWindowCommitted, payload);
-    return { ok: true };
+    return sendToPreview(IPC_CHANNELS.previewWindowCommitted, payload) ?? { ok: true };
   });
 
   ipcMain.handle(IPC_CHANNELS.previewWindowClose, () => {
