@@ -3638,3 +3638,65 @@ Decision:
   work should either extend the roadmap with the next user-visible capability
   tranche or begin a new execution board for desktop experience/plugin sandbox
   maturity.
+
+## Codex Review: MR-001 Memory Review History And Undo
+
+Date: 2026-05-12
+
+Scope:
+- Added `docs/architecture/post-runtime-maturity-roadmap.md` as the next
+  tracked execution board for desktop experience, plugin/sandbox/multi-model,
+  capability-management, memory, and operations maturity work after OQ-002.
+- Added bounded memory governance `reviewHistory` records for proposal approval,
+  proposal rejection, and approved-memory deletion in
+  `src/service/memory/user-profile.mjs`.
+- Added `undoMemoryReview()` service behavior and the desktop-actor-only HTTP
+  route `POST /config/user-memory/reviews/:reviewId/undo`.
+- Updated the desktop console memory panel to render recent review history and
+  call the shared runtime user-memory client for undo actions.
+- Updated route ownership inventory and verifiers so the new route is locked by
+  the same contract gates as the existing user-memory routes.
+
+Contract notes:
+- This intentionally adds one HTTP route and one persisted user-memory profile
+  field, `reviewHistory`.
+- No IPC channels, tool ids, artifact kinds, provider ids, or runtime execution
+  behavior changed.
+- Saving editable user/project memory now preserves existing review history when
+  the incoming payload omits it, preventing the UI save path from erasing the
+  governance audit trail.
+
+Verification run by Codex:
+- `node --check` on changed MR-001 modules/tests/verifiers: passed.
+- `node --test tests/behavior/runtime-user-memory-client.test.mjs tests/behavior/user-memory-profile.test.mjs`:
+  passed, 9/9.
+- `node scripts/verify-memory-review-history.mjs`: passed.
+- `node scripts/verify-post-runtime-maturity-roadmap.mjs`: passed.
+- `node scripts/verify-user-memory-profile.mjs`: passed.
+- `node scripts/verify-memory-governance.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-console-runtime-client.mjs`: passed.
+- `node scripts/verify-http-route-inventory.mjs`: passed.
+- `node scripts/verify-renderer-runtime-client-consolidation.mjs`: passed.
+- `npm run check:fast`: passed, 119/119 commands including 1047/1047 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed; only existing line-ending normalization warnings
+  were reported.
+
+Issue found and handled:
+- The first full check exposed the new undo route in the HTTP regex count; the
+  HTTP inventory and snapshot verifier were updated to lock the new contract.
+- The renderer runtime-client consolidation verifier still asserted the old
+  user-memory test title and was updated to require the save/proposal/delete/undo
+  mutation contract.
+- Two console `check:fast` attempts showed a behavior-test aggregate mismatch
+  while the same behavior suite passed directly. A redirected full `check:fast`
+  run completed cleanly at 119/119, so this remains a watched test-output
+  stability signal rather than an MR-001 code blocker.
+
+Decision:
+- MR-001 is ready to commit.
+- Next recommended work is MR-002: add project-scope memory review filters and
+  clearer review-history scoping in the desktop memory panel, building on the
+  review history foundation instead of creating a parallel memory surface.

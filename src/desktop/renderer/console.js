@@ -226,6 +226,8 @@ const userMemoryApprovedState = document.querySelector("#userMemoryApprovedState
 const userMemoryApprovedList = document.querySelector("#userMemoryApprovedList");
 const userMemoryProposalState = document.querySelector("#userMemoryProposalState");
 const userMemoryProposalList = document.querySelector("#userMemoryProposalList");
+const userMemoryReviewState = document.querySelector("#userMemoryReviewState");
+const userMemoryReviewList = document.querySelector("#userMemoryReviewList");
 const taskComposer = document.querySelector("#taskComposer");
 const commandInput = document.querySelector("#commandInput");
 const submitState = document.querySelector("#submitState");
@@ -3990,12 +3992,17 @@ function parseProjectMemoryLines(text = "") {
 function renderGovernedMemoryList(profile = {}) {
   const approved = Array.isArray(profile.approvedMemories) ? profile.approvedMemories : [];
   const proposals = Array.isArray(profile.proposals) ? profile.proposals : [];
+  const reviewHistory = Array.isArray(profile.reviewHistory) ? profile.reviewHistory : [];
   const pending = proposals.filter((item) => item?.status === "pending");
   if (userMemoryApprovedState) {
     userMemoryApprovedState.textContent = `${approved.length} approved`;
   }
   if (userMemoryProposalState) {
     userMemoryProposalState.textContent = `${pending.length} pending`;
+  }
+  if (userMemoryReviewState) {
+    const undoable = reviewHistory.filter((item) => item?.status !== "undone").length;
+    userMemoryReviewState.textContent = `${reviewHistory.length} reviews · ${undoable} undoable`;
   }
   if (userMemoryApprovedList) {
     if (approved.length === 0) {
@@ -4065,6 +4072,44 @@ function renderGovernedMemoryList(profile = {}) {
       }
     }
   }
+  if (userMemoryReviewList) {
+    if (reviewHistory.length === 0) {
+      renderEmpty(userMemoryReviewList, "No memory review history.");
+    } else {
+      userMemoryReviewList.innerHTML = reviewHistory.slice(0, 12).map((item) => {
+        const canUndo = item.status !== "undone";
+        return `
+          <div class="surface" style="padding:10px 12px;">
+            <div class="row">
+              <strong style="font-size:13px;">${escapeHtml(item.action ?? "review")}</strong>
+              <span class="chip ${canUndo ? "muted" : ""}">${escapeHtml(item.status ?? "applied")}</span>
+            </div>
+            <p style="margin:6px 0 0;font-size:12px;">${escapeHtml(item.summary ?? "")}</p>
+            <p class="muted" style="margin:4px 0 0;font-size:11px;">${escapeHtml(item.createdAt ?? "")}</p>
+            ${canUndo ? `
+              <div class="toolbar" style="margin-top:6px;">
+                <button class="btn btn-sm" data-memory-review-undo="${escapeHtml(item.reviewId ?? "")}">Undo</button>
+              </div>
+            ` : ""}
+          </div>
+        `;
+      }).join("");
+      for (const btn of userMemoryReviewList.querySelectorAll("[data-memory-review-undo]")) {
+        btn.addEventListener("click", async () => {
+          const reviewId = btn.dataset.memoryReviewUndo;
+          if (!reviewId || !userMemoryState) return;
+          userMemoryState.textContent = "Undoing memory review...";
+          try {
+            const result = await consoleUserMemoryClient.undoReview(reviewId);
+            state.workspace.userMemory = result.userMemory ?? state.workspace.userMemory;
+            renderUserMemorySettings();
+          } catch (error) {
+            userMemoryState.textContent = `Failed: ${error.message}`;
+          }
+        });
+      }
+    }
+  }
 }
 
 function renderUserMemorySettings() {
@@ -4089,7 +4134,8 @@ async function saveUserMemorySettings() {
       preferences: parseMemoryLines(userMemoryPreferences?.value ?? ""),
       projectMemories: parseProjectMemoryLines(userMemoryProjectNotes?.value ?? ""),
       approvedMemories: state.workspace.userMemory?.approvedMemories ?? [],
-      proposals: state.workspace.userMemory?.proposals ?? []
+      proposals: state.workspace.userMemory?.proposals ?? [],
+      reviewHistory: state.workspace.userMemory?.reviewHistory ?? []
     };
     const result = await consoleUserMemoryClient.saveUserMemory(payload);
     state.workspace.userMemory = result.userMemory ?? payload;

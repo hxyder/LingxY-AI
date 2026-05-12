@@ -27,7 +27,7 @@ const expectedSummary = {
   "ai-status-routes.mjs": { methods: ["GET", "PATCH"], literalCount: 5, regexCount: 2 },
   "audio-routes.mjs": { methods: ["GET", "POST"], literalCount: 9, regexCount: 0 },
   "browser-context-routes.mjs": { methods: ["DELETE", "GET", "POST"], literalCount: 6, regexCount: 0 },
-  "config-provider-routes.mjs": { methods: ["DELETE", "GET", "PATCH", "POST"], literalCount: 38, regexCount: 4 },
+  "config-provider-routes.mjs": { methods: ["DELETE", "GET", "PATCH", "POST"], literalCount: 38, regexCount: 5 },
   "connector-routes.mjs": { methods: ["DELETE", "GET", "PATCH", "POST"], literalCount: 7, regexCount: 15 },
   "mcp-install-routes.mjs": { methods: ["POST"], literalCount: 3, regexCount: 0 },
   "note-project-conversation-routes.mjs": { methods: ["DELETE", "GET", "PATCH", "POST"], literalCount: 8, regexCount: 10 },

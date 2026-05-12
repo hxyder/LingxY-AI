@@ -106,8 +106,8 @@ assert.match(behavior, /runtime submission client routes task and clarification 
   "runtime submission client behavior tests must cover task and clarification mutations");
 assert.match(behavior, /conversation model mutations/u,
   "runtime submission client behavior tests must cover conversation model mutations");
-assert.match(memoryBehavior, /runtime user memory client owns save, proposal, and delete mutations/u,
-  "runtime user memory client behavior tests must cover save/proposal/delete mutations");
+assert.match(memoryBehavior, /runtime user memory client owns save, proposal, delete, and undo mutations/u,
+  "runtime user memory client behavior tests must cover save/proposal/delete/undo mutations");
 assert.match(preflightBehavior, /runtime preflight client owns MCP, skill, and DAG validation mutations/u,
   "runtime preflight client behavior tests must cover MCP/skill/DAG validation mutations");
 assert.match(roadmap, /DX-003: Renderer Runtime Client Consolidation/u,

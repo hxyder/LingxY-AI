@@ -4,6 +4,7 @@ export const USER_MEMORY_PROFILE_VERSION = 1;
 
 const MAX_ITEMS = 40;
 const MAX_PROPOSALS = 80;
+const MAX_REVIEW_HISTORY = 120;
 const MAX_TEXT_CHARS = 600;
 const MEMORY_TYPES = new Set([
   "user_preference",
@@ -16,6 +17,8 @@ const MEMORY_TYPES = new Set([
   "episodic_task"
 ]);
 const PROPOSAL_STATUSES = new Set(["pending", "approved", "rejected"]);
+const REVIEW_ACTIONS = new Set(["approve_proposal", "reject_proposal", "delete_memory"]);
+const REVIEW_STATUSES = new Set(["applied", "undone"]);
 
 function normalizeText(value, max = MAX_TEXT_CHARS) {
   return `${value ?? ""}`
@@ -49,6 +52,10 @@ function normalizeScope(value, fallback = "global") {
 }
 
 function normalizeProvenance(value = {}) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function normalizeUndoPayload(value = {}) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
@@ -144,6 +151,30 @@ function normalizeMemoryProposals(items = [], { now = nowIso() } = {}) {
   return out;
 }
 
+function normalizeMemoryReviewHistory(items = [], { now = nowIso() } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  const out = [];
+  for (const raw of list) {
+    const action = REVIEW_ACTIONS.has(raw?.action) ? raw.action : null;
+    if (!action) continue;
+    const reviewId = normalizeId(raw?.reviewId ?? raw?.review_id ?? raw?.id, `review_${action}_${out.length + 1}`);
+    out.push({
+      reviewId,
+      action,
+      status: REVIEW_STATUSES.has(raw?.status) ? raw.status : "applied",
+      proposalId: normalizeText(raw?.proposalId ?? raw?.proposal_id, 120) || null,
+      memoryId: normalizeText(raw?.memoryId ?? raw?.memory_id, 120) || null,
+      actor: normalizeText(raw?.actor, 80) || "desktop_console",
+      createdAt: normalizeText(raw?.createdAt ?? raw?.created_at, 40) || now,
+      undoneAt: normalizeText(raw?.undoneAt ?? raw?.undone_at, 40) || null,
+      summary: normalizeText(raw?.summary, 180) || action,
+      undo: normalizeUndoPayload(raw?.undo)
+    });
+    if (out.length >= MAX_REVIEW_HISTORY) break;
+  }
+  return out;
+}
+
 export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOString() } = {}) {
   const profile = input && typeof input === "object" ? input : {};
   return {
@@ -155,7 +186,8 @@ export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOSt
       defaultScope: "project"
     }),
     approvedMemories: normalizeGovernedMemoryItems(profile.approvedMemories ?? profile.approved_memories ?? [], { now }),
-    proposals: normalizeMemoryProposals(profile.proposals ?? profile.memoryProposals ?? profile.memory_proposals ?? [], { now })
+    proposals: normalizeMemoryProposals(profile.proposals ?? profile.memoryProposals ?? profile.memory_proposals ?? [], { now }),
+    reviewHistory: normalizeMemoryReviewHistory(profile.reviewHistory ?? profile.review_history ?? [], { now })
   };
 }
 
@@ -305,33 +337,124 @@ export function approveMemoryProposal(profile = {}, proposalId, patch = {}, { no
     createdAt: now,
     updatedAt: now
   }], { now })[0];
+  const review = createMemoryReviewRecord({
+    action: "approve_proposal",
+    proposalId,
+    memoryId: approved.id,
+    actor: patch.actor,
+    summary: `Approved ${approved.type} memory`,
+    undo: { kind: "proposal_approval", proposalId, memoryId: approved.id },
+    now
+  });
   return sanitizeUserMemoryProfile({
     ...sanitized,
     updatedAt: now,
     approvedMemories: [...sanitized.approvedMemories, approved],
     proposals: sanitized.proposals.map((item) => item.proposalId === proposalId
       ? { ...item, status: "approved", reviewedAt: now, updatedAt: now }
-      : item)
+      : item),
+    reviewHistory: [review, ...sanitized.reviewHistory]
   }, { now });
 }
 
-export function rejectMemoryProposal(profile = {}, proposalId, { now = nowIso() } = {}) {
+export function rejectMemoryProposal(profile = {}, proposalId, { actor = "desktop_console", now = nowIso() } = {}) {
   const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  const proposal = sanitized.proposals.find((item) => item.proposalId === proposalId);
+  if (!proposal || proposal.status !== "pending") return sanitized;
+  const review = createMemoryReviewRecord({
+    action: "reject_proposal",
+    proposalId,
+    actor,
+    summary: `Rejected ${proposal.type} memory proposal`,
+    undo: { kind: "proposal_rejection", proposalId },
+    now
+  });
   return sanitizeUserMemoryProfile({
     ...sanitized,
     updatedAt: now,
     proposals: sanitized.proposals.map((item) => item.proposalId === proposalId
       ? { ...item, status: "rejected", reviewedAt: now, updatedAt: now }
-      : item)
+      : item),
+    reviewHistory: [review, ...sanitized.reviewHistory]
   }, { now });
 }
 
-export function deleteApprovedMemory(profile = {}, memoryId, { now = nowIso() } = {}) {
+export function deleteApprovedMemory(profile = {}, memoryId, { actor = "desktop_console", now = nowIso() } = {}) {
   const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  const memory = sanitized.approvedMemories.find((item) => item.id === memoryId);
+  if (!memory) return sanitized;
+  const review = createMemoryReviewRecord({
+    action: "delete_memory",
+    memoryId,
+    actor,
+    summary: `Deleted ${memory.type} memory`,
+    undo: { kind: "memory_delete", memory },
+    now
+  });
   return sanitizeUserMemoryProfile({
     ...sanitized,
     updatedAt: now,
-    approvedMemories: sanitized.approvedMemories.filter((item) => item.id !== memoryId)
+    approvedMemories: sanitized.approvedMemories.filter((item) => item.id !== memoryId),
+    reviewHistory: [review, ...sanitized.reviewHistory]
+  }, { now });
+}
+
+export function createMemoryReviewRecord({
+  action,
+  proposalId = null,
+  memoryId = null,
+  actor = "desktop_console",
+  summary = null,
+  undo = {},
+  now = nowIso()
+} = {}) {
+  return normalizeMemoryReviewHistory([{
+    reviewId: `review_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+    action,
+    status: "applied",
+    proposalId,
+    memoryId,
+    actor,
+    createdAt: now,
+    summary,
+    undo
+  }], { now })[0];
+}
+
+export function undoMemoryReview(profile = {}, reviewId, { now = nowIso() } = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  const review = sanitized.reviewHistory.find((item) => item.reviewId === reviewId);
+  if (!review || review.status === "undone") return sanitized;
+  let approvedMemories = sanitized.approvedMemories;
+  let proposals = sanitized.proposals;
+  const undo = review.undo ?? {};
+
+  if (undo.kind === "proposal_approval") {
+    approvedMemories = approvedMemories.filter((item) => item.id !== undo.memoryId);
+    proposals = proposals.map((item) => item.proposalId === undo.proposalId
+      ? { ...item, status: "pending", reviewedAt: null, updatedAt: now }
+      : item);
+  } else if (undo.kind === "proposal_rejection") {
+    proposals = proposals.map((item) => item.proposalId === undo.proposalId
+      ? { ...item, status: "pending", reviewedAt: null, updatedAt: now }
+      : item);
+  } else if (undo.kind === "memory_delete" && undo.memory) {
+    const restored = normalizeGovernedMemoryItems([{ ...undo.memory, updatedAt: now }], { now })[0];
+    if (restored && !approvedMemories.some((item) => item.id === restored.id)) {
+      approvedMemories = [...approvedMemories, restored];
+    }
+  } else {
+    return sanitized;
+  }
+
+  return sanitizeUserMemoryProfile({
+    ...sanitized,
+    updatedAt: now,
+    approvedMemories,
+    proposals,
+    reviewHistory: sanitized.reviewHistory.map((item) => item.reviewId === reviewId
+      ? { ...item, status: "undone", undoneAt: now, updatedAt: now }
+      : item)
   }, { now });
 }
 

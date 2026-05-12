@@ -26,6 +26,12 @@ export function createRuntimeUserMemoryClient({
         `/config/user-memory/memories/${encodeURIComponent(memoryId)}`,
         runtimeJsonOptions("DELETE", {}, { actor })
       );
+    },
+    undoReview(reviewId) {
+      return httpClient.fetchJson(
+        `/config/user-memory/reviews/${encodeURIComponent(reviewId)}/undo`,
+        runtimeJsonOptions("POST", {}, { actor })
+      );
     }
   };
 }

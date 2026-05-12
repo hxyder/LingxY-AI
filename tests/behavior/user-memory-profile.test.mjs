@@ -11,7 +11,8 @@ import {
   createMemoryProposal,
   deleteApprovedMemory,
   rejectMemoryProposal,
-  sanitizeUserMemoryProfile
+  sanitizeUserMemoryProfile,
+  undoMemoryReview
 } from "../../src/service/memory/user-profile.mjs";
 
 test("user memory profile sanitizes editable global and project notes", () => {
@@ -109,6 +110,8 @@ test("memory governance requires proposal review before approved memory injectio
   );
   assert.equal(approvedProfile.proposals[0].status, "approved");
   assert.equal(approvedProfile.approvedMemories.length, 1);
+  assert.equal(approvedProfile.reviewHistory[0].action, "approve_proposal");
+  assert.equal(approvedProfile.reviewHistory[0].status, "applied");
   assert.equal(approvedProfile.approvedMemories[0].type, "rejected_assumption");
   assert.equal(approvedProfile.approvedMemories[0].provenance.proposal_id, proposal.proposalId);
 
@@ -130,6 +133,7 @@ test("memory governance can reject proposals and delete approved memory", () => 
     { now: "2026-05-09T07:11:00.000Z" }
   );
   assert.equal(rejected.proposals[0].status, "rejected");
+  assert.equal(rejected.reviewHistory[0].action, "reject_proposal");
   assert.equal(rejected.approvedMemories.length, 0);
 
   const approved = approveMemoryProposal(
@@ -144,6 +148,48 @@ test("memory governance can reject proposals and delete approved memory", () => 
     { now: "2026-05-09T07:13:00.000Z" }
   );
   assert.equal(deleted.approvedMemories.length, 0);
+  assert.equal(deleted.reviewHistory[0].action, "delete_memory");
+});
+
+test("memory governance review history can undo approval, rejection, and deletion", () => {
+  const proposal = createMemoryProposal({
+    type: "workflow_rule",
+    text: "Prefer structured acceptance checks.",
+    now: "2026-05-12T15:00:00.000Z"
+  });
+  const approved = approveMemoryProposal(
+    { proposals: [proposal] },
+    proposal.proposalId,
+    {},
+    { now: "2026-05-12T15:01:00.000Z" }
+  );
+  const approvalReviewId = approved.reviewHistory[0].reviewId;
+  const approvalUndone = undoMemoryReview(approved, approvalReviewId, {
+    now: "2026-05-12T15:02:00.000Z"
+  });
+  assert.equal(approvalUndone.approvedMemories.length, 0);
+  assert.equal(approvalUndone.proposals[0].status, "pending");
+  assert.equal(approvalUndone.reviewHistory[0].status, "undone");
+
+  const rejected = rejectMemoryProposal(approvalUndone, proposal.proposalId, {
+    now: "2026-05-12T15:03:00.000Z"
+  });
+  const rejectionUndone = undoMemoryReview(rejected, rejected.reviewHistory[0].reviewId, {
+    now: "2026-05-12T15:04:00.000Z"
+  });
+  assert.equal(rejectionUndone.proposals[0].status, "pending");
+
+  const reapproved = approveMemoryProposal(rejectionUndone, proposal.proposalId, {}, {
+    now: "2026-05-12T15:05:00.000Z"
+  });
+  const deleted = deleteApprovedMemory(reapproved, reapproved.approvedMemories[0].id, {
+    now: "2026-05-12T15:06:00.000Z"
+  });
+  const deleteUndone = undoMemoryReview(deleted, deleted.reviewHistory[0].reviewId, {
+    now: "2026-05-12T15:07:00.000Z"
+  });
+  assert.equal(deleteUndone.approvedMemories.length, 1);
+  assert.equal(deleteUndone.approvedMemories[0].text, "Prefer structured acceptance checks.");
 });
 
 test("context compiler can select scoped reviewed memory", () => {
