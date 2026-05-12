@@ -15,8 +15,8 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 132/132 with 1083/1083
-  behavior tests after MMX-001.
+- Current green gate: `npm run check:fast` passed 133/133 with 1088/1088
+  behavior tests after MMX-002.
 - `npm run verify:desktop-gui-smoke` passed 49/49 after MMX-001. The first
   smoke attempt hit the known task-list keyboard focus timing failure and the
   immediate rerun passed.
@@ -70,7 +70,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
 | SBOX-001 High-risk sandbox evidence pack | complete | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
 | MMX-001 Model role management surface | complete | Users can see planner/executor/reviewer/fast roles, health, cost, fallback, feature-flag state, and live-test action metadata without editing config files. |
-| MMX-002 Budgeted fallback and cascade evidence | pending | Any model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
+| MMX-002 Budgeted fallback and cascade evidence | complete | Any future model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
 | CTX-001 Context selection and project packs | pending | Users must see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
 | REL-001 Release evidence bundle | pending | Release readiness must bundle check results, GUI smoke, row evidence, known issues, policy traces, and environment notes. |
 
@@ -410,16 +410,34 @@ Verification:
 
 ### MMX-002: Budgeted Fallback And Cascade Evidence
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Add fallback/cascade only after role management and trace evidence are stable.
 
-Acceptance:
+Implemented:
 
-- Fallback is opt-in and budget-bounded.
-- Every fallback decision emits trace and usage.
-- User sees which model answered and why fallback happened.
-- Ensemble/voting remains deferred unless eval evidence shows quality gains.
+- Added `src/shared/model-fallback-cascade-evidence.mjs` as the shared
+  evidence contract.
+- Added `docs/architecture/model-fallback-cascade-evidence.md`.
+- Model-role management now exposes the current fallback/cascade policy state.
+- Enabled fallback/cascade requires explicit opt-in, max attempts, cost budget,
+  trace events, and usage measurement keys.
+- Ensemble/voting remains blocked unless eval evidence id and passed quality
+  gate are present.
+
+Boundaries:
+
+- No runtime fallback or cascade behavior changed in this phase.
+- No additional model calls, provider ids, HTTP routes, IPC channels, storage
+  schema, or approval semantics were introduced.
+
+Verification:
+
+- `node --test tests/behavior/model-fallback-cascade-evidence.test.mjs`
+- `node scripts/verify-model-fallback-cascade-evidence.mjs`
+- `npm run check:fast`
 
 ### CTX-001: Context Selection And Project Packs
 

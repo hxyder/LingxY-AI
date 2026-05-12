@@ -1,4 +1,5 @@
 import { detectProviderFamily, sanitizeProviderConfig } from "../../shared/provider-catalog.mjs";
+import { buildModelFallbackCascadePolicy } from "../../shared/model-fallback-cascade-evidence.mjs";
 import {
   isProviderConfiguredForUse,
   providerConfigurationReason
@@ -230,6 +231,7 @@ export function buildModelRoleManagementSurface({
     id: "model_role_management_surface",
     schemaVersion: MODEL_ROLE_ROUTING_VERSION,
     featureFlag: featureFlagState(config),
+    fallbackCascade: buildModelFallbackCascadePolicy(config),
     roles,
     counts: summary.counts,
     testActions: roles.map((roleEntry) =>

@@ -2,6 +2,42 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: MMX-002 Budgeted Fallback And Cascade Evidence
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/model-fallback-cascade-evidence.mjs` as the shared
+  contract for future model fallback, cascade, and ensemble/voting work.
+- Added `docs/architecture/model-fallback-cascade-evidence.md`.
+- Exposed fallback/cascade policy state through the existing model-role
+  management surface.
+- Added `scripts/verify-model-fallback-cascade-evidence.mjs` and
+  `tests/behavior/model-fallback-cascade-evidence.test.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs` and `package.json`.
+
+Decision:
+- No runtime fallback/cascade behavior changed.
+- No additional model calls, provider ids, HTTP routes, IPC channels, storage
+  schema, or approval semantics were introduced.
+- Future fallback/cascade must be opt-in, budget-bounded, traceable, and tied
+  to usage measurement keys. Ensemble/voting remains blocked unless eval
+  evidence is present and passing.
+
+Verification:
+- `node --test tests/behavior/model-fallback-cascade-evidence.test.mjs`:
+  passed, 5/5.
+- `node scripts/verify-model-fallback-cascade-evidence.mjs`: passed.
+- `node scripts/verify-model-role-routing.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-post-runtime-product-gap-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 133/133; behavior tests passed, 1088/1088.
+
+Next valid work:
+- Start `CTX-001` context selection and project packs.
+- Keep the final real API/common-agent acceptance pass as a release-blocking
+  product-gap item after CTX-001 and REL-001 are complete.
+
 ## Codex Update: MMX-001 Model Role Management Surface
 
 Date: 2026-05-12
