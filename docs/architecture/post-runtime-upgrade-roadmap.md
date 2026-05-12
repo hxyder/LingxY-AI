@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 106/106 after VX-001
-  real audio/KWS fixture corpus coverage was added.
+- Current green gate: `npm run check:fast` passed 107/107 after VX-002
+  opt-in desktop audio hardware smoke coverage was added.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
 - Next execution board: this document.
@@ -64,7 +64,7 @@ Last updated: 2026-05-12.
 | DX-004 Keyboard/a11y GUI pass | complete | Real Electron smoke now drives Overlay task-list keyboard navigation, Console Settings/Schedules keyboard paths, and approval popup keyboard reject. |
 | DX-005 Desktop first-run/i18n/preview fidelity | complete | First-run provider recovery and generate_document preview screenshot-diff are covered by real Electron GUI smoke and verifier contracts. |
 | VX-001 Voice fixture corpus | complete | Checked-in WAV corpus now backs transcription and KWS metrics; optional private fixture directory is documented for larger local samples. |
-| VX-002 Hardware permission smoke | pending | CI-safe by default; hardware checks opt-in only. |
+| VX-002 Hardware permission smoke | complete | Opt-in Electron GUI smoke can record from local microphone hardware with actionable diagnostics; default checks stay hardware-free. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
@@ -476,20 +476,30 @@ Verification:
 
 ### VX-002: Optional Hardware Permission Smoke
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Add an opt-in local smoke that records from real mic hardware only when an
   explicit env flag is set.
 - Keep CI deterministic by default.
+- Completed slice adds `npm run verify:desktop-audio-hardware-smoke`, gated by
+  `LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE=1`, and reuses the real Electron GUI
+  smoke harness to request microphone permission and record a short
+  MediaRecorder sample from hardware.
 
 Acceptance:
 
 - Hardware permission/capture failures produce actionable diagnostics.
 - The default check suite does not hang or require hardware.
+- Default `npm run check:fast` locks the opt-in contract only; hardware capture
+  remains an explicit local diagnostic.
 
 Verification:
 
-- New opt-in `npm run verify:desktop-audio-hardware-smoke`
+- `node scripts/verify-desktop-audio-hardware-smoke-contract.mjs`
+- `npm run verify:desktop-audio-hardware-smoke`
+- `LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE=1 npm run verify:desktop-audio-hardware-smoke`
 
 ## Phase E: Generic Graph Resume, Reversibility, And True Sub-Agents
 

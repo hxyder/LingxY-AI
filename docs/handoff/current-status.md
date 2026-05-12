@@ -342,6 +342,39 @@ Next valid work:
 - Commit VX-001 and move to VX-002 optional desktop audio hardware permission
   smoke.
 
+## Codex Review: VX-002 Optional Desktop Audio Hardware Smoke
+
+Date: 2026-05-12
+
+Status:
+- VX-002 is complete as an opt-in local hardware diagnostic.
+
+Scope:
+- Added `window.__lingxyOverlaySmoke.runAudioHardwarePermissionPath()` to drive
+  the real renderer microphone permission and MediaRecorder path through
+  `requestAudioInputStream`.
+- Added opt-in Electron GUI smoke wiring:
+  `LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE=1` enables the named
+  `overlay_audio_hardware_permission_capture` check.
+- Added `npm run verify:desktop-audio-hardware-smoke`; without the env flag it
+  skips cleanly and does not touch hardware.
+- Added `scripts/verify-desktop-audio-hardware-smoke-contract.mjs` and wired it
+  into `check:fast`.
+
+Verification:
+- `node scripts/verify-desktop-audio-hardware-smoke-contract.mjs`: passed.
+- `npm run verify:desktop-audio-hardware-smoke`: passed by clean default skip.
+- `LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE=1 npm run verify:desktop-audio-hardware-smoke`:
+  executed the real Electron path and failed with actionable current-machine
+  diagnostic `no_device: 未检测到可用的麦克风。请确认设备已连接后重试。`
+- `npm run verify:desktop-gui-smoke`: passed, 49/49.
+- `npm run check:fast`: passed, 107/107; behavior tests passed, 998/998.
+
+Next valid work:
+- Commit VX-002 and move to GX-003 generic approval resume, RV-001 git
+  checkpoint evaluation, or SA-001 sub-agent runtime contract. Recommended next:
+  GX-003 because it closes the highest-impact runtime continuity gap.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

@@ -45,6 +45,7 @@ export function createDesktopGuiSmokeRunner({
     const checks = [];
     const pass = (name, extra = {}) => checks.push({ name, ok: true, ...extra });
     const waitForSmokeFrame = () => new Promise((resolve) => setTimeout(resolve, 40));
+    const runAudioHardwareSmoke = process.env.LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE === "1";
     function captureImageStats(nativeImage) {
       const size = nativeImage?.getSize?.() ?? { width: 0, height: 0 };
       const bitmap = nativeImage?.toBitmap?.();
@@ -241,6 +242,23 @@ export function createDesktopGuiSmokeRunner({
         mimeType: noteMicMediaRecorderPath.mimeType,
         timeslice: noteMicMediaRecorderPath.startTimeslice
       });
+
+      if (runAudioHardwareSmoke) {
+        const audioHardwarePath = await overlayWindow.webContents.executeJavaScript(
+          'window.__lingxyOverlaySmoke?.runAudioHardwarePermissionPath?.({ recordMs: 900, timeoutMs: 6000 })',
+          true
+        );
+        if (!audioHardwarePath?.ok) {
+          throw new Error(`overlay_audio_hardware_permission_capture_failed:${audioHardwarePath?.code ?? "unknown"}:${audioHardwarePath?.message ?? ""}`);
+        }
+        pass("overlay_audio_hardware_permission_capture", {
+          chunks: audioHardwarePath.chunkCount,
+          bytes: audioHardwarePath.bytes,
+          mimeType: audioHardwarePath.mimeType,
+          audioTrackCount: audioHardwarePath.audioTrackCount,
+          durationMs: audioHardwarePath.durationMs
+        });
+      }
 
       const cancelBridgeReady = await waitForDesktopGuiSmoke(async () => {
         if (overlayWindow.isDestroyed?.()) return false;

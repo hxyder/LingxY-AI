@@ -3415,6 +3415,90 @@ window.__lingxyOverlaySmoke = {
       harness.restore();
     }
   },
+  async runAudioHardwarePermissionPath({ recordMs = 900, timeoutMs = 6000 } = {}) {
+    const started = performance.now();
+    const input = await requestAudioInputStream({
+      mediaDevices: navigator.mediaDevices,
+      permissions: navigator.permissions,
+      timeoutMs
+    });
+    if (!input?.ok) {
+      return {
+        ok: false,
+        code: input?.code ?? "init_failed",
+        message: describeAudioInputFailure(input),
+        durationMs: Math.round(performance.now() - started)
+      };
+    }
+
+    const stream = input.stream;
+    const tracks = stream?.getAudioTracks?.() ?? [];
+    const chunks = [];
+    let recorder = null;
+    try {
+      if (tracks.length === 0) {
+        return {
+          ok: false,
+          code: "no_audio_track",
+          message: "getUserMedia returned a stream without audio tracks.",
+          durationMs: Math.round(performance.now() - started)
+        };
+      }
+      if (typeof MediaRecorder !== "function") {
+        return {
+          ok: false,
+          code: "mediarecorder_unsupported",
+          message: "MediaRecorder is unavailable after microphone permission was granted.",
+          audioTrackCount: tracks.length,
+          durationMs: Math.round(performance.now() - started)
+        };
+      }
+
+      const options = {};
+      if (MediaRecorder.isTypeSupported?.("audio/webm;codecs=opus")) {
+        options.mimeType = "audio/webm;codecs=opus";
+      }
+      const stopped = new Promise((resolve, reject) => {
+        recorder = new MediaRecorder(stream, options);
+        recorder.addEventListener("dataavailable", (event) => {
+          if (event.data?.size > 0) chunks.push(event.data);
+        });
+        recorder.addEventListener("error", (event) => {
+          reject(event.error ?? new Error("MediaRecorder hardware smoke failed"));
+        });
+        recorder.addEventListener("stop", resolve, { once: true });
+      });
+      recorder.start(120);
+      await new Promise((resolve) => setTimeout(resolve, Math.max(300, Number(recordMs) || 900)));
+      if (recorder.state !== "inactive") recorder.stop();
+      await stopped;
+      const bytes = chunks.reduce((sum, chunk) => sum + (chunk?.size ?? 0), 0);
+      return {
+        ok: bytes > 0,
+        code: bytes > 0 ? "ok" : "empty_recording",
+        message: bytes > 0 ? "microphone capture produced audio data" : "microphone capture produced no audio chunks",
+        audioTrackCount: tracks.length,
+        chunkCount: chunks.length,
+        bytes,
+        mimeType: recorder.mimeType ?? null,
+        trackLabels: tracks.map((track) => track.label).filter(Boolean).slice(0, 3),
+        trackStates: tracks.map((track) => track.readyState),
+        durationMs: Math.round(performance.now() - started)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        code: "recording_failed",
+        message: error?.message ?? String(error),
+        audioTrackCount: tracks.length,
+        durationMs: Math.round(performance.now() - started)
+      };
+    } finally {
+      for (const track of tracks) {
+        try { track.stop?.(); } catch { /* ignore cleanup */ }
+      }
+    }
+  },
   async runTextDeltaLoad({ chunks = 1000, chunkText = "x", taskId = "gui-smoke-stream" } = {}) {
     const count = Math.max(1, Math.min(5000, Number(chunks) || 1000));
     const text = String(chunkText || "x");

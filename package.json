@@ -152,6 +152,7 @@
     "verify:overlay-composer": "node scripts/verify-overlay-composer.mjs",
     "verify:audio-entrypoints": "node scripts/verify-audio-entrypoints.mjs",
     "verify:real-audio-kws-fixtures": "node scripts/verify-real-audio-kws-fixtures.mjs",
+    "verify:desktop-audio-hardware-smoke": "node scripts/run-electron-audio-hardware-smoke.mjs",
     "verify:context-handoff-ui": "node scripts/verify-context-handoff-ui.mjs",
     "verify:console-ui": "node scripts/verify-console-ui.mjs",
     "verify:console-runtime-client": "node scripts/verify-console-runtime-client.mjs",

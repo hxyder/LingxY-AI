@@ -98,6 +98,10 @@ for (const required of [
   "node scripts/verify-real-audio-kws-fixtures.mjs",
   "checked-in WAV corpus",
   "LINGXY_REAL_AUDIO_FIXTURE_DIR",
+  "VX-002: Optional Hardware Permission Smoke",
+  "node scripts/verify-desktop-audio-hardware-smoke-contract.mjs",
+  "LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE=1",
+  "npm run verify:desktop-audio-hardware-smoke",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
