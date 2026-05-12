@@ -50,7 +50,7 @@ for (const required of [
 }
 
 for (const required of [
-  "`npm run check:fast` passed 96/96",
+  "`npm run check:fast` passed",
   "`src/service/action_tools/tools/index.mjs`",
   "aggregator/re-export surface only",
   "desktop completeness",
@@ -61,6 +61,14 @@ for (const required of [
   "sub-agent runtime"
 ]) {
   assert(roadmap.includes(required), `roadmap current snapshot missing: ${required}`);
+}
+
+for (const required of [
+  "docs/architecture/sqlite-write-path-budget.md",
+  "node scripts/verify-sqlite-write-path-budget.mjs",
+  "Current decision is to keep direct service-owned SQLite writes"
+]) {
+  assert(roadmap.includes(required), `roadmap RT-001 status missing: ${required}`);
 }
 
 assert(architectureReadme.includes("[post-runtime-upgrade-roadmap.md](post-runtime-upgrade-roadmap.md)"),

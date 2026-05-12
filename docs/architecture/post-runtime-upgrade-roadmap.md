@@ -25,7 +25,8 @@ Last updated: 2026-05-11.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 96/96 after CAP-5H.
+- Current green gate: `npm run check:fast` passed 98/98 after RT-001 SQLite
+  write-path budget verification was added.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -53,8 +54,8 @@ Last updated: 2026-05-11.
 
 | Phase | Status | Tracking rule |
 | --- | --- | --- |
-| PX-001 Roadmap/status hygiene | in progress | This roadmap must stay linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
-| RT-001 to RT-004 Runtime persistence/context/mode | pending | Start only after PX-001 is green. Each phase needs a verifier and measured decision record. |
+| PX-001 Roadmap/status hygiene | complete | This roadmap is linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
+| RT-001 to RT-004 Runtime persistence/context/mode | in progress | RT-001 is complete as an audit/decision-record phase; RT-002 starts from the direct-write decision. Each later phase needs a verifier and measured decision record. |
 | DX-001 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
@@ -128,6 +129,8 @@ Verification:
 
 ### RT-001: SQLite Write-Path Audit And Queue Decision
 
+Status: complete as of 2026-05-11.
+
 Scope:
 
 - Audit all SQLite/store write paths for tasks, events, session items,
@@ -151,9 +154,19 @@ Acceptance:
 - If a queue is implemented, snapshots expose depth, age, flush latency,
   dropped low-priority writes, and last error.
 
+Decision:
+
+- See `docs/architecture/sqlite-write-path-budget.md`.
+- Current decision is to keep direct service-owned SQLite writes.
+- Rationale: write ownership is concentrated in the service store, WAL is
+  enabled, Electron desktop code does not own SQLite, and high-frequency stream
+  events are already excluded from SQLite task-event persistence.
+- No queue or DB worker is implemented in RT-001. RT-002 may revisit this only
+  with measured evidence or a specific write-budget enforcement gap.
+
 Verification:
 
-- New `verify-sqlite-write-path-budget`
+- `node scripts/verify-sqlite-write-path-budget.mjs`
 - Behavior tests for priority ordering, flush failure, shutdown drain, and
   low-priority backpressure only if a queue is implemented.
 - `npm run check:fast`

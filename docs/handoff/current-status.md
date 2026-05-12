@@ -6,6 +6,34 @@
 
 All planned low-risk extraction and inventory work across Phases 2A through 2G and CAP-0 is committed. High-risk deferred items: write/edit/run/generate/render tools, GUI automation, capability creator, full capability migration, desktop app directory move. All Codex review blockers from rounds 1-6 resolved. check:fast green.
 
+## Codex Update: RT-001 SQLite Write-Path Budget
+
+Date: 2026-05-11
+
+Scope:
+- Added `docs/architecture/sqlite-write-path-budget.md` as the RT-001 audit and queue decision record.
+- Added `scripts/verify-sqlite-write-path-budget.mjs` and wired it into full and fast check manifests.
+- Updated the post-runtime roadmap to mark RT-001 complete as an audit/decision-record phase.
+- Did not change product runtime behavior, storage schema, IPC channels, HTTP routes, tool ids, artifact kinds, provider ids, or desktop UI code.
+
+Decision:
+- Keep direct service-owned SQLite writes for the current program.
+- Do not implement a DB queue or DB worker in RT-001.
+- Rationale: SQLite ownership is concentrated in `src/service/core/store/sqlite-store.mjs`, WAL/service-only ownership is declared, Electron desktop code does not own SQLite, and high-frequency stream events are already excluded from SQLite task-event persistence.
+
+Next valid work:
+- Start RT-002 session/context/artifact write budget enforcement using the RT-001 direct-write decision.
+- Only introduce a queue/worker if RT-002 finds measured hot-path pressure or a concrete write-budget enforcement gap.
+
+Verification:
+- `node --check scripts/verify-sqlite-write-path-budget.mjs`: passed.
+- `node scripts/verify-sqlite-write-path-budget.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-event-fast-lane.mjs`: passed.
+- `npm run check:fast`: passed, 98/98; behavior tests passed, 987/987.
+
 ## Completed Phases
 
 | Phase | Module | Lines |
