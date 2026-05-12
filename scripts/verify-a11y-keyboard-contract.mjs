@@ -12,6 +12,7 @@ const read = (relativePath) => readFileSync(path.join(root, relativePath), "utf8
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const consoleHtml = read("src/desktop/renderer/console.html");
+const desktopGuiSmoke = read("src/desktop/smoke/desktop-gui-smoke-runner.mjs");
 
 assert.match(overlayHtml, /<div class="quick-toolbar" role="toolbar" aria-label="快捷操作">/,
   "overlay quick toolbar must expose toolbar semantics");
@@ -65,5 +66,16 @@ assert.match(overlayJs, /taskListPanel\?\.addEventListener\("keydown"[\s\S]{0,12
 
 assert.match(consoleHtml, /<button[^>]+role="tab"[^>]+aria-selected="true"/,
   "console rail must continue exposing selected tab semantics");
+assert.match(desktopGuiSmoke, /sendInputEvent\(\{\s*type:\s*"keyDown"/,
+  "desktop GUI smoke must use real keyboard input events for a11y paths");
+for (const checkName of [
+  "overlay_task_list_keyboard_nav",
+  "console_settings_keyboard_nav",
+  "console_schedule_form_keyboard_labels",
+  "popup_approval_card_keyboard_reject_closes"
+]) {
+  assert.match(desktopGuiSmoke, new RegExp(`pass\\("${checkName}"`, "u"),
+    `desktop GUI smoke must include keyboard check: ${checkName}`);
+}
 
 console.log("a11y keyboard contract ok");

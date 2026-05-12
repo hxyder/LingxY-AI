@@ -86,6 +86,9 @@ for (const required of [
   "runtime-submission-client",
   "runtime-user-memory-client",
   "runtime-preflight-client",
+  "DX-004 Keyboard/a11y GUI pass",
+  "Overlay task-list open/filter/Escape",
+  "approval popup reject by keyboard",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

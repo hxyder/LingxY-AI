@@ -251,6 +251,34 @@ Verification:
 Next valid work:
 - Commit DX-003 and start DX-004 keyboard-only/a11y GUI pass.
 
+## Codex Review: DX-004 Keyboard/A11y GUI Pass
+
+Date: 2026-05-12
+
+Status:
+- DX-004 is complete as a real GUI keyboard/a11y coverage pass.
+
+Scope:
+- Extended `src/desktop/smoke/desktop-gui-smoke-runner.mjs` with native
+  `webContents.sendInputEvent` keyboard driving.
+- Added real Electron smoke coverage for Overlay task-list open, roving filter
+  navigation, and Escape focus restore.
+- Added real Electron smoke coverage for Console Settings and Schedules rail
+  keyboard activation plus visible Settings/Schedule labels.
+- Changed the approval popup close path in GUI smoke from mouse click to
+  keyboard-focused reject via Space.
+- Updated a11y/user-interaction verifiers so these keyboard smoke checks stay
+  required.
+
+Verification:
+- `node scripts/verify-a11y-keyboard-contract.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `npm run check:fast`: passed, 104/104; behavior tests passed, 998/998.
+- `npm run verify:desktop-gui-smoke`: passed, 47/47.
+
+Next valid work:
+- Commit DX-004 and start DX-005 first-run/i18n/preview fidelity.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

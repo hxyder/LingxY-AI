@@ -87,7 +87,10 @@ for (const checkName of [
   "overlay_inline_error_retry",
   "overlay_llm_usage_timeline",
   "overlay_stream_delta_load",
+  "overlay_task_list_keyboard_nav",
   "console_stream_delta_load",
+  "console_settings_keyboard_nav",
+  "console_schedule_form_keyboard_labels",
   "console_stop_button_cancel",
   "console_task_detail_cancel",
   "console_inline_error_retry",
@@ -112,7 +115,7 @@ for (const checkName of [
   "popup_updater_available_card_close",
   "popup_approval_card_visible",
   "popup_approval_card_controls",
-  "popup_approval_card_reject_closes"
+  "popup_approval_card_keyboard_reject_closes"
 ]) {
   assert.equal(desktopGuiSmoke.includes(checkName), true,
     `desktop GUI smoke must retain check: ${checkName}`);

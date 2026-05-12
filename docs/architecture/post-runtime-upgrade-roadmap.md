@@ -25,10 +25,10 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 104/104 after DX-003
-  renderer runtime client consolidation was added.
+- Current green gate: `npm run check:fast` passed 104/104 after DX-004
+  keyboard/a11y GUI smoke coverage was added.
   `npm run verify:desktop-gui-smoke`
-  passed 44/44.
+  passed 47/47.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -61,7 +61,8 @@ Last updated: 2026-05-12.
 | DX-001 Desktop WindowSession | complete | Window owner state, preview stale-delta rejection, popup owner tracking, and GUI smoke coverage are locked by `verify-window-session-state-machine.mjs`. |
 | DX-002 Desktop IPC boundary | complete | `electron-main.mjs` is locked as lifecycle/composition only; 112 IPC registrations live under `src/desktop/main/ipc/` and are guarded against duplicates and large handlers. |
 | DX-003 Renderer runtime client consolidation | complete | Console and Overlay runtime mutations are routed through shared renderer clients and locked by `verify-renderer-runtime-client-consolidation.mjs`. |
-| DX-004 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
+| DX-004 Keyboard/a11y GUI pass | complete | Real Electron smoke now drives Overlay task-list keyboard navigation, Console Settings/Schedules keyboard paths, and approval popup keyboard reject. |
+| DX-005 Desktop first-run/i18n/preview fidelity | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
@@ -388,12 +389,18 @@ Verification:
 
 ### DX-004: Keyboard-Only And A11y GUI Pass
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Cover Settings, provider setup, approval cards, popup cards, branch controls,
   task detail, and schedule forms.
 - Add real GUI smoke hooks for tab order, focus restore, Escape behavior, and
   visible labels.
+- Completed slice covers Overlay task-list open/filter/Escape with native
+  keyboard input, Console Settings and Schedules rail activation with visible
+  labels, and approval popup reject by keyboard. Existing smoke still covers
+  branch controls and task-detail/approval surfaces.
 
 Acceptance:
 
@@ -405,7 +412,7 @@ Verification:
 
 - `node scripts/verify-a11y-keyboard-contract.mjs`
 - `npm run verify:desktop-gui-smoke`
-- New keyboard-only GUI smoke checks.
+- `node scripts/verify-user-interaction-smoke.mjs`
 
 ### DX-005: First-Run, i18n, And Preview Fidelity Completion
 

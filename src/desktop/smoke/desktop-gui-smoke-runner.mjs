@@ -44,6 +44,17 @@ export function createDesktopGuiSmokeRunner({
   async function runDesktopGuiSmoke() {
     const checks = [];
     const pass = (name, extra = {}) => checks.push({ name, ok: true, ...extra });
+    const waitForSmokeFrame = () => new Promise((resolve) => setTimeout(resolve, 40));
+    async function sendKeyboardShortcut(targetWindow, keyCode) {
+      if (!targetWindow || targetWindow.isDestroyed?.()) {
+        throw new Error(`keyboard_target_missing:${keyCode}`);
+      }
+      targetWindow.focus?.();
+      await waitForSmokeFrame();
+      targetWindow.webContents.sendInputEvent({ type: "keyDown", keyCode });
+      targetWindow.webContents.sendInputEvent({ type: "keyUp", keyCode });
+      await waitForSmokeFrame();
+    }
     const smokeRunStartedAt = Date.now();
     let firstWindowReadyMs = null;
     const buildPerfReport = () => {
@@ -229,6 +240,82 @@ export function createDesktopGuiSmokeRunner({
         duration_ms: streamLoad.duration_ms
       });
 
+      overlayWindow.focus?.();
+      await waitForSmokeFrame();
+      const overlayTaskListInitial = await overlayWindow.webContents.executeJavaScript(`(() => {
+        const dock = document.getElementById("taskListDock");
+        dock?.focus();
+        return {
+          focusedDock: document.activeElement === dock,
+          dockLabel: dock?.getAttribute("aria-label") || "",
+          expanded: dock?.getAttribute("aria-expanded") || "",
+          panelOpen: document.getElementById("taskListPanel")?.dataset.open || ""
+        };
+      })()`, true);
+      if (!overlayTaskListInitial?.focusedDock || !overlayTaskListInitial?.dockLabel) {
+        throw new Error("overlay_task_list_keyboard_focus_missing");
+      }
+      await sendKeyboardShortcut(overlayWindow, "Space");
+      let overlayTaskListSnapshot = null;
+      const overlayTaskListOpened = await waitForDesktopGuiSmoke(async () => {
+        overlayTaskListSnapshot = await overlayWindow.webContents.executeJavaScript(`(() => {
+          const panel = document.getElementById("taskListPanel");
+          const dock = document.getElementById("taskListDock");
+          const filters = [...document.querySelectorAll("[data-task-filter]")];
+          return {
+            open: panel?.dataset.open === "true",
+            expanded: dock?.getAttribute("aria-expanded") || "",
+            filterCount: filters.length,
+            activeFilter: filters.find((btn) => btn.getAttribute("aria-selected") === "true")?.dataset.taskFilter || null,
+            activeTabIndex: filters.find((btn) => btn.getAttribute("aria-selected") === "true")?.tabIndex ?? null
+          };
+        })()`, true);
+        return overlayTaskListSnapshot?.open === true
+          && overlayTaskListSnapshot?.expanded === "true"
+          && overlayTaskListSnapshot?.filterCount >= 3
+          && overlayTaskListSnapshot?.activeTabIndex === 0;
+      }, 3000);
+      if (!overlayTaskListOpened) throw new Error("overlay_task_list_keyboard_open_failed");
+      await overlayWindow.webContents.executeJavaScript(`(() => {
+        const active = [...document.querySelectorAll("[data-task-filter]")]
+          .find((btn) => btn.getAttribute("aria-selected") === "true");
+        active?.focus();
+        return true;
+      })()`, true);
+      await sendKeyboardShortcut(overlayWindow, "Right");
+      const overlayTaskListAfterArrow = await overlayWindow.webContents.executeJavaScript(`(() => {
+        const active = [...document.querySelectorAll("[data-task-filter]")]
+          .find((btn) => btn.getAttribute("aria-selected") === "true");
+        return {
+          activeFilter: active?.dataset.taskFilter || null,
+          activeHasFocus: document.activeElement === active,
+          activeTabIndex: active?.tabIndex ?? null
+        };
+      })()`, true);
+      if (!overlayTaskListAfterArrow?.activeHasFocus || overlayTaskListAfterArrow?.activeTabIndex !== 0) {
+        throw new Error("overlay_task_list_keyboard_arrow_failed");
+      }
+      await sendKeyboardShortcut(overlayWindow, "Escape");
+      const overlayTaskListClosed = await waitForDesktopGuiSmoke(async () => {
+        const snapshot = await overlayWindow.webContents.executeJavaScript(`(() => {
+          const dock = document.getElementById("taskListDock");
+          return {
+            panelOpen: document.getElementById("taskListPanel")?.dataset.open || "",
+            expanded: dock?.getAttribute("aria-expanded") || "",
+            focusRestored: document.activeElement === dock
+          };
+        })()`, true);
+        overlayTaskListSnapshot = { ...overlayTaskListSnapshot, ...snapshot };
+        return snapshot.panelOpen === "false"
+          && snapshot.expanded === "false"
+          && snapshot.focusRestored === true;
+      }, 3000);
+      if (!overlayTaskListClosed) throw new Error("overlay_task_list_keyboard_escape_failed");
+      pass("overlay_task_list_keyboard_nav", {
+        initialFilter: overlayTaskListSnapshot?.activeFilter,
+        arrowFilter: overlayTaskListAfterArrow.activeFilter
+      });
+
       registeredShortcutHandlers.get("open-console")?.();
       const consoleWindow = windows.get("console");
       if (!consoleWindow || consoleWindow.isDestroyed?.()) {
@@ -237,6 +324,84 @@ export function createDesktopGuiSmokeRunner({
       const consoleVisible = await waitForDesktopGuiSmoke(() => consoleWindow.isVisible?.() === true, 5000);
       if (!consoleVisible) throw new Error("console_window_not_visible");
       pass("global_shortcut_open_console");
+
+      consoleWindow.focus?.();
+      await waitForSmokeFrame();
+      const consoleSettingsInitial = await consoleWindow.webContents.executeJavaScript(`(() => {
+        const btn = document.querySelector('[data-tab="settings"]');
+        btn?.focus();
+        return {
+          focused: document.activeElement === btn,
+          label: btn?.getAttribute("title") || btn?.textContent?.trim() || ""
+        };
+      })()`, true);
+      if (!consoleSettingsInitial?.focused || !consoleSettingsInitial?.label) {
+        throw new Error("console_settings_keyboard_focus_missing");
+      }
+      await sendKeyboardShortcut(consoleWindow, "Space");
+      let consoleSettingsSnapshot = null;
+      const consoleSettingsActive = await waitForDesktopGuiSmoke(async () => {
+        consoleSettingsSnapshot = await consoleWindow.webContents.executeJavaScript(`(() => {
+          const panel = document.getElementById("panel-settings");
+          const activeBtn = document.querySelector('[data-tab="settings"]');
+          const navLabels = [...document.querySelectorAll("#panel-settings [data-settings-nav]")]
+            .map((item) => item.textContent.trim())
+            .filter(Boolean);
+          return {
+            active: panel?.classList.contains("active") === true,
+            ariaSelected: activeBtn?.getAttribute("aria-selected") || "",
+            navLabels,
+            hasProviderNav: navLabels.some((label) => /AI Providers|供应商|Provider/i.test(label)),
+            hasPrivacyNav: navLabels.some((label) => /Privacy|Security|隐私|安全/i.test(label))
+          };
+        })()`, true);
+        return consoleSettingsSnapshot?.active === true
+          && consoleSettingsSnapshot?.ariaSelected === "true"
+          && consoleSettingsSnapshot?.hasProviderNav === true
+          && consoleSettingsSnapshot?.hasPrivacyNav === true;
+      }, 3000);
+      if (!consoleSettingsActive) throw new Error("console_settings_keyboard_nav_failed");
+      pass("console_settings_keyboard_nav", {
+        navCount: consoleSettingsSnapshot.navLabels.length
+      });
+
+      await consoleWindow.webContents.executeJavaScript(`(() => {
+        const btn = document.querySelector('[data-tab="schedules"]');
+        btn?.focus();
+        return true;
+      })()`, true);
+      await sendKeyboardShortcut(consoleWindow, "Space");
+      let consoleScheduleSnapshot = null;
+      const consoleScheduleActive = await waitForDesktopGuiSmoke(async () => {
+        consoleScheduleSnapshot = await consoleWindow.webContents.executeJavaScript(`(async () => {
+          const panel = document.getElementById("panel-schedules");
+          const command = document.getElementById("scheduleCommandInput");
+          command?.focus();
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          command?.focus();
+          const labels = [...document.querySelectorAll("#scheduleForm label")]
+            .map((label) => label.textContent.trim())
+            .filter(Boolean);
+          return {
+            active: panel?.classList.contains("active") === true,
+            activeElementId: document.activeElement?.id || document.activeElement?.tagName || "",
+            labels,
+            hasCommandLabel: labels.some((label) => /Reminder|Task|要做的事/i.test(label)),
+            hasCreateButton: Boolean(document.querySelector('#scheduleForm button[type="submit"]'))
+          };
+        })()`, true);
+        return consoleScheduleSnapshot?.active === true
+          && consoleScheduleSnapshot?.hasCommandLabel === true
+          && consoleScheduleSnapshot?.hasCreateButton === true;
+      }, 3000);
+      if (!consoleScheduleActive) {
+        throw new Error(`console_schedule_form_keyboard_labels_failed:${JSON.stringify(consoleScheduleSnapshot)}`);
+      }
+      pass("console_schedule_form_keyboard_labels", {
+        labels: consoleScheduleSnapshot.labels,
+        activeElementId: consoleScheduleSnapshot.activeElementId
+      });
+
       const consoleStreamLoad = await waitForDesktopGuiSmoke(async () => {
         if (consoleWindow.isDestroyed?.()) return false;
         const result = await consoleWindow.webContents.executeJavaScript(
@@ -761,13 +926,25 @@ export function createDesktopGuiSmokeRunner({
       }
       pass("popup_approval_card_controls", { labels: popupControls.labels });
 
-      await popupWindow.webContents.executeJavaScript(
-        'Array.from(document.querySelectorAll("#pc-actions button")).find((button) => button.textContent.trim() === "拒绝")?.click(); true',
-        true
-      );
+      const popupRejectFocused = await popupWindow.webContents.executeJavaScript(`(() => {
+        const reject = Array.from(document.querySelectorAll("#pc-actions button"))
+          .find((button) => button.textContent.trim() === "拒绝");
+        reject?.focus();
+        return {
+          focused: document.activeElement === reject,
+          label: reject?.textContent?.trim() || "",
+          ariaLabel: reject?.getAttribute("aria-label") || ""
+        };
+      })()`, true);
+      if (!popupRejectFocused?.focused || popupRejectFocused?.label !== "拒绝") {
+        throw new Error("popup_approval_card_keyboard_focus_failed");
+      }
+      await sendKeyboardShortcut(popupWindow, "Space");
       const popupClosed = await waitForDesktopGuiSmoke(() => popupWindow.isDestroyed?.() === true, 5000);
       if (!popupClosed) throw new Error("popup_approval_card_reject_did_not_close");
-      pass("popup_approval_card_reject_closes");
+      pass("popup_approval_card_keyboard_reject_closes", {
+        label: popupRejectFocused.label
+      });
 
       writeDesktopGuiSmokeResult({ ok: true, checks, perf: buildPerfReport() });
       app.quit();
