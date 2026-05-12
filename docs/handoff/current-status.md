@@ -3836,3 +3836,47 @@ Decision:
 - Remaining maturity-board items are SA-003 and SH-004. Recommended next work is
   SA-003 planner-selected delegation enablement audit, because it can stay
   mostly verifier/eval driven before changing runtime delegation behavior.
+
+## Codex Review: SA-003 Planner-Selected Delegation Enablement Audit
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/service/core/evals/sub-agent-delegation-enablement-audit.mjs` as a
+  machine-readable audit for future sub-agent enablement.
+- Added `docs/architecture/planner-selected-delegation-enablement-audit.md` to
+  document eligible classes, forbidden classes, required gates, and the current
+  disabled-by-default decision.
+- Added `tests/behavior/sub-agent-delegation-enablement-audit.test.mjs` and
+  `scripts/verify-sub-agent-delegation-enablement-audit.mjs`.
+- Updated the maturity roadmap, architecture README, package scripts, and check
+  manifest.
+
+Contract notes:
+- This phase does not enable automatic planner delegation.
+- Eligible classes are audit-only and still require a future feature flag:
+  `delegate_parallel_research`, `delegate_isolated_file_review`, and
+  `delegate_bounded_qa`.
+- Simple tasks, high-risk mutations, and private-context categories remain
+  forbidden.
+- No runtime behavior, IPC channel, HTTP route, tool id, artifact kind, provider
+  id, provider call, storage schema, or renderer behavior changed.
+
+Verification run by Codex:
+- `node --check` on changed SA-003 modules/tests/verifier: passed.
+- `node --test tests/behavior/sub-agent-delegation-enablement-audit.test.mjs`:
+  passed, 3/3.
+- `node scripts/verify-sub-agent-delegation-enablement-audit.mjs`: passed.
+- `node scripts/verify-sub-agent-runtime-contract.mjs`: passed.
+- `node scripts/verify-sub-agent-ui-evals.mjs`: passed.
+- `node scripts/verify-post-runtime-maturity-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 123/123 commands including 1052/1052 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed; only existing line-ending normalization warnings
+  were reported.
+
+Decision:
+- SA-003 is ready to commit.
+- Remaining maturity-board item is SH-004 OS sandbox implementation decision.

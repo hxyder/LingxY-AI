@@ -34,7 +34,7 @@ protocol in `AGENTS.md`.
 | --- | --- | --- |
 | MR-001 Memory review history and undo | complete | Memory proposal approve/reject/delete actions are reviewable and undoable typed governance records. |
 | MR-002 Memory project scope and review filters | complete | Approved/proposed memory can be filtered by scope/project/conversation without leaking unrelated scope. |
-| SA-003 Planner-selected delegation enablement audit | pending | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
+| SA-003 Planner-selected delegation enablement audit | complete | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
 | PM-004 Marketplace management UI | complete | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
 | SH-004 OS sandbox implementation decision | pending | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
 | DX-006 Desktop product acceptance matrix | complete | Broaden manual/real GUI acceptance for daily desktop workflows beyond foundational smoke. |
@@ -171,3 +171,32 @@ Verification:
 - `node scripts/verify-desktop-product-acceptance-matrix.mjs`
 - `node scripts/verify-functional-acceptance.mjs`
 - `node scripts/verify-user-interaction-smoke.mjs`
+
+## SA-003: Planner-Selected Delegation Enablement Audit
+
+Status: complete as of 2026-05-12.
+
+Scope:
+
+- Add a service eval audit for future planner-selected sub-agent enablement.
+- Keep automatic delegation disabled by default.
+- Declare only eval-proven positive classes eligible behind a future feature
+  flag: `delegate_parallel_research`, `delegate_isolated_file_review`, and
+  `delegate_bounded_qa`.
+- Keep simple tasks, high-risk mutations, and private-context cases forbidden.
+- Require budget, allowed-tool subset, context isolation, cancellation, trace,
+  and feature-flag gates before runtime enablement.
+
+Acceptance:
+
+- No runtime planner delegation behavior changes in this phase.
+- The audit is machine-readable and covered by behavior tests.
+- The maturity board blocks any future enablement that skips eval, budget, or
+  trace gates.
+
+Verification:
+
+- `node scripts/verify-sub-agent-delegation-enablement-audit.mjs`
+- `node scripts/verify-sub-agent-runtime-contract.mjs`
+- `node scripts/verify-sub-agent-ui-evals.mjs`
+- `node --test tests/behavior/sub-agent-delegation-enablement-audit.test.mjs`
