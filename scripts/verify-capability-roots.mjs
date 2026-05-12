@@ -33,6 +33,8 @@ const capabilityRoots = [
   "src/service/capabilities/connectors",
   // Providers
   "src/service/capabilities/providers",
+  // Code CLI adapters (CAP-4E preflight current owner)
+  "src/service/ai/code_cli",
   // Extracted tool families and capability-owned helpers
   "src/service/capabilities/tools/browser-web-tools.mjs",
   "src/service/capabilities/tools/os-app-tools.mjs",

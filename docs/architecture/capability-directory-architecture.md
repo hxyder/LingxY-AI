@@ -1,7 +1,7 @@
 # Capability Directory Architecture
 
 Phase CAP-0 inventory of current capability roots and target `src/service/capabilities/**` layout.
-Status: inventory verified against the current repository on 2026-05-11 after CAP-4D provider migration.
+Status: inventory verified against the current repository on 2026-05-11 during CAP-4E Code CLI preflight.
 
 ## Current Capability Roots
 
@@ -17,6 +17,7 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 | MCP | `src/service/capabilities/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/capabilities/connectors/` | Connector tool aggregator, connector plugins, account tools |
 | Providers | `src/service/capabilities/providers/` | Provider catalog, config, model discovery |
+| Code CLI adapters | `src/service/ai/code_cli/` | Code CLI adapter catalog, configured adapters, Kimi runtime probing |
 | Shared capability helpers | `src/service/capabilities/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs` |
 | Service core helpers | `src/service/core/` | `artifact-path-helper.mjs` (artifact boundary) |
 
@@ -33,6 +34,7 @@ src/service/capabilities/
   mcp/             # MCP server config, install, drafts
   connectors/      # connector plugins, accounts
   providers/       # provider catalog, config, discovery
+  code_cli/        # code CLI adapter catalog and runtime probes
   shared/          # cross-capability shared helpers
 ```
 
@@ -50,7 +52,7 @@ src/service/capabilities/
 2. CAP-1 — migrate low-risk/helper built-in tool families into `capabilities/tools/` one family at a time (complete for browser/web/search/translation, email compose, file discovery/stat/artifact lookup, OS app/file/clipboard/notify, scheduler, and the two shared helpers)
 3. CAP-2 — move `action_tools/schemas/` to `capabilities/schemas/` (schema-only, no logic change)
 4. CAP-3 ✅ — move registry, result/type, risk, and policy owners to `capabilities/registry/`
-5. CAP-4 — consolidate skills, MCP, connectors, and providers under `capabilities/`
+5. CAP-4 — consolidate skills, MCP, connectors, providers, and Code CLI adapters under `capabilities/`
 6. CAP-5 — final stale-path cleanup and verifier hardening after capability families move
 
 Each CAP-N phase is a separate PR. No phase moves code without verifier coverage.
