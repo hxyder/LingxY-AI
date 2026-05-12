@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 1,
+  "commit": "replace-with-commit",
+  "branch": "replace-with-branch",
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "gates": {
+    "checkFast": {
+      "command": "npm run check:fast",
+      "status": "not_run",
+      "summary": ""
+    },
+    "electronGuiSmoke": {
+      "command": "npm run verify:desktop-gui-smoke",
+      "status": "not_run",
+      "summary": ""
+    },
+    "releaseReadiness": {
+      "command": "node scripts/verify-release-readiness.mjs",
+      "status": "not_run",
+      "summary": ""
+    }
+  },
+  "desktopProductEvidence": {
+    "schemaVersion": 1,
+    "commit": "replace-with-commit",
+    "branch": "replace-with-branch",
+    "generatedAt": "2026-05-12T00:00:00.000Z",
+    "checkFast": {
+      "command": "npm run check:fast",
+      "status": "not_run",
+      "summary": ""
+    },
+    "electronGuiSmoke": {
+      "command": "npm run verify:desktop-gui-smoke",
+      "status": "not_run",
+      "summary": ""
+    },
+    "realEnvironments": [
+      {
+        "kind": "none",
+        "status": "not_run",
+        "redaction": "no live environment used"
+      }
+    ],
+    "rows": [],
+    "knownIssues": []
+  },
+  "realEvidence": [
+    {
+      "kind": "live_provider_acceptance",
+      "status": "not_run",
+      "summary": "Run only with explicit credentials and live opt-in.",
+      "live": false
+    },
+    {
+      "kind": "connector_oauth_acceptance",
+      "status": "not_run",
+      "summary": "Run only with disposable connector accounts and live opt-in.",
+      "live": false
+    },
+    {
+      "kind": "sandbox_evidence_pack",
+      "status": "not_run",
+      "summary": "Run deterministic local evidence pack before sandbox boundary changes.",
+      "live": false
+    }
+  ],
+  "policyTraces": [],
+  "knownIssues": [],
+  "environment": {
+    "os": "",
+    "node": "",
+    "electron": "",
+    "notes": ""
+  },
+  "releaseDecision": {
+    "status": "not_run",
+    "summary": "",
+    "blockerCount": 0
+  }
+}

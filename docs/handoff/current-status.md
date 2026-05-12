@@ -2,6 +2,42 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: REL-001 Release Evidence Bundle
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/release-evidence-bundle.mjs` as the shared release
+  evidence bundle contract.
+- Added `docs/release/release_evidence_bundle.md` and
+  `docs/release/evidence/release-evidence-bundle.template.json`.
+- Added `scripts/verify-release-evidence-bundle.mjs` and
+  `tests/behavior/release-evidence-bundle.test.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs` and `package.json`.
+
+Decision:
+- No runtime behavior, IPC channel, HTTP route, provider id, tool id, artifact
+  kind, approval semantic, or storage schema changed.
+- Release readiness now has a reproducible bundle shape for check results, GUI
+  smoke, desktop product evidence rows, real evidence refs, policy traces,
+  known issues, environment notes, and release decision.
+- Live evidence refs require redaction notes; partial or failed release
+  decisions require known issues.
+
+Verification:
+- `node --test tests/behavior/release-evidence-bundle.test.mjs`: passed, 3/3.
+- `node scripts/verify-release-evidence-bundle.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-post-runtime-product-gap-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 135/135; behavior tests passed, 1092/1092.
+
+Next valid work:
+- Run the final real API/common-agent acceptance closeout across provider
+  calls, tool use, artifact creation, context, connector guards, memory,
+  fallback, and recovery.
+- Issues found in that closeout must be fixed through framework contracts,
+  tests, or verifiers, not prompt-only or single-scenario patches.
+
 ## Codex Update: CTX-001 Context Selection And Project Packs
 
 Date: 2026-05-12

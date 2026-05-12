@@ -251,6 +251,7 @@
     "verify:public-branding": "node scripts/verify-public-branding.mjs",
     "verify:functional-acceptance": "node scripts/verify-functional-acceptance.mjs",
     "verify:desktop-product-evidence-pack": "node scripts/verify-desktop-product-evidence-pack.mjs",
+    "verify:release-evidence-bundle": "node scripts/verify-release-evidence-bundle.mjs",
     "verify:desktop-gui-daily-workflow-coverage": "node scripts/verify-desktop-gui-daily-workflow-coverage.mjs",
     "verify:capability-inventory-manager": "node scripts/verify-capability-inventory-manager.mjs",
     "verify:capability-creation-lifecycle": "node scripts/verify-capability-creation-lifecycle.mjs",

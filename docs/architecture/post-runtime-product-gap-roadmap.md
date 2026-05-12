@@ -15,8 +15,8 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 134/134 with 1089/1089
-  behavior tests after CTX-001.
+- Current green gate: `npm run check:fast` passed 135/135 with 1092/1092
+  behavior tests after REL-001.
 - `npm run verify:desktop-gui-smoke` passed 49/49 after CTX-001. The earlier
   MMX-001 smoke attempt hit the known task-list keyboard focus timing failure
   and the immediate rerun passed.
@@ -72,7 +72,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | MMX-001 Model role management surface | complete | Users can see planner/executor/reviewer/fast roles, health, cost, fallback, feature-flag state, and live-test action metadata without editing config files. |
 | MMX-002 Budgeted fallback and cascade evidence | complete | Any future model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
 | CTX-001 Context selection and project packs | complete | Users can see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
-| REL-001 Release evidence bundle | pending | Release readiness must bundle check results, GUI smoke, row evidence, known issues, policy traces, and environment notes. |
+| REL-001 Release evidence bundle | complete | Release readiness bundles check results, GUI smoke, row evidence, known issues, policy traces, and environment notes. |
 
 ## Phase Details
 
@@ -469,25 +469,30 @@ Verification:
 
 ### REL-001: Release Evidence Bundle
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Replace scattered release notes with a reproducible local evidence bundle.
 
-Required contents:
+Implemented:
 
-- Commit and branch.
-- Check results.
-- GUI smoke result.
-- Product acceptance rows.
-- Real environment evidence.
-- Known issues.
-- Redacted policy trace summary.
+- Added `src/shared/release-evidence-bundle.mjs`.
+- Added `docs/release/release_evidence_bundle.md`.
+- Added `docs/release/evidence/release-evidence-bundle.template.json`.
+- Added `scripts/verify-release-evidence-bundle.mjs` and
+  `tests/behavior/release-evidence-bundle.test.mjs`.
+- The bundle validates commit/branch, check results, GUI smoke, release
+  readiness, desktop product evidence rows, real evidence refs, policy traces,
+  known issues, environment notes, and release decision.
+- Live evidence refs require redaction notes.
+- Partial or failed release decisions require known issues.
 
 Verification:
 
-- Deterministic bundle-shape verifier.
-- Release-readiness verifier must point to the latest bundle or explicitly
-  state why no product release is being cut.
+- `node --test tests/behavior/release-evidence-bundle.test.mjs`
+- `node scripts/verify-release-evidence-bundle.mjs`
+- `npm run check:fast`
 
 ## Recommended PR Order
 

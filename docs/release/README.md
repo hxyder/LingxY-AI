@@ -17,6 +17,7 @@ Included documents:
 - `functional_acceptance_matrix.md`
 - `desktop_product_acceptance_matrix.md`
 - `desktop_product_evidence_pack.md`
+- `release_evidence_bundle.md`
 - `root_markdown_public_review.md`
 - `known_issues.md`
 - `rollback_plan.md`
