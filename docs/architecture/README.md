@@ -23,6 +23,7 @@ This directory contains the Phase 0 architecture baseline that Phase 1 engineers
 - [window-session-state-machine.md](window-session-state-machine.md)
 - [desktop-ipc-boundaries.md](desktop-ipc-boundaries.md)
 - [desktop-gui-daily-workflow-coverage.md](desktop-gui-daily-workflow-coverage.md)
+- [live-provider-acceptance-harness.md](live-provider-acceptance-harness.md)
 - [capability-inventory-manager.md](capability-inventory-manager.md)
 - [capability-creation-lifecycle.md](capability-creation-lifecycle.md)
 

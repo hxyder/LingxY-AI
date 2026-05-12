@@ -2,6 +2,53 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: LAPI-001 Live Provider Acceptance Harness
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/live-provider-acceptance-harness.mjs` as the typed,
+  secret-redacted live-provider acceptance evidence contract.
+- Added `scripts/real-llm-test/run-live-provider-acceptance.mjs` with a
+  default dry-run mode and explicit live mode via `--live` or
+  `LINGXY_LIVE_PROVIDER_ACCEPTANCE=1`.
+- Added `docs/architecture/live-provider-acceptance-harness.md`,
+  `docs/release/evidence/live-provider-acceptance.template.json`,
+  `scripts/verify-live-provider-acceptance-harness.mjs`, and
+  `tests/behavior/live-provider-acceptance-harness.test.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs`, `package.json`, and the
+  post-runtime product gap roadmap. No IPC channels, HTTP routes, tool ids,
+  artifact kinds, provider ids, or storage schema changed.
+
+Decision:
+- Keep real provider acceptance opt-in so deterministic CI does not depend on
+  paid APIs or local credentials.
+- Dry-run mode is the default evidence contract check; live mode starts or
+  attaches to runtime, reads `/health`, `/ai/providers`, `/config/integrations`,
+  submits one short `/task`, and validates `llm_usage` token/cost trace
+  visibility from `/task/:id`.
+- Fault recovery rows are part of the report contract, but missing-key,
+  rate-limit, invalid-model, and provider-failure induction remain opt-in so
+  the harness does not intentionally burn quota or mutate credentials.
+
+Verification:
+- `node --test tests/behavior/live-provider-acceptance-harness.test.mjs`:
+  passed, 4/4.
+- `node scripts/verify-live-provider-acceptance-harness.mjs`: passed.
+- `node scripts/real-llm-test/run-live-provider-acceptance.mjs`: dry-run
+  passed and wrote a redacted report under `.tmp/live-provider-acceptance`.
+- `node scripts/verify-post-runtime-product-gap-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 130/130; behavior tests passed, 1074/1074.
+- Common provider API environment variables were not present, so no paid live
+  provider call was run in this checkpoint.
+
+Next valid work:
+- Start `CONN-001` real connector/OAuth acceptance: add a disposable-account
+  evidence contract and opt-in runner for OAuth connect/disconnect, token
+  refresh, list operations, guarded send/calendar side effects, and redacted
+  recovery copy.
+
 ## Status: Phases 2B-2G + CAP-0 Inventory/Checkpoint Complete; All Codex Blockers Resolved
 
 All planned low-risk extraction and inventory work across Phases 2A through 2G and CAP-0 is committed. High-risk deferred items: write/edit/run/generate/render tools, GUI automation, capability creator, full capability migration, desktop app directory move. All Codex review blockers from rounds 1-6 resolved. check:fast green.

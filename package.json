@@ -162,6 +162,8 @@
     "verify:provider-health": "node scripts/verify-provider-health.mjs",
     "verify:provider-routing": "node scripts/verify-provider-routing.mjs",
     "verify:conversation-model-override": "node scripts/verify-conversation-model-override.mjs",
+    "verify:live-provider-acceptance-harness": "node scripts/verify-live-provider-acceptance-harness.mjs",
+    "real-llm:provider-acceptance": "node scripts/real-llm-test/run-live-provider-acceptance.mjs",
     "verify:capability-gap-suggestions": "node scripts/verify-capability-gap-suggestions.mjs",
     "verify:provider-setup-onboarding": "node scripts/verify-provider-setup-onboarding.mjs",
     "verify:task-trace-timeline": "node scripts/verify-task-trace-timeline.mjs",

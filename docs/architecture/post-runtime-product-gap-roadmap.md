@@ -15,8 +15,8 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 129/129 with 1070/1070
-  behavior tests after CAPM-002.
+- Current green gate: `npm run check:fast` passed 130/130 with 1074/1074
+  behavior tests after LAPI-001.
 - `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-002
   visible Console skill-install preview integration. The first CAPM-002 GUI
   smoke attempt hit the known task-list keyboard focus timing failure and the
@@ -60,7 +60,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | PG-001 Product gap roadmap and verifier | complete | This board is linked from architecture docs and guarded by `verify-post-runtime-product-gap-roadmap.mjs`. |
 | DXR-001 Desktop evidence pack runner | complete | Release acceptance rows must produce reusable evidence records with commit, gate, real environment, pass/partial/fail, and known-issue links. |
 | DXR-002 Daily conversation/task/artifact GUI matrix | complete | Real Electron smoke must cover attach, follow-up, generate/edit/open, timeline inspection, cancellation/retry, and recovery paths before declaring desktop workflows complete. |
-| LAPI-001 Live provider acceptance harness | pending | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
+| LAPI-001 Live provider acceptance harness | complete | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
 | CONN-001 Real connector/OAuth acceptance | pending | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
@@ -169,10 +169,21 @@ Verification:
 
 ### LAPI-001: Live Provider Acceptance Harness
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Provide opt-in live provider tests for configured local credentials without
   making CI depend on paid APIs.
+
+Implemented:
+
+- `src/shared/live-provider-acceptance-harness.mjs`
+- `scripts/real-llm-test/run-live-provider-acceptance.mjs`
+- `docs/architecture/live-provider-acceptance-harness.md`
+- `docs/release/evidence/live-provider-acceptance.template.json`
+- `scripts/verify-live-provider-acceptance-harness.mjs`
+- `tests/behavior/live-provider-acceptance-harness.test.mjs`
 
 Required scenarios:
 
@@ -185,8 +196,12 @@ Required scenarios:
 
 Verification:
 
-- Deterministic verifier for harness contracts.
-- Opt-in real API command only when credentials are present.
+- `node scripts/verify-live-provider-acceptance-harness.mjs`
+- `node --test tests/behavior/live-provider-acceptance-harness.test.mjs`
+- Dry-run evidence command:
+  `node scripts/real-llm-test/run-live-provider-acceptance.mjs`
+- Opt-in real API command only when credentials are present:
+  `LINGXY_LIVE_PROVIDER_ACCEPTANCE=1 node scripts/real-llm-test/run-live-provider-acceptance.mjs --live`
 - Redacted report with no prompt secrets or API keys.
 
 ### CONN-001: Real Connector/OAuth Acceptance

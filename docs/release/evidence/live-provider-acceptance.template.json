@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "commit": "template",
+  "branch": "template",
+  "mode": "dry_run",
+  "liveOptIn": false,
+  "runtimeBaseUrl": "http://127.0.0.1:4350",
+  "provider": null,
+  "providerSetup": null,
+  "modelRoles": null,
+  "usageTrace": {
+    "observed": false,
+    "tokenUsage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "total_tokens": 0,
+      "cache_hit_tokens": 0,
+      "cache_miss_tokens": 0
+    },
+    "costEstimate": {
+      "estimated_usd": null,
+      "rate_source": "not_available"
+    },
+    "llmUsageCallCount": 0,
+    "callSites": []
+  },
+  "scenarios": [
+    {
+      "id": "provider_setup_health",
+      "label": "Provider setup and health",
+      "status": "not_run",
+      "command": "GET /health + GET /ai/providers",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "short_text_task",
+      "label": "Short text task",
+      "status": "not_run",
+      "command": "POST /task",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "model_role_routing",
+      "label": "Model role routing",
+      "status": "not_run",
+      "command": "GET /config/integrations",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "token_cost_trace",
+      "label": "Token and cost trace",
+      "status": "not_run",
+      "command": "GET /task/:id",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "missing_key_recovery",
+      "label": "Missing key recovery",
+      "status": "not_run",
+      "command": "fault injection",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "rate_limit_recovery",
+      "label": "Rate limit recovery",
+      "status": "not_run",
+      "command": "fault injection",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "invalid_model_recovery",
+      "label": "Invalid model recovery",
+      "status": "not_run",
+      "command": "fault injection",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "provider_failure_recovery",
+      "label": "Provider failure recovery",
+      "status": "not_run",
+      "command": "fault injection",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    }
+  ],
+  "redaction": "secrets, prompts, request bodies, and provider headers are omitted or redacted",
+  "notes": [
+    "template only; no live provider request was made"
+  ]
+}
