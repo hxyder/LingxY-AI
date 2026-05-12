@@ -2641,3 +2641,52 @@ Decision:
 - CAP-4A physical move is ready to commit.
 - After CAP-4A is committed, the next valid phase is CAP-4B MCP surface
   preflight, not a broad MCP/connectors/provider move.
+
+## Codex Review: CAP-4B MCP Surface Static Preflight
+
+Date: 2026-05-11
+
+Scope:
+- Added `docs/architecture/mcp-surface-boundary.md`.
+- Added `scripts/verify-mcp-surface-contract.mjs` and wired it into full and
+  fast check manifests.
+- Did not move, rename, or refactor MCP product source files.
+- Did not change MCP behavior, IPC channels, HTTP routes, tool ids, artifact
+  kinds, provider ids, or storage schema.
+
+Preflight locked:
+- Current MCP runtime owner remains `src/service/ai/mcp/` until the physical
+  CAP-4B move.
+- Public MCP exports remain available from registry, builtin, configured,
+  descriptor-validation, drafts, env-resolver, install-detection,
+  install-execution, install-sandbox, auto-install, client-bridge, and internal
+  server modules.
+- MCP owner files do not import desktop, Electron, or renderer modules.
+- Desktop UI/view-model files do not import MCP runtime internals.
+- MCP install execution keeps using `spawnExternal`.
+- External MCP tools remain wrapped through client-bridge/catalog/workflow
+  dispatcher instead of direct prompt injection.
+- `/ai/mcp`, `/ai/mcp/:id/toggle`, `/ai/mcp/:id/config`,
+  `/config/mcp/servers`, `/config/mcp/test`, `/config/mcp/drafts/import`,
+  `/config/mcp/install/plan`, `/config/mcp/install/preview`, and
+  `/config/mcp/install/run` remain service HTTP contracts.
+
+Verification run by Codex:
+- `node --check scripts/verify-mcp-surface-contract.mjs`: passed.
+- `node scripts/verify-mcp-surface-contract.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 88/88.
+
+Decision:
+- CAP-4B preflight is ready to commit.
+- Next valid step after committing this preflight is the CAP-4B physical move:
+  - create `src/service/capabilities/mcp/`;
+  - move all files from `src/service/ai/mcp/` into that owner;
+  - update every active import in product code, tests, scripts, and docs;
+  - update `verify-mcp-surface-contract.mjs`, `verify-capability-roots.mjs`,
+    `verify-structure.mjs`, `verify-service-core.mjs`,
+    `verify-internal-mcp-server.mjs`, `verify-stale-owner-paths.mjs`, and
+    inventories;
+  - prove `src/service/ai/mcp/` is gone or contains no reachable
+    implementation files;
+  - do not leave compatibility barrels once callers are migrated.
