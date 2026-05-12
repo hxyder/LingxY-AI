@@ -48,7 +48,7 @@ is a live aggregator plus remaining inline high-risk families.
 
 | Family | Tool IDs | Lines (approx) | Risk |
 |--------|----------|----------------|------|
-| File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects) |
+| File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects); CAP-5F preflight locked in `docs/architecture/write-edit-run-tools-boundary.md` |
 | Document / Artifact / Diagram / SVG | `generate_document`, `render_diagram`, `render_svg` | ~680 | high (artifact-producing) |
 | Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
 
