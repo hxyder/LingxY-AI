@@ -30,6 +30,7 @@ for (const required of [
   "node scripts/verify-marketplace-management-ui.mjs",
   "node scripts/verify-desktop-product-acceptance-matrix.mjs",
   "node scripts/verify-sub-agent-delegation-enablement-audit.mjs",
+  "node scripts/verify-os-sandbox-implementation-decision.mjs",
   "node --test tests/behavior/user-memory-profile.test.mjs"
 ]) {
   assert.ok(roadmap.includes(required), `maturity roadmap missing required text: ${required}`);

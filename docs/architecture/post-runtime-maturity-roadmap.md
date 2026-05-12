@@ -11,8 +11,8 @@ protocol in `AGENTS.md`.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 119/119 with 1047/1047
-  behavior tests after MR-001.
+- Current green gate: `npm run check:fast` passed 124/124 with 1057/1057
+  behavior tests after SH-004.
 - The previous board's Tracking Register is complete; do not reopen completed
   phases without a new measured gap.
 
@@ -36,7 +36,7 @@ protocol in `AGENTS.md`.
 | MR-002 Memory project scope and review filters | complete | Approved/proposed memory can be filtered by scope/project/conversation without leaking unrelated scope. |
 | SA-003 Planner-selected delegation enablement audit | complete | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
 | PM-004 Marketplace management UI | complete | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
-| SH-004 OS sandbox implementation decision | pending | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
+| SH-004 OS sandbox implementation decision | complete | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
 | DX-006 Desktop product acceptance matrix | complete | Broaden manual/real GUI acceptance for daily desktop workflows beyond foundational smoke. |
 
 ## MR-001: Memory Review History And Undo
@@ -200,3 +200,39 @@ Verification:
 - `node scripts/verify-sub-agent-runtime-contract.mjs`
 - `node scripts/verify-sub-agent-ui-evals.mjs`
 - `node --test tests/behavior/sub-agent-delegation-enablement-audit.test.mjs`
+
+## SH-004: OS Sandbox Implementation Decision
+
+Status: complete as of 2026-05-12.
+
+Scope:
+
+- Add a service-owned implementation decision for current high-risk isolation
+  surfaces without adding a new OS sandbox.
+- Derive the implementation decision from
+  `src/service/security/isolation-decision-records.mjs` so every current
+  isolation record must have a matching implementation decision.
+- Keep file operations, external commands, browser automation, audio daemons,
+  and MCP install sandbox on their current boundaries.
+- Keep OCR extractors as a measured worker/child-process/OS-sandbox candidate
+  until latency, memory, packaging, or binary-execution evidence justifies a
+  stronger process boundary.
+
+Acceptance:
+
+- `noNewOsSandbox` remains true for the current program.
+- Every current isolation decision has an implementation decision, required
+  evidence before change, rollback path, and user recovery contract.
+- OS sandboxing cannot be introduced as a general business-logic rewrite or a
+  broad refactor without updating the decision record, behavior tests, and
+  verifier in the same change.
+- Real API, GUI, hardware, or packaged-build tests are required only when the
+  changed boundary depends on those surfaces; deterministic policy changes stay
+  covered by behavior tests and `check:fast`.
+
+Verification:
+
+- `node scripts/verify-os-sandbox-implementation-decision.mjs`
+- `node scripts/verify-sandbox-decision-records.mjs`
+- `node scripts/verify-privacy-sandbox-policy.mjs`
+- `node --test tests/behavior/os-sandbox-implementation-decision.test.mjs`

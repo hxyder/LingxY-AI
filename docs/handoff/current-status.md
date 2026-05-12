@@ -3880,3 +3880,55 @@ Verification run by Codex:
 Decision:
 - SA-003 is ready to commit.
 - Remaining maturity-board item is SH-004 OS sandbox implementation decision.
+
+## Codex Review: SH-004 OS Sandbox Implementation Decision
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/service/security/os-sandbox-implementation-decision.mjs` as the
+  service-owned implementation decision derived from current isolation decision
+  records.
+- Added `docs/architecture/os-sandbox-implementation-decision.md`,
+  `tests/behavior/os-sandbox-implementation-decision.test.mjs`, and
+  `scripts/verify-os-sandbox-implementation-decision.mjs`.
+- Updated the maturity roadmap, architecture README, package script, and check
+  manifest.
+
+Decision:
+- No new OS sandbox is introduced in SH-004.
+- Current boundaries remain: service in-process for file operations,
+  child-process lanes for external commands and MCP install sandbox,
+  browser/extension process boundary for browser automation, external daemon
+  contract for audio, and measured candidate status for OCR extractors.
+- Future OS sandbox work must update the isolation record, implementation
+  decision, behavior tests, and verifier in the same change, with measured
+  evidence before changing boundaries.
+
+Contract notes:
+- No runtime behavior, IPC channel, HTTP route, tool id, artifact kind,
+  provider id, provider call, storage schema, or renderer behavior changed.
+- Real API, GUI, hardware, or packaged-build tests were not required because
+  SH-004 is deterministic security policy/decision wiring, not a live boundary
+  behavior change.
+
+Verification run by Codex:
+- `node --check` on changed SH-004 module/test/verifier files: passed.
+- `node --test tests/behavior/os-sandbox-implementation-decision.test.mjs tests/behavior/isolation-decision-records.test.mjs tests/behavior/privacy-sandbox-policy.test.mjs`:
+  passed, 14/14.
+- `node scripts/verify-os-sandbox-implementation-decision.mjs`: passed.
+- `node scripts/verify-sandbox-decision-records.mjs`: passed.
+- `node scripts/verify-privacy-sandbox-policy.mjs`: passed.
+- `node scripts/verify-post-runtime-maturity-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 124/124 commands including 1057/1057 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed; only existing line-ending normalization warnings
+  were reported.
+
+Decision:
+- SH-004 is ready to commit.
+- The current maturity board is now complete. Next valid work is to open the
+  next tracked roadmap board for desktop experience, long-term plugin/sandbox,
+  multi-model, capability management, and real-world acceptance gaps.

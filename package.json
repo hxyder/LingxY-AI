@@ -173,6 +173,7 @@
     "verify:approval-resume-state": "node scripts/verify-approval-resume-state.mjs",
     "verify:i18n-onboarding": "node scripts/verify-i18n-onboarding.mjs",
     "verify:privacy-sandbox-policy": "node scripts/verify-privacy-sandbox-policy.mjs",
+    "verify:os-sandbox-implementation-decision": "node scripts/verify-os-sandbox-implementation-decision.mjs",
     "verify:model-role-routing": "node scripts/verify-model-role-routing.mjs",
     "verify:live-write-grading": "node scripts/verify-live-write-grading.mjs",
     "verify:ai-integrations": "node scripts/verify-ai-integrations.mjs",
