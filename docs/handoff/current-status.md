@@ -62,6 +62,35 @@ Next valid work:
 - Start RT-003 context trace persistence and budget audit.
 - Use RT-002's decision as the starting point: compact task metadata is the current canonical trace storage unless RT-003 proves a persistent trace table is needed.
 
+## Codex Update: RT-003 Context Trace Budget
+
+Date: 2026-05-11
+
+Scope:
+- Added `docs/architecture/context-trace-budget.md` as the RT-003 context trace decision record.
+- Added `scripts/verify-context-trace-budget.mjs` and wired it into full and fast check manifests.
+- Updated the post-runtime roadmap to mark RT-003 complete.
+- Did not change product runtime behavior, storage schema, IPC channels, HTTP routes, tool ids, artifact kinds, provider ids, connector behavior, or desktop UI code.
+
+Decision:
+- Compact task metadata is the canonical context trace storage for the current program.
+- Do not add `context_compile_traces` in RT-003.
+- Keep full candidate traces debug-only and full compiled-context JSON copy-only in the Context Debug Panel.
+
+Verification:
+- `node --check scripts/verify-context-trace-budget.mjs`: passed.
+- `node scripts/verify-context-trace-budget.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node --test tests/behavior/context-compiler.test.mjs tests/behavior/context-debug-panel.test.mjs tests/behavior/task-runtime-task-record.test.mjs`: passed, 13/13.
+- `node scripts/verify-context-compiler-v1.mjs`: passed.
+- `node scripts/verify-context-debug-panel-lazy-load.mjs`: passed.
+- `node scripts/verify-session-context-artifact-write-budget.mjs`: passed.
+- `npm run check:fast`: passed, 100/100; behavior tests passed, 987/987.
+
+Next valid work:
+- Start RT-004 permission and mode model.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

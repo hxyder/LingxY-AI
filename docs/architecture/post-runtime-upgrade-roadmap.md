@@ -25,8 +25,8 @@ Last updated: 2026-05-11.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 99/99 after RT-002
-  session/context/artifact write-budget verification was added.
+- Current green gate: `npm run check:fast` passed 100/100 after RT-003
+  context trace budget verification was added.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -55,7 +55,7 @@ Last updated: 2026-05-11.
 | Phase | Status | Tracking rule |
 | --- | --- | --- |
 | PX-001 Roadmap/status hygiene | complete | This roadmap is linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
-| RT-001 to RT-004 Runtime persistence/context/mode | in progress | RT-001 and RT-002 are complete as direct-write audit/enforcement phases; RT-003 starts from compact compiled-context trace storage. Each later phase needs a verifier and measured decision record. |
+| RT-001 to RT-004 Runtime persistence/context/mode | in progress | RT-001, RT-002, and RT-003 are complete as direct-write/compact-trace audit phases; RT-004 is next. Each later phase needs a verifier and measured decision record. |
 | DX-001 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
@@ -203,6 +203,8 @@ Verification:
 
 ### RT-003: Context Trace Persistence And Budget Audit
 
+Status: complete as of 2026-05-11.
+
 Scope:
 
 - Reconcile the older `context_compile_traces` plan with the current compact
@@ -218,11 +220,21 @@ Acceptance:
 - Full traces remain opt-in and do not render by default.
 - Stale older trace surfaces are deleted or archived after replacement.
 
+Decision:
+
+- See `docs/architecture/context-trace-budget.md`.
+- Current decision: compact task metadata is the canonical context trace storage
+  for the current program.
+- Do not add `context_compile_traces` in RT-003.
+- Keep full candidate traces debug-only and full compiled context JSON copy-only
+  in the Context Debug Panel.
+
 Verification:
 
 - `node scripts/verify-context-compiler-v1.mjs`
 - `node scripts/verify-context-debug-panel-lazy-load.mjs`
-- New context trace budget verifier.
+- `node scripts/verify-context-trace-budget.mjs`
+- `npm run check:fast`
 
 ### RT-004: Permission And Mode Model
 

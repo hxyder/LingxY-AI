@@ -68,7 +68,10 @@ for (const required of [
   "node scripts/verify-sqlite-write-path-budget.mjs",
   "Current decision is to keep direct service-owned SQLite writes",
   "node scripts/verify-session-context-artifact-write-budget.mjs",
-  "RT-001 and RT-002 are complete"
+  "RT-001, RT-002, and RT-003 are complete",
+  "docs/architecture/context-trace-budget.md",
+  "node scripts/verify-context-trace-budget.mjs",
+  "compact task metadata is the canonical context trace storage"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
 }
