@@ -4,13 +4,16 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
-  rmSync,
   statSync,
   writeFileSync
 } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  archiveMarketplaceInstallDirectory,
+  normalizeMarketplaceDistribution
+} from "../../marketplace/distribution-policy.mjs";
 import { buildMarketplaceTrustPreview } from "../../marketplace/trust-model.mjs";
 
 const STATE_FILE = ".state.json";
@@ -67,6 +70,25 @@ function listInstalledDirectories(pluginsDir) {
     .filter(({ directory }) => existsSync(path.join(directory, MANIFEST_FILE)));
 }
 
+function attachMarketplaceMetadata(plugin, manifest = {}) {
+  const withSignature = {
+    ...plugin,
+    signature: manifest.signature ?? plugin.signature ?? null,
+    shareable: manifest.shareable === true || plugin.shareable === true
+  };
+  const distribution = normalizeMarketplaceDistribution(withSignature, { kind: "plugin" });
+  const next = {
+    ...withSignature,
+    distribution,
+    signatureVerified: distribution.signature.state === "verified",
+    shareable: distribution.shareable
+  };
+  return {
+    ...next,
+    trustPreview: buildMarketplaceTrustPreview(next, { kind: "plugin" })
+  };
+}
+
 function describeBuiltInPlugins(rootConnectorsDir) {
   if (!existsSync(rootConnectorsDir)) return [];
   return readdirSync(rootConnectorsDir, { withFileTypes: true })
@@ -82,10 +104,7 @@ function describeBuiltInPlugins(rootConnectorsDir) {
         directory: path.join(rootConnectorsDir, entry.name),
         mcpServers: []
       };
-      return {
-        ...plugin,
-        trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
-      };
+      return attachMarketplaceMetadata(plugin);
     });
 }
 
@@ -120,10 +139,7 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
         directory,
         mcpServers: Array.isArray(manifest.mcpServers) ? manifest.mcpServers : []
       };
-      return {
-        ...plugin,
-        trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
-      };
+      return attachMarketplaceMetadata(plugin, manifest);
     } catch (error) {
       const plugin = {
         id,
@@ -134,10 +150,7 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
         error: error.message,
         mcpServers: []
       };
-      return {
-        ...plugin,
-        trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
-      };
+      return attachMarketplaceMetadata(plugin);
     }
   }
 
@@ -149,10 +162,7 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
         ...plugin,
         enabled: state[plugin.id]?.enabled !== false
       };
-      return {
-        ...next,
-        trustPreview: buildMarketplaceTrustPreview(next, { kind: "plugin" })
-      };
+      return attachMarketplaceMetadata(next);
     });
     const installed = listInstalledDirectories(dir).map(({ id, directory }) => readPluginRecord(id, directory));
     return [...builtInsWithState, ...installed];
@@ -220,9 +230,11 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
       directory: resolved,
       mcpServers: Array.isArray(manifest.mcpServers) ? manifest.mcpServers : []
     };
+    const withMarketplace = attachMarketplaceMetadata(plugin, manifest);
     return {
-      plugin,
-      trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
+      plugin: withMarketplace,
+      trustPreview: withMarketplace.trustPreview,
+      distribution: withMarketplace.distribution
     };
   }
 
@@ -249,7 +261,11 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
     state[manifest.id] = {
       enabled: true,
       installedAt: new Date().toISOString(),
-      version: manifest.version ?? "0.0.0"
+      version: manifest.version ?? "0.0.0",
+      signatureState: normalizeMarketplaceDistribution({
+        signature: manifest.signature ?? null,
+        shareable: manifest.shareable === true
+      }, { kind: "plugin" }).signature.state
     };
     writeStateFile(dir, state);
 
@@ -302,12 +318,21 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
     if (plugin.source === "builtin") {
       throw new Error("built-in plugins cannot be uninstalled; disable instead");
     }
-    rmSync(plugin.directory, { recursive: true, force: true });
+    const archive = archiveMarketplaceInstallDirectory({
+      sourceDir: plugin.directory,
+      archiveRoot: path.join(dir, ".archive"),
+      id: plugin.id
+    });
     const state = readStateFile(dir);
     delete state[pluginId];
     writeStateFile(dir, state);
     reload();
-    return plugin;
+    return attachMarketplaceMetadata({
+      ...plugin,
+      ...archive,
+      enabled: false,
+      status: "archived"
+    });
   }
 
   return {

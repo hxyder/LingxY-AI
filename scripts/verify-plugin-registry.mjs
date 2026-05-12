@@ -117,8 +117,11 @@ runtime.pluginRegistry.setEnabled("demo", true);
 assert.ok(runtime.connectorCatalog.getTool("demo.app.ping"), "re-enabled plugin tool must reappear");
 const removed = await runtime.pluginRegistry.uninstall("demo");
 assert.equal(removed.id, "demo");
+assert.equal(removed.status, "archived");
+assert.ok(removed.archivePath && existsSync(removed.archivePath), "uninstalled plugin must be recoverably archived");
 assert.equal(runtime.connectorCatalog.getTool("demo.app.ping"), null, "uninstalled plugin tool must disappear");
 assert.ok(!existsSync(path.join(pluginsDir, "demo")));
+assert.ok(!runtime.pluginRegistry.list().some((plugin) => plugin.id === "demo"), "archived plugin must not remain discoverable");
 
 // Built-in plugins cannot be uninstalled.
 await assert.rejects(async () => {

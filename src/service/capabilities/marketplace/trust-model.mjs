@@ -1,3 +1,5 @@
+import { normalizeMarketplaceDistribution } from "./distribution-policy.mjs";
+
 export const MARKETPLACE_TRUST_SCHEMA_VERSION = 1;
 
 export const MARKETPLACE_TRUST_FLAGS = Object.freeze({
@@ -39,8 +41,10 @@ function sourceKind(source = "") {
   return value || "runtime_config";
 }
 
-function hasSignature(entry = {}) {
-  return Boolean(entry.signature || entry.signatureVerified === true || entry.signed === true);
+function hasVerifiedSignature(entry = {}) {
+  const distribution = entry.distribution ?? normalizeMarketplaceDistribution(entry);
+  return distribution.signature?.state === "verified"
+    || entry.signatureVerified === true;
 }
 
 function isDeleted(entry = {}) {
@@ -58,6 +62,7 @@ function isDisabled(entry = {}) {
 }
 
 export function classifyMarketplaceTrust(entry = {}, { kind = "capability" } = {}) {
+  const distribution = entry.distribution ?? normalizeMarketplaceDistribution(entry, { kind });
   const source = sourceFrom(entry);
   const normalizedSource = sourceKind(source);
   const flags = new Set();
@@ -77,7 +82,7 @@ export function classifyMarketplaceTrust(entry = {}, { kind = "capability" } = {
   if (trusted) flags.add(MARKETPLACE_TRUST_FLAGS.TRUSTED);
   if (localOnly) flags.add(MARKETPLACE_TRUST_FLAGS.LOCAL_ONLY);
   if (thirdParty) flags.add(MARKETPLACE_TRUST_FLAGS.THIRD_PARTY);
-  if (thirdParty && !hasSignature(entry)) flags.add(MARKETPLACE_TRUST_FLAGS.UNSIGNED);
+  if (thirdParty && !hasVerifiedSignature({ ...entry, distribution })) flags.add(MARKETPLACE_TRUST_FLAGS.UNSIGNED);
   if (isDisabled(entry)) flags.add(MARKETPLACE_TRUST_FLAGS.DISABLED);
   if (isDeleted(entry)) flags.add(MARKETPLACE_TRUST_FLAGS.DELETED);
 
@@ -91,7 +96,9 @@ export function classifyMarketplaceTrust(entry = {}, { kind = "capability" } = {
     trusted,
     localOnly: flags.has(MARKETPLACE_TRUST_FLAGS.LOCAL_ONLY),
     thirdParty: flags.has(MARKETPLACE_TRUST_FLAGS.THIRD_PARTY),
-    signed: hasSignature(entry),
+    signed: hasVerifiedSignature({ ...entry, distribution }),
+    signatureState: distribution.signature?.state ?? "unsigned",
+    distribution,
     enabled: !flags.has(MARKETPLACE_TRUST_FLAGS.DISABLED),
     deleted: flags.has(MARKETPLACE_TRUST_FLAGS.DELETED),
     trustFlags,
@@ -127,6 +134,7 @@ export function buildMarketplaceTrustPreview(entry = {}, options = {}) {
   const trust = classifyMarketplaceTrust(entry, options);
   return {
     trust,
+    distribution: trust.distribution,
     title: asString(entry.displayName ?? entry.name ?? entry.id) || trust.id,
     description: asString(entry.description),
     source: trust.source,

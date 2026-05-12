@@ -38,6 +38,12 @@ A plugin directory must contain a `plugin.json` manifest:
   ],
   "requires": {
     "node": ">=18"
+  },
+  "signature": {
+    "scheme": "minisign",
+    "signer": "example",
+    "digest": "sha256:...",
+    "verified": false
   }
 }
 ```
@@ -49,6 +55,9 @@ Rules:
 - `workflows` paths must resolve to JSON files the workflow dispatcher can load.
 - `mcpServers` are optional. Each entry follows the registry's server shape (id, transport, command, args, env). When the plugin is enabled, each server is registered into `runtime.mcpRegistry` with `enabled: false` so the user still has to flip it on in Console → Connectors → MCP.
 - `requires.node` is checked at install time.
+- `signature` is optional distribution metadata. Raw signature metadata is not
+  trusted by itself; only verifier-marked `verified: true` clears the unsigned
+  third-party warning and can mark a package as shareable.
 
 ## 2. Install sources
 
@@ -89,7 +98,12 @@ DELETE /plugins/<id>
 ```
 
 - Built-in plugins return 400.
-- Installed plugins: the registry removes `<userData>/plugins/<id>/`, updates `.state.json`, reloads the catalog, and de-registers any mcpServers declared in the manifest.
+- Installed plugins: the registry moves `<userData>/plugins/<id>` into
+  `<userData>/plugins/.archive/<id>-<timestamp>-<random>` for recovery, updates
+  `.state.json`, reloads the catalog, and de-registers any mcpServers declared
+  in the manifest.
+- Archived plugins are not active plugin roots and must not remain discoverable
+  as runnable catalog tools or workflows.
 
 ## 5. Reload
 
@@ -103,7 +117,20 @@ Triggers `catalog.reload()` without changing installation state. Use this after 
 
 The `connector_plugin_manage` action tool lets the model call `list`, `enable`, `disable`, or `reload`. It *cannot* install or uninstall — those are user-authorised actions only (Console UI or direct HTTP from a trusted client).
 
-## 7. How this compares
+## 7. Signature and archive policy
+
+Plugin records expose normalized marketplace distribution metadata:
+
+- `distribution.signature.state`: `unsigned`, `unverified`, or `verified`.
+- `distribution.shareable`: true only for explicitly shareable packages whose
+  signature has been verified.
+- `distribution.archive.state`: `active` or `archived`.
+
+Install previews, installed plugin records, and uninstall responses expose this
+metadata alongside `trustPreview`. Archived entries are recovery data only; they
+are not loaded by `pluginRootsProvider()` and are not active catalog entries.
+
+## 8. How this compares
 
 | Aspect | Claude Code plugins | Codex config | LingxY plugin |
 |---|---|---|---|

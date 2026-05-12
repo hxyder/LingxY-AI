@@ -157,6 +157,13 @@ for (const required of [
   "governance_blocked",
   "node scripts/verify-mcp-governance-policy.mjs",
   "node --test tests/behavior/mcp-governance.test.mjs",
+  "PM-003: Sharing, Signatures, And Archive Cleanup",
+  "src/service/capabilities/marketplace/distribution-policy.mjs",
+  "distribution.signature",
+  "distribution.shareable",
+  "distribution.archive",
+  "node scripts/verify-marketplace-distribution-policy.mjs",
+  "node --test tests/behavior/marketplace-distribution-policy.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

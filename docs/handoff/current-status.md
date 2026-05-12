@@ -3459,3 +3459,38 @@ Decision:
 - PM-002 is ready to commit.
 - Next valid work is PM-003 sharing/signatures/archive-cleanup preflight unless
   sandbox/sidecar decision records are prioritized.
+
+## Codex Review: PM-003 Marketplace Distribution Policy
+
+Date: 2026-05-12
+
+Scope:
+- Added normalized marketplace distribution policy in
+  `src/service/capabilities/marketplace/distribution-policy.mjs`.
+- Trust preview now exposes normalized distribution metadata and treats raw
+  third-party signatures as `unverified` until verifier-marked `verified: true`.
+- Connector plugin preview/install/list/uninstall records now expose
+  `distribution.signature`, `distribution.shareable`, and
+  `distribution.archive`.
+- Installed plugin uninstall now archives the plugin directory under
+  `<plugins>/.archive/` and removes it from active plugin roots so connector
+  catalog reload cannot keep stale runnable tools/workflows.
+- Updated plugin lifecycle docs and roadmap tracking. No IPC channels, HTTP
+  routes, tool ids, artifact kinds, provider ids, or storage schema changed.
+
+Verification run by Codex:
+- `node --check` on changed PM-003 modules/tests/verifier: passed.
+- `node --test tests/behavior/marketplace-distribution-policy.test.mjs`:
+  passed, 5/5.
+- `node scripts/verify-marketplace-distribution-policy.mjs`: passed.
+- `node scripts/verify-plugin-registry.mjs`: passed.
+- `node scripts/verify-marketplace-trust-model.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 113/113 commands including 1034/1034 behavior
+  tests.
+
+Decision:
+- PM-003 is ready to commit.
+- Phase G marketplace foundation is complete at the service-contract level.
+- Next valid work is Phase H sandbox/sidecar/security export decision-record
+  preflight, starting with SH-001.
