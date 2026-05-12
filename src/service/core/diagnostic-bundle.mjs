@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { redactForExport, redactRuntimeConfigForExport } from "./export-bundle.mjs";
+import { buildPolicyTraceExport } from "../security/policy-trace-export.mjs";
 
 const DIAGNOSTIC_SCHEMA_VERSION = 1;
 const DEFAULT_LIMITS = Object.freeze({
@@ -188,6 +189,11 @@ export async function buildRuntimeDiagnosticBundle(runtime, options = {}) {
     taskEventSamples: buildTaskEventSamples(store, tasks, limits),
     schedules: limitArray(schedules, 30).map(scheduleDiagnosticSummary),
     recentAuditLogs: limitArray(auditLogs, limits.auditLogs).map((entry) => redactForExport(entry)),
+    policyTrace: buildPolicyTraceExport(runtime, {
+      auditLimit: limits.auditLogs,
+      approvalLimit: limits.auditLogs,
+      taskEventLimit: limits.taskEventTasks * limits.taskEventsPerTask
+    }),
     desktopErrors: logsDir ? await readJsonlTail(path.join(logsDir, "desktop-errors.jsonl"), limits.desktopErrors) : [],
     crashDumps: await listCrashDumps(logsDir, limits.crashDumps),
     manifest: {
@@ -199,6 +205,7 @@ export async function buildRuntimeDiagnosticBundle(runtime, options = {}) {
         "task_event_samples",
         "schedules",
         "recent_audit_logs",
+        "policy_trace",
         "desktop_error_log",
         "crash_dump_manifest"
       ],

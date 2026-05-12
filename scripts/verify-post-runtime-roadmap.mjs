@@ -172,6 +172,11 @@ for (const required of [
   "SH-002: Sidecar Decision Record Template",
   "docs/architecture/sidecar-decision-record.md",
   "business-logic rewrite",
+  "SH-003: Audit Export And Policy Trace",
+  "src/service/security/policy-trace-export.mjs",
+  "docs/architecture/security-policy-trace-export.md",
+  "node scripts/verify-policy-trace-export.mjs",
+  "node --test tests/behavior/policy-trace-export.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

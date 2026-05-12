@@ -3525,3 +3525,40 @@ Verification run by Codex:
 Decision:
 - SH-001 and SH-002 are ready to commit.
 - Next valid work is SH-003 audit export and policy trace.
+
+## Codex Review: SH-003 Audit Export And Policy Trace
+
+Date: 2026-05-12
+
+Scope:
+- Added redacted policy trace export builder in
+  `src/service/security/policy-trace-export.mjs`.
+- Runtime export and diagnostic bundles now include bounded `policyTrace`
+  summaries for blocked policy decisions, redaction events, kill switch /
+  presenter mode events, pending approvals, and policy-relevant task events.
+- Added `docs/architecture/security-policy-trace-export.md`,
+  `scripts/verify-policy-trace-export.mjs`, and
+  `tests/behavior/policy-trace-export.test.mjs`.
+- No IPC channels, HTTP routes, tool ids, artifact kinds, provider ids,
+  storage schema, desktop UI behavior, or runtime execution behavior changed.
+
+Verification run by Codex:
+- `node --check` on changed SH-003 modules/tests/verifier: passed.
+- `node --test tests/behavior/policy-trace-export.test.mjs`: passed, 4/4.
+- `node scripts/verify-policy-trace-export.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 115/115 commands including 1042/1042 behavior
+  tests.
+
+Issue found and handled:
+- Two earlier `npm run check:fast` attempts reported a behavior aggregation
+  mismatch with no visible failing TAP item. Direct
+  `node scripts/verify-behavior-tests.mjs` passed 1042/1042, and the final full
+  `npm run check:fast` rerun passed 115/115. Treat as a watched stability signal
+  rather than an SH-003 product-code blocker.
+
+Decision:
+- SH-003 is ready to commit.
+- Phase H sandbox/security export foundation is complete at the service-contract
+  level.
+- Next valid work is OQ-001 eval trend store.

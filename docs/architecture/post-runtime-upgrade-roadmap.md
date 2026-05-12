@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 114/114 after SH-001/SH-002
-  sandbox/sidecar decision-record coverage was added, including 1038/1038 behavior
+- Current green gate: `npm run check:fast` passed 115/115 after SH-003
+  audit export and policy trace coverage was added, including 1042/1042 behavior
   tests.
   `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
@@ -52,7 +52,7 @@ Last updated: 2026-05-12.
 | Sidecar decision record | `docs/architecture/sidecar-decision-record.md`, `src/service/security/isolation-decision-records.mjs`, and `verify-sandbox-decision-records.mjs`. | SH-001 and SH-002 are complete for current isolation decisions and mandatory sidecar decision template; no new sidecars are introduced. |
 | Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | Complete for opt-in metadata: file reversibility remains default, while `ctx.reversibility.gitCheckpoint.enabled` can create a non-worktree git checkpoint ref for project rollback. |
 | Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs, `docs/architecture/marketplace-trust-model.md`, and marketplace distribution policy tests. | PM-001 is complete for shared trust preview metadata across skills, plugins, and MCP; PM-002 is complete for external MCP isolated-token governance; PM-003 is complete for normalized signature/share/archive metadata and non-discoverable plugin archives. Broader marketplace UI remains. |
-| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner, and OS sandbox decision records. | Privacy policy/broker foundation exists; OS-level sandbox/codesign execution remains deferred behind decision records. |
+| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner, OS sandbox decision records, and `security-policy-trace-export.md`. | Privacy policy/broker foundation exists; OS-level sandbox/codesign execution remains deferred behind decision records; SH-003 now exports redacted policy traces in runtime and diagnostic bundles. |
 | Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers. | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
 
 ## Tracking Register
@@ -79,7 +79,7 @@ Last updated: 2026-05-12.
 | PM-003 Plugin/skill/MCP marketplace | complete | Marketplace distribution policy normalizes signature/share/archive metadata, plugin uninstall archives recoverably, and archived plugins are not discoverable as runnable catalog entries. |
 | SH-001 OS sandbox decision records | complete | File operations, external commands, browser automation, OCR, audio daemons, and MCP install sandbox have explicit isolation decisions, rollback paths, and user recovery contracts. |
 | SH-002 Sidecar decision record template | complete | New native helpers, daemons, OS sandboxes, or sidecars require a measured decision record and cannot be justified as a general business-logic rewrite. |
-| SH-003 Audit export and policy trace | pending | Security/privacy decisions still need user-readable export coverage without leaking secrets. |
+| SH-003 Audit export and policy trace | complete | Runtime and diagnostic bundles include redacted policy trace summaries for blocked decisions, approvals, and policy task events without raw tool args or context text. |
 | OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
 
 ## Execution Rules
@@ -875,19 +875,27 @@ Verification:
 
 ### SH-003: Audit Export And Policy Trace
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Export privacy/security decisions, blocked capabilities, approvals, and tool
   risk decisions as a user-readable audit bundle.
+- Implemented `src/service/security/policy-trace-export.mjs`.
+- Runtime export and diagnostic bundles now include redacted `policyTrace`.
+- Added `docs/architecture/security-policy-trace-export.md`.
 
 Acceptance:
 
 - Users can inspect what was blocked, allowed, approved, and why.
 - Export does not leak secrets.
+- Policy trace excludes raw tool arguments, raw context text, secret store
+  values, OAuth tokens, cookies, authorization headers, passwords, and API keys.
 
 Verification:
 
-- New audit-export behavior tests.
+- `node scripts/verify-policy-trace-export.mjs`
+- `node --test tests/behavior/policy-trace-export.test.mjs`
 
 ## Phase I: Observability And Quality Trends
 

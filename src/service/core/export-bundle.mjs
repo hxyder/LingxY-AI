@@ -1,3 +1,5 @@
+import { buildPolicyTraceExport } from "../security/policy-trace-export.mjs";
+
 const EXPORT_SCHEMA_VERSION = 1;
 
 const SECRET_KEY_RE = /(api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|password|secret|credential|authorization|cookie)/i;
@@ -123,6 +125,7 @@ export function buildRuntimeExportBundle(runtime, {
     },
     connectedAccounts: connectedAccounts.map((account) => redactValue(account)),
     auditLogs: auditLogs.map((entry) => redactValue(entry)),
+    policyTrace: buildPolicyTraceExport(runtime),
     manifest: {
       includes: [
         "config_redacted",
@@ -134,7 +137,8 @@ export function buildRuntimeExportBundle(runtime, {
         "artifact_manifest",
         "schedules",
         "connected_accounts_redacted",
-        "audit_logs_redacted"
+        "audit_logs_redacted",
+        "policy_trace_redacted"
       ],
       excludes: [
         "provider_api_keys",
