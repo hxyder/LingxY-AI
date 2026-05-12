@@ -18,6 +18,10 @@ import {
   normalizeConversationModelOverride
 } from "../../../shared/conversation-model-override.mjs";
 import {
+  isModelRoleCallSiteRoutingEnabled,
+  resolveModelRoleRoute
+} from "../../ai/model-role-routing.mjs";
+import {
   hydrateProviderApiKeySecretSync,
   providerHasConfiguredApiKey
 } from "../../security/secret-store.mjs";
@@ -347,6 +351,65 @@ export function resolveProviderForTask(taskType, env = process.env, options = {}
   return null;
 }
 
+function annotateModelRoleProvider(resolved, {
+  role,
+  requestedTaskType,
+  selectedTaskType,
+  routeSource,
+  status,
+  enabled
+} = {}) {
+  if (!resolved) return resolved;
+  return {
+    ...resolved,
+    modelRole: role ?? null,
+    modelRoleRoutingEnabled: enabled === true,
+    modelRoleRequestedTaskType: requestedTaskType ?? null,
+    modelRoleTaskType: selectedTaskType ?? requestedTaskType ?? null,
+    modelRoleRouteSource: routeSource ?? null,
+    modelRoleStatus: status ?? null
+  };
+}
+
+export function resolveProviderForModelRole(role, taskType = "chat", env = process.env, options = {}) {
+  const config = loadConfig();
+  if (!isModelRoleCallSiteRoutingEnabled(config, options?.task ?? null)) {
+    return annotateModelRoleProvider(resolveProviderForTask(taskType, env, options), {
+      role,
+      requestedTaskType: taskType,
+      selectedTaskType: taskType,
+      routeSource: "disabled",
+      status: "disabled",
+      enabled: false
+    });
+  }
+
+  const routeEntry = resolveModelRoleRoute(role, { config });
+  const selectedTaskType = routeEntry?.route?.taskType || taskType;
+  const customProviders = (config.ai?.customProviders ?? []).map((provider) => hydrateProvider(provider, selectedTaskType));
+  const explicitProviderId = routeEntry?.route?.providerId ?? null;
+  const explicitProvider = explicitProviderId
+    ? customProviders.find((provider) => provider.id === explicitProviderId)
+    : null;
+  const explicitResolved = explicitProvider
+    ? providerToResolved(explicitProvider, {
+        providerId: explicitProviderId,
+        model: routeEntry?.route?.model ?? null,
+        mode: routeEntry?.route?.mode ?? null,
+        reasoningEffort: routeEntry?.route?.reasoningEffort ?? null
+      }, selectedTaskType)
+    : null;
+  const resolved = explicitResolved ?? resolveProviderForTask(selectedTaskType, env, options);
+  return annotateModelRoleProvider(resolved, {
+    role,
+    requestedTaskType: taskType,
+    selectedTaskType,
+    routeSource: explicitResolved ? routeEntry?.route?.source ?? "model_roles" : routeEntry?.route?.source ?? "fallback",
+    status: explicitResolved ? "resolved" : routeEntry?.status ?? "fallback",
+    enabled: true
+  });
+}
+
 function getDefaultModelForKind(kind, taskType) {
   if (kind === "anthropic") return "claude-sonnet-4-6";
   if (kind === "openai") return taskType === "vision" ? "gpt-5.4-mini" : "gpt-5.4-mini";
@@ -432,13 +495,21 @@ export function describeResolvedProvider(resolved) {
   if (!resolved) return null;
   const kind = resolved.kind || resolved.id || null;
   const isCodeCli = kind === "code_cli";
-  return {
+  const descriptor = {
     provider_id: resolved.configId || resolved.id || kind || null,
     provider_kind: kind,
     provider_name: resolved.providerName || resolved.provider_name || null,
     model: resolved.model || null,
     transport: isCodeCli ? "subprocess" : "https"
   };
+  if (resolved.modelRoleRoutingEnabled === true || resolved.modelRole) {
+    descriptor.model_role = resolved.modelRole ?? null;
+    descriptor.model_role_routing_enabled = resolved.modelRoleRoutingEnabled === true;
+    descriptor.model_role_task_type = resolved.modelRoleTaskType ?? null;
+    descriptor.model_role_route_source = resolved.modelRoleRouteSource ?? null;
+    descriptor.model_role_status = resolved.modelRoleStatus ?? null;
+  }
+  return descriptor;
 }
 
 /**

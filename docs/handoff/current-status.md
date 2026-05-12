@@ -3290,3 +3290,44 @@ Decision:
 - SA-002 is ready to commit.
 - Next valid work after SA-002 commit is MM-001 model-role binding at real
   call sites, unless a further roadmap audit changes the order.
+
+## Codex Review: MM-001 Model Role Call-Site Binding
+
+Date: 2026-05-12
+
+Scope:
+- Added role-aware provider resolution in
+  `src/service/executors/shared/provider-resolver.mjs`.
+- Bound real planner call sites to the `planner` role:
+  `src/service/executors/tool_using/agent-loop.mjs` and
+  `src/service/executors/agentic/planner.mjs`.
+- Bound the tool-using final composer to the `executor` role.
+- Kept role routing disabled by default through
+  `isModelRoleCallSiteRoutingEnabled`.
+- Added model-role fields to `llm_usage` only when a role-aware descriptor is
+  present, preserving default provider descriptor compatibility.
+- No IPC channels, HTTP routes, storage schema, tool ids, artifact kinds,
+  provider ids, or default model routing behavior changed.
+
+Verification run by Codex:
+- `node --check` on changed MM-001 modules/tests/verifier: passed.
+- `node --test tests/behavior/model-role-routing.test.mjs`: passed, 6/6.
+- `node scripts/verify-model-role-routing.mjs`: passed.
+- `node scripts/verify-provider-routing.mjs`: passed.
+- `node scripts/verify-llm-usage-emission.mjs`: passed.
+- `node scripts/verify-real-llm-token-metrics.mjs`: passed.
+- `node scripts/verify-agentic-planner.mjs`: passed.
+- `node scripts/verify-agentic-parity.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `git diff --check`: passed, with line-ending warnings only.
+- `npm run check:fast`: passed, 109/109 commands including 1015/1015 behavior
+  tests.
+
+Issue found and fixed:
+- `describeResolvedProvider()` initially returned disabled/null model-role
+  fields by default, breaking exact provider descriptor contracts. It now emits
+  model-role fields only when role routing actually annotated the provider.
+
+Decision:
+- MM-001 is ready to commit.
+- Next valid work after MM-001 commit is MM-002 reviewer/voting-loop preflight.

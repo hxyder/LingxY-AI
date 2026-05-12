@@ -12,7 +12,7 @@ import {
   matchWorkflowByTrigger
 } from "../../capabilities/connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
-import { resolveProviderForTask } from "../shared/provider-resolver.mjs";
+import { resolveProviderForModelRole } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
@@ -348,7 +348,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime, signal 
   if (signal?.aborted) {
     throw Object.assign(new Error("Tool planner aborted before provider call."), { code: "ABORT_ERR" });
   }
-  const provider = resolveProviderForTask("chat", process.env, {
+  const provider = resolveProviderForModelRole("planner", "chat", process.env, {
     task,
     store: runtime?.store ?? task.__runtime?.store
   });

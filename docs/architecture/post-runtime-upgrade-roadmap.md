@@ -25,9 +25,9 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 109/109 after SA-002
-  sub-agent timeline/eval coverage was added, including 1013/1013 behavior
-  tests. `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after one
+- Current green gate: `npm run check:fast` passed 109/109 after MM-001
+  model-role call-site binding was added, including 1015/1015 behavior tests.
+  `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
@@ -41,7 +41,7 @@ Last updated: 2026-05-12.
 | Area | Current program evidence | Current state |
 | --- | --- | --- |
 | True sub-agent runtime | `runtime-graph-*` verifiers exist; `docs/architecture/sub-agent-runtime-contract.md` defines the service contract; `src/shared/sub-agent-timeline-summary.mjs` defines the UI trace summary. | SA-001 and SA-002 are complete for contracts, timeline visibility, and eval corpus; automatic planner delegation remains deferred. |
-| Multi-model execution | `verify-model-role-routing.mjs` exists; executor call sites still mostly use resolved provider/model directly. | Role-routing summary exists; executor call sites do not yet switch per role. |
+| Multi-model execution | `verify-model-role-routing.mjs` exists; real planner/executor call sites now use role-aware provider resolution behind an explicit feature flag. | MM-001 is complete for planner/executor binding and measurement fields; reviewer/voting loops remain deferred to MM-002. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
 | Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | Real GUI smoke is strong; DX-001 owns preview/popup/window owner state and DX-002 locks extracted IPC boundaries. Real mic/KWS, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
 | Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers. | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
@@ -71,7 +71,8 @@ Last updated: 2026-05-12.
 | RV-001 Optional git checkpoint mode | complete | Opt-in git checkpoint metadata is implemented under `src/service/capabilities/tools/git-checkpoint-mode.mjs`; default file reversibility remains unchanged. |
 | SA-001 Sub-agent runtime contract | complete | Service-owned child-run contract now covers feature-flag gating, planner-selected delegation, context isolation, allowed tools, budget, cancellation, and structured child reports. |
 | SA-002 Sub-agent UI/evals | complete | Parent task detail now renders child runs from task detail children and `sub_agent_report` events; delegation eval corpus guards when to delegate and when not to. |
-| MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
+| MM-001 Model role call-site binding | complete | `resolveProviderForModelRole` binds planner/executor call sites only when model role routing is explicitly enabled and records role fields in `llm_usage`. |
+| MM-002 Reviewer/voting loops | pending | Must be feature-flagged, measured against single-model baselines, and guarded by latency/budget gates. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
 | OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
@@ -640,21 +641,33 @@ Verification:
 
 ### MM-001: Bind Model Roles To Real Call Sites
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Use existing planner/executor/reviewer role config in actual LLM call sites.
 - Start with planner/executor split for low-risk task classes.
 - Record role decisions and token/timing deltas.
+- Implemented `resolveProviderForModelRole` in
+  `src/service/executors/shared/provider-resolver.mjs`.
+- Bound `tool_using` planner and `agentic` planner to the `planner` role.
+- Bound `tool_using` final composer to the `executor` role.
+- `llm_usage` now includes model-role fields only when the role-aware provider
+  descriptor carries them, preserving default descriptor compatibility.
 
 Acceptance:
 
 - Role routing changes behavior only behind a feature flag or per-task config.
 - Reports can compare single-model vs role-routed runs.
+- Default provider descriptors remain unchanged while role routing is disabled.
 
 Verification:
 
 - `node scripts/verify-model-role-routing.mjs`
-- New role-call-site behavior tests.
+- `node --test tests/behavior/model-role-routing.test.mjs`
+- Related checks: `node scripts/verify-provider-routing.mjs`,
+  `node scripts/verify-llm-usage-emission.mjs`, and
+  `node scripts/verify-real-llm-token-metrics.mjs`.
 
 ### MM-002: Reviewer And Voting Loops
 

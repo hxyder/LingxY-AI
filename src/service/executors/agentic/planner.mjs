@@ -36,7 +36,7 @@ import { executeAgenticToolCall } from "./tool-execution.mjs";
 import { isStreamableArtifactTool } from "../shared/previewable-artifact-tools.mjs";
 import { buildAgenticUserMessage } from "./user-message.mjs";
 import { renderEvidenceLedger } from "../shared/evidence-ledger.mjs";
-import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
+import { resolveProviderForModelRole, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import {
   inferSearchRecencyFromText,
@@ -337,7 +337,7 @@ export async function runAgenticPlanner({
     });
   }
 
-  const resolvedProvider = provider ?? resolveProviderForTask("chat", process.env, {
+  const resolvedProvider = provider ?? resolveProviderForModelRole("planner", "chat", process.env, {
     task,
     store: runtime?.store
   });

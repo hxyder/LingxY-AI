@@ -1,11 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
 import {
   buildModelRoleRoutingSummary,
+  isModelRoleCallSiteRoutingEnabled,
   normalizeModelRoleRoutes,
   resolveModelRoleRoute
 } from "../../src/service/ai/model-role-routing.mjs";
+import {
+  describeResolvedProvider,
+  resolveProviderForModelRole
+} from "../../src/service/executors/shared/provider-resolver.mjs";
+import { buildLlmUsagePayload } from "../../src/service/core/task-runtime/llm-usage.mjs";
 
 test("model role routing exposes planner executor reviewer defaults", () => {
   const summary = buildModelRoleRoutingSummary({ config: {} });
@@ -138,4 +147,103 @@ test("model role routing reports missing or misconfigured providers without secr
   assert.equal(byRole.get("planner")?.issue, "api_key_missing");
   assert.equal(byRole.get("reviewer")?.status, "missing_provider");
   assert.doesNotMatch(JSON.stringify(summary), /apiKey|sk-test|secret-value/u);
+});
+
+test("model role call-site routing stays disabled until explicit feature flag", () => {
+  assert.equal(isModelRoleCallSiteRoutingEnabled({ ai: {} }), false);
+  assert.equal(isModelRoleCallSiteRoutingEnabled({
+    ai: {
+      modelRoleRouting: { enabled: true }
+    }
+  }), true);
+});
+
+test("model role call-site resolver binds planner role only when enabled", async () => {
+  const previousConfigPath = process.env.UCA_CONFIG_PATH;
+  const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-model-role-"));
+  const configPath = path.join(dir, "runtime.json");
+  try {
+    await writeFile(configPath, JSON.stringify({
+      ai: {
+        customProviders: [{
+          id: "local-planner",
+          name: "Local Planner",
+          kind: "ollama",
+          baseUrl: "http://127.0.0.1:11434",
+          defaultModel: "planner-model"
+        }, {
+          id: "local-chat",
+          name: "Local Chat",
+          kind: "ollama",
+          baseUrl: "http://127.0.0.1:11434",
+          defaultModel: "chat-model"
+        }],
+        taskRouting: {
+          chat: { providerId: "local-chat", model: "chat-model" }
+        },
+        modelRoles: {
+          planner: {
+            providerId: "local-planner",
+            taskType: "planner",
+            model: "planner-model"
+          }
+        }
+      }
+    }), "utf8");
+    process.env.UCA_CONFIG_PATH = configPath;
+
+    const disabled = resolveProviderForModelRole("planner", "chat", {}, {});
+    assert.equal(disabled.configId, "local-chat");
+    assert.equal(disabled.model, "chat-model");
+    assert.equal(disabled.modelRoleRoutingEnabled, false);
+
+    await writeFile(configPath, JSON.stringify({
+      ai: {
+        customProviders: [{
+          id: "local-planner",
+          name: "Local Planner",
+          kind: "ollama",
+          baseUrl: "http://127.0.0.1:11434",
+          defaultModel: "planner-model"
+        }, {
+          id: "local-chat",
+          name: "Local Chat",
+          kind: "ollama",
+          baseUrl: "http://127.0.0.1:11434",
+          defaultModel: "chat-model"
+        }],
+        taskRouting: {
+          chat: { providerId: "local-chat", model: "chat-model" }
+        },
+        modelRoles: {
+          enabled: true,
+          planner: {
+            providerId: "local-planner",
+            taskType: "planner",
+            model: "planner-model"
+          }
+        }
+      }
+    }), "utf8");
+
+    const enabled = resolveProviderForModelRole("planner", "chat", {}, {});
+    assert.equal(enabled.configId, "local-planner");
+    assert.equal(enabled.model, "planner-model");
+    assert.equal(enabled.modelRole, "planner");
+    assert.equal(enabled.modelRoleRoutingEnabled, true);
+    assert.equal(enabled.modelRoleTaskType, "planner");
+    assert.equal(describeResolvedProvider(enabled).model_role, "planner");
+    const usagePayload = buildLlmUsagePayload({
+      callSite: "tool_using.planner",
+      usage: { input_tokens: 10, output_tokens: 4 },
+      provider: describeResolvedProvider(enabled)
+    });
+    assert.equal(usagePayload.model_role, "planner");
+    assert.equal(usagePayload.model_role_routing_enabled, true);
+    assert.equal(usagePayload.model_role_task_type, "planner");
+  } finally {
+    if (previousConfigPath == null) delete process.env.UCA_CONFIG_PATH;
+    else process.env.UCA_CONFIG_PATH = previousConfigPath;
+    await rm(dir, { recursive: true, force: true });
+  }
 });

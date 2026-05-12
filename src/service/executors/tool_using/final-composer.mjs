@@ -1,5 +1,5 @@
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
-import { resolveProviderForTask } from "../shared/provider-resolver.mjs";
+import { resolveProviderForModelRole } from "../shared/provider-resolver.mjs";
 import {
   evaluateActionObligations,
   findWaitingActionApproval,
@@ -92,7 +92,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       const text = String(composed ?? "").trim();
       if (text) return text;
     }
-    const provider = resolveProviderForTask("chat", process.env, {
+    const provider = resolveProviderForModelRole("executor", "chat", process.env, {
       task,
       store: runtime?.store
     });

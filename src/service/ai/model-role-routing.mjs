@@ -193,3 +193,10 @@ export function resolveModelRoleRoute(role, {
   return buildModelRoleRoutingSummary({ config, providers })
     .roles.find((entry) => entry.role === role) ?? null;
 }
+
+export function isModelRoleCallSiteRoutingEnabled(config = {}, task = null) {
+  return config.ai?.modelRoleRouting?.enabled === true
+    || config.ai?.modelRoles?.enabled === true
+    || task?.model_role_routing?.enabled === true
+    || task?.context_packet?.selection_metadata?.model_role_routing?.enabled === true;
+}

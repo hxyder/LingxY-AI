@@ -10,6 +10,11 @@ import {
 } from "../src/service/ai/model-role-routing.mjs";
 
 const moduleSource = readFileSync("src/service/ai/model-role-routing.mjs", "utf8");
+const providerResolver = readFileSync("src/service/executors/shared/provider-resolver.mjs", "utf8");
+const llmUsage = readFileSync("src/service/core/task-runtime/llm-usage.mjs", "utf8");
+const toolUsingPlanner = readFileSync("src/service/executors/tool_using/agent-loop.mjs", "utf8");
+const finalComposer = readFileSync("src/service/executors/tool_using/final-composer.mjs", "utf8");
+const agenticPlanner = readFileSync("src/service/executors/agentic/planner.mjs", "utf8");
 const configRoutes = readFileSync("src/service/core/http-routes/config-provider-routes.mjs", "utf8");
 const behavior = readFileSync("tests/behavior/model-role-routing.test.mjs", "utf8");
 
@@ -17,10 +22,21 @@ assert.deepEqual(MODEL_ROLES, ["planner", "executor", "reviewer"], "planner/exec
 assert.match(moduleSource, /MODEL_ROLE_DEFAULTS/u, "role defaults must be explicit");
 assert.match(moduleSource, /measurementKeys/u, "model role summary must expose measurement keys");
 assert.match(moduleSource, /task_routing_fallback/u, "roles must inherit existing task routing while no explicit role route exists");
+assert.match(moduleSource, /isModelRoleCallSiteRoutingEnabled/u, "role routing must expose explicit call-site feature flag gate");
+assert.match(providerResolver, /resolveProviderForModelRole/u, "provider resolver must expose role-aware call-site resolver");
+assert.match(providerResolver, /modelRoleRoutingEnabled/u, "role-aware resolver must annotate provider decisions");
+assert.match(providerResolver, /describeResolvedProvider[\s\S]*model_role/u, "provider descriptor must expose model role decision fields");
+assert.match(llmUsage, /model_role/u, "llm usage payload must record model role decisions");
+assert.match(toolUsingPlanner, /resolveProviderForModelRole\("planner",\s*"chat"/u, "tool_using planner must use planner role call site");
+assert.match(agenticPlanner, /resolveProviderForModelRole\("planner",\s*"chat"/u, "agentic planner must use planner role call site");
+assert.match(finalComposer, /resolveProviderForModelRole\("executor",\s*"chat"/u, "final composer must use executor role call site");
 assert.match(configRoutes, /buildModelRoleRoutingSummary/u, "integrations route must expose model role summary");
 assert.match(configRoutes, /modelRoles/u, "integrations payload must include modelRoles");
 assert.match(behavior, /model role routing exposes planner executor reviewer defaults/u, "behavior tests must cover default roles");
 assert.match(behavior, /without secrets/u, "behavior tests must cover secret-free diagnostics");
+assert.match(behavior, /stays disabled until explicit feature flag/u, "behavior tests must cover disabled default");
+assert.match(behavior, /binds planner role only when enabled/u, "behavior tests must cover real call-site resolver binding");
+assert.match(behavior, /usagePayload\.model_role/u, "behavior tests must prove llm_usage carries role decisions");
 
 const summary = buildModelRoleRoutingSummary({
   config: {

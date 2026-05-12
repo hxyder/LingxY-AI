@@ -128,6 +128,13 @@ for (const required of [
   "renderSubAgentTimelinePanel",
   "node scripts/verify-sub-agent-ui-evals.mjs",
   "node --test tests/behavior/sub-agent-timeline-evals.test.mjs",
+  "MM-001 Model role call-site binding",
+  "resolveProviderForModelRole",
+  "tool_using` planner",
+  "agentic` planner",
+  "final composer",
+  "llm_usage",
+  "node --test tests/behavior/model-role-routing.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
