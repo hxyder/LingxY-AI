@@ -30,10 +30,10 @@ import {
   rollbackSkillMarkdown,
   testEditableSkill,
   writeSkillMarkdownWithBackup
-} from "../../ai/skills/lifecycle.mjs";
-import { installSkillFromGitHub } from "../../ai/skills/github-install.mjs";
-import { skillStateKey } from "../../ai/skills/registry.mjs";
-import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
+} from "../../capabilities/skills/lifecycle.mjs";
+import { installSkillFromGitHub } from "../../capabilities/skills/github-install.mjs";
+import { skillStateKey } from "../../capabilities/skills/registry.mjs";
+import { validateSkillRegistryDescriptor } from "../../capabilities/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
 import {

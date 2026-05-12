@@ -41,12 +41,10 @@ function assertExports(moduleNamespace, rel, names) {
   }
 }
 
-// CAP-4A preflight: lock the current skill runtime surface before moving it
-// under capabilities/skills. This verifier intentionally checks the current
-// owner path. The physical move phase must update this file to the new owner
-// and add old-owner absence checks.
+// CAP-4A: lock the moved skill runtime surface under capabilities/skills.
 
-const ownerDir = "src/service/ai/skills";
+const ownerDir = "src/service/capabilities/skills";
+const oldOwnerDir = "src/service/ai/skills";
 const expectedFiles = [
   "builtin.mjs",
   "discovery.mjs",
@@ -59,6 +57,8 @@ const expectedFiles = [
 ];
 
 assert(existsSync(path.join(root, ownerDir)), `skill owner dir missing: ${ownerDir}`);
+assert(!existsSync(path.join(root, oldOwnerDir)),
+  `${oldOwnerDir} must not exist after CAP-4A physical move`);
 for (const file of expectedFiles) {
   assert(existsSync(path.join(root, ownerDir, file)), `skill owner file missing: ${ownerDir}/${file}`);
 }
@@ -186,7 +186,7 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
   for (const file of walk(uiRoot)) {
     const rel = path.relative(root, file).replace(/\\/g, "/");
     const source = read(rel);
-    assert(!source.includes("src/service/ai/skills") && !source.includes("/ai/skills/"),
+    assert(!source.includes("src/service/capabilities/skills") && !source.includes("/capabilities/skills/"),
       `${rel} must not import skill runtime internals`);
   }
 }
@@ -194,30 +194,30 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
 // Existing product callers must still delegate to the skill owner rather than
 // duplicating skill lifecycle or installer logic.
 const actionTools = read("src/service/action_tools/tools/index.mjs");
-assert(actionTools.includes("../../ai/skills/lifecycle.mjs"),
-  "action tool aggregator must delegate editable skill creation to lifecycle.mjs before CAP-4A move");
+assert(actionTools.includes("../../capabilities/skills/lifecycle.mjs"),
+  "action tool aggregator must delegate editable skill creation to lifecycle.mjs");
 assert(actionTools.includes("createEditableSkill") && actionTools.includes("slugifySkillId"),
   "editable skill action helpers must keep lifecycle delegation");
 
 const skillInstallTools = read("src/service/capabilities/tools/skill-install-tools.mjs");
-assert(skillInstallTools.includes("../../ai/skills/github-install.mjs"),
-  "skill install tools must delegate to github-install.mjs before CAP-4A move");
+assert(skillInstallTools.includes("../skills/github-install.mjs"),
+  "skill install tools must delegate to github-install.mjs");
 for (const name of ["stageSkillFromGitHub", "finalizeStagedInstall", "discardStagedInstall"]) {
   assert(skillInstallTools.includes(name), `skill install tools must use ${name}`);
 }
 
 const runtimeIntegrations = read("src/service/ai/integrations/runtime.mjs");
-assert(runtimeIntegrations.includes("../skills/registry.mjs"),
+assert(runtimeIntegrations.includes("../../capabilities/skills/registry.mjs"),
   "AI integration runtime must use the skill registry owner");
-assert(runtimeIntegrations.includes("../skills/discovery.mjs"),
+assert(runtimeIntegrations.includes("../../capabilities/skills/discovery.mjs"),
   "AI integration runtime must use the skill discovery owner");
 
 const configRoutes = read("src/service/core/http-routes/config-provider-routes.mjs");
 for (const routeNeedle of [
-  "../../ai/skills/lifecycle.mjs",
-  "../../ai/skills/github-install.mjs",
-  "../../ai/skills/registry.mjs",
-  "../../ai/skills/registry-validation.mjs"
+  "../../capabilities/skills/lifecycle.mjs",
+  "../../capabilities/skills/github-install.mjs",
+  "../../capabilities/skills/registry.mjs",
+  "../../capabilities/skills/registry-validation.mjs"
 ]) {
   assert(configRoutes.includes(routeNeedle),
     `skill config routes must still delegate to ${routeNeedle}`);
@@ -228,7 +228,7 @@ assert(aiStatusRoutes.includes('url.pathname === "/ai/skills"'),
   "/ai/skills service route must remain registered");
 
 const bootstrap = read("src/service/core/service-bootstrap.mjs");
-assert(bootstrap.includes("../ai/skills/install-state.mjs"),
+assert(bootstrap.includes("../capabilities/skills/install-state.mjs"),
   "service bootstrap must wire skill install-state owner");
 
 const boundaryDoc = "docs/architecture/skill-surface-boundary.md";

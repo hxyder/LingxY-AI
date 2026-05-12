@@ -15,12 +15,12 @@ runtime/security preflight verification.
 
 | Import | Current path | Notes |
 |--------|-------------|----------------|
-| `stageSkillFromGitHub` | `../../ai/skills/github-install.mjs` | Unchanged |
-| `finalizeStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
-| `discardStagedInstall` | `../../ai/skills/github-install.mjs` | Unchanged |
+| `stageSkillFromGitHub` | `../skills/github-install.mjs` | Unchanged |
+| `finalizeStagedInstall` | `../skills/github-install.mjs` | Unchanged |
+| `discardStagedInstall` | `../skills/github-install.mjs` | Unchanged |
 | `createActionResult` | `../../capabilities/registry/types.mjs` | Result shape unchanged |
 
-Three imports from `github-install.mjs` — these are already at `../../ai/skills/` and would remain correct after a move to `capabilities/tools/`.
+Three imports from `github-install.mjs` — these are already at `../skills/` and would remain correct after a move to `capabilities/tools/`.
 
 ## Current Verifier Coverage
 
@@ -57,7 +57,7 @@ Three imports from `github-install.mjs` — these are already at `../../ai/skill
 | Risk | Severity | Mitigation |
 |------|----------|------------|
 | Confirmation gate must survive path change | High | Contract verifier locks requires_confirmation |
-| `../../ai/skills/github-install.mjs` post-move | Low | Same relative path from `capabilities/tools/`, unchanged |
+| `../skills/github-install.mjs` post-move | Low | Same relative path from `capabilities/tools/`, unchanged |
 | Narrow test seam must not change production behavior | Medium | Runtime verifier exercises injected seams; defaults remain production functions |
 
 ## Decision

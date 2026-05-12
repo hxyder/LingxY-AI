@@ -25,7 +25,7 @@ The replacement is a layered dispatch that keeps the fast paths fast and makes s
 
 | Concept | Owns | Directory | Must not own |
 |---|---|---|---|
-| Skills | reusable reasoning/work instructions rendered into prompts | [src/service/ai/skills/](../../src/service/ai/skills/) | OAuth, account state, provider APIs, service execution |
+| Skills | reusable reasoning/work instructions rendered into prompts | [src/service/capabilities/skills/](../../src/service/capabilities/skills/) | OAuth, account state, provider APIs, service execution |
 | MCP adapters | external MCP server transport, discovery, bridge | [src/service/ai/mcp/](../../src/service/ai/mcp/) | provider-specific business rules, confirmation bypass |
 | Action tools | local execution primitives, schema validation, risk matrix | [src/service/action_tools/](../../src/service/action_tools/) | Gmail/Calendar/Drive semantics |
 | Connectors | provider accounts, scopes, service contracts, workflows | [src/service/connectors/\<provider\>/](../../src/service/connectors/) | generic planner behavior |

@@ -32,7 +32,7 @@ import {
   validateCapabilityDraft
 } from "../../core/capability-creator/index.mjs";
 import { resolveMcpDraftsDir } from "../../ai/mcp/drafts.mjs";
-import { createEditableSkill, slugifySkillId } from "../../ai/skills/lifecycle.mjs";
+import { createEditableSkill, slugifySkillId } from "../../capabilities/skills/lifecycle.mjs";
 import {
   PREVIEW_SKILL_FROM_GITHUB_TOOL,
   INSTALL_SKILL_FROM_GITHUB_TOOL

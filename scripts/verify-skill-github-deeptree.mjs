@@ -32,7 +32,7 @@ import {
   validateSubPath,
   deriveFinalDirName,
   SKILL_INSTALL_ERROR
-} from "../src/service/ai/skills/github-install.mjs";
+} from "../src/service/capabilities/skills/github-install.mjs";
 
 let passed = 0;
 let failed = 0;
@@ -225,7 +225,7 @@ function check(label, condition) {
 //     points them at the #branch fallback form.
 // ---------------------------------------------------------------------
 {
-  const { installSkillFromGitHub } = await import("../src/service/ai/skills/github-install.mjs");
+  const { installSkillFromGitHub } = await import("../src/service/capabilities/skills/github-install.mjs");
   // Stub spawnImpl that fails with a "Remote branch not found" stderr.
   let cloneAttempted = false;
   const stubSpawn = (command, args) => {

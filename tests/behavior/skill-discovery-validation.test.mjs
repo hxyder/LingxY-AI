@@ -9,9 +9,9 @@ import {
   listSkillDirectories,
   readSkillDescriptor,
   validateSkillDescriptorMarkdown
-} from "../../src/service/ai/skills/discovery.mjs";
-import { createConfiguredSkillRegistry } from "../../src/service/ai/skills/builtin.mjs";
-import { createSkillRegistry, skillStateKey } from "../../src/service/ai/skills/registry.mjs";
+} from "../../src/service/capabilities/skills/discovery.mjs";
+import { createConfiguredSkillRegistry } from "../../src/service/capabilities/skills/builtin.mjs";
+import { createSkillRegistry, skillStateKey } from "../../src/service/capabilities/skills/registry.mjs";
 import { buildAIIntegrationRegistries } from "../../src/service/ai/integrations/runtime.mjs";
 import { removeTempDirWithRetry } from "./helpers/temp-dir.mjs";
 

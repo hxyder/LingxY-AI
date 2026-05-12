@@ -12,8 +12,8 @@ import {
   validateGitHubSkillUrl,
   validateBranchName,
   SKILL_INSTALL_ERROR
-} from "../../src/service/ai/skills/github-install.mjs";
-import { deriveSkillRegistryId } from "../../src/service/ai/skills/discovery.mjs";
+} from "../../src/service/capabilities/skills/github-install.mjs";
+import { deriveSkillRegistryId } from "../../src/service/capabilities/skills/discovery.mjs";
 
 // ─── URL / branch validation ───────────────────────────────────────────────
 

@@ -13,7 +13,7 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 | Action tool registry | `src/service/capabilities/registry/registry.mjs` | `createActionToolRegistry` |
 | Action tool types | `src/service/capabilities/registry/types.mjs` | `createActionResult` |
 | Risk/policy | `src/service/capabilities/registry/risk_matrix.mjs`, `src/service/capabilities/registry/policy-guard.mjs`, `src/service/action_tools/file-reversibility.mjs` | Tool risk evaluation, policy guard, file reversibility |
-| Skills | `src/service/ai/skills/` | Skill lifecycle (`lifecycle.mjs`), skill installer, skill markdown editor |
+| Skills | `src/service/capabilities/skills/` | Skill lifecycle (`lifecycle.mjs`), skill installer, skill markdown editor |
 | MCP | `src/service/ai/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/connectors/` | Connector tool aggregator, connector plugins, account tools |
 | Providers | `src/service/ai/providers/` | Provider catalog, config, model discovery |
@@ -40,7 +40,7 @@ src/service/capabilities/
 
 - Built-in source capabilities belong in `src/service/capabilities/**`.
 - User-installed skills/MCP/tools/connectors must live under runtime data paths, NOT under `src/`.
-- Legacy paths (`src/service/action_tools/**`, `src/service/ai/skills/**`, `src/service/ai/mcp/**`, `src/service/connectors/**`) must be deleted once all active callers move, unless a phase explicitly names a temporary migration window and guards it with a verifier.
+- Legacy paths for moved capability families, plus `src/service/ai/mcp/**` and `src/service/connectors/**` once their phases move, must be deleted after active callers migrate unless a phase explicitly names a temporary migration window and guards it with a verifier.
 - Compatibility barrels may re-export only during a named migration window; they must not remain in a completion claim.
 - Do not start broad source moves until each family has owner documentation and migration verifiers.
 
@@ -50,7 +50,7 @@ src/service/capabilities/
 2. CAP-1 — migrate low-risk/helper built-in tool families into `capabilities/tools/` one family at a time (complete for browser/web/search/translation, email compose, file discovery/stat/artifact lookup, OS app/file/clipboard/notify, scheduler, and the two shared helpers)
 3. CAP-2 — move `action_tools/schemas/` to `capabilities/schemas/` (schema-only, no logic change)
 4. CAP-3 ✅ — move registry, result/type, risk, and policy owners to `capabilities/registry/`
-5. CAP-4 — consolidate `ai/skills/`, `ai/mcp/`, `connectors/`, `ai/providers/` under `capabilities/`
+5. CAP-4 — consolidate skills, `ai/mcp/`, `connectors/`, and `ai/providers/` under `capabilities/`
 6. CAP-5 — final stale-path cleanup and verifier hardening after capability families move
 
 Each CAP-N phase is a separate PR. No phase moves code without verifier coverage.

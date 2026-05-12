@@ -42,7 +42,7 @@ import {
   discardStagedInstall,
   installSkillFromGitHub,
   SKILL_INSTALL_ERROR
-} from "../src/service/ai/skills/github-install.mjs";
+} from "../src/service/capabilities/skills/github-install.mjs";
 
 let passed = 0;
 let failed = 0;

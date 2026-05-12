@@ -28,7 +28,7 @@ import {
   stageSkillFromGitHub,
   finalizeStagedInstall,
   discardStagedInstall
-} from "../../ai/skills/github-install.mjs";
+} from "../skills/github-install.mjs";
 import { createActionResult } from "../registry/types.mjs";
 
 // Truncated preview shown to the LLM in the tool result. The full

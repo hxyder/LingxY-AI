@@ -2587,3 +2587,57 @@ Decision:
   - prove `src/service/ai/skills/` is gone or contains no reachable
     implementation files;
   - do not leave compatibility barrels once callers are migrated.
+
+## Codex Review: CAP-4A Skills Surface Physical Move
+
+Date: 2026-05-11
+
+Scope:
+- Moved the skills runtime surface from the former service AI skill owner into
+  `src/service/capabilities/skills/`.
+- Updated active imports in product code, behavior tests, scripts, and
+  architecture docs.
+- Updated `verify-skill-surface-contract.mjs`,
+  `verify-capability-roots.mjs`, `verify-structure.mjs`, and
+  `verify-stale-owner-paths.mjs`.
+- Removed the old owner directory rather than leaving a compatibility barrel.
+- Did not change skill behavior, tool ids, IPC channels, HTTP routes, artifact
+  kinds, provider ids, or storage schema.
+
+Migration result:
+- Current owner: `src/service/capabilities/skills/`.
+- Old owner directory: absent.
+- `/ai/skills` remains the HTTP route.
+- Skill install action tools now import `../skills/github-install.mjs`.
+- Editable-skill action helpers and config routes now import from
+  `../../capabilities/skills/`.
+- AI integration runtime now imports skill registry/discovery/builtin from
+  `../../capabilities/skills/`.
+
+Verification run by Codex:
+- `node --check` on all moved skills modules and
+  `scripts/verify-skill-surface-contract.mjs`: passed.
+- `node scripts/verify-skill-surface-contract.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node --test tests/behavior/skill-discovery-validation.test.mjs tests/behavior/skill-github-install.test.mjs tests/behavior/skill-lifecycle.test.mjs`: passed, 27/27.
+- `node scripts/verify-skill-install-tools-contract.mjs`: passed.
+- `node scripts/verify-skill-install-tools-runtime.mjs`: passed.
+- `node scripts/verify-skill-install-tools.mjs`: passed, 65/65.
+- `node scripts/verify-skill-install-approval-preview.mjs`: passed, 22/22.
+- `node scripts/verify-skill-stage-finalize.mjs`: passed, 25/25.
+- `node scripts/verify-skill-github-deeptree.mjs`: passed, 67/67.
+- `node scripts/verify-skill-local-only-boundary.mjs`: passed.
+- `node scripts/verify-service-core.mjs`: passed.
+- `node scripts/verify-ai-integrations.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 87/87.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- CAP-4A physical move is ready to commit.
+- After CAP-4A is committed, the next valid phase is CAP-4B MCP surface
+  preflight, not a broad MCP/connectors/provider move.

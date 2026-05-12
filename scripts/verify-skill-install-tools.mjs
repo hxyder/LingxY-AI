@@ -26,7 +26,7 @@ import {
 } from "../src/service/capabilities/tools/skill-install-tools.mjs";
 import {
   createInstallStateRegistry
-} from "../src/service/ai/skills/install-state.mjs";
+} from "../src/service/capabilities/skills/install-state.mjs";
 import {
   shouldExposeSkillInstall,
   filterToolsForTask

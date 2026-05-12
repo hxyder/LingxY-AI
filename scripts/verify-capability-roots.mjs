@@ -26,7 +26,7 @@ const capabilityRoots = [
   "src/service/capabilities/registry/policy-guard.mjs",
   "src/service/action_tools/file-reversibility.mjs",
   // Skills
-  "src/service/ai/skills/lifecycle.mjs",
+  "src/service/capabilities/skills/lifecycle.mjs",
   // MCP
   "src/service/ai/mcp",
   // Connectors

@@ -29,7 +29,7 @@ import { createActionToolRegistry } from "../capabilities/registry/registry.mjs"
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { createSchedulerRuntime } from "../scheduler/engine.mjs";
-import { createInstallStateRegistry } from "../ai/skills/install-state.mjs";
+import { createInstallStateRegistry } from "../capabilities/skills/install-state.mjs";
 import { createOfficeHttpsRuntime } from "../https/port-9413.mjs";
 import { createBuiltinTemplateRegistry, createPersistentTemplateRegistry } from "../templates/runtime.mjs";
 import { createBudgetManager } from "../cost/budget.mjs";

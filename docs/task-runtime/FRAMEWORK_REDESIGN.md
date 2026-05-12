@@ -121,7 +121,7 @@
 | Layer 4 Action tools | [`action_tools/*`](src/service/action_tools/) | **保留** |
 | Layer 4 Workflow dispatcher | [`connectors/core/workflow-dispatcher.mjs`](src/service/connectors/core/workflow-dispatcher.mjs) | **保留** |
 | Layer 4 MCP bridge | [`connectors/core/mcp-catalog-bridge.mjs`](src/service/connectors/core/mcp-catalog-bridge.mjs)（已写但未接入 service-bootstrap）| **需要接入**（P0-2 原来就在单子上） |
-| Layer 4 Skill runtime | [`ai/skills/`](src/service/ai/skills/) 只有 builtin + registry，没有"跑一个 Skill"的 runtime | **新建 skill executor**：执行单个 Skill、管 session_key、返回结果 |
+| Layer 4 Skill runtime | [`capabilities/skills/`](src/service/capabilities/skills/) 只有 builtin + registry，没有"跑一个 Skill"的 runtime | **新建 skill executor**：执行单个 Skill、管 session_key、返回结果 |
 | Layer 5 Timeline UI | overlay.js + console.js 已接完 SSE | **保留**，新事件类型（`dag_node_started` 等）继续走同一通道 |
 
 ---
@@ -305,7 +305,7 @@ async function onNodeFailed(node, error, state) {
 
 ### Phase 6 —— Skill executor + session_key runtime（1 周）
 
-- [ ] `src/service/ai/skills/executor.mjs`：执行单个 Skill、管理 session_key 绑定的状态
+- [ ] `src/service/capabilities/skills/executor.mjs`：执行单个 Skill、管理 session_key 绑定的状态
 - [ ] session_store：`<userData>/skill-sessions/<session_key>/`
 - [ ] 契约 schema 支持声明 Skill 要保留哪些文件到 session
 

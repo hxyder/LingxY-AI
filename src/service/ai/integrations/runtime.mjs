@@ -10,9 +10,9 @@ import { createMCPRegistry } from "../mcp/registry.mjs";
 import { BUILTIN_MCP_SERVERS } from "../mcp/builtin.mjs";
 import { createConfiguredMCPServer } from "../mcp/configured.mjs";
 import { describeMcpEnvRequirements, resolveMcpEnv } from "../mcp/env-resolver.mjs";
-import { createSkillRegistry } from "../skills/registry.mjs";
-import { BUILTIN_SKILL_REGISTRIES, createConfiguredSkillRegistry } from "../skills/builtin.mjs";
-import { deriveSkillRegistryId, resolveSkillRootPath } from "../skills/discovery.mjs";
+import { createSkillRegistry } from "../../capabilities/skills/registry.mjs";
+import { BUILTIN_SKILL_REGISTRIES, createConfiguredSkillRegistry } from "../../capabilities/skills/builtin.mjs";
+import { deriveSkillRegistryId, resolveSkillRootPath } from "../../capabilities/skills/discovery.mjs";
 
 function asArray(value) {
   if (!value) {

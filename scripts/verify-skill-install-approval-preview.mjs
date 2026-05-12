@@ -29,7 +29,7 @@ import {
 } from "../src/service/executors/shared/tool-approval-context.mjs";
 import {
   createInstallStateRegistry
-} from "../src/service/ai/skills/install-state.mjs";
+} from "../src/service/capabilities/skills/install-state.mjs";
 
 let passed = 0;
 let failed = 0;

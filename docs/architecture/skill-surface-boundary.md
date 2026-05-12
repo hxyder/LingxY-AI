@@ -2,28 +2,27 @@
 
 Date: 2026-05-11
 
-This inventory locks the current skill runtime surface before CAP-4 physical
-reorganization work. It is intentionally a preflight document: no product source
-files are moved in this phase.
+This inventory locks the CAP-4A skill runtime surface after the physical move
+into `src/service/capabilities/skills/`.
 
 ## Current Owner
 
 Current skill runtime owner:
 
-`src/service/ai/skills/`
+`src/service/capabilities/skills/`
 
 Files:
 
 | Path | Responsibility | Target layer |
 |---|---|---|
-| `src/service/ai/skills/builtin.mjs` | Built-in skill registry adapter for `%CODEX_HOME%/skills` | service/capabilities/skills |
-| `src/service/ai/skills/discovery.mjs` | Skill root expansion, descriptor parsing, validation, directory discovery | service/capabilities/skills |
-| `src/service/ai/skills/github-install.mjs` | GitHub skill staging, validation, preview, finalize, discard | service/capabilities/skills/install |
-| `src/service/ai/skills/install-state.mjs` | In-memory token to staged skill install state registry | service/capabilities/skills/install |
-| `src/service/ai/skills/lifecycle.mjs` | Local editable skill create/duplicate/delete/history/write/rollback/test | service/capabilities/skills/lifecycle |
-| `src/service/ai/skills/registry-validation.mjs` | Skill registry descriptor validation | service/capabilities/skills/registry |
-| `src/service/ai/skills/registry.mjs` | Skill registry aggregation, disabled-state filtering, status listing | service/capabilities/skills/registry |
-| `src/service/ai/skills/README.md` | Runtime skill discovery notes | service/capabilities/skills |
+| `src/service/capabilities/skills/builtin.mjs` | Built-in skill registry adapter for `%CODEX_HOME%/skills` | service/capabilities/skills |
+| `src/service/capabilities/skills/discovery.mjs` | Skill root expansion, descriptor parsing, validation, directory discovery | service/capabilities/skills |
+| `src/service/capabilities/skills/github-install.mjs` | GitHub skill staging, validation, preview, finalize, discard | service/capabilities/skills/install |
+| `src/service/capabilities/skills/install-state.mjs` | In-memory token to staged skill install state registry | service/capabilities/skills/install |
+| `src/service/capabilities/skills/lifecycle.mjs` | Local editable skill create/duplicate/delete/history/write/rollback/test | service/capabilities/skills/lifecycle |
+| `src/service/capabilities/skills/registry-validation.mjs` | Skill registry descriptor validation | service/capabilities/skills/registry |
+| `src/service/capabilities/skills/registry.mjs` | Skill registry aggregation, disabled-state filtering, status listing | service/capabilities/skills/registry |
+| `src/service/capabilities/skills/README.md` | Runtime skill discovery notes | service/capabilities/skills |
 
 ## Active Callers
 
@@ -40,13 +39,14 @@ Product callers that currently depend on this surface:
 | `src/service/core/service-bootstrap.mjs` | install-state registry boot wiring |
 
 Renderer and desktop code must reach skills through IPC/HTTP contracts only.
-They must not import `src/service/ai/skills/**` directly.
+They must not import skill runtime internals directly.
 
 ## Stable Contracts
 
-The preflight verifier locks these contracts:
+The verifier locks these contracts:
 
-- Skill owner files exist at the current path until the physical move phase.
+- Skill owner files exist at the capabilities path.
+- The former service AI skill owner directory is absent.
 - Public exports needed by existing callers remain available.
 - Skill owner files do not import Electron, desktop, renderer, provider, MCP, or
   connector implementation modules.
@@ -58,9 +58,9 @@ The preflight verifier locks these contracts:
 - `/ai/skills` remains a service HTTP contract, not a renderer-owned runtime
   shortcut.
 
-## Target Shape
+## Current Shape
 
-The intended CAP-4A physical move should be:
+The CAP-4A physical move produced:
 
 ```text
 src/service/capabilities/skills/
@@ -74,14 +74,14 @@ src/service/capabilities/skills/
   README.md
 ```
 
-After the physical move:
+Completion rules:
 
-- Update every active import in product code, tests, scripts, and docs.
-- Update `verify-skill-surface-contract.mjs`,
-  `verify-capability-roots.mjs`, `verify-structure.mjs`, and
-  `verify-stale-owner-paths.mjs`.
-- Delete the old `src/service/ai/skills/` implementation path if empty.
-- Do not keep compatibility barrels once all callers are migrated.
+- Every active import in product code, tests, scripts, and docs must point at
+  `src/service/capabilities/skills/`.
+- `verify-skill-surface-contract.mjs`, `verify-capability-roots.mjs`,
+  `verify-structure.mjs`, and `verify-stale-owner-paths.mjs` must all agree on
+  the owner.
+- Compatibility barrels are not allowed after CAP-4A completion.
 
 ## Risk
 

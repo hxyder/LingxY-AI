@@ -55,7 +55,24 @@ const phaseCap3OldOwners = [
   { old: "action_tools/risk_matrix.mjs", new: "capabilities/registry/risk_matrix.mjs" },
   { old: "action_tools/policy-guard.mjs", new: "capabilities/registry/policy-guard.mjs" },
 ];
-const allMoved = [...phase2bOldOwners, ...phaseRepo1OldOwners, ...phaseCap1OldOwners, ...phaseCap2OldOwners, ...phaseCap3OldOwners];
+const phaseCap4ASkillOldOwners = [
+  { old: "ai/skills/builtin.mjs", new: "capabilities/skills/builtin.mjs" },
+  { old: "ai/skills/discovery.mjs", new: "capabilities/skills/discovery.mjs" },
+  { old: "ai/skills/github-install.mjs", new: "capabilities/skills/github-install.mjs" },
+  { old: "ai/skills/install-state.mjs", new: "capabilities/skills/install-state.mjs" },
+  { old: "ai/skills/lifecycle.mjs", new: "capabilities/skills/lifecycle.mjs" },
+  { old: "ai/skills/registry-validation.mjs", new: "capabilities/skills/registry-validation.mjs" },
+  { old: "ai/skills/registry.mjs", new: "capabilities/skills/registry.mjs" },
+  { old: "src/service/ai/skills/", new: "src/service/capabilities/skills/" },
+];
+const allMoved = [
+  ...phase2bOldOwners,
+  ...phaseRepo1OldOwners,
+  ...phaseCap1OldOwners,
+  ...phaseCap2OldOwners,
+  ...phaseCap3OldOwners,
+  ...phaseCap4ASkillOldOwners
+];
 
 // Post-migration: old physical paths must not exist as reachable files.
 // Compatibility barrels are disallowed under the no-short-term-fallback rule.
@@ -79,6 +96,7 @@ const forbiddenExistingPaths = [
   "src/service/action_tools/types.mjs",
   "src/service/action_tools/risk_matrix.mjs",
   "src/service/action_tools/policy-guard.mjs",
+  "src/service/ai/skills",
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);
@@ -127,6 +145,7 @@ for (const file of allFiles) {
   if (rel === "scripts/verify-mermaid-assets-contract.mjs") continue;
   if (rel === "scripts/verify-action-tool-schemas-contract.mjs") continue;
   if (rel === "scripts/verify-action-tool-registry-contract.mjs") continue;
+  if (rel === "scripts/verify-skill-surface-contract.mjs") continue;
   // Skip the plan document (historical, not active)
   if (rel === "linxi_codebase_reorganization_execution_plan.md") continue;
 

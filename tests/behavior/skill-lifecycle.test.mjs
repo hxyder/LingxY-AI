@@ -16,9 +16,9 @@ import {
   slugifySkillId,
   testEditableSkill,
   writeSkillMarkdownWithBackup
-} from "../../src/service/ai/skills/lifecycle.mjs";
-import { createSkillRegistry } from "../../src/service/ai/skills/registry.mjs";
-import { createConfiguredSkillRegistry } from "../../src/service/ai/skills/builtin.mjs";
+} from "../../src/service/capabilities/skills/lifecycle.mjs";
+import { createSkillRegistry } from "../../src/service/capabilities/skills/registry.mjs";
+import { createConfiguredSkillRegistry } from "../../src/service/capabilities/skills/builtin.mjs";
 
 async function makeRuntime() {
   const root = await mkdtemp(path.join(os.tmpdir(), "lingxy-skills-"));

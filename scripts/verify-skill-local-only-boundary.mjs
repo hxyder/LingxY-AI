@@ -39,7 +39,7 @@ assertNoUserSkillData("electron build.extraResources", packageJson.build?.extraR
 const releaseConfig = readJson("tools/release/release-config.json");
 assertNoUserSkillData("trial required_assets", releaseConfig.required_assets ?? []);
 
-const githubInstallSource = readText("src/service/ai/skills/github-install.mjs");
+const githubInstallSource = readText("src/service/capabilities/skills/github-install.mjs");
 assert.match(githubInstallSource, /source:\s*"github_install"/);
 assert.match(githubInstallSource, /deriveSkillRegistryId\(normalised,\s*\{\s*source:\s*"github_install"\s*\}\)/);
 
@@ -47,7 +47,7 @@ const runtimeSource = readText("src/service/ai/integrations/runtime.mjs");
 assert.match(runtimeSource, /function normalizeSkillRegistryEntry/);
 assert.match(runtimeSource, /deriveSkillRegistryId\(rootPath,\s*\{\s*source\s*\}\)/);
 
-const registrySource = readText("src/service/ai/skills/registry.mjs");
+const registrySource = readText("src/service/capabilities/skills/registry.mjs");
 assert.match(registrySource, /const seen = new Map\(\)/);
 assert.match(registrySource, /seen\.has\(key\)/);
 assert.match(registrySource, /inactiveReason:\s*"duplicate_skill_id"/);
