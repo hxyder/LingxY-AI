@@ -26,8 +26,8 @@ Status: verified against the current repository on 2026-05-11.
 
 ## Tool Family Ownership
 
-Status after CAP-5G document/render tool migration (2026-05-11). `tools/index.mjs`
-is a live aggregator plus remaining inline high-risk families.
+Status after CAP-5H capability creator tool migration (2026-05-11). `tools/index.mjs`
+is a live aggregator only.
 
 ### Extracted families (own source modules)
 
@@ -41,6 +41,7 @@ is a live aggregator plus remaining inline high-risk families.
 | File Content / Artifact Output | `src/service/capabilities/tools/file-content-tools.mjs` (~525 lines) | `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` |
 | File Write / Script Execution | `src/service/capabilities/tools/file-mutation-execution-tools.mjs` (~320 lines) | `write_file`, `edit_file`, `run_script` |
 | Document / Artifact / Diagram / SVG Generation | `src/service/capabilities/tools/document-render-tools.mjs` (~280 lines) | `generate_document`, `render_diagram`, `render_svg` |
+| Capability Creator | `src/service/capabilities/tools/capability-creator-tools.mjs` (~390 lines) | `draft_capability`, `save_capability_draft` |
 | Desktop Launch | `src/service/capabilities/tools/desktop-launch-tools.mjs` (~365 lines) | `launch_app` |
 | Desktop Capture / GUI Automation | `src/service/capabilities/tools/desktop-capture-gui-tools.mjs` (~260 lines) | `take_screenshot`, `gui_find_element`, `gui_click`, `gui_type_text` |
 | Shared document artifact helpers | `src/service/capabilities/tools/document-artifact-helpers.mjs` | document kind inference, PDF/HTML preview helpers, document renderer fallback |
@@ -49,9 +50,8 @@ is a live aggregator plus remaining inline high-risk families.
 
 ### Inline families (still in `tools/index.mjs`)
 
-| Family | Tool IDs | Lines (approx) | Risk |
-|--------|----------|----------------|------|
-| Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
+None. `tools/index.mjs` is the built-in action tool aggregator and re-export
+surface only.
 
 ### External families (aggregated into `BUILTIN_ACTION_TOOLS`)
 
@@ -72,13 +72,11 @@ is a live aggregator plus remaining inline high-risk families.
 4. File Discovery / Read / Index: read/stat/artifact-lookup slice extracted in Phase 2D.4/2D.6, moved to `capabilities/tools/` in CAP-1; file-content/artifact-output slice moved in CAP-5D.
 5. Email: `compose_email` extracted in Phase 2D.5 and moved to `capabilities/tools/` in CAP-1; `send_email_smtp` moved to `email-tools.mjs` in CAP-5E to remove stale NOOP coupling.
 
-Do not move without a dedicated high-risk phase and targeted tests: `draft_capability`, `save_capability_draft`, memory tools, vision tools, skill install tools, schemas, registry, policy, or type surfaces.
+Do not move without a dedicated high-risk phase and targeted tests: memory tools, vision tools, skill install tools, schemas, registry, policy, or type surfaces.
 
 ### Deferred high-risk families
 
-| Family | Reason |
-|--------|--------|
-| Capability Creator | Confirmation-gated capability generation and persistence. |
+None in `tools/index.mjs`.
 
 ## Boundary Rules
 

@@ -193,10 +193,10 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
 
 // Existing product callers must still delegate to the skill owner rather than
 // duplicating skill lifecycle or installer logic.
-const actionTools = read("src/service/action_tools/tools/index.mjs");
-assert(actionTools.includes("../../capabilities/skills/lifecycle.mjs"),
-  "action tool aggregator must delegate editable skill creation to lifecycle.mjs");
-assert(actionTools.includes("createEditableSkill") && actionTools.includes("slugifySkillId"),
+const capabilityCreatorTools = read("src/service/capabilities/tools/capability-creator-tools.mjs");
+assert(capabilityCreatorTools.includes("../skills/lifecycle.mjs"),
+  "capability creator tools must delegate editable skill creation to lifecycle.mjs");
+assert(capabilityCreatorTools.includes("createEditableSkill") && capabilityCreatorTools.includes("slugifySkillId"),
   "editable skill action helpers must keep lifecycle delegation");
 
 const skillInstallTools = read("src/service/capabilities/tools/skill-install-tools.mjs");

@@ -237,10 +237,17 @@ assert(indexSrc.includes("from \"../../capabilities/tools/file-mutation-executio
   "index.mjs must import file-mutation-execution-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/document-render-tools.mjs\""),
   "index.mjs must import document-render-tools.mjs from capabilities/tools/");
-assert(indexSrc.includes("from \"../../capabilities/schemas/index.mjs\""),
-  "index.mjs must import ACTION_TOOL_SCHEMAS from capabilities/schemas/");
+assert(indexSrc.includes("from \"../../capabilities/tools/capability-creator-tools.mjs\""),
+  "index.mjs must import capability-creator-tools.mjs from capabilities/tools/");
 assert(existsSync(path.join(root, "src/service/capabilities/schemas/index.mjs")),
   "CAP-2 schema owner must exist under capabilities/schemas/");
+for (const owner of [
+  "src/service/capabilities/tools/document-render-tools.mjs",
+  "src/service/capabilities/tools/capability-creator-tools.mjs"
+]) {
+  assert(read(owner).includes("from \"../schemas/index.mjs\""),
+    `${owner} must import ACTION_TOOL_SCHEMAS from capabilities/schemas/`);
+}
 assert(!existsSync(path.join(root, "src/service/action_tools/schemas/index.mjs")),
   "CAP-2 schema owner must not remain under action_tools/schemas/");
 assert(existsSync(path.join(root, "src/service/capabilities/registry/registry.mjs")),
@@ -282,6 +289,7 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/file-mutation-execution-tools.mjs",
   "src/service/action_tools/tools/document-artifact-helpers.mjs",
   "src/service/action_tools/tools/document-render-tools.mjs",
+  "src/service/action_tools/tools/capability-creator-tools.mjs",
 ];
 for (const oldPath of cap1MovedPaths) {
   assert(!existsSync(path.join(root, oldPath)),
@@ -401,6 +409,24 @@ for (const ownerText of [
   "sanitizeSvgMarkup(args.svg"
 ]) {
   assert(documentRenderToolSrc.includes(ownerText), `document-render-tools.mjs missing ${ownerText}`);
+}
+
+const capabilityCreatorToolSrc = read("src/service/capabilities/tools/capability-creator-tools.mjs");
+for (const tool of ["DRAFT_CAPABILITY_TOOL", "SAVE_CAPABILITY_DRAFT_TOOL"]) {
+  assert(capabilityCreatorToolSrc.includes(`export const ${tool}`),
+    `capability-creator-tools.mjs must own ${tool}`);
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must not redefine extracted ${tool}`);
+}
+for (const ownerText of [
+  "function rehydrateInterviewState",
+  "function buildOneShotInterviewState",
+  "async function saveCapabilityDraftSkill",
+  "async function saveCapabilityDraftMcp",
+  "descriptor = { ...(draft.descriptor ?? {}), enabled: false }"
+]) {
+  assert(capabilityCreatorToolSrc.includes(ownerText), `capability-creator-tools.mjs missing ${ownerText}`);
+  assert(!indexSrc.includes(ownerText), `index.mjs must not retain capability-creator owner text: ${ownerText}`);
 }
 
 assert(!indexSrc.includes("NOOP_TOOLS"), "index.mjs must not retain NOOP_TOOLS coupling");

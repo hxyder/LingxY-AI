@@ -302,6 +302,7 @@ const requiredPaths = [
   "src/service/capabilities/tools/file-mutation-execution-tools.mjs",
   "src/service/capabilities/tools/document-artifact-helpers.mjs",
   "src/service/capabilities/tools/document-render-tools.mjs",
+  "src/service/capabilities/tools/capability-creator-tools.mjs",
   "src/service/capabilities/tools/mermaid-assets.mjs",
   "src/service/capabilities/tools/svg-sanitize.mjs",
   "src/service/core/file-submission.mjs",
