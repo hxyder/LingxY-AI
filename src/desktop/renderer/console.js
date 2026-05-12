@@ -2015,6 +2015,59 @@ window.__lingxyConsoleSmoke = {
       messages: consoleChatMessages?.querySelectorAll?.(".chat-msg")?.length ?? 0
     };
   },
+  async runFirstRunProviderSetupRecovery({
+    issueDetail = "API key missing during first-run recovery."
+  } = {}) {
+    state.workspace = {
+      ...state.workspace,
+      providers: [],
+      codeCliAdapters: [],
+      providerSetup: {
+        status: "recoverable",
+        hasUsableRuntime: false,
+        hasConfiguredRuntime: true,
+        primaryIssue: {
+          id: "provider:openai:api_key_missing",
+          kind: "provider_config",
+          providerId: "openai",
+          title: "OpenAI needs setup",
+          detail: issueDetail,
+          recovery: "api_key_missing",
+          action: {
+            type: "edit_provider",
+            panelId: "providerSettingsPanel",
+            providerId: "openai"
+          }
+        }
+      },
+      onboarding: {
+        ...(state.workspace.onboarding ?? {}),
+        pendingSuggestions: [],
+        archivedSuggestions: []
+      }
+    };
+    switchTab("settings");
+    renderOnboarding();
+    await waitForConsoleSmokeFrame();
+    const providerItem = wizardList?.querySelector?.('[data-capability-id="ai-provider"]') ?? null;
+    const routingItem = wizardList?.querySelector?.('[data-capability-id="model-routing"]') ?? null;
+    const openProviderButton = providerItem?.querySelector?.('[data-capability-panel="providerSettingsPanel"]') ?? null;
+    openProviderButton?.focus?.();
+    const bodyText = wizardList?.textContent ?? "";
+    return {
+      ok: Boolean(providerItem)
+        && Boolean(routingItem)
+        && Boolean(openProviderButton)
+        && (onboardingState?.textContent ?? "") === "Action needed"
+        && bodyText.includes(issueDetail)
+        && !bodyText.includes("sk-gui-smoke-secret"),
+      state: onboardingState?.textContent ?? "",
+      providerDetail: providerItem?.textContent?.trim?.() ?? "",
+      routingDetail: routingItem?.textContent?.trim?.() ?? "",
+      focusedOpenButton: document.activeElement === openProviderButton,
+      openButtonLabel: openProviderButton?.textContent?.trim?.() ?? ""
+    };
+  },
   async runScheduleCompletionNotice({
     taskId = "gui-smoke-scheduled-artifact",
     artifactPath = "E:\\linxi\\gui-smoke-scheduled-report.pdf",

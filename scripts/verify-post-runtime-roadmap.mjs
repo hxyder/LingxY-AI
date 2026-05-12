@@ -89,6 +89,10 @@ for (const required of [
   "DX-004 Keyboard/a11y GUI pass",
   "Overlay task-list open/filter/Escape",
   "approval popup reject by keyboard",
+  "DX-005 Desktop first-run/i18n/preview fidelity",
+  "node scripts/verify-preview-screenshot-diff.mjs",
+  "first-run provider recovery",
+  "generate_document preview screenshot-diff",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

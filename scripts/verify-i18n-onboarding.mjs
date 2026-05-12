@@ -8,6 +8,8 @@ import { dictionaryForLocale, t } from "../src/shared/i18n/index.mjs";
 const i18n = readFileSync("src/shared/i18n/index.mjs", "utf8");
 const firstRun = readFileSync("src/desktop/console/first_run_wizard/view-model.mjs", "utf8");
 const providerSetup = readFileSync("src/shared/provider-setup-status.mjs", "utf8");
+const consoleRenderer = readFileSync("src/desktop/renderer/console.js", "utf8");
+const userInteractionSmoke = readFileSync("scripts/verify-user-interaction-smoke.mjs", "utf8");
 const behavior = readFileSync("tests/behavior/i18n-onboarding.test.mjs", "utf8");
 
 assert.match(i18n, /SUPPORTED_LOCALES/u, "shared i18n module must declare supported locales");
@@ -18,6 +20,8 @@ assert.match(i18n, /export function t/u, "shared i18n module must expose t(local
 assert.match(firstRun, /t\(locale,\s*"firstRun\.welcome\.title"/u, "first-run wizard must use i18n labels");
 assert.match(providerSetup, /t\(locale,\s*"providerSetup\.providerNeedsSetup"/u, "provider setup issues must use i18n labels");
 assert.match(providerSetup, /apiKeyAuthHint/u, "provider setup auth hints must be localized");
+assert.match(consoleRenderer, /runFirstRunProviderSetupRecovery/u, "console GUI smoke must cover first-run provider recovery");
+assert.match(userInteractionSmoke, /console_first_run_provider_recovery/u, "user interaction smoke must require first-run provider recovery");
 
 const enKeys = Object.keys(dictionaryForLocale("en-US")).sort();
 const zhKeys = Object.keys(dictionaryForLocale("zh-CN")).sort();

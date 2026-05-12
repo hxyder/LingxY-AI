@@ -25,10 +25,10 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 104/104 after DX-004
-  keyboard/a11y GUI smoke coverage was added.
+- Current green gate: `npm run check:fast` passed 105/105 after DX-005
+  first-run and preview screenshot-diff coverage was added.
   `npm run verify:desktop-gui-smoke`
-  passed 47/47.
+  passed 49/49.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -62,7 +62,7 @@ Last updated: 2026-05-12.
 | DX-002 Desktop IPC boundary | complete | `electron-main.mjs` is locked as lifecycle/composition only; 112 IPC registrations live under `src/desktop/main/ipc/` and are guarded against duplicates and large handlers. |
 | DX-003 Renderer runtime client consolidation | complete | Console and Overlay runtime mutations are routed through shared renderer clients and locked by `verify-renderer-runtime-client-consolidation.mjs`. |
 | DX-004 Keyboard/a11y GUI pass | complete | Real Electron smoke now drives Overlay task-list keyboard navigation, Console Settings/Schedules keyboard paths, and approval popup keyboard reject. |
-| DX-005 Desktop first-run/i18n/preview fidelity | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
+| DX-005 Desktop first-run/i18n/preview fidelity | complete | First-run provider recovery and generate_document preview screenshot-diff are covered by real Electron GUI smoke and verifier contracts. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
@@ -416,6 +416,8 @@ Verification:
 
 ### DX-005: First-Run, i18n, And Preview Fidelity Completion
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Add first-run GUI smoke for provider setup and missing-key recovery.
@@ -423,6 +425,10 @@ Scope:
   connector pages.
 - Add richer incremental binary draft previews and screenshot-diff checks for
   generated document previews.
+- Completed slice adds real Console first-run provider recovery coverage,
+  keeps provider setup recovery copy on shared i18n contracts, and adds a real
+  Preview window screenshot-diff over initial and incremental
+  `generate_document` drafts.
 
 Acceptance:
 
@@ -434,7 +440,8 @@ Verification:
 
 - `node scripts/verify-i18n-onboarding.mjs`
 - `npm run verify:desktop-gui-smoke`
-- New preview screenshot-diff verifier.
+- `node scripts/verify-preview-screenshot-diff.mjs`
+- `node scripts/verify-user-interaction-smoke.mjs`
 
 ## Phase D: Voice And Real Desktop Hardware
 

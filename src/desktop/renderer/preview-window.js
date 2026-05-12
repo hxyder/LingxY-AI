@@ -332,6 +332,54 @@
         results
       };
     },
+    async prepareGenerateDocumentScreenshotDiff({
+      taskId = "gui-smoke-doc-visual",
+      phase = "initial"
+    } = {}) {
+      const baseOutline = {
+        title: "Visual Coherence Plan",
+        slides: [
+          { heading: "Baseline", bullets: ["Nonblank draft", "Readable structure"] }
+        ]
+      };
+      const expandedOutline = {
+        title: "Visual Coherence Plan",
+        slides: [
+          { heading: "Baseline", bullets: ["Nonblank draft", "Readable structure"] },
+          { heading: "Expanded", bullets: ["Incremental update", "Stable chrome"] }
+        ]
+      };
+      if (phase === "initial") {
+        applyInit({
+          toolName: "generate_document",
+          taskId,
+          args: {
+            kind: "pptx",
+            outline: baseOutline
+          }
+        });
+      } else {
+        applyDelta({
+          toolName: "generate_document",
+          taskId,
+          partialJson: JSON.stringify({
+            kind: "pptx",
+            outline: expandedOutline
+          })
+        });
+      }
+      await waitForSmokeRender();
+      const renderedText = body?.textContent ?? "";
+      return {
+        ok: renderedText.includes("PowerPoint 草稿预览")
+          && renderedText.includes("Visual Coherence Plan")
+          && (phase === "initial" || renderedText.includes("Expanded")),
+        phase,
+        status: status?.dataset?.state ?? "",
+        title: title?.textContent ?? "",
+        rendered_text: renderedText.slice(0, 500)
+      };
+    },
     async runTaskBindingIsolation({
       taskId = "gui-smoke-session-a",
       otherTaskId = "gui-smoke-session-b"

@@ -45,6 +45,80 @@ export function createDesktopGuiSmokeRunner({
     const checks = [];
     const pass = (name, extra = {}) => checks.push({ name, ok: true, ...extra });
     const waitForSmokeFrame = () => new Promise((resolve) => setTimeout(resolve, 40));
+    function captureImageStats(nativeImage) {
+      const size = nativeImage?.getSize?.() ?? { width: 0, height: 0 };
+      const bitmap = nativeImage?.toBitmap?.();
+      if (!bitmap || size.width <= 0 || size.height <= 0) {
+        return { ok: false, width: size.width, height: size.height, sampleCount: 0 };
+      }
+      const stride = size.width * 4;
+      const stepX = Math.max(1, Math.floor(size.width / 80));
+      const stepY = Math.max(1, Math.floor(size.height / 60));
+      let sampleCount = 0;
+      let nonWhite = 0;
+      let sum = 0;
+      let sumSquares = 0;
+      for (let y = 0; y < size.height; y += stepY) {
+        for (let x = 0; x < size.width; x += stepX) {
+          const index = (y * stride) + (x * 4);
+          const b = bitmap[index] ?? 0;
+          const g = bitmap[index + 1] ?? 0;
+          const r = bitmap[index + 2] ?? 0;
+          const a = bitmap[index + 3] ?? 255;
+          if (a < 8) continue;
+          const luma = (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+          sampleCount += 1;
+          sum += luma;
+          sumSquares += luma * luma;
+          if (r < 245 || g < 245 || b < 245) nonWhite += 1;
+        }
+      }
+      const mean = sampleCount ? sum / sampleCount : 0;
+      const variance = sampleCount ? (sumSquares / sampleCount) - (mean * mean) : 0;
+      const nonWhiteRatio = sampleCount ? nonWhite / sampleCount : 0;
+      return {
+        ok: sampleCount > 0 && nonWhiteRatio > 0.02 && variance > 8,
+        width: size.width,
+        height: size.height,
+        sampleCount,
+        nonWhiteRatio,
+        variance
+      };
+    }
+    function compareImageStats(beforeImage, afterImage) {
+      const beforeSize = beforeImage?.getSize?.() ?? { width: 0, height: 0 };
+      const afterSize = afterImage?.getSize?.() ?? { width: 0, height: 0 };
+      const before = beforeImage?.toBitmap?.();
+      const after = afterImage?.toBitmap?.();
+      if (!before || !after || beforeSize.width !== afterSize.width || beforeSize.height !== afterSize.height) {
+        return { ok: false, diffRatio: 0, sampleCount: 0 };
+      }
+      const stride = beforeSize.width * 4;
+      const stepX = Math.max(1, Math.floor(beforeSize.width / 80));
+      const stepY = Math.max(1, Math.floor(beforeSize.height / 60));
+      let sampleCount = 0;
+      let changed = 0;
+      let totalDelta = 0;
+      for (let y = 0; y < beforeSize.height; y += stepY) {
+        for (let x = 0; x < beforeSize.width; x += stepX) {
+          const index = (y * stride) + (x * 4);
+          const delta = Math.abs((before[index] ?? 0) - (after[index] ?? 0))
+            + Math.abs((before[index + 1] ?? 0) - (after[index + 1] ?? 0))
+            + Math.abs((before[index + 2] ?? 0) - (after[index + 2] ?? 0));
+          sampleCount += 1;
+          totalDelta += delta;
+          if (delta > 36) changed += 1;
+        }
+      }
+      const diffRatio = sampleCount ? changed / sampleCount : 0;
+      const averageDelta = sampleCount ? totalDelta / sampleCount : 0;
+      return {
+        ok: diffRatio > 0.003 && diffRatio < 0.7 && averageDelta > 1,
+        diffRatio,
+        averageDelta,
+        sampleCount
+      };
+    }
     async function sendKeyboardShortcut(targetWindow, keyCode) {
       if (!targetWindow || targetWindow.isDestroyed?.()) {
         throw new Error(`keyboard_target_missing:${keyCode}`);
@@ -402,6 +476,18 @@ export function createDesktopGuiSmokeRunner({
         activeElementId: consoleScheduleSnapshot.activeElementId
       });
 
+      const consoleFirstRunProviderRecovery = await consoleWindow.webContents.executeJavaScript(
+        'window.__lingxyConsoleSmoke?.runFirstRunProviderSetupRecovery?.({ issueDetail: "API key missing during first-run recovery." })',
+        true
+      );
+      if (!consoleFirstRunProviderRecovery?.ok) {
+        throw new Error(`console_first_run_provider_recovery_failed:${JSON.stringify(consoleFirstRunProviderRecovery)}`);
+      }
+      pass("console_first_run_provider_recovery", {
+        state: consoleFirstRunProviderRecovery.state,
+        openButtonLabel: consoleFirstRunProviderRecovery.openButtonLabel
+      });
+
       const consoleStreamLoad = await waitForDesktopGuiSmoke(async () => {
         if (consoleWindow.isDestroyed?.()) return false;
         const result = await consoleWindow.webContents.executeJavaScript(
@@ -569,6 +655,56 @@ export function createDesktopGuiSmokeRunner({
         return true;
       }, 8000);
       if (!previewDraftFamilyMatrix) throw new Error("preview_generate_document_draft_family_matrix_failed");
+      const previewVisualInitial = await previewWin.webContents.executeJavaScript(
+        'window.__lingxyPreviewSmoke?.prepareGenerateDocumentScreenshotDiff?.({ taskId: "gui-smoke-doc-visual", phase: "initial" })',
+        true
+      );
+      if (!previewVisualInitial?.ok) {
+        throw new Error("preview_generate_document_screenshot_initial_failed");
+      }
+      previewWin.show?.();
+      previewWin.focus?.();
+      await waitForSmokeFrame();
+      await previewWin.webContents.executeJavaScript(
+        "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+        true
+      );
+      const previewBounds = previewWin.getContentBounds?.() ?? previewWin.getBounds?.() ?? { width: 900, height: 680 };
+      const previewCaptureRect = {
+        x: 0,
+        y: 0,
+        width: Math.max(1, Math.floor(previewBounds.width || 900)),
+        height: Math.max(1, Math.floor(previewBounds.height || 680))
+      };
+      const previewInitialImage = await previewWin.webContents.capturePage(previewCaptureRect);
+      const previewInitialStats = captureImageStats(previewInitialImage);
+      if (!previewInitialStats.ok) {
+        throw new Error(`preview_generate_document_screenshot_initial_blank:${JSON.stringify(previewInitialStats)}`);
+      }
+      const previewVisualExpanded = await previewWin.webContents.executeJavaScript(
+        'window.__lingxyPreviewSmoke?.prepareGenerateDocumentScreenshotDiff?.({ taskId: "gui-smoke-doc-visual", phase: "expanded" })',
+        true
+      );
+      if (!previewVisualExpanded?.ok) {
+        throw new Error("preview_generate_document_screenshot_expanded_failed");
+      }
+      await waitForSmokeFrame();
+      await previewWin.webContents.executeJavaScript(
+        "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+        true
+      );
+      const previewExpandedImage = await previewWin.webContents.capturePage(previewCaptureRect);
+      const previewExpandedStats = captureImageStats(previewExpandedImage);
+      const previewDiffStats = compareImageStats(previewInitialImage, previewExpandedImage);
+      if (!previewExpandedStats.ok || !previewDiffStats.ok) {
+        throw new Error(`preview_generate_document_screenshot_diff_failed:${JSON.stringify({ previewExpandedStats, previewDiffStats })}`);
+      }
+      pass("preview_generate_document_screenshot_diff", {
+        initialNonWhiteRatio: Number(previewInitialStats.nonWhiteRatio.toFixed(4)),
+        expandedNonWhiteRatio: Number(previewExpandedStats.nonWhiteRatio.toFixed(4)),
+        diffRatio: Number(previewDiffStats.diffRatio.toFixed(4)),
+        averageDelta: Number(previewDiffStats.averageDelta.toFixed(2))
+      });
       const previewTaskBinding = await waitForDesktopGuiSmoke(async () => {
         if (previewWin.isDestroyed?.()) return false;
         const result = await previewWin.webContents.executeJavaScript(

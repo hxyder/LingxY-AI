@@ -279,6 +279,36 @@ Verification:
 Next valid work:
 - Commit DX-004 and start DX-005 first-run/i18n/preview fidelity.
 
+## Codex Review: DX-005 First-Run, i18n, And Preview Fidelity
+
+Date: 2026-05-12
+
+Status:
+- DX-005 is complete.
+
+Scope:
+- Added Console GUI smoke coverage for first-run provider setup recovery:
+  recoverable missing API-key state renders in the setup checklist, exposes the
+  provider settings action, and does not leak secret-looking values.
+- Added Preview window smoke preparation for `generate_document` visual
+  coherence: initial draft then incremental draft update for the same task.
+- Added real Electron screenshot capture and sampled image comparison in
+  `src/desktop/smoke/desktop-gui-smoke-runner.mjs`.
+- Added `scripts/verify-preview-screenshot-diff.mjs` and wired it into full and
+  fast checks.
+- Extended i18n/user-interaction verifiers so first-run recovery and preview
+  screenshot-diff stay required.
+
+Verification:
+- `node scripts/verify-i18n-onboarding.mjs`: passed.
+- `node scripts/verify-preview-screenshot-diff.mjs`: passed.
+- `node scripts/verify-user-interaction-smoke.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed, 49/49.
+- `npm run check:fast`: passed, 105/105; behavior tests passed, 998/998.
+
+Next valid work:
+- Commit DX-005 and move to VX-001 real audio/KWS fixtures.
+
 ## Completed Phases
 
 | Phase | Module | Lines |
