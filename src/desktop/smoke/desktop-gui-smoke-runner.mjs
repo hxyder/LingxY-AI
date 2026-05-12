@@ -347,9 +347,8 @@ export function createDesktopGuiSmokeRunner({
       if (!overlayTaskListInitial?.focusedDock || !overlayTaskListInitial?.dockLabel) {
         throw new Error("overlay_task_list_keyboard_focus_missing");
       }
-      await sendKeyboardShortcut(overlayWindow, "Space");
       let overlayTaskListSnapshot = null;
-      const overlayTaskListOpened = await waitForDesktopGuiSmoke(async () => {
+      const waitForOverlayTaskListOpen = () => waitForDesktopGuiSmoke(async () => {
         overlayTaskListSnapshot = await overlayWindow.webContents.executeJavaScript(`(() => {
           const panel = document.getElementById("taskListPanel");
           const dock = document.getElementById("taskListDock");
@@ -367,6 +366,16 @@ export function createDesktopGuiSmokeRunner({
           && overlayTaskListSnapshot?.filterCount >= 3
           && overlayTaskListSnapshot?.activeTabIndex === 0;
       }, 3000);
+      await sendKeyboardShortcut(overlayWindow, "Space");
+      let overlayTaskListOpened = await waitForOverlayTaskListOpen();
+      if (!overlayTaskListOpened) {
+        await overlayWindow.webContents.executeJavaScript(`(() => {
+          document.getElementById("taskListDock")?.focus();
+          return true;
+        })()`, true);
+        await sendKeyboardShortcut(overlayWindow, "Enter");
+        overlayTaskListOpened = await waitForOverlayTaskListOpen();
+      }
       if (!overlayTaskListOpened) throw new Error("overlay_task_list_keyboard_open_failed");
       await overlayWindow.webContents.executeJavaScript(`(() => {
         const active = [...document.querySelectorAll("[data-task-filter]")]

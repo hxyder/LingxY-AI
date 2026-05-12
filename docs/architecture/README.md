@@ -22,5 +22,6 @@ This directory contains the Phase 0 architecture baseline that Phase 1 engineers
 - [os-sandbox-implementation-decision.md](os-sandbox-implementation-decision.md)
 - [window-session-state-machine.md](window-session-state-machine.md)
 - [desktop-ipc-boundaries.md](desktop-ipc-boundaries.md)
+- [desktop-gui-daily-workflow-coverage.md](desktop-gui-daily-workflow-coverage.md)
 
 These documents are high-level by design. Protocol-level details move into the next task, `UCA-002`.

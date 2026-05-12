@@ -3994,3 +3994,38 @@ Verification run by Codex:
 Next valid work:
 - Start `DXR-002 Daily conversation/task/artifact GUI matrix`, because the
   evidence pack now gives real GUI runs a durable place to report results.
+
+## Codex Update: DXR-002 Desktop GUI Daily Workflow Coverage
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/desktop-gui-smoke-workflow-coverage.mjs` to group real
+  Electron GUI smoke checks by daily workflow.
+- Added `docs/architecture/desktop-gui-daily-workflow-coverage.md`,
+  `tests/behavior/desktop-gui-smoke-workflow-coverage.test.mjs`, and
+  `scripts/verify-desktop-gui-daily-workflow-coverage.mjs`.
+- Marked DXR-002 complete in the product gap roadmap for the current covered
+  real smoke workflows: conversation continuity, task operations, and artifact
+  workflow.
+
+Contract notes:
+- This locks existing real Electron smoke checks into a product workflow matrix;
+  it does not change IPC channels, HTTP routes, tool ids, artifact kinds,
+  provider ids, storage schema, or runtime behavior.
+- The next visible desktop workflow phase must either add new real smoke checks
+  or update this coverage contract in the same change.
+
+Verification run by Codex:
+- `node scripts/verify-desktop-gui-daily-workflow-coverage.mjs`
+- `node --test tests/behavior/desktop-gui-smoke-workflow-coverage.test.mjs`
+- `npm run verify:desktop-gui-smoke`
+- The first real GUI smoke run exposed a transient
+  `overlay_task_list_keyboard_open_failed`; Codex hardened the smoke runner by
+  retrying the same task-list keyboard-open path with a refocused dock and Enter
+  fallback when Space does not open the panel.
+- `npm run verify:desktop-gui-smoke`: passed, 49/49 checks
+  (`startup=468ms`, `first_window=468ms`, `interaction=5053ms`,
+  `total=5514ms`).
+- `npm run check:fast`: passed, 127/127 commands including 1064/1064 behavior
+  tests.

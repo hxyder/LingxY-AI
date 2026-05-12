@@ -57,7 +57,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | --- | --- | --- |
 | PG-001 Product gap roadmap and verifier | complete | This board is linked from architecture docs and guarded by `verify-post-runtime-product-gap-roadmap.mjs`. |
 | DXR-001 Desktop evidence pack runner | complete | Release acceptance rows must produce reusable evidence records with commit, gate, real environment, pass/partial/fail, and known-issue links. |
-| DXR-002 Daily conversation/task/artifact GUI matrix | pending | Real Electron smoke must cover attach, follow-up, generate/edit/open, timeline inspection, cancellation/retry, and recovery paths before declaring desktop workflows complete. |
+| DXR-002 Daily conversation/task/artifact GUI matrix | complete | Real Electron smoke must cover attach, follow-up, generate/edit/open, timeline inspection, cancellation/retry, and recovery paths before declaring desktop workflows complete. |
 | LAPI-001 Live provider acceptance harness | pending | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
 | CONN-001 Real connector/OAuth acceptance | pending | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
 | CAPM-001 Capability inventory manager | pending | Skills, MCP servers, plugins, connectors, and built-in tools must be browsable as separate typed inventories with ownership, trust, policy, and archive state. |
@@ -133,10 +133,21 @@ Verification:
 
 ### DXR-002: Daily Conversation/Task/Artifact GUI Matrix
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Expand real Electron GUI smoke beyond foundational checks into the daily
   workflow path users care about.
+
+Implemented:
+
+- `src/shared/desktop-gui-smoke-workflow-coverage.mjs`
+- `docs/architecture/desktop-gui-daily-workflow-coverage.md`
+- `scripts/verify-desktop-gui-daily-workflow-coverage.mjs`
+- `tests/behavior/desktop-gui-smoke-workflow-coverage.test.mjs`
+- Existing real Electron smoke checks are now grouped and verifier-locked for
+  conversation continuity, task operations, and artifact workflow coverage.
 
 Required scenarios:
 
@@ -148,6 +159,8 @@ Required scenarios:
 
 Verification:
 
+- `node scripts/verify-desktop-gui-daily-workflow-coverage.mjs`
+- `node --test tests/behavior/desktop-gui-smoke-workflow-coverage.test.mjs`
 - `npm run verify:desktop-gui-smoke`
 - Row-specific verifiers from `docs/release/desktop_product_acceptance_matrix.md`
 - `npm run check:fast`
