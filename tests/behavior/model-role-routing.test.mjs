@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 import {
+  buildModelRoleManagementSurface,
   buildModelRoleRoutingSummary,
   isModelRoleCallSiteRoutingEnabled,
   normalizeModelRoleRoutes,
@@ -16,18 +17,20 @@ import {
 } from "../../src/service/executors/shared/provider-resolver.mjs";
 import { buildLlmUsagePayload } from "../../src/service/core/task-runtime/llm-usage.mjs";
 
-test("model role routing exposes planner executor reviewer defaults", () => {
+test("model role routing exposes planner executor reviewer fast defaults", () => {
   const summary = buildModelRoleRoutingSummary({ config: {} });
   const byRole = new Map(summary.roles.map((role) => [role.role, role]));
 
-  assert.deepEqual([...byRole.keys()], ["planner", "executor", "reviewer"]);
+  assert.deepEqual([...byRole.keys()], ["planner", "executor", "reviewer", "fast"]);
   assert.equal(byRole.get("planner")?.status, "fallback");
   assert.equal(byRole.get("executor")?.route.taskType, "chat");
   assert.equal(byRole.get("reviewer")?.route.taskType, "reviewer");
+  assert.equal(byRole.get("fast")?.route.taskType, "chat");
   assert.deepEqual(summary.measurementKeys, [
     "model_role.planner",
     "model_role.executor",
-    "model_role.reviewer"
+    "model_role.reviewer",
+    "model_role.fast"
   ]);
 });
 
@@ -147,6 +150,39 @@ test("model role routing reports missing or misconfigured providers without secr
   assert.equal(byRole.get("planner")?.issue, "api_key_missing");
   assert.equal(byRole.get("reviewer")?.status, "missing_provider");
   assert.doesNotMatch(JSON.stringify(summary), /apiKey|sk-test|secret-value/u);
+});
+
+test("model role management surface exposes health cost fallback feature flag and test actions", () => {
+  const summary = buildModelRoleRoutingSummary({
+    config: {
+      ai: {
+        modelRoles: { enabled: true },
+        customProviders: [{
+          id: "openai-main",
+          name: "OpenAI Main",
+          kind: "openai",
+          apiKeyConfigured: true,
+          defaultModel: "gpt-5.4-mini"
+        }],
+        taskRouting: {
+          chat: { providerId: "openai-main", model: "gpt-5.4-mini" }
+        }
+      }
+    }
+  });
+  const surface = buildModelRoleManagementSurface({ routingSummary: summary, config: { ai: { modelRoles: { enabled: true } } } });
+  const byRole = new Map(surface.roles.map((role) => [role.role, role]));
+
+  assert.equal(surface.featureFlag.enabled, true);
+  assert.equal(surface.featureFlag.source, "ai.modelRoles.enabled");
+  assert.deepEqual([...byRole.keys()], ["planner", "executor", "reviewer", "fast"]);
+  assert.equal(byRole.get("fast")?.health.ok, true);
+  assert.equal(byRole.get("fast")?.fallback.source, "task_routing_fallback");
+  assert.equal(byRole.get("fast")?.cost.usageEvent, "llm_usage");
+  assert.equal(byRole.get("fast")?.cost.measurementKey, "model_role.fast");
+  assert.equal(surface.testActions.some((action) => action.id === "model_role.fast.test"), true);
+  assert.equal(surface.testActions.some((action) => action.prompt === "Reply with exactly: LINGXY_MODEL_ROLE_TEST_OK"), true);
+  assert.doesNotMatch(JSON.stringify(surface), /apiKey|sk-test|secret-value/u);
 });
 
 test("model role call-site routing stays disabled until explicit feature flag", () => {

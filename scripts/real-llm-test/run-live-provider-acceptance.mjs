@@ -213,17 +213,26 @@ function compactProvider(provider = null) {
 }
 
 function compactModelRoles(modelRoles = null) {
+  const surface = modelRoles?.managementSurface ?? {};
   return {
     schemaVersion: modelRoles?.schemaVersion ?? null,
     counts: modelRoles?.counts ?? null,
+    featureFlag: modelRoles?.featureFlag ?? surface.featureFlag ?? null,
     roles: (modelRoles?.roles ?? []).map((role) => ({
       role: role.role,
       status: role.status,
       ready: role.ready === true,
+      configured: role.configured === true,
       providerId: role.route?.providerId ?? null,
       model: role.route?.model ?? null,
-      source: role.route?.source ?? null
-    }))
+      source: role.route?.source ?? null,
+      costMeasurementKey: `model_role.${role.role}`
+    })),
+    managementSurface: {
+      id: surface.id ?? null,
+      roleCount: Array.isArray(surface.roles) ? surface.roles.length : 0,
+      testActionCount: Array.isArray(surface.testActions) ? surface.testActions.length : 0
+    }
   };
 }
 

@@ -2,6 +2,48 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: MMX-001 Model Role Management Surface
+
+Date: 2026-05-12
+
+Scope:
+- Promoted planner/executor/reviewer/fast model roles into the service-owned
+  `modelRoles` contract.
+- Added `managementSurface` metadata with feature-flag state, per-role health,
+  fallback source, cost/usage evidence, and safe live-test action metadata.
+- Rendered the model-role management surface in Console Settings > Routing
+  before the existing task-routing form.
+- Extended the live provider acceptance harness evidence snapshot so real API
+  runs carry model-role management surface metadata.
+
+Decision:
+- No provider ids, task routing schema, HTTP routes, IPC channels, storage
+  schema, or approval semantics changed.
+- The fast role is visible as a role but maps to the existing fast executor
+  `chat` route, so no new execution lane or behavior fork was added.
+- Role call-site routing remains opt-in through the existing model-role flags.
+
+Verification:
+- `node --test tests/behavior/model-role-routing.test.mjs`: passed, 7/7.
+- `node scripts/verify-model-role-routing.mjs`: passed.
+- `node --test tests/behavior/live-provider-acceptance-harness.test.mjs`:
+  passed, 4/4.
+- `node scripts/verify-live-provider-acceptance-harness.mjs`: passed.
+- `npm run check:fast`: passed, 132/132; behavior tests passed, 1083/1083.
+- `npm run verify:desktop-gui-smoke`: first attempt hit the known
+  `overlay_task_list_keyboard_open_failed` focus timing issue; immediate rerun
+  passed 49/49 (`startup=470ms`, `first_window=470ms`,
+  `interaction=5033ms`, `total=5497ms`).
+- `node scripts/real-llm-test/run-live-provider-acceptance.mjs`: dry-run
+  passed and wrote a redacted report under `.tmp/live-provider-acceptance`.
+
+Next valid work:
+- Start `MMX-002` budgeted fallback/cascade evidence.
+- After the product-gap roadmap is functionally complete, run a real
+  API/common-agent acceptance pass across provider calls, tools, artifacts,
+  context, connectors, memory, fallback, and recovery; fix failures at the
+  framework layer, not with prompt-only patches.
+
 ## Codex Update: SBOX-001 High-Risk Sandbox Evidence Pack
 
 Date: 2026-05-12

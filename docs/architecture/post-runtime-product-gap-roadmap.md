@@ -15,10 +15,9 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 132/132 with 1082/1082
-  behavior tests after SBOX-001.
-- `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-002
-  visible Console skill-install preview integration. The first CAPM-002 GUI
+- Current green gate: `npm run check:fast` passed 132/132 with 1083/1083
+  behavior tests after MMX-001.
+- `npm run verify:desktop-gui-smoke` passed 49/49 after MMX-001. The first
   smoke attempt hit the known task-list keyboard focus timing failure and the
   immediate rerun passed.
 - The next work must improve product capability, manageability, or real
@@ -38,6 +37,11 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
   verifiers, and `npm run check:fast`.
 - Any new plugin, MCP, skill, provider, model role, sandbox, or desktop workflow
   surface must have an owner, a rollback/recovery story, and acceptance evidence.
+- After the roadmap is functionally complete, run a real API/common-agent
+  acceptance pass across provider calls, tool use, artifact creation, context,
+  connector read/write guards, memory, fallback, and recovery. Problems found
+  there must be fixed in framework contracts, tests, or verifiers rather than
+  prompt-only or one-scenario patches.
 
 ## Source Map
 
@@ -65,7 +69,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
 | SBOX-001 High-risk sandbox evidence pack | complete | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
-| MMX-001 Model role management surface | pending | Users must see and test planner/executor/reviewer/fast roles, health, cost, fallback, and feature-flag state without editing config files. |
+| MMX-001 Model role management surface | complete | Users can see planner/executor/reviewer/fast roles, health, cost, fallback, feature-flag state, and live-test action metadata without editing config files. |
 | MMX-002 Budgeted fallback and cascade evidence | pending | Any model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
 | CTX-001 Context selection and project packs | pending | Users must see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
 | REL-001 Release evidence bundle | pending | Release readiness must bundle check results, GUI smoke, row evidence, known issues, policy traces, and environment notes. |
@@ -364,21 +368,43 @@ Verification:
 
 ### MMX-001: Model Role Management Surface
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Make multi-model support understandable and testable from the desktop app.
 
-Required surface:
+Implemented:
 
-- Planner/executor/reviewer/fast role assignments.
-- Provider health and model availability.
-- Feature-flag status.
-- Estimated cost/latency.
-- Test button using a safe short prompt.
+- `src/service/ai/model-role-routing.mjs` now treats
+  planner/executor/reviewer/fast as first-class roles.
+- The `/config/integrations` `modelRoles` payload now includes
+  `featureFlag`, `managementSurface`, per-role health, fallback, cost/usage
+  evidence, and safe live-test action metadata.
+- Console Settings > Routing renders a service-backed model-role management
+  surface before the existing task-routing form.
+- The live provider acceptance harness records the model-role management
+  surface shape in its redacted evidence output.
+
+Boundaries:
+
+- Existing provider ids, task-routing schema, HTTP routes, IPC channels, and
+  storage schema remain unchanged.
+- The fast role maps to the current fast executor's `chat` provider route; no
+  new runtime execution lane was introduced.
+- Role call-site routing is still opt-in through the existing
+  `ai.modelRoles.enabled` or `ai.modelRoleRouting.enabled` flags.
 
 Verification:
 
-- Role-routing verifiers and provider-health tests.
+- `node --test tests/behavior/model-role-routing.test.mjs`
+- `node scripts/verify-model-role-routing.mjs`
+- `node --test tests/behavior/live-provider-acceptance-harness.test.mjs`
+- `node scripts/verify-live-provider-acceptance-harness.mjs`
+- `npm run check:fast`
+- `npm run verify:desktop-gui-smoke`
+- `node scripts/real-llm-test/run-live-provider-acceptance.mjs` in dry-run
+  mode
 - Real API test only when credentials are present and the user explicitly runs
   the live harness.
 

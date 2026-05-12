@@ -4977,6 +4977,7 @@ async function loadProvidersAndRouting() {
     providerModelOptionsCache.clear();
     providerModelOptionsLoading.clear();
     renderProvidersList();
+    renderModelRoleManagementSurface();
     renderTaskRouting();
     void prefetchProviderModelOptions();
   } catch (error) {
@@ -5245,6 +5246,87 @@ function renderProvidersList() {
       await loadProvidersAndRouting();
     });
   }
+}
+
+function modelRoleChipClass(status = "") {
+  if (status === "ready" || status === "configured" || status === "fallback") return "ready";
+  if (status === "missing_provider" || status === "misconfigured" || status === "unavailable") return "warning";
+  if (status === "disabled") return "muted";
+  return "muted";
+}
+
+function renderModelRoleManagementSurface() {
+  const el = document.getElementById("modelRoleManagementSurface");
+  if (!el) return;
+  const modelRoles = state.workspace?.modelRoles ?? null;
+  const surface = modelRoles?.managementSurface ?? null;
+  const roles = surface?.roles ?? modelRoles?.roles ?? [];
+  if (!modelRoles || roles.length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const featureFlag = surface?.featureFlag ?? modelRoles.featureFlag ?? {};
+  const flagLabel = featureFlag.enabled ? "role routing enabled" : "role routing inactive";
+  const flagDetail = featureFlag.source ?? "disabled";
+  const counts = surface?.counts ?? modelRoles.counts ?? {};
+
+  el.innerHTML = `
+    <div style="padding:12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+        <div>
+          <strong style="font-size:13px;">Model Roles</strong>
+          <div class="muted" style="font-size:11px;margin-top:2px;">Planner, executor, reviewer, and fast model lanes with health, fallback, and usage evidence.</div>
+        </div>
+        <span class="chip ${featureFlag.enabled ? "ready" : "muted"}" title="${escapeHtml(flagDetail)}">${escapeHtml(flagLabel)}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;">
+        ${roles.map((roleEntry) => {
+          const route = roleEntry.route ?? {};
+          const provider = roleEntry.provider ?? {};
+          const fallback = roleEntry.fallback ?? {};
+          const cost = roleEntry.cost ?? {};
+          const providerLabel = provider.providerName ?? provider.providerId ?? route.providerId ?? "fallback provider";
+          const modelLabel = route.model ?? "auto";
+          const sourceLabel = fallback.source ?? route.source ?? "unknown";
+          const status = roleEntry.status ?? "unknown";
+          const testAction = (roleEntry.actions ?? []).find((action) => action.type === "live_provider_acceptance");
+          return `
+            <div style="padding:10px;border-radius:10px;background:var(--surface-strong);border:1px solid var(--line);min-width:0;">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+                <strong style="font-size:13px;">${escapeHtml(roleEntry.label ?? roleEntry.role)}</strong>
+                <span class="chip ${modelRoleChipClass(status)}">${escapeHtml(status)}</span>
+              </div>
+              <div class="muted" style="font-size:11px;margin-top:5px;overflow-wrap:anywhere;">${escapeHtml(providerLabel)} · ${escapeHtml(modelLabel)}</div>
+              <div class="muted" style="font-size:11px;margin-top:3px;">route: ${escapeHtml(route.taskType ?? "auto")} · ${escapeHtml(sourceLabel)}</div>
+              <div class="muted" style="font-size:11px;margin-top:3px;">cost: ${escapeHtml(cost.usageEvent ?? "llm_usage")} · ${escapeHtml(cost.measurementKey ?? `model_role.${roleEntry.role}`)}</div>
+              <div class="toolbar" style="margin-top:8px;">
+                <button class="btn btn-sm btn-ghost" type="button" data-model-role-action="open_routing" data-model-role="${escapeHtml(roleEntry.role)}">Route</button>
+                ${testAction ? `<button class="btn btn-sm btn-ghost" type="button" data-model-role-action="test" data-model-role="${escapeHtml(roleEntry.role)}" ${testAction.available === false ? "disabled" : ""}>Test</button>` : ""}
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+      <div class="muted" style="font-size:11px;margin-top:8px;">${escapeHtml(counts.ready ?? 0)} ready · ${escapeHtml(counts.configured ?? 0)} configured · ${escapeHtml(counts.explicit ?? 0)} explicit routes</div>
+    </div>
+  `;
+
+  el.querySelectorAll("[data-model-role-action]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const action = btn.dataset.modelRoleAction;
+      const role = btn.dataset.modelRole ?? "";
+      if (action === "open_routing") {
+        navigateToSettingsPanel("routingSettingsPanel");
+        return;
+      }
+      if (action === "test") {
+        const roleEntry = roles.find((entry) => entry.role === role) ?? null;
+        const testAction = (roleEntry?.actions ?? []).find((entry) => entry.type === "live_provider_acceptance") ?? {};
+        showConsoleToast(`Live role test: ${testAction.command ?? "node scripts/real-llm-test/run-live-provider-acceptance.mjs --live"} (${role})`, { kind: "info" });
+      }
+    });
+  });
 }
 
 function renderTaskRouting() {
@@ -8205,6 +8287,7 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
 
   if (isActive("settings")) {
     renderIfChanged("settings.providerOnboarding", state.workspace.onboarding, renderProviderOnboardingSuggestions);
+    renderIfChanged("settings.modelRoles", state.workspace.modelRoles, renderModelRoleManagementSurface);
     renderIfChanged("settings.userMemory", state.workspace.userMemory, renderUserMemorySettings);
     renderIfChanged("settings.templates", state.workspace.templates, renderTemplates);
     renderIfChanged("settings.dag", state.workspace.dagExecutions, renderDagExecutions);
@@ -8301,6 +8384,7 @@ async function refreshWorkspace(options = {}) {
         plugins: pluginsP.plugins ?? [],
         onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
         providerSetup: integrationsP.providerSetup ?? null,
+        modelRoles: integrationsP.modelRoles ?? previous.modelRoles ?? null,
         userMemory: integrationsP.userMemory ?? previous.userMemory ?? null,
         emailAccounts: emailP.accounts ?? [],
         emailDigestSettings: emailSettingsP.settings ?? {},

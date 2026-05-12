@@ -6,7 +6,7 @@ import {
 
 export const MODEL_ROLE_ROUTING_VERSION = 1;
 
-export const MODEL_ROLES = Object.freeze(["planner", "executor", "reviewer"]);
+export const MODEL_ROLES = Object.freeze(["planner", "executor", "reviewer", "fast"]);
 
 export const MODEL_ROLE_DEFAULTS = Object.freeze({
   planner: Object.freeze({
@@ -23,6 +23,11 @@ export const MODEL_ROLE_DEFAULTS = Object.freeze({
     label: "Reviewer",
     taskType: "reviewer",
     fallbackTaskTypes: Object.freeze(["reviewer", "summary", "chat"])
+  }),
+  fast: Object.freeze({
+    label: "Fast",
+    taskType: "chat",
+    fallbackTaskTypes: Object.freeze(["chat"])
   })
 });
 
@@ -130,6 +135,109 @@ function providerDescriptor(provider = null) {
   };
 }
 
+function featureFlagState(config = {}) {
+  const modelRolesEnabled = config.ai?.modelRoles?.enabled === true;
+  const modelRoleRoutingEnabled = config.ai?.modelRoleRouting?.enabled === true;
+  return {
+    enabled: modelRolesEnabled || modelRoleRoutingEnabled,
+    source: modelRolesEnabled
+      ? "ai.modelRoles.enabled"
+      : modelRoleRoutingEnabled
+        ? "ai.modelRoleRouting.enabled"
+        : "disabled",
+    configPaths: Object.freeze([
+      "ai.modelRoles.enabled",
+      "ai.modelRoleRouting.enabled"
+    ]),
+    callSiteRouting: modelRolesEnabled || modelRoleRoutingEnabled ? "enabled" : "disabled"
+  };
+}
+
+function roleHealthDescriptor(roleEntry = {}) {
+  const status = roleEntry.status ?? "unknown";
+  const ok = status === "ready" || status === "configured" || status === "fallback";
+  return {
+    status,
+    ok,
+    issue: roleEntry.issue ?? null,
+    recovery: roleEntry.issue
+      ? "Open Settings > Providers or Routing and repair the selected provider/model."
+      : ""
+  };
+}
+
+function roleFallbackDescriptor(roleEntry = {}) {
+  const defaults = MODEL_ROLE_DEFAULTS[roleEntry.role] ?? {};
+  return {
+    active: roleEntry.route?.explicit !== true,
+    source: roleEntry.route?.source ?? "unknown",
+    taskTypes: [...(defaults.fallbackTaskTypes ?? [defaults.taskType ?? roleEntry.role])]
+  };
+}
+
+function roleCostDescriptor(roleEntry = {}) {
+  return {
+    visible: true,
+    usageEvent: "llm_usage",
+    measurementKey: `model_role.${roleEntry.role}`,
+    tokenUsage: true,
+    pricingAvailable: Boolean(roleEntry.provider?.providerFamily),
+    providerFamily: roleEntry.provider?.providerFamily ?? null
+  };
+}
+
+function roleActions(roleEntry = {}) {
+  return [
+    {
+      id: `model_role.${roleEntry.role}.open_routing`,
+      type: "open_settings_panel",
+      target: "routingSettingsPanel",
+      label: "Open routing"
+    },
+    {
+      id: `model_role.${roleEntry.role}.test`,
+      type: "live_provider_acceptance",
+      target: "real-llm:provider-acceptance",
+      label: "Run live test",
+      available: roleEntry.configured === true || roleEntry.ready === true,
+      requiresLiveProvider: true,
+      prompt: "Reply with exactly: LINGXY_MODEL_ROLE_TEST_OK",
+      command: "node scripts/real-llm-test/run-live-provider-acceptance.mjs --live",
+      evidence: "llm_usage.model_role"
+    }
+  ];
+}
+
+export function buildModelRoleManagementSurface({
+  config = {},
+  routingSummary = null
+} = {}) {
+  const summary = routingSummary ?? buildModelRoleRoutingSummary({ config });
+  const roles = summary.roles.map((roleEntry) => ({
+    role: roleEntry.role,
+    label: roleEntry.label,
+    status: roleEntry.status,
+    ready: roleEntry.ready,
+    configured: roleEntry.configured,
+    route: roleEntry.route,
+    provider: roleEntry.provider,
+    health: roleHealthDescriptor(roleEntry),
+    fallback: roleFallbackDescriptor(roleEntry),
+    cost: roleCostDescriptor(roleEntry),
+    actions: roleActions(roleEntry)
+  }));
+  return {
+    id: "model_role_management_surface",
+    schemaVersion: MODEL_ROLE_ROUTING_VERSION,
+    featureFlag: featureFlagState(config),
+    roles,
+    counts: summary.counts,
+    testActions: roles.map((roleEntry) =>
+      roleEntry.actions.find((action) => action.type === "live_provider_acceptance")
+    ).filter(Boolean)
+  };
+}
+
 export function buildModelRoleRoutingSummary({
   config = {},
   providers = null
@@ -178,11 +286,16 @@ export function buildModelRoleRoutingSummary({
     return acc;
   }, { roles: 0, explicit: 0, ready: 0, configured: 0, byStatus: {} });
 
-  return {
+  const routingSummary = {
     schemaVersion: MODEL_ROLE_ROUTING_VERSION,
     roles,
     counts,
     measurementKeys: roles.map((role) => `model_role.${role.role}`)
+  };
+  return {
+    ...routingSummary,
+    featureFlag: featureFlagState(config),
+    managementSurface: buildModelRoleManagementSurface({ config, routingSummary })
   };
 }
 
