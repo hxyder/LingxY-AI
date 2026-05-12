@@ -27,6 +27,7 @@ for (const required of [
   "DX-006 Desktop product acceptance matrix",
   "node scripts/verify-memory-review-history.mjs",
   "node scripts/verify-memory-scope-filters.mjs",
+  "node scripts/verify-marketplace-management-ui.mjs",
   "node --test tests/behavior/user-memory-profile.test.mjs"
 ]) {
   assert.ok(roadmap.includes(required), `maturity roadmap missing required text: ${required}`);

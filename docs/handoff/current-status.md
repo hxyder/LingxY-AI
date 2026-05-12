@@ -3748,3 +3748,46 @@ Decision:
 - Next recommended work is PM-004 marketplace management UI, because trust,
   governance, and distribution policy verifiers already exist and the remaining
   gap is making those states visible/actionable in Console.
+
+## Codex Review: PM-004 Marketplace Management UI
+
+Date: 2026-05-12
+
+Scope:
+- Added a Console Marketplace Governance panel covering skills, MCP servers, and
+  plugins.
+- Displayed existing service-provided `trustPreview`, signature state, archive
+  state, warning ids, and MCP governance allow/block state.
+- Loaded `/plugins` into the workspace refresh cycle.
+- Made plugins actionable through the existing `/plugins/:id/enabled` and
+  `DELETE /plugins/:id` routes for enable/disable and archive.
+- Added `scripts/verify-marketplace-management-ui.mjs` and updated the maturity
+  roadmap/check manifest.
+
+Contract notes:
+- No new HTTP route, IPC channel, tool id, artifact kind, provider id, provider
+  call, or storage schema was introduced.
+- Renderer code remains view/controller code over existing service contracts; it
+  does not import marketplace, MCP, skill, or plugin service internals.
+
+Verification run by Codex:
+- `node --check` on changed PM-004 renderer/verifier files: passed.
+- `node --test tests/behavior/marketplace-trust-model.test.mjs tests/behavior/marketplace-distribution-policy.test.mjs tests/behavior/mcp-governance.test.mjs`:
+  passed, 16/16.
+- `node scripts/verify-marketplace-management-ui.mjs`: passed.
+- `node scripts/verify-marketplace-trust-model.mjs`: passed.
+- `node scripts/verify-marketplace-distribution-policy.mjs`: passed.
+- `node scripts/verify-mcp-governance-policy.mjs`: passed.
+- `node scripts/verify-post-runtime-maturity-roadmap.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-console-runtime-client.mjs`: passed.
+- `npm run check:fast`: passed, 121/121 commands including 1049/1049 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed; only existing line-ending normalization warnings
+  were reported.
+
+Decision:
+- PM-004 is ready to commit.
+- Next recommended work is DX-006 Desktop product acceptance matrix: broaden
+  manual/real GUI coverage for daily workflows beyond the current smoke gates.

@@ -35,7 +35,7 @@ protocol in `AGENTS.md`.
 | MR-001 Memory review history and undo | complete | Memory proposal approve/reject/delete actions are reviewable and undoable typed governance records. |
 | MR-002 Memory project scope and review filters | complete | Approved/proposed memory can be filtered by scope/project/conversation without leaking unrelated scope. |
 | SA-003 Planner-selected delegation enablement audit | pending | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
-| PM-004 Marketplace management UI | pending | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
+| PM-004 Marketplace management UI | complete | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
 | SH-004 OS sandbox implementation decision | pending | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
 | DX-006 Desktop product acceptance matrix | pending | Broaden manual/real GUI acceptance for daily desktop workflows beyond foundational smoke. |
 
@@ -110,3 +110,34 @@ Verification:
 4. DX-006: product acceptance matrix expansion.
 5. SA-003: planner-selected delegation enablement audit.
 6. SH-004: OS sandbox implementation decision if measured evidence supports it.
+
+## PM-004: Marketplace Management UI
+
+Status: complete as of 2026-05-12.
+
+Scope:
+
+- Add a Console Marketplace Governance panel for skills, plugins, and MCP
+  servers.
+- Display existing `trustPreview`, signature state, archive state, warnings,
+  and MCP governance state without duplicating marketplace policy in renderer.
+- Load existing `/plugins` registry data into the workspace refresh cycle.
+- Make installed plugins actionable through existing enable/disable and archive
+  routes.
+
+Acceptance:
+
+- Skills, MCP servers, and plugins are visible in one management surface.
+- Third-party/unsigned/disabled/deleted warnings from service trust previews are
+  visible.
+- MCP governance allow/block state is visible.
+- Plugin enable/disable and archive actions call existing service routes; no new
+  HTTP route, IPC channel, tool id, artifact kind, provider id, or storage schema
+  is introduced.
+
+Verification:
+
+- `node scripts/verify-marketplace-management-ui.mjs`
+- `node scripts/verify-marketplace-trust-model.mjs`
+- `node scripts/verify-marketplace-distribution-policy.mjs`
+- `node scripts/verify-mcp-governance-policy.mjs`

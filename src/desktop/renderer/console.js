@@ -334,6 +334,10 @@ const mcpServerList = document.querySelector("#mcpServerList");
 const mcpDraftList = document.querySelector("#mcpDraftList");
 const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
 const mcpServerTestBtn = document.querySelector("#mcpServerTestBtn");
+const marketplaceCapabilityCount = document.querySelector("#marketplaceCapabilityCount");
+const marketplaceRefreshBtn = document.querySelector("#marketplaceRefreshBtn");
+const marketplaceState = document.querySelector("#marketplaceState");
+const marketplaceCapabilityList = document.querySelector("#marketplaceCapabilityList");
 const mcpInstallSource = document.querySelector("#mcpInstallSource");
 const mcpInstallPlanBtn = document.querySelector("#mcpInstallPlanBtn");
 const mcpInstallRunBtn = document.querySelector("#mcpInstallRunBtn");
@@ -855,6 +859,7 @@ const state = {
     mcpServers: [],
     skillRegistries: [],
     skills: [],
+    plugins: [],
     onboarding: { pendingSuggestions: [], archivedSuggestions: [] },
     providerSetup: null,
     userMemory: null,
@@ -4440,6 +4445,144 @@ function renderSkillRegistries() {
       }
     });
   }
+}
+
+function marketplaceTrustFields(entry = {}) {
+  const preview = entry.trustPreview ?? {};
+  const trust = preview.trust ?? entry.trust ?? {};
+  const distribution = preview.distribution ?? trust.distribution ?? entry.distribution ?? {};
+  const signature = distribution.signature ?? {};
+  const archive = distribution.archive ?? {};
+  return {
+    origin: preview.origin ?? trust.origin ?? entry.source ?? "unknown",
+    signatureState: signature.state ?? trust.signatureState ?? entry.signatureState ?? "unsigned",
+    archiveState: archive.state ?? entry.archiveState ?? (entry.status === "archived" ? "archived" : "active"),
+    warnings: Array.isArray(preview.warnings) ? preview.warnings : Array.isArray(trust.warnings) ? trust.warnings : [],
+    requiredReview: Boolean(preview.requiredUserReview ?? trust.userActionRequired),
+    trustState: trust.trustState ?? "unknown"
+  };
+}
+
+function marketplaceCardHtml(entry = {}) {
+  const fields = marketplaceTrustFields(entry);
+  const title = entry.title ?? entry.displayName ?? entry.name ?? entry.id ?? "Marketplace item";
+  const subtitle = [entry.kind, fields.origin, entry.path ?? entry.entryPath ?? entry.directory ?? entry.command ?? entry.url]
+    .filter(Boolean)
+    .join(" · ");
+  const governance = entry.governance
+    ? entry.governance.allowed === false
+      ? { chip: "danger", label: "governance blocked" }
+      : { chip: "ready", label: "governance allowed" }
+    : null;
+  const enabled = entry.enabled !== false && entry.active !== false && entry.status !== "archived";
+  return `
+    <div class="surface" style="padding:10px 12px;">
+      <div class="row">
+        <strong style="font-size:13px;">${escapeHtml(title)}</strong>
+        <span class="chip ${enabled ? "ready" : "muted"}">${escapeHtml(enabled ? "enabled" : "inactive")}</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(subtitle || "n/a")}</p>
+      <div class="toolbar" style="margin-top:6px;">
+        <span class="chip ${fields.requiredReview ? "warning" : "ready"}">${escapeHtml(fields.trustState)}</span>
+        <span class="chip ${fields.signatureState === "verified" ? "ready" : "warning"}">${escapeHtml(`signature:${fields.signatureState}`)}</span>
+        <span class="chip ${fields.archiveState === "archived" ? "muted" : "ready"}">${escapeHtml(`archive:${fields.archiveState}`)}</span>
+        ${governance ? `<span class="chip ${governance.chip}">${escapeHtml(governance.label)}</span>` : ""}
+      </div>
+      ${fields.warnings.length ? `
+        <p class="muted" style="margin-top:6px;font-size:11.5px;color:#b45309;">${escapeHtml(fields.warnings.join(", "))}</p>
+      ` : ""}
+      ${entry.kind === "plugin" ? `
+        <div class="toolbar" style="margin-top:8px;">
+          <button class="btn btn-sm btn-ghost" data-marketplace-plugin-toggle="${escapeHtml(entry.id ?? "")}" data-marketplace-plugin-enabled="${enabled ? "false" : "true"}">${enabled ? "Disable" : "Enable"}</button>
+          ${entry.source !== "builtin" ? `<button class="btn btn-sm btn-danger" data-marketplace-plugin-archive="${escapeHtml(entry.id ?? "")}">Archive</button>` : ""}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+function marketplaceEntries() {
+  const skills = (state.workspace.skills ?? []).map((skill) => ({
+    ...skill,
+    kind: "skill",
+    title: skill.displayName ?? skill.name ?? skill.id
+  }));
+  const mcpServers = (state.workspace.mcpServers ?? []).map((server) => ({
+    ...server,
+    kind: "mcp",
+    title: server.displayName ?? server.id
+  }));
+  const plugins = (state.workspace.plugins ?? []).map((plugin) => ({
+    ...plugin,
+    kind: "plugin",
+    title: plugin.displayName ?? plugin.name ?? plugin.id
+  }));
+  return [...skills, ...mcpServers, ...plugins];
+}
+
+async function setMarketplacePluginEnabled(pluginId, enabled) {
+  return fetchJson(
+    `/plugins/${encodeURIComponent(pluginId)}/enabled`,
+    runtimeJsonOptions("PATCH", { enabled }, { actor: "desktop_console" })
+  );
+}
+
+async function archiveMarketplacePlugin(pluginId) {
+  return fetchJson(`/plugins/${encodeURIComponent(pluginId)}`, {
+    method: "DELETE",
+    headers: { "X-Lingxy-Desktop-Actor": "desktop_console" }
+  });
+}
+
+function renderMarketplaceManagement() {
+  if (!marketplaceCapabilityList) return;
+  const entries = marketplaceEntries();
+  const actionable = entries.filter((entry) => {
+    const fields = marketplaceTrustFields(entry);
+    return fields.requiredReview || fields.signatureState !== "verified" || fields.archiveState === "archived" || entry.governance;
+  }).length;
+  if (marketplaceCapabilityCount) marketplaceCapabilityCount.textContent = `${actionable}/${entries.length}`;
+  if (marketplaceState) marketplaceState.textContent = `${entries.length} capabilities · ${actionable} need review or expose governance state`;
+  if (entries.length === 0) {
+    renderEmpty(marketplaceCapabilityList, "No marketplace-managed skills, plugins, or MCP servers discovered.");
+    return;
+  }
+  marketplaceCapabilityList.innerHTML = entries.map(marketplaceCardHtml).join("");
+  marketplaceCapabilityList.querySelectorAll("[data-marketplace-plugin-toggle]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pluginId = btn.dataset.marketplacePluginToggle;
+      const enabled = btn.dataset.marketplacePluginEnabled === "true";
+      if (!pluginId) return;
+      btn.disabled = true;
+      if (marketplaceState) marketplaceState.textContent = enabled ? "Enabling plugin..." : "Disabling plugin...";
+      try {
+        await setMarketplacePluginEnabled(pluginId, enabled);
+        await refreshWorkspace({ mode: "background" });
+      } catch (error) {
+        if (marketplaceState) marketplaceState.textContent = `Failed: ${error.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+  marketplaceCapabilityList.querySelectorAll("[data-marketplace-plugin-archive]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const pluginId = btn.dataset.marketplacePluginArchive;
+      if (!pluginId) return;
+      const ok = confirm("Archive this installed plugin? Built-in plugins can be disabled instead.");
+      if (!ok) return;
+      btn.disabled = true;
+      if (marketplaceState) marketplaceState.textContent = "Archiving plugin...";
+      try {
+        await archiveMarketplacePlugin(pluginId);
+        await refreshWorkspace({ mode: "background" });
+      } catch (error) {
+        if (marketplaceState) marketplaceState.textContent = `Failed: ${error.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
 }
 
 function renderSkillValidation(target, validation) {
@@ -8066,6 +8209,11 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
       skills: state.workspace.skills,
       skillRegistries: state.workspace.skillRegistries
     }, renderSkillRegistries);
+    renderIfChanged("settings.marketplace", {
+      skills: state.workspace.skills,
+      mcpServers: state.workspace.mcpServers,
+      plugins: state.workspace.plugins
+    }, renderMarketplaceManagement);
     renderIfChanged("settings.codeCli", state.workspace.codeCliAdapters, renderCodeCliAdapters);
     renderIfChanged("settings.emailAccounts", state.workspace.emailAccounts, renderEmailAccounts);
     renderIfChanged("settings.emailDigest", state.workspace.emailDigestSettings, renderEmailDigestSettings);
@@ -8107,7 +8255,7 @@ async function refreshWorkspace(options = {}) {
       const shouldLoadSettingsHeavyData = activeTabId === "settings";
 
       const previous = state.workspace ?? {};
-      const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
+      const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, pluginsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
         fetchJsonWithFallback("/health", previous.health ?? {}, "health"),
         fetchClientJsonWithFallback(() => consoleTaskClient.fetchTasks(), { tasks: previous.tasks ?? [] }, "tasks"),
         fetchJsonWithFallback("/approvals", { approvals: previous.approvals ?? [] }, "approvals"),
@@ -8123,6 +8271,7 @@ async function refreshWorkspace(options = {}) {
         fetchJsonWithFallback("/ai/code-cli", { adapters: previous.codeCliAdapters ?? [] }, "code-cli"),
         fetchJsonWithFallback("/ai/mcp", { servers: previous.mcpServers ?? [] }, "mcp"),
         fetchJsonWithFallback("/ai/skills", { registries: previous.skillRegistries ?? [], skills: previous.skills ?? [] }, "skills"),
+        fetchJsonWithFallback("/plugins", { plugins: previous.plugins ?? [] }, "plugins"),
         fetchJsonWithFallback("/config/integrations", { onboarding: previous.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] } }, "integrations"),
         fetchJsonWithFallback("/config/email/accounts", { accounts: previous.emailAccounts ?? [] }, "email-accounts"),
         fetchJsonWithFallback("/config/email/settings", { settings: previous.emailDigestSettings ?? {} }, "email-settings")
@@ -8140,6 +8289,7 @@ async function refreshWorkspace(options = {}) {
         mcpServers: mcpP.servers ?? [],
         skillRegistries: skillsP.registries ?? [],
         skills: skillsP.skills ?? [],
+        plugins: pluginsP.plugins ?? [],
         onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
         providerSetup: integrationsP.providerSetup ?? null,
         userMemory: integrationsP.userMemory ?? previous.userMemory ?? null,
@@ -9084,6 +9234,7 @@ scheduleForm?.addEventListener("submit", async (event) => {
 })();
 
 mcpServerRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+marketplaceRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 skillRegistryRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 codeCliAdapterRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 emailAccountRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
