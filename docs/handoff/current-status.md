@@ -3170,3 +3170,35 @@ Next valid work:
 - Start `PX-001` from `docs/architecture/post-runtime-upgrade-roadmap.md`, then
   proceed in the recommended order unless a program-grounded audit changes the
   order.
+
+## Codex Review: RV-001 Optional Git Checkpoint Mode
+
+Date: 2026-05-12
+
+Scope:
+- Added optional git-backed checkpoint metadata for file mutation
+  reversibility without changing the default file-level checkpoint behavior.
+- New owner:
+  `src/service/capabilities/tools/git-checkpoint-mode.mjs`.
+- The mode is disabled unless a caller explicitly sets
+  `ctx.reversibility.gitCheckpoint.enabled === true` or
+  `ctx.gitCheckpoint.enabled === true`.
+- When enabled inside a git repository, the service creates a non-worktree
+  `stash_create_ref` checkpoint with `git stash create` and anchors it with
+  `git update-ref`; this preserves the current worktree state and exposes a
+  clear `restore_hint`.
+
+Verification run by Codex:
+- `node --check src/service/capabilities/tools/git-checkpoint-mode.mjs`: passed.
+- `node --test tests/behavior/file-reversibility-checkpoint.test.mjs`: passed,
+  9/9.
+- `node scripts/verify-file-reversibility-checkpoint.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `git diff --check`: passed.
+- `npm run check:fast`: passed, 107/107 commands including 1000/1000 behavior
+  tests.
+
+Decision:
+- RV-001 implementation is ready to commit.
+- Next valid work after RV-001 commit is SA-001 sub-agent runtime contract
+  preflight and implementation.

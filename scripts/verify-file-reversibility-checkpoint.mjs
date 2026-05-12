@@ -6,6 +6,7 @@ import path from "node:path";
 import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const checkpointModule = readFileSync("src/service/capabilities/tools/file-reversibility.mjs", "utf8");
+const gitCheckpointModule = readFileSync("src/service/capabilities/tools/git-checkpoint-mode.mjs", "utf8");
 const tools = [
   readFileSync("src/service/action_tools/tools/index.mjs", "utf8"),
   readFileSync("src/service/capabilities/tools/file-mutation-execution-tools.mjs", "utf8"),
@@ -32,6 +33,12 @@ assert.match(checkpointModule, /reverse_operation:\s*"delete_created_file"/u, "n
 assert.match(checkpointModule, /applyFileReversibilityCheckpoint/u, "checkpoint helper must apply one-click recovery");
 assert.match(checkpointModule, /collectFileReversibilityCheckpoints/u, "checkpoint helper must collect recoverable task-event checkpoints");
 assert.match(checkpointModule, /reversibility_sidecars/u, "checkpoint collector must include generated artifact sidecar checkpoints");
+assert.match(checkpointModule, /createOptionalGitCheckpoint/u, "checkpoint helper must support opt-in git checkpoint metadata");
+assert.match(gitCheckpointModule, /gitCheckpoint/u, "git checkpoint mode must be explicitly opt-in");
+assert.match(gitCheckpointModule, /config\?\.enabled === true/u, "git checkpoint mode must be disabled unless explicitly enabled");
+assert.match(gitCheckpointModule, /stash", "create"/u, "git checkpoint mode must create a non-worktree stash commit");
+assert.match(gitCheckpointModule, /update-ref/u, "git checkpoint mode must anchor stash commits under an explicit ref");
+assert.match(gitCheckpointModule, /restore_hint/u, "git checkpoint mode must expose an understandable restore hint");
 
 assert.match(tools, /prepareFileReversibilityCheckpoint\(ctx,[\s\S]*toolId:\s*"write_file"/u, "write_file must checkpoint before write");
 assert.match(tools, /prepareFileReversibilityCheckpoint\(ctx,[\s\S]*toolId:\s*"edit_file"/u, "edit_file must checkpoint before edit");
@@ -62,6 +69,9 @@ assert.match(behavior, /generate_document records restore checkpoints for artifa
 assert.match(behavior, /reversibility_sidecars/u, "behavior test must cover sidecar checkpoint metadata");
 assert.match(behavior, /data-file-reversibility-copy="1"/u, "behavior test must cover visible recovery export");
 assert.match(behavior, /applyFileReversibilityCheckpoint/u, "behavior test must cover applying recovery");
+assert.match(behavior, /optional git checkpoint mode records a temporary-repo ref only when opted in/u, "behavior test must cover opt-in git checkpoint mode");
+assert.match(behavior, /statusAfter, statusBefore/u, "git checkpoint behavior test must prove worktree state is unchanged");
+assert.match(behavior, /git_checkpoint, null/u, "git checkpoint behavior test must prove default mode is off");
 assert.match(behavior, /data-file-reversibility-restore="fw018_demo"/u, "behavior test must cover visible one-click restore button");
 assert.match(behavior, /data-file-reversibility-restore="fw018_preview"/u, "behavior test must cover sidecar restore button rendering");
 

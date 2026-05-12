@@ -107,6 +107,13 @@ for (const required of [
   "approval_resume_started",
   "same_task_resume",
   "node --test tests/behavior/approval-resume-state.test.mjs",
+  "RV-001: Optional Git Checkpoint Mode",
+  "src/service/capabilities/tools/git-checkpoint-mode.mjs",
+  "ctx.reversibility.gitCheckpoint.enabled",
+  "git stash create",
+  "git update-ref",
+  "stash_create_ref",
+  "node --test tests/behavior/file-reversibility-checkpoint.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

@@ -25,8 +25,9 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 107/107 after GX-003
-  generic same-task approval resume coverage was added.
+- Current green gate: `npm run check:fast` passed 107/107 after RV-001
+  optional git checkpoint metadata was added, including 1000/1000 behavior
+  tests.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
 - Next execution board: this document.
@@ -47,7 +48,7 @@ Last updated: 2026-05-12.
 | SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
 | Permission/mode model | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` Wave 12; `lingxy_electron_js_codex_execution_plan.md` queue-class notes | `execution_mode` exists, privacy policy exists, and approvals exist; user-visible mode/tool-surface mapping remains incomplete. |
 | Sidecar decision record | `lingxy_electron_js_codex_execution_plan.md` PR-09/PR-19; sidecar decision gate | Sidecars are constrained by guardrails, but a dedicated decision-record template/verifier is still missing. |
-| Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | File reversibility checkpoint metadata exists; optional project-level git checkpoint mode remains deferred. |
+| Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | Complete for opt-in metadata: file reversibility remains default, while `ctx.reversibility.gitCheckpoint.enabled` can create a non-worktree git checkpoint ref for project rollback. |
 | Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs. | Skill/MCP trust primitives exist; discovery, trust preview, signatures, sharing UX, and external MCP governance remain. |
 | Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner. | Privacy policy/broker foundation exists; OS-level sandbox/codesign boundaries and richer controls remain. |
 | Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers. | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
@@ -66,7 +67,8 @@ Last updated: 2026-05-12.
 | VX-001 Voice fixture corpus | complete | Checked-in WAV corpus now backs transcription and KWS metrics; optional private fixture directory is documented for larger local samples. |
 | VX-002 Hardware permission smoke | complete | Opt-in Electron GUI smoke can record from local microphone hardware with actionable diagnostics; default checks stay hardware-free. |
 | GX-003 Generic graph resume | complete | Generic agent tool approvals now resume on the original task through same-task graph resume; connector workflow resume remains intact. |
-| RV/SA Reversibility/sub-agents | pending | Requires git checkpoint evaluation, sub-agent context isolation, budget, and timeline evidence. |
+| RV-001 Optional git checkpoint mode | complete | Opt-in git checkpoint metadata is implemented under `src/service/capabilities/tools/git-checkpoint-mode.mjs`; default file reversibility remains unchanged. |
+| SA-001 to SA-002 Sub-agents | pending | Requires sub-agent context isolation, budget, cancellation, timeline evidence, and eval coverage. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
@@ -538,23 +540,34 @@ Verification:
 
 ### RV-001: Optional Git Checkpoint Mode
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Evaluate optional git-backed project checkpoints for file mutation tasks.
 - Keep existing file-level reversibility checkpoints as the default.
 - Require a project opt-in and clear rollback behavior before running git
   commands.
+- Implemented opt-in only through `ctx.reversibility.gitCheckpoint.enabled`
+  or `ctx.gitCheckpoint.enabled`; product behavior remains file-checkpoint
+  based unless a caller explicitly enables the git mode.
+- `src/service/capabilities/tools/git-checkpoint-mode.mjs` uses
+  `git stash create` plus `git update-ref` to record a `stash_create_ref`
+  checkpoint without mutating the worktree.
 
 Acceptance:
 
 - Git checkpoint mode never mutates repositories without explicit opt-in.
 - Restore behavior is understandable and recoverable.
 - File-level reversibility remains available when git is absent or disabled.
+- Temporary-repository behavior coverage proves the default mode is off,
+  opt-in preserves `git status --short`, anchors the checkpoint ref, and
+  exposes a `restore_hint`.
 
 Verification:
 
 - `node scripts/verify-file-reversibility-checkpoint.mjs`
-- New opt-in git checkpoint verifier with temporary repositories only.
+- `node --test tests/behavior/file-reversibility-checkpoint.test.mjs`
 
 ### SA-001: Sub-Agent Runtime Contract
 

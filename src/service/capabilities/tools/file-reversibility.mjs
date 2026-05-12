@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { copyFile, lstat, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
+import { createOptionalGitCheckpoint } from "./git-checkpoint-mode.mjs";
 
 function safeName(value = "taskless") {
   return String(value || "taskless").replace(/[^a-z0-9_.-]+/gi, "_").slice(0, 80) || "taskless";
@@ -48,7 +49,12 @@ export async function prepareFileReversibilityCheckpoint(ctx = {}, {
     tool_id: toolId ?? null,
     operation: operation ?? "file_mutation",
     target_path: absTarget,
-    created_at: new Date().toISOString()
+    created_at: new Date().toISOString(),
+    git_checkpoint: await createOptionalGitCheckpoint(ctx, {
+      targetPath: absTarget,
+      toolId,
+      operation
+    })
   };
 
   if (!existing) {

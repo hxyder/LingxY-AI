@@ -1,18 +1,22 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 
 import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 import {
   applyFileReversibilityCheckpoint,
-  collectFileReversibilityCheckpoints
+  collectFileReversibilityCheckpoints,
+  prepareFileReversibilityCheckpoint
 } from "../../src/service/capabilities/tools/file-reversibility.mjs";
 import { renderFileReversibilityPanel } from "../../src/desktop/renderer/console-task-detail.mjs";
 
 const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+const execFileAsync = promisify(execFile);
 
 async function withTempDir(fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-fw018-"));
@@ -21,6 +25,11 @@ async function withTempDir(fn) {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+async function git(cwd, args) {
+  const { stdout } = await execFileAsync("git", args, { cwd, windowsHide: true });
+  return String(stdout ?? "").trim();
 }
 
 test("write_file records a delete-created-file reverse operation for new files", async () => {
@@ -166,6 +175,57 @@ test("file recovery checkpoint deletes a newly-created file", async () => {
     assert.equal(recovered.ok, true);
     assert.equal(recovered.reverse_operation, "delete_created_file");
     await assert.rejects(readFile(target, "utf8"), /ENOENT/u);
+  });
+});
+
+test("optional git checkpoint mode records a temporary-repo ref only when opted in", async () => {
+  await withTempDir(async (repoDir) => {
+    await git(repoDir, ["init"]);
+    await git(repoDir, ["config", "user.email", "test@example.com"]);
+    await git(repoDir, ["config", "user.name", "LingxY Test"]);
+    const target = path.join(repoDir, "notes.md");
+    await writeFile(target, "committed\n", "utf8");
+    await git(repoDir, ["add", "notes.md"]);
+    await git(repoDir, ["commit", "-m", "initial"]);
+
+    const defaultCheckpoint = await prepareFileReversibilityCheckpoint({
+      outputDir: repoDir,
+      task: { task_id: "task_fw018_git_default" }
+    }, {
+      toolId: "write_file",
+      targetPath: target,
+      operation: "write_file"
+    });
+    assert.equal(defaultCheckpoint.git_checkpoint, null);
+
+    await writeFile(target, "dirty before mutation\n", "utf8");
+    const statusBefore = await git(repoDir, ["status", "--short"]);
+    const checkpoint = await prepareFileReversibilityCheckpoint({
+      outputDir: repoDir,
+      task: { task_id: "task_fw018_git_opt_in" },
+      reversibility: {
+        gitCheckpoint: {
+          enabled: true,
+          refNamespace: "lingxy/checkpoints-test",
+          label: "RV-001 test checkpoint"
+        }
+      }
+    }, {
+      toolId: "write_file",
+      targetPath: target,
+      operation: "write_file"
+    });
+    const statusAfter = await git(repoDir, ["status", "--short"]);
+
+    assert.equal(statusAfter, statusBefore, "git checkpoint must not mutate worktree state");
+    assert.equal(checkpoint.git_checkpoint.provider, "git");
+    assert.equal(checkpoint.git_checkpoint.mode, "stash_create_ref");
+    assert.equal(checkpoint.git_checkpoint.available, true);
+    assert.match(checkpoint.git_checkpoint.checkpoint_ref, /^refs\/lingxy\/checkpoints-test\//);
+    assert.match(checkpoint.git_checkpoint.stash_commit, /^[a-f0-9]{40}$/);
+    await git(repoDir, ["cat-file", "-e", checkpoint.git_checkpoint.stash_commit]);
+    await git(repoDir, ["show-ref", "--verify", checkpoint.git_checkpoint.checkpoint_ref]);
+    assert.match(checkpoint.git_checkpoint.restore_hint, /git checkout refs\/lingxy\/checkpoints-test\//);
   });
 });
 
