@@ -25,8 +25,9 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 109/109 after MM-001
-  model-role call-site binding was added, including 1015/1015 behavior tests.
+- Current green gate: `npm run check:fast` passed 110/110 after MM-002
+  final-answer reviewer-loop coverage was added, including 1018/1018 behavior
+  tests.
   `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
   `npm run verify:desktop-gui-smoke`
@@ -41,7 +42,7 @@ Last updated: 2026-05-12.
 | Area | Current program evidence | Current state |
 | --- | --- | --- |
 | True sub-agent runtime | `runtime-graph-*` verifiers exist; `docs/architecture/sub-agent-runtime-contract.md` defines the service contract; `src/shared/sub-agent-timeline-summary.mjs` defines the UI trace summary. | SA-001 and SA-002 are complete for contracts, timeline visibility, and eval corpus; automatic planner delegation remains deferred. |
-| Multi-model execution | `verify-model-role-routing.mjs` exists; real planner/executor call sites now use role-aware provider resolution behind an explicit feature flag. | MM-001 is complete for planner/executor binding and measurement fields; reviewer/voting loops remain deferred to MM-002. |
+| Multi-model execution | `verify-model-role-routing.mjs` exists; real planner/executor call sites now use role-aware provider resolution behind an explicit feature flag. `verify-final-answer-reviewer-loop.mjs` locks the optional reviewer pass. | MM-001 is complete for planner/executor binding and measurement fields; MM-002 is complete for the feature-flagged final-answer reviewer pass. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
 | Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | Real GUI smoke is strong; DX-001 owns preview/popup/window owner state and DX-002 locks extracted IPC boundaries. Real mic/KWS, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
 | Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers. | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
@@ -72,7 +73,7 @@ Last updated: 2026-05-12.
 | SA-001 Sub-agent runtime contract | complete | Service-owned child-run contract now covers feature-flag gating, planner-selected delegation, context isolation, allowed tools, budget, cancellation, and structured child reports. |
 | SA-002 Sub-agent UI/evals | complete | Parent task detail now renders child runs from task detail children and `sub_agent_report` events; delegation eval corpus guards when to delegate and when not to. |
 | MM-001 Model role call-site binding | complete | `resolveProviderForModelRole` binds planner/executor call sites only when model role routing is explicitly enabled and records role fields in `llm_usage`. |
-| MM-002 Reviewer/voting loops | pending | Must be feature-flagged, measured against single-model baselines, and guarded by latency/budget gates. |
+| MM-002 Reviewer/voting loops | complete | Feature-flagged final-answer reviewer pass runs only for high-risk artifact/connector/research tasks, binds to the `reviewer` role, records trace/usage, and cannot silently rewrite output. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
 | OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
@@ -671,21 +672,43 @@ Verification:
 
 ### MM-002: Reviewer And Voting Loops
 
+Status: complete as of 2026-05-12 for the final-answer reviewer pass. Broader
+multi-candidate voting stays out of scope until measured evidence shows the
+single reviewer pass is not enough.
+
 Scope:
 
 - Add optional reviewer pass for high-risk artifact, connector, or research
   tasks.
 - Add strict budget and latency gates.
+- Implemented a final-answer reviewer pass in
+  `src/service/executors/tool_using/final-reviewer.mjs`.
+- The pass is disabled by default and requires `reviewer_loop.enabled: true`
+  from task metadata or runtime config.
+- The pass binds provider calls to `resolveProviderForModelRole("reviewer",
+  "reviewer", ...)` and emits `llm_usage` at
+  `tool_using.final_reviewer`.
+- The pass only runs when the risk profile includes artifact-required,
+  connector/side-effect, research-quality, or multi-source analysis signals,
+  unless explicitly configured with `mode: "always"`.
+- Candidate and transcript character budgets plus a timeout gate prevent the
+  reviewer from turning finalization into an unbounded second agent loop.
 
 Acceptance:
 
 - Reviewer cannot silently rewrite outcomes without trace evidence.
 - Reviewer failures degrade gracefully.
+- Reviewer `revise` or `reject` verdicts keep the candidate answer and append a
+  visible `Reviewer note:` instead of replacing user-visible content.
+- Reviewer start/completion/skip events expose risk reasons, duration, verdict,
+  and whether a visible note was applied.
 
 Verification:
 
-- New reviewer-loop evals.
-- Real-LLM comparison report for targeted cases.
+- `node scripts/verify-final-answer-reviewer-loop.mjs`
+- `node --test tests/behavior/agent-loop-final-composer.test.mjs`
+- Real-LLM comparison report for targeted cases remains useful as an opt-in
+  quality exercise before introducing broader multi-candidate voting.
 
 ## Phase G: Plugin, Skill, MCP Marketplace
 

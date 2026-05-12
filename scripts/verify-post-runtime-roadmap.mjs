@@ -135,6 +135,15 @@ for (const required of [
   "final composer",
   "llm_usage",
   "node --test tests/behavior/model-role-routing.test.mjs",
+  "MM-002 Reviewer/voting loops",
+  "final-answer reviewer pass",
+  "src/service/executors/tool_using/final-reviewer.mjs",
+  "reviewer_loop.enabled: true",
+  "resolveProviderForModelRole(\"reviewer\"",
+  "tool_using.final_reviewer",
+  "Reviewer note:",
+  "node scripts/verify-final-answer-reviewer-loop.mjs",
+  "node --test tests/behavior/agent-loop-final-composer.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

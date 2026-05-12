@@ -13,13 +13,15 @@ Status: verified against the current repository on 2026-05-10.
 
 ## Provider Resolution Call Sites
 
-All call sites go through `resolveProviderForTask` from `provider-resolver.mjs`:
+All call sites go through `resolveProviderForTask` or
+`resolveProviderForModelRole` from `provider-resolver.mjs`:
 
 | Caller | Path | Import style |
 | --- | --- | --- |
 | Fast executor | `src/service/executors/fast/fast-executor.mjs` | Static |
 | Agent loop (tool_using) | `src/service/executors/tool_using/agent-loop.mjs` | Static |
 | Final composer | `src/service/executors/tool_using/final-composer.mjs` | Static |
+| Final reviewer | `src/service/executors/tool_using/final-reviewer.mjs` | Static |
 | Agentic planner | `src/service/executors/agentic/planner.mjs` | Static |
 | Provider adapter (agentic) | `src/service/executors/agentic/provider-adapter.mjs` | Dynamic |
 | Multi-modal executor | `src/service/executors/multi_modal/multi-modal-executor.mjs` | Static |
@@ -35,7 +37,7 @@ All call sites go through `resolveProviderForTask` from `provider-resolver.mjs`:
 | Config provider routes | `src/service/core/http-routes/config-provider-routes.mjs` | Static |
 | Semantic router (intent) | `src/service/core/intent/semantic-router.mjs` | Static |
 
-~18 call sites. All go through the same `resolveProviderForTask` function.
+~19 call sites. All go through the same provider resolver boundary.
 
 `src/service/extractors/file-ingest.mjs` references provider-resolver only in a
 comment (non-runtime textual reference); it is excluded from the runtime caller set.
@@ -48,12 +50,13 @@ All call sites go through `createProviderAdapter` from `provider-adapter.mjs`:
 | --- | --- | --- |
 | Agent loop (tool_using) | `src/service/executors/tool_using/agent-loop.mjs` | Static |
 | Final composer | `src/service/executors/tool_using/final-composer.mjs` | Static |
+| Final reviewer | `src/service/executors/tool_using/final-reviewer.mjs` | Static |
 | Agentic planner | `src/service/executors/agentic/planner.mjs` | Static |
 | Fast executor | `src/service/executors/fast/fast-executor.mjs` | Static |
 | Semantic router (intent) | `src/service/core/intent/semantic-router.mjs` | Dynamic |
 | Provider adapter (self) | `src/service/executors/agentic/provider-adapter.mjs` | Self |
 
-~6 call sites. All go through the same `createProviderAdapter` function.
+~7 call sites. All go through the same `createProviderAdapter` function.
 
 ## Direct Provider Calls (Exceptions)
 

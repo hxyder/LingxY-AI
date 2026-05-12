@@ -36,6 +36,7 @@ const approvedResolverCallers = new Set([
   "src/service/executors/fast/fast-executor.mjs",
   "src/service/executors/tool_using/agent-loop.mjs",
   "src/service/executors/tool_using/final-composer.mjs",
+  "src/service/executors/tool_using/final-reviewer.mjs",
   "src/service/executors/agentic/planner.mjs",
   "src/service/executors/agentic/provider-adapter.mjs",
   "src/service/executors/multi_modal/multi-modal-executor.mjs",
@@ -86,6 +87,7 @@ for (const filePath of allServiceFiles) {
 const approvedAdapterCallers = new Set([
   "src/service/executors/tool_using/agent-loop.mjs",
   "src/service/executors/tool_using/final-composer.mjs",
+  "src/service/executors/tool_using/final-reviewer.mjs",
   "src/service/executors/agentic/planner.mjs",
   "src/service/executors/agentic/provider-adapter.mjs",
   "src/service/executors/fast/fast-executor.mjs",

@@ -13,6 +13,7 @@ import {
   compactTranscriptForComposer,
   localFallbackFinal
 } from "./finalization.mjs";
+import { reviewFinalAnswer } from "./final-reviewer.mjs";
 
 const EVIDENCE_LIST_LIMIT = 6;
 
@@ -75,6 +76,18 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
     const taskSpec = task?.task_spec ?? {};
     const evidenceSummary = extractEvidence(transcript);
     const evidenceBlock = formatEvidenceSummaryForComposer(evidenceSummary);
+    const finalizeCandidate = async (candidateText) => {
+      const reviewed = await reviewFinalAnswer({
+        task,
+        transcript,
+        runtime,
+        candidateText,
+        reason,
+        signal,
+        evidenceSummary
+      });
+      return reviewed.text;
+    };
     const waitingAction = findWaitingActionApproval(
       evaluateActionObligations(taskSpec, transcript)
     ) ?? findWaitingActionApprovalInTranscript(transcript);
@@ -90,14 +103,14 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
         evidence_summary: evidenceSummary
       });
       const text = String(composed ?? "").trim();
-      if (text) return text;
+      if (text) return finalizeCandidate(text);
     }
     const provider = resolveProviderForModelRole("executor", "chat", process.env, {
       task,
       store: runtime?.store
     });
     if (!provider || provider.kind === "code_cli") {
-      return localFallbackFinal({ task, transcript, reason });
+      return finalizeCandidate(localFallbackFinal({ task, transcript, reason }));
     }
     const adapter = createProviderAdapter(provider);
     let text = "";
@@ -163,7 +176,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
     });
     if (!text) text = response?.text ?? "";
     const finalText = String(text ?? "").trim();
-    return finalText || localFallbackFinal({ task, transcript, reason });
+    return finalizeCandidate(finalText || localFallbackFinal({ task, transcript, reason }));
   } catch (error) {
     if (error?.code === "ABORT_ERR") throw error;
     return localFallbackFinal({ task, transcript, reason });

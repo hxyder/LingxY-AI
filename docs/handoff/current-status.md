@@ -3331,3 +3331,48 @@ Issue found and fixed:
 Decision:
 - MM-001 is ready to commit.
 - Next valid work after MM-001 commit is MM-002 reviewer/voting-loop preflight.
+
+## Codex Review: MM-002 Final-Answer Reviewer Loop
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/service/executors/tool_using/final-reviewer.mjs` as the
+  service-owned reviewer pass for final answers.
+- Wired `composeFinalAnswer()` to pass candidate answers through the reviewer
+  seam after normal composition while keeping default behavior disabled.
+- Reviewer loop requires explicit `reviewer_loop.enabled: true`, runs only for
+  high-risk artifact, connector/side-effect, research-quality, or multi-source
+  analysis tasks unless `mode: "always"` is set.
+- Reviewer provider calls bind through `resolveProviderForModelRole("reviewer",
+  "reviewer", ...)` and emit `llm_usage` at `tool_using.final_reviewer`.
+- Reviewer verdicts cannot silently rewrite output; `revise` and `reject`
+  append a visible `Reviewer note:` to the candidate answer.
+- Candidate/transcript size gates and timeout gates prevent unbounded review
+  work; reviewer failure returns the original candidate.
+
+Verification run by Codex:
+- `node --check` on changed MM-002 modules/tests/verifier: passed.
+- `node --test tests/behavior/agent-loop-final-composer.test.mjs`: passed, 7/7.
+- `node scripts/verify-final-answer-reviewer-loop.mjs`: passed.
+- `node scripts/verify-provider-boundary.mjs`: passed after registering the
+  new reviewer provider call site in the provider boundary inventory.
+- `node scripts/verify-model-role-routing.mjs`: passed.
+- `node scripts/verify-llm-usage-emission.mjs`: passed.
+- `node scripts/verify-real-llm-token-metrics.mjs`: passed.
+- `node scripts/verify-agentic-parity.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 110/110 commands including 1018/1018 behavior
+  tests.
+
+Issue found and fixed:
+- The first full fast gate failed because the new reviewer module imported the
+  provider resolver/adapter without being listed in `verify-provider-boundary`.
+  The fix was to explicitly document and allow `final-reviewer.mjs` as a
+  provider call site, preserving the boundary invariant.
+
+Decision:
+- MM-002 is ready to commit.
+- Next valid work is PM-001 marketplace trust model preflight unless the user
+  chooses to start sandbox/sidecar or observability first.
