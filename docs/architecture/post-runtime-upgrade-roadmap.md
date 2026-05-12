@@ -25,8 +25,8 @@ Last updated: 2026-05-11.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 98/98 after RT-001 SQLite
-  write-path budget verification was added.
+- Current green gate: `npm run check:fast` passed 99/99 after RT-002
+  session/context/artifact write-budget verification was added.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -55,7 +55,7 @@ Last updated: 2026-05-11.
 | Phase | Status | Tracking rule |
 | --- | --- | --- |
 | PX-001 Roadmap/status hygiene | complete | This roadmap is linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
-| RT-001 to RT-004 Runtime persistence/context/mode | in progress | RT-001 is complete as an audit/decision-record phase; RT-002 starts from the direct-write decision. Each later phase needs a verifier and measured decision record. |
+| RT-001 to RT-004 Runtime persistence/context/mode | in progress | RT-001 and RT-002 are complete as direct-write audit/enforcement phases; RT-003 starts from compact compiled-context trace storage. Each later phase needs a verifier and measured decision record. |
 | DX-001 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
@@ -173,6 +173,8 @@ Verification:
 
 ### RT-002: Session/Context/Artifact Write Budget Enforcement
 
+Status: complete as of 2026-05-11.
+
 Scope:
 
 - Apply the RT-001 decision to non-critical `session_items`, context traces,
@@ -194,8 +196,10 @@ Acceptance:
 Verification:
 
 - Existing session/context/artifact behavior tests.
-- New write-budget or write-queue integration tests for session and artifact
-  paths.
+- `node scripts/verify-session-context-artifact-write-budget.mjs`
+- New write-queue integration tests for session and artifact paths only if a
+  later phase implements a queue.
+- `npm run check:fast`
 
 ### RT-003: Context Trace Persistence And Budget Audit
 

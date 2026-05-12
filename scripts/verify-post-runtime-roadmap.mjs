@@ -66,9 +66,11 @@ for (const required of [
 for (const required of [
   "docs/architecture/sqlite-write-path-budget.md",
   "node scripts/verify-sqlite-write-path-budget.mjs",
-  "Current decision is to keep direct service-owned SQLite writes"
+  "Current decision is to keep direct service-owned SQLite writes",
+  "node scripts/verify-session-context-artifact-write-budget.mjs",
+  "RT-001 and RT-002 are complete"
 ]) {
-  assert(roadmap.includes(required), `roadmap RT-001 status missing: ${required}`);
+  assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
 }
 
 assert(architectureReadme.includes("[post-runtime-upgrade-roadmap.md](post-runtime-upgrade-roadmap.md)"),

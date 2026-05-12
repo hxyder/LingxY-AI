@@ -34,6 +34,34 @@ Verification:
 - `node scripts/verify-event-fast-lane.mjs`: passed.
 - `npm run check:fast`: passed, 98/98; behavior tests passed, 987/987.
 
+## Codex Update: RT-002 Session/Context/Artifact Write Budget
+
+Date: 2026-05-11
+
+Scope:
+- Added `docs/architecture/session-context-artifact-write-budget.md` as the RT-002 enforcement record.
+- Added `scripts/verify-session-context-artifact-write-budget.mjs` and wired it into full and fast check manifests.
+- Updated the post-runtime roadmap to mark RT-002 complete as a direct-write enforcement phase.
+- Did not change product runtime behavior, storage schema, IPC channels, HTTP routes, tool ids, artifact kinds, provider ids, connector behavior, or desktop UI code.
+
+Decision:
+- Keep the RT-001 direct service-owned write decision for session/context/artifact writes.
+- Do not add `context_compile_traces` in RT-002; normal trace storage remains compact `task.context_packet.compiled_context`.
+- Keep artifact extract writes behind bounded service/background-lane contracts and artifact lineage as a critical transform-contract write.
+
+Verification:
+- `node --check scripts/verify-session-context-artifact-write-budget.mjs`: passed.
+- `node scripts/verify-session-context-artifact-write-budget.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node --test tests/behavior/conversation-session-service.test.mjs tests/behavior/context-compiler.test.mjs tests/behavior/task-runtime-task-record.test.mjs`: passed, 15/15.
+- `node --test tests/behavior/artifact-extract-service.test.mjs tests/behavior/artifact-extract-background-lane.test.mjs tests/behavior/artifact-lineage-service.test.mjs tests/behavior/artifact-transform-service.test.mjs`: passed, 18/18.
+- `npm run check:fast`: passed, 99/99; behavior tests passed, 987/987.
+
+Next valid work:
+- Start RT-003 context trace persistence and budget audit.
+- Use RT-002's decision as the starting point: compact task metadata is the current canonical trace storage unless RT-003 proves a persistent trace table is needed.
+
 ## Completed Phases
 
 | Phase | Module | Lines |
