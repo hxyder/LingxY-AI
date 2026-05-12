@@ -84,6 +84,22 @@ test("user memory profile does not leak project memory without matching scope co
   assert.doesNotMatch(scopedBlock, /Only project B/);
 });
 
+test("project-scoped memory precedes global reviewed memory for project tasks", () => {
+  const profile = sanitizeUserMemoryProfile({
+    approvedMemories: [
+      { id: "global_1", scope: "global", type: "user_preference", text: "Global reviewed marker." },
+      { id: "proj_a_1", scope: "project", projectId: "proj_a", type: "project_fact", text: "Project A marker." }
+    ]
+  }, { now: "2026-05-12T00:00:00.000Z" });
+
+  const entries = buildUserMemoryBackgroundEntries(profile, { projectId: "proj_a" });
+
+  assert.equal(entries[0].kind, "project_memory");
+  assert.equal(entries[1].kind, "user_profile");
+  assert.match(entries[0].content, /Project A marker/);
+  assert.match(entries[1].content, /Global reviewed marker/);
+});
+
 test("user memory injection stamps context metadata and remains background-only", () => {
   const context = applyUserMemoryProfileToContext(
     { text: "", selection_metadata: {} },

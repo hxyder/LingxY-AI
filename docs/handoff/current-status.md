@@ -2,6 +2,108 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: Context, Memory, Follow-Up, And Cache Acceptance
+
+Date: 2026-05-12
+
+Scope:
+- Added `scripts/real-llm-test/run-context-memory-cache-acceptance.mjs`
+  as an opt-in real API acceptance harness for approved user memory,
+  project-scoped memory, follow-up parent/conversation binding, and
+  token/cache traces.
+- Added `scripts/verify-context-memory-cache-acceptance-harness.mjs`,
+  `real-llm:context-memory-cache`, and check-manifest coverage.
+- Fixed the capability-management tool surface so MCP/plugin visibility tasks
+  can call `connector_plugin_manage` through the service tool-surface gate.
+- Changed user-memory background ordering so project-scoped memory is injected
+  before broad global reviewed memory when `project_id` is present.
+
+Decision:
+- Price is not displayed in this acceptance path. The report records
+  input/output/total token counts and cache hit/miss fields only, with
+  `cost_display: not_displayed_token_trace_only`.
+- The harness backs up current user memory before mutation and restores it in a
+  `finally` block. Reports are written under `.tmp/` and redacted.
+- The first live run exposed two real issues: project memory was losing to
+  global memory, and the follow-up seed had no explicit conversation id. Both
+  were fixed through runtime/test contracts, not prompt-only patches.
+
+Verification:
+- `node scripts/real-llm-test/run-context-memory-cache-acceptance.mjs --live
+  --port 4350 --task-timeout 240000`: passed, report
+  `.tmp/context-memory-cache-acceptance/report-2026-05-12-21-14-12.json`;
+  token/cache trace: `input=31024`, `output=59`, `total=31083`,
+  `cache_hit=0`, `cache_miss=31024`, `llm_usage_call_count=4`.
+- `node scripts/real-llm-test/run-function-audit.mjs --id
+  T.seed_doc,T.followup_summarize,T.followup_convert,T.followup_title_short,T.followup_no_stale,T.followup_next_steps
+  --concurrency 1 --task-timeout 240000 --port 4310`: passed 6/6.
+- `node --test tests/behavior/user-memory-profile.test.mjs
+  tests/behavior/runtime-user-memory-client.test.mjs
+  tests/behavior/agent-loop-tool-surface.test.mjs`: passed 25/25.
+- `node --test tests/behavior/follow-up-resolver.test.mjs
+  tests/behavior/followup-artifact-eval-corpus.test.mjs
+  tests/behavior/context-selection-project-pack.test.mjs
+  tests/behavior/context-debug-panel.test.mjs
+  tests/behavior/live-provider-acceptance-harness.test.mjs`: passed 14/14.
+- `node scripts/verify-context-memory-cache-acceptance-harness.mjs`: passed.
+- `node scripts/verify-user-memory-profile.mjs`: passed.
+- `node scripts/verify-memory-governance.mjs`: passed.
+- `node scripts/verify-memory-review-history.mjs`: passed.
+- `node scripts/verify-memory-scope-filters.mjs`: passed.
+- `node scripts/verify-follow-up-resolver-foundation.mjs`: passed.
+- `node scripts/verify-followup-artifact-eval-corpus.mjs`: passed.
+- `node scripts/verify-context-selection-project-pack.mjs`: passed.
+- `node scripts/verify-context-debug-panel-lazy-load.mjs`: passed.
+- `node scripts/verify-prompt-cache-coverage.mjs`: passed.
+- `node scripts/verify-real-llm-token-metrics.mjs`: passed.
+
+## Codex Update: Follow-Up Artifact Generation, Execution, And Topic Isolation
+
+Date: 2026-05-12
+
+Scope:
+- Added `scripts/real-llm-test/run-followup-artifact-acceptance.mjs`
+  as an opt-in real API harness for generated artifact content, artifact-based
+  follow-up generation, generated artifact validation through `run_script`,
+  same-conversation topic switching, and new-topic follow-up isolation.
+- Added `scripts/verify-followup-artifact-acceptance-harness.mjs`,
+  `real-llm:followup-artifact`, and check-manifest coverage.
+- Fixed `FollowUpResolver` so explicit new-topic phrases such as
+  "换个完全无关的问题" do not bind to the latest task merely because the
+  prompt mentions previous files in a negative instruction.
+- Fixed the tool surface so explicit code/script execution requests keep
+  `run_script` visible even when the task also has generated-file context.
+
+Decision:
+- The live harness checks the actual artifact files on disk, not only final
+  answer text.
+- The first live pass intentionally exposed a high-risk generated-script-file
+  issue: the model claimed a `.mjs` file contained `console.log(...)`, while
+  the actual file contained only the output marker. That is now tracked in the
+  roadmap as a future stricter content-validator item instead of being marked
+  green.
+- The accepted chain now verifies stable product behavior: create HTML,
+  follow up to create derived HTML from the previous artifact, execute a
+  Node-based validation over the generated artifact, switch topics inside the
+  same conversation without stale parent binding, then follow up on the new
+  topic.
+
+Verification:
+- `node scripts/real-llm-test/run-followup-artifact-acceptance.mjs --live
+  --port 4350 --task-timeout 300000`: passed, report
+  `.tmp/followup-artifact-acceptance/report-2026-05-12-21-30-25.json`;
+  token/cache trace: `input=90204`, `output=2541`, `total=92745`,
+  `cache_hit=768`, `cache_miss=89436`, `llm_usage_call_count=12`.
+- `node --test tests/behavior/agent-loop-tool-surface.test.mjs
+  tests/behavior/follow-up-resolver.test.mjs`: passed 19/19.
+- `node scripts/verify-followup-artifact-acceptance-harness.mjs`: passed.
+- `node scripts/verify-follow-up-resolver-foundation.mjs`: passed.
+- `npm run check:fast`: passed 137/137; behavior tests passed 1095/1095.
+- `npm run verify:desktop-gui-smoke`: first run hit the known
+  `overlay_task_list_keyboard_open_failed` transient, immediate rerun passed
+  49/49 (`startup=472ms`, `first_window=472ms`, `interaction=11306ms`,
+  `total=11774ms`).
+
 ## Codex Update: Final Live Provider Acceptance Fix
 
 Date: 2026-05-12

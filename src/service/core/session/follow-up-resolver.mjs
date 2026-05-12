@@ -9,6 +9,7 @@ export const FOLLOW_UP_RESOLUTION_MODES = Object.freeze({
 });
 
 const SHORT_FOLLOWUP_REPLY = /^(好|好的?|可以|继续|需要|要|对|是|是的|嗯|ok|okay|yes|sure|please)\s*[!.！。]?$/i;
+const EXPLICIT_NEW_TOPIC = /(换个|换一个|另一个|新的|新问题|新话题|无关的|完全无关).{0,8}(问题|话题|任务)|\b(new|different|unrelated)\s+(question|topic|task)\b/i;
 const REFERENTIAL_FOLLOWUP = /(上个|上一|刚才|之前|前面|那个|这个|这些|那些|这份|那份|它|它们|里面的|已有文件|文件夹里的|图片里的|表格里的|文档里的|这张|那张|第一张|第二张|同样|一样|照这个|继续|再来|改一下|补充|加上|换成|转成|导成|打开它|打开这个|打开那个|\bthat\b|\bthis\b|\bit\b|\bthose\b|\bthese\b|\bsame\b|\bcontinue\b|\bagain\b|\bconvert\b|\bchange\b)/i;
 const SHORT_SLOT_REPLY_BLOCKER = /(打开|启动|运行|删除|移动|复制|保存|导出|发送|发邮件|搜索|查一下|查询|查找|新闻|天气|气温|股价|股票|美股|A股|汇率|价格|多少钱|文件|文件夹|图片|上传|下载|日历|提醒|定时|为什么|怎么办|怎么|如何|生成|创建|制作|做成|做一个|报表|表格|格式|文档|幻灯片|电子表格|走势|\?|？|\bopen\b|\blaunch\b|\brun\b|\bdelete\b|\bmove\b|\bcopy\b|\bsave\b|\bexport\b|\bsend\b|\bemail\b|\bsearch\b|\bnews\b|\bweather\b|\bstock\b|\bprice\b|\bfile\b|\bfolder\b|\bimage\b|\bcalendar\b|\bremind\b|\bschedule\b|\bcreate\b|\bgenerate\b|\bmake\b|\breport\b|\bformat\b|\bexcel\b|\bxlsx\b|\bpptx?\b|\bdocx?\b|\bpdf\b|\bwhy\b|\bhow\b|\bwhat\b)/i;
 
@@ -30,6 +31,7 @@ function looksLikeShortSlotReply(text = "") {
 export function looksLikeFollowUpSignal(userCommand = "") {
   const text = String(userCommand ?? "").trim();
   if (!text) return false;
+  if (EXPLICIT_NEW_TOPIC.test(text)) return false;
   if (SHORT_FOLLOWUP_REPLY.test(text)) return true;
   if (looksLikeShortSlotReply(text)) return true;
   return REFERENTIAL_FOLLOWUP.test(text);

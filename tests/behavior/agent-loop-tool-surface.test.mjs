@@ -12,6 +12,7 @@ const tools = [
   { id: "vision_analyze" },
   { id: "generate_document" },
   { id: "write_file" },
+  { id: "run_script" },
   { id: "resolve_output_path" },
   { id: "register_artifact" },
   { id: "verify_file_exists" },
@@ -21,6 +22,7 @@ const tools = [
   { id: "create_scheduled_task" },
   { id: "account_send_email" },
   { id: "connector_workflow_run" },
+  { id: "connector_plugin_manage" },
   { id: "draft_capability" },
   { id: "save_capability_draft" }
 ];
@@ -96,7 +98,11 @@ test("agent tool surface exposes capability tools when capability_management is 
 
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
-  assert.deepEqual(visible.sort(), ["draft_capability", "save_capability_draft"].sort());
+  assert.deepEqual(visible.sort(), [
+    "connector_plugin_manage",
+    "draft_capability",
+    "save_capability_draft"
+  ].sort());
 });
 
 test("agent tool surface preserves required action tools even when capabilities focus on research", () => {
@@ -191,6 +197,26 @@ test("agent tool surface exposes artifact writers for explicit file output", () 
   assert.ok(visible.includes("resolve_output_path"));
 });
 
+test("agent tool surface preserves run_script for explicit execution over generated file context", () => {
+  const task = {
+    user_command: "继续：用 Node.js 执行一段脚本读取上一个生成的 HTML 文件，确认内容包含标记。",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["artifact_generation"]
+      }
+    },
+    task_spec: {
+      artifact: { required: true, kind: "html" },
+      success_contract: { artifact_created: true }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("run_script"));
+});
+
 test("agent tool surface keeps connector-scoped searches out of generic web search", () => {
   const task = {
     user_command: "搜索云盘里文件名包含 audit 的文档，只列出名称。",
@@ -263,6 +289,7 @@ test("capability_management still hides direct file open tools when not required
 
   assert.ok(!visible.includes("open_file"));
   assert.ok(!visible.includes("reveal_in_explorer"));
+  assert.ok(visible.includes("connector_plugin_manage"));
 });
 
 test("capability_management still hides schedule registry tools inside scheduled fires", () => {
@@ -279,6 +306,7 @@ test("capability_management still hides schedule registry tools inside scheduled
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
   assert.ok(!visible.includes("create_scheduled_task"));
+  assert.ok(visible.includes("connector_plugin_manage"));
   assert.ok(visible.includes("draft_capability"));
 });
 

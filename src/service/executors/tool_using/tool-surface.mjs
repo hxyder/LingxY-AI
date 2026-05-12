@@ -51,10 +51,11 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   image_understanding: (tool) => tool.id === "vision_analyze",
   image_generation: (tool) => ["generate_document", "write_file", "render_svg", "render_diagram"].includes(tool.id),
   // First-class lane for the "create / configure a capability" intent.
-  // Exposes the draft + save tools so the planner can run the interview
-  // and persist the result without per-case keyword routing.
+  // Exposes read-only inventory/plugin management plus draft + save tools so
+  // the planner can inspect existing capabilities, run the interview, and
+  // persist the result without per-case keyword routing.
   capability_management: (tool) =>
-    ["draft_capability", "save_capability_draft"].includes(tool.id),
+    ["connector_plugin_manage", "draft_capability", "save_capability_draft"].includes(tool.id),
   none: () => false
 });
 
@@ -272,6 +273,7 @@ const ARTIFACT_TOOL_IDS = new Set([
   "register_artifact",
   "verify_file_exists"
 ]);
+const CODE_EXECUTION_TOOL_IDS = new Set(["run_script"]);
 
 export function isScheduledFireTask(task) {
   return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
@@ -336,9 +338,14 @@ function taskRequiresArtifactTools(task) {
 }
 
 const ARTIFACT_REQUEST_RE = /(生成|创建|保存|导出|写入|修改|编辑|更新|制作|做一个|整理成|转成|转换成).{0,20}(文件|文档|报告|表格|幻灯片|图片|图表|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|\bmd\b)|\b(create|generate|save|export|write|edit|update|make|turn\s+.*\s+into|convert)\b.{0,32}\b(file|document|report|spreadsheet|slide|deck|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|md)\b/iu;
+const CODE_EXECUTION_REQUEST_RE = /(执行|运行|跑一下|用\s*(node|python|powershell).{0,12}(脚本|代码)|脚本.{0,12}(执行|运行)|代码.{0,12}(执行|运行)|\b(run|execute)\b.{0,24}\b(script|code|node|python|powershell)\b|\b(node|python|powershell)\b.{0,24}\b(run|execute|script|code)\b)/iu;
 
 function taskTextExplicitlyAsksForArtifact(task) {
   return liveUserIntentSources(task).some((text) => ARTIFACT_REQUEST_RE.test(text));
+}
+
+function taskTextExplicitlyAsksForCodeExecution(task) {
+  return liveUserIntentSources(task).some((text) => CODE_EXECUTION_REQUEST_RE.test(text));
 }
 
 function taskAllowsArtifactTools(task) {
@@ -352,6 +359,10 @@ function taskAllowsArtifactTools(task) {
 
 function artifactToolsFrom(tools = []) {
   return tools.filter((tool) => ARTIFACT_TOOL_IDS.has(tool.id));
+}
+
+function codeExecutionToolsFrom(tools = []) {
+  return tools.filter((tool) => CODE_EXECUTION_TOOL_IDS.has(tool.id));
 }
 
 function filterUnrequestedArtifactTools(list = [], task) {
@@ -382,8 +393,9 @@ export function filterToolsForTask(tools = [], task) {
   const requiredGroups = requiredPolicyGroupsOf(task);
   const requiredTools = tools.filter((tool) => toolSatisfiesRequiredPolicyGroup(tool, requiredGroups));
   const artifactTools = taskRequiresArtifactTools(task) ? artifactToolsFrom(tools) : [];
+  const codeExecutionTools = taskTextExplicitlyAsksForCodeExecution(task) ? codeExecutionToolsFrom(tools) : [];
   const capabilityTools = filtered.length > 0 ? filtered : tools;
-  return stripTaskScopedTools(mergeToolLists(capabilityTools, [...requiredTools, ...artifactTools]));
+  return stripTaskScopedTools(mergeToolLists(capabilityTools, [...requiredTools, ...artifactTools, ...codeExecutionTools]));
 }
 
 export function shouldRenderWorkflowHint(task) {

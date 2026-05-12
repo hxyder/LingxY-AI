@@ -302,27 +302,12 @@ export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = nul
 
   const governed = relevantGovernedMemories(sanitized.approvedMemories, { projectId });
   const globalGoverned = governed.filter((item) => item.scope !== "project");
-  if (globalGoverned.length > 0) {
-    entries.push({
-      kind: "user_profile",
-      priority: "background",
-      origin: "pre_task_seed",
-      content: [
-        "Reviewed memory approved by the user. Use only when scoped and relevant; current instructions override memory.",
-        renderGovernedMemoryList(globalGoverned)
-      ].join("\n"),
-      metadata: {
-        memory_governance: true,
-        user_memory_ids: globalGoverned.map((item) => item.id),
-        memory_types: [...new Set(globalGoverned.map((item) => item.type))]
-      }
-    });
-  }
-
   const normalizedProjectId = normalizeText(projectId, 120);
   const projectItems = sanitized.projectMemories
     .filter((item) => Boolean(normalizedProjectId) && item.projectId === normalizedProjectId);
   const projectGoverned = governed.filter((item) => item.scope === "project");
+  // Specific scope should precede broad reviewed memory so project facts win
+  // when a task explicitly carries project_id.
   if (projectItems.length > 0 || projectGoverned.length > 0) {
     entries.push({
       kind: "project_memory",
@@ -341,6 +326,23 @@ export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = nul
           ...projectGoverned.map((item) => item.id)
         ],
         memory_types: [...new Set(projectGoverned.map((item) => item.type))]
+      }
+    });
+  }
+
+  if (globalGoverned.length > 0) {
+    entries.push({
+      kind: "user_profile",
+      priority: "background",
+      origin: "pre_task_seed",
+      content: [
+        "Reviewed memory approved by the user. Use only when scoped and relevant; current instructions override memory.",
+        renderGovernedMemoryList(globalGoverned)
+      ].join("\n"),
+      metadata: {
+        memory_governance: true,
+        user_memory_ids: globalGoverned.map((item) => item.id),
+        memory_types: [...new Set(globalGoverned.map((item) => item.type))]
       }
     });
   }

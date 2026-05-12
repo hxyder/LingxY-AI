@@ -94,6 +94,32 @@ test("follow-up resolver does not bind standalone new-topic requests", () => {
   assert.equal(resolution.should_continue, false);
 });
 
+test("follow-up resolver blocks explicit same-conversation topic switches", () => {
+  const store = createInMemoryStoreScaffold();
+  store.insertConversation({ conversation_id: "conv_topic_switch" });
+  const service = createConversationSessionService({ store });
+  const session = service.ensureSession({
+    conversationId: "conv_topic_switch",
+    activeTaskId: "task_prior_file"
+  });
+  service.appendItem({
+    sessionId: session.session_id,
+    kind: SESSION_ITEM_KINDS.ARTIFACT_REFERENCE,
+    taskId: "task_prior_file",
+    artifactId: "artifact_prior"
+  });
+
+  const resolution = resolveFollowUp({
+    userCommand: "换个完全无关的问题：2+3 等于几？不要引用之前生成的文件。",
+    conversationId: "conv_topic_switch",
+    runtime: { store, conversationSessions: service }
+  });
+
+  assert.equal(looksLikeFollowUpSignal("换个完全无关的问题：2+3 等于几？不要引用之前生成的文件。"), false);
+  assert.equal(resolution.mode, FOLLOW_UP_RESOLUTION_MODES.NONE);
+  assert.equal(resolution.parent_task_id, null);
+});
+
 test("caller-provided parent wins over session anchors", () => {
   const resolution = resolveFollowUp({
     userCommand: "继续",
