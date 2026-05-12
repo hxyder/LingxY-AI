@@ -6,6 +6,7 @@ import {
   createApprovalResumeState,
   resolveApprovalResumeMetadata
 } from "../../src/service/scheduler/approval-resume-state.mjs";
+import { resumeAgentToolApprovalInOriginalTask } from "../../src/service/scheduler/approval-graph-resume.mjs";
 import { createPendingApprovalService } from "../../src/service/scheduler/pending-approvals.mjs";
 
 function createMockStore() {
@@ -132,4 +133,89 @@ test("approval resume metadata marks rejected decisions without a resulting task
   assert.equal(rejected.approval_resume.state, "rejected");
   assert.equal(rejected.approval_resume.resulting_task_id, null);
   assert.equal(rejected.approval_resume.resume_token, "approval:appr_reject");
+});
+
+test("generic agent tool approval resumes and terminalizes the original task without bridge events", async () => {
+  const runtime = createRuntime();
+  const calls = [];
+  runtime.actionToolRegistry = {
+    get(toolId) {
+      assert.equal(toolId, "risky_fixture");
+      return {
+        async execute(args, context) {
+          calls.push({ args, transcript: context.transcript, taskId: context.task?.task_id });
+          return { success: true, observation: `resumed:${args.value}` };
+        }
+      };
+    }
+  };
+  runtime.store.insertTask({
+    task_id: "task_origin",
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    progress: 0.5
+  });
+  const service = createPendingApprovalService({
+    runtime,
+    executeApprovedAction: (approval, options) => resumeAgentToolApprovalInOriginalTask({
+      runtime,
+      approval,
+      ...options
+    })
+  });
+
+  const approval = service.create({
+    sourceType: "agent_tool_call",
+    sourceId: "task_origin",
+    proposedAction: "action_tool",
+    proposedTarget: "risky_fixture",
+    proposedParams: { value: "original" },
+    metadata: {
+      task_id: "task_origin",
+      tool_id: "risky_fixture",
+      deferred_tool_context: {
+        transcript: [{ type: "tool_result", tool: "read_file_text", observation: "context" }]
+      }
+    },
+    createdAt: "2026-05-08T10:00:00.000Z"
+  });
+
+  const result = await service.approve(approval.approval_id, {
+    actor: "desktop_console",
+    decidedAt: "2026-05-08T10:02:00.000Z",
+    overrides: { value: "edited" }
+  });
+
+  assert.equal(result.executionResult.same_task_resume, true);
+  assert.equal(result.executionResult.task.task_id, "task_origin");
+  assert.equal(result.approval.resulting_task_id, "task_origin");
+  assert.equal(result.approval.metadata.approval_resume.state, "resumed");
+  assert.deepEqual(calls, [{
+    args: { value: "edited" },
+    transcript: [{ type: "tool_result", tool: "read_file_text", observation: "context" }],
+    taskId: "task_origin"
+  }]);
+
+  const task = runtime.store.getTask("task_origin");
+  assert.equal(task.status, "success");
+  assert.equal(task.sub_status, "completed");
+  assert.equal(task.result_summary, "resumed:edited");
+
+  const events = runtime.store.listEvents();
+  assert.ok(events.some((event) =>
+    event.event_type === "approval_resume_started"
+    && event.payload.same_task_resume === true
+    && event.payload.approval_id === approval.approval_id
+  ));
+  assert.ok(events.some((event) =>
+    event.event_type === "tool_call_completed"
+    && event.payload.same_task_resume === true
+    && event.payload.success === true
+  ));
+  assert.ok(events.some((event) =>
+    event.event_type === "success"
+    && event.payload.same_task_resume === true
+    && event.payload.approval_resume.state === "resumed"
+  ));
+  assert.equal(events.some((event) => event.payload?.bridged_from_approval === true), false);
 });

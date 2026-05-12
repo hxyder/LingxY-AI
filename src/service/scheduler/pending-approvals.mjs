@@ -332,7 +332,7 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
 
       let executionResult = null;
       if (executeApprovedAction) {
-        executionResult = await executeApprovedAction(approval, { overrides });
+        executionResult = await executeApprovedAction(approval, { overrides, actor, decidedAt });
         if (executionResult?.task?.task_id) {
           runtime.store.updatePendingApproval(approvalId, {
             resulting_task_id: executionResult.task.task_id
@@ -355,19 +355,20 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
         })
       }) ?? approval;
 
-      // UCA-181 follow-up: bridge the new task's outcome back to the
-      // ORIGINATING task. Without this, a task that suspended on
-      // `waiting_external_decision` stays at that sub_status forever
-      // and the UI's task panel shows "运行中…" indefinitely. The
-      // metadata.task_id field is set by agent-loop's framework gate
-      // and the connector workflow dispatcher; if absent we just skip
-      // (older approvals or non-task-bound approvals don't need this).
-      bridgeApprovalToOriginatingTask({
-        runtime,
-        approval,
-        executionResult,
-        decidedAt
-      });
+      if (executionResult?.same_task_resume !== true) {
+        // UCA-181 follow-up: bridge the new task's outcome back to the
+        // ORIGINATING task. Without this, a task that suspended on
+        // `waiting_external_decision` stays at that sub_status forever
+        // and the UI's task panel shows "运行中…" indefinitely. Same-task
+        // graph resumes already updated and terminalized the original task,
+        // so they deliberately skip this compatibility bridge.
+        bridgeApprovalToOriginatingTask({
+          runtime,
+          approval,
+          executionResult,
+          decidedAt
+        });
+      }
 
       appendAuditLog(runtime, "pending_approval.approved", {
         approval_id: approvalId,

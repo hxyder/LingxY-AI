@@ -73,23 +73,31 @@ test("runtime services approval hook executes agent tool calls through the runti
   });
 
   ensureRuntimeServices(runtime);
+  runtime.store.insertTask({
+    task_id: "task_origin",
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    progress: 0.5
+  });
   const approval = runtime.pendingApprovals.create({
     sourceType: "agent_tool_call",
     sourceId: "task_origin",
     proposedAction: "execute",
     proposedTarget: "demo_tool",
     proposedParams: { value: 42 },
-    metadata: { tool_id: "demo_tool" }
+    metadata: { task_id: "task_origin", tool_id: "demo_tool" }
   });
 
   const result = await runtime.pendingApprovals.approve(approval.approval_id);
 
   assert.equal(result.executionResult.executed, true);
+  assert.equal(result.executionResult.same_task_resume, true);
   assert.equal(result.executionResult.tool_id, "demo_tool");
   assert.equal(result.executionResult.success, true);
   assert.equal(result.executionResult.observation, "demo ok");
   assert.deepEqual(calls[0].args, { value: 42 });
   assert.equal(calls[0].ctx.runtime, runtime);
+  assert.equal(calls[0].ctx.task.task_id, "task_origin");
   assert.equal(calls[0].ctx.outputDir, "out-dir");
 });
 
@@ -122,6 +130,12 @@ test("runtime services approval hook replays deferred transcript context", async
   });
 
   ensureRuntimeServices(runtime);
+  runtime.store.insertTask({
+    task_id: "task_origin",
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    progress: 0.5
+  });
   const approval = runtime.pendingApprovals.create({
     sourceType: "agent_tool_call",
     sourceId: "task_origin",
@@ -129,6 +143,7 @@ test("runtime services approval hook replays deferred transcript context", async
     proposedTarget: "index_file_content",
     proposedParams: { max_records: 5 },
     metadata: {
+      task_id: "task_origin",
       tool_id: "index_file_content",
       deferred_tool_context: { transcript: deferredTranscript }
     }
@@ -153,18 +168,25 @@ test("runtime services approval hook reports missing agent tools without throwin
   });
 
   ensureRuntimeServices(runtime);
+  runtime.store.insertTask({
+    task_id: "task_origin",
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    progress: 0.5
+  });
   const approval = runtime.pendingApprovals.create({
     sourceType: "agent_tool_call",
     sourceId: "task_origin",
     proposedAction: "execute",
     proposedTarget: "missing_tool",
     proposedParams: {},
-    metadata: { tool_id: "missing_tool" }
+    metadata: { task_id: "task_origin", tool_id: "missing_tool" }
   });
 
   const result = await runtime.pendingApprovals.approve(approval.approval_id);
 
   assert.deepEqual(result.executionResult, {
+    same_task_resume: false,
     executed: false,
     reason: "tool_not_found",
     tool_id: "missing_tool"

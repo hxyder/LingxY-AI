@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 107/107 after VX-002
-  opt-in desktop audio hardware smoke coverage was added.
+- Current green gate: `npm run check:fast` passed 107/107 after GX-003
+  generic same-task approval resume coverage was added.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
 - Next execution board: this document.
@@ -65,7 +65,8 @@ Last updated: 2026-05-12.
 | DX-005 Desktop first-run/i18n/preview fidelity | complete | First-run provider recovery and generate_document preview screenshot-diff are covered by real Electron GUI smoke and verifier contracts. |
 | VX-001 Voice fixture corpus | complete | Checked-in WAV corpus now backs transcription and KWS metrics; optional private fixture directory is documented for larger local samples. |
 | VX-002 Hardware permission smoke | complete | Opt-in Electron GUI smoke can record from local microphone hardware with actionable diagnostics; default checks stay hardware-free. |
-| GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
+| GX-003 Generic graph resume | complete | Generic agent tool approvals now resume on the original task through same-task graph resume; connector workflow resume remains intact. |
+| RV/SA Reversibility/sub-agents | pending | Requires git checkpoint evaluation, sub-agent context isolation, budget, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
@@ -505,12 +506,19 @@ Verification:
 
 ### GX-003: Generic Agent/Tool Graph Resume
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Replace bridge-copy terminalization for generic approval pauses with same-run
   executor continuation.
 - Use existing runtime graph checkpoints and approval resume metadata.
 - Keep connector workflow resume behavior intact.
+- Completed slice adds `src/service/scheduler/approval-graph-resume.mjs` for
+  generic `agent_tool_call` approvals, emits `approval_resume_started`,
+  executes the approved tool against the original task, terminalizes that task
+  with `same_task_resume` events, and skips the compatibility bridge for this
+  path.
 
 Acceptance:
 
@@ -518,12 +526,15 @@ Acceptance:
   resume the original task execution graph where possible.
 - No duplicate bridge task is required for generic agent/tool runs.
 - Existing approval GUI smoke still passes.
+- Connector workflow approval resume remains on its existing same-task workflow
+  path.
 
 Verification:
 
 - `node scripts/verify-approval-resume-state.mjs`
 - `npm run verify:desktop-gui-smoke`
-- New graph-resume behavior/eval tests.
+- `node --test tests/behavior/approval-resume-state.test.mjs`
+- `node --test tests/behavior/task-runtime-services.test.mjs`
 
 ### RV-001: Optional Git Checkpoint Mode
 

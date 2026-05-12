@@ -3,6 +3,7 @@ import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { createMetricsRegistry } from "../../metrics/registry.mjs";
 import { createSecurityBroker } from "../../security/broker.mjs";
 import { createPendingApprovalService } from "../../scheduler/pending-approvals.mjs";
+import { resumeAgentToolApprovalInOriginalTask } from "../../scheduler/approval-graph-resume.mjs";
 import { createRuntimeGraphCheckpointService } from "../graph/runtime-graph-checkpoints.mjs";
 import { createRuntimeGraphReplayService } from "../graph/runtime-graph-replay.mjs";
 import { createRuntimeGraphScheduler } from "../graph/runtime-graph-scheduler.mjs";
@@ -159,34 +160,15 @@ export function ensureRuntimeServices(runtime) {
   // were — only agent_tool_call is newly handled here.
   runtime.pendingApprovals ??= createPendingApprovalService({
     runtime,
-    executeApprovedAction: async (approval) => {
+    executeApprovedAction: async (approval, { overrides = null, actor = null, decidedAt = null } = {}) => {
       if (approval.source_type !== "agent_tool_call") return null;
-      const toolId = approval.proposed_target || approval.metadata?.tool_id;
-      if (!toolId) return null;
-      const tool = runtime.actionToolRegistry?.get?.(toolId);
-      if (!tool || typeof tool.execute !== "function") {
-        return { executed: false, reason: "tool_not_found", tool_id: toolId };
-      }
-      try {
-        const deferredToolContext = approval.metadata?.deferred_tool_context ?? {};
-        const result = await tool.execute(approval.proposed_params ?? {}, {
-          ...(runtime.toolContext ?? {}),
-          runtime,
-          task: approval.metadata?.task_id ? runtime.store?.getTask?.(approval.metadata.task_id) : null,
-          outputDir: runtime.toolContext?.outputDir ?? null,
-          transcript: Array.isArray(deferredToolContext.transcript)
-            ? deferredToolContext.transcript
-            : []
-        });
-        return {
-          executed: true,
-          tool_id: toolId,
-          success: Boolean(result?.success),
-          observation: result?.observation ?? null
-        };
-      } catch (error) {
-        return { executed: true, tool_id: toolId, success: false, error: error.message };
-      }
+      return resumeAgentToolApprovalInOriginalTask({
+        runtime,
+        approval,
+        overrides,
+        actor,
+        decidedAt
+      });
     }
   });
   return runtime;

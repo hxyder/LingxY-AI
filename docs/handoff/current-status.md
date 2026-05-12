@@ -375,6 +375,36 @@ Next valid work:
   checkpoint evaluation, or SA-001 sub-agent runtime contract. Recommended next:
   GX-003 because it closes the highest-impact runtime continuity gap.
 
+## Codex Review: GX-003 Generic Agent Tool Graph Resume
+
+Date: 2026-05-12
+
+Status:
+- GX-003 is complete for generic `agent_tool_call` approvals.
+
+Scope:
+- Added `src/service/scheduler/approval-graph-resume.mjs`.
+- Runtime service approvals now route generic agent tool approvals through
+  same-task resume instead of direct tool execution plus bridge terminalization.
+- Same-task resume emits `approval_resume_started`, `tool_call_completed`, and
+  terminal `success`/`failed` events on the original task with
+  `same_task_resume: true`.
+- Compatibility bridge terminalization now skips same-task resume results.
+- Runtime graph checkpoint mapping recognizes `approval_resume_started`.
+- Connector workflow resume path was not changed.
+
+Verification:
+- `node --test tests/behavior/approval-resume-state.test.mjs`: passed, 4/4.
+- `node --test tests/behavior/task-runtime-services.test.mjs`: passed, 5/5.
+- `node scripts/verify-approval-resume-state.mjs`: passed.
+- `node scripts/verify-runtime-graph-nodes.mjs`: passed.
+- `node scripts/verify-runtime-graph-replay.mjs`: passed.
+- `npm run verify:desktop-gui-smoke`: passed, 49/49.
+- `npm run check:fast`: passed, 107/107; behavior tests passed, 999/999.
+
+Next valid work:
+- Commit GX-003 and move to RV-001 optional git checkpoint evaluation.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

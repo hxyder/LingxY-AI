@@ -59,6 +59,8 @@ function nodeForEvent(eventType, payload = {}) {
       return { node: "act", status: "interrupted" };
     case "pending_approval_created":
       return { node: "act", status: "interrupted", resumeToken: payload?.approval_id ?? null };
+    case "approval_resume_started":
+      return { node: "act", status: "started", resumeToken: payload?.approval_id ?? null };
     case "artifact_created":
       return { node: "validate", status: "completed" };
     case "final_composer_started":

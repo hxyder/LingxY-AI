@@ -102,6 +102,11 @@ for (const required of [
   "node scripts/verify-desktop-audio-hardware-smoke-contract.mjs",
   "LINGXY_DESKTOP_AUDIO_HARDWARE_SMOKE=1",
   "npm run verify:desktop-audio-hardware-smoke",
+  "GX-003: Generic Agent/Tool Graph Resume",
+  "src/service/scheduler/approval-graph-resume.mjs",
+  "approval_resume_started",
+  "same_task_resume",
+  "node --test tests/behavior/approval-resume-state.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

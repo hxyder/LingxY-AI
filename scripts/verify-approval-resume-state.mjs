@@ -9,7 +9,9 @@ import {
 import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const stateModule = readFileSync("src/service/scheduler/approval-resume-state.mjs", "utf8");
+const graphResume = readFileSync("src/service/scheduler/approval-graph-resume.mjs", "utf8");
 const approvals = readFileSync("src/service/scheduler/pending-approvals.mjs", "utf8");
+const runtimeServices = readFileSync("src/service/core/task-runtime/runtime-services.mjs", "utf8");
 const workflowSubmission = readFileSync("src/service/capabilities/connectors/core/workflow-submission.mjs", "utf8");
 const executeAction = readFileSync("src/service/scheduler/execute-action.mjs", "utf8");
 const schedulerEngine = readFileSync("src/service/scheduler/engine.mjs", "utf8");
@@ -23,6 +25,22 @@ assert.match(stateModule, /resume_token/u, "resume state must expose a stable to
 assert.match(approvals, /attachApprovalResumeMetadata/u, "pending approvals must attach resume metadata at create time");
 assert.match(approvals, /resolveApprovalResumeMetadata/u, "pending approvals must resolve resume metadata on decisions");
 assert.match(approvals, /approval_resume:\s*approval\.metadata\?\.approval_resume/u, "terminal bridge events must carry resume metadata");
+assert.match(approvals, /executionResult\?\.same_task_resume !== true/u,
+  "generic same-task approval resumes must skip compatibility bridge terminalization");
+assert.match(runtimeServices, /resumeAgentToolApprovalInOriginalTask/u,
+  "generic agent tool approvals must route through same-task graph resume");
+assert.match(graphResume, /export async function resumeAgentToolApprovalInOriginalTask/u,
+  "same-task graph resume service must be exported");
+assert.match(graphResume, /eventType,\s*payload/u,
+  "same-task graph resume must append task events through a single event helper");
+assert.match(graphResume, /"approval_resume_started"/u,
+  "same-task graph resume must emit approval_resume_started");
+assert.match(graphResume, /same_task_resume:\s*true/u,
+  "same-task graph resume events must be distinguishable from bridge compatibility events");
+assert.match(graphResume, /"tool_call_completed"/u,
+  "same-task graph resume must complete the original tool card");
+assert.match(graphResume, /"success"/u,
+  "same-task graph resume must terminalize successful original tasks");
 assert.match(workflowSubmission, /export async function resumeConnectorWorkflowTask/u,
   "connector workflow approvals must have a same-task resume path");
 assert.match(workflowSubmission, /approval_resume_started/u,
@@ -50,6 +68,10 @@ assert.equal(resolved.approval_resume.state, "resumed");
 assert.equal(resolved.approval_resume.resulting_task_id, "task_new");
 
 assert.match(behavior, /terminal\.payload\.approval_resume/u, "behavior tests must verify terminal event resume metadata");
+assert.match(behavior, /generic agent tool approval resumes and terminalizes the original task without bridge events/u,
+  "behavior tests must cover generic same-task approval resume");
+assert.match(behavior, /bridged_from_approval === true\), false/u,
+  "behavior tests must prove same-task resume does not use compatibility bridge events");
 
 const command = "node scripts/verify-approval-resume-state.mjs";
 assert.ok(CHECK_COMMANDS.includes(command), "check manifest must include approval resume verifier");
