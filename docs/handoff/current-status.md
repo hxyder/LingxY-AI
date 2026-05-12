@@ -3700,3 +3700,51 @@ Decision:
 - Next recommended work is MR-002: add project-scope memory review filters and
   clearer review-history scoping in the desktop memory panel, building on the
   review history foundation instead of creating a parallel memory surface.
+
+## Codex Review: MR-002 Memory Scope Filters
+
+Date: 2026-05-12
+
+Scope:
+- Added service-owned memory governance filtering in
+  `src/service/memory/user-profile.mjs` for approved memory, proposals, and
+  review history by scope, project id, conversation id, and artifact id.
+- Prevented project/conversation/artifact-scoped reviewed memory from entering
+  task background context when the task has no matching scope id.
+- Added scope identity to new memory review records so renderer filtering does
+  not have to infer durable governance state from display text.
+- Added Console memory filters for scope, project id, and conversation id while
+  keeping the renderer as a view-only consumer of loaded user-memory data.
+- Added `scripts/verify-memory-scope-filters.mjs` and updated the maturity
+  roadmap/check manifest.
+
+Contract notes:
+- This intentionally changes context selection behavior: global memory may still
+  be injected without a project, but project/conversation/artifact memory now
+  requires matching scope context.
+- No IPC channels, HTTP routes, tool ids, artifact kinds, provider ids, or
+  provider calls changed.
+- No service imports were added to renderer code.
+
+Verification run by Codex:
+- `node --check` on changed MR-002 modules/tests/verifier: passed.
+- `node --test tests/behavior/user-memory-profile.test.mjs`: passed, 10/10.
+- `node scripts/verify-memory-scope-filters.mjs`: passed.
+- `node scripts/verify-post-runtime-maturity-roadmap.mjs`: passed.
+- `node scripts/verify-user-memory-profile.mjs`: passed.
+- `node scripts/verify-memory-review-history.mjs`: passed.
+- `node scripts/verify-memory-governance.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-console-runtime-client.mjs`: passed.
+- `node scripts/verify-renderer-runtime-client-consolidation.mjs`: passed.
+- `npm run check:fast`: passed, 120/120 commands including 1049/1049 behavior
+  tests.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed; only existing line-ending normalization warnings
+  were reported.
+
+Decision:
+- MR-002 is ready to commit.
+- Next recommended work is PM-004 marketplace management UI, because trust,
+  governance, and distribution policy verifiers already exist and the remaining
+  gap is making those states visible/actionable in Console.

@@ -2293,6 +2293,18 @@
           <textarea id="userMemoryPreferences" rows="5" placeholder="One preference per line"></textarea>
           <label for="userMemoryProjectNotes" style="margin-top:10px;">Project memory</label>
           <textarea id="userMemoryProjectNotes" rows="5" placeholder="project_id | note"></textarea>
+          <div class="toolbar" style="margin-top:10px;align-items:center;">
+            <label for="userMemoryScopeFilter" class="muted" style="font-size:12px;">Scope</label>
+            <select id="userMemoryScopeFilter" class="select" style="max-width:150px;">
+              <option value="all">All</option>
+              <option value="global">Global</option>
+              <option value="project">Project</option>
+              <option value="conversation">Conversation</option>
+              <option value="artifact">Artifact</option>
+            </select>
+            <input id="userMemoryProjectFilter" class="input" style="max-width:180px;" placeholder="project_id">
+            <input id="userMemoryConversationFilter" class="input" style="max-width:180px;" placeholder="conversation_id">
+          </div>
           <div class="row" style="align-items:center;margin-top:12px;">
             <strong style="font-size:13px;">Approved memory</strong>
             <span id="userMemoryApprovedState" class="muted" style="font-size:12px;"></span>

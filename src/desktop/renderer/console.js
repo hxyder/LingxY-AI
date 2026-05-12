@@ -220,6 +220,9 @@ const wizardList = document.querySelector("#wizardList");
 const userMemoryEnabled = document.querySelector("#userMemoryEnabled");
 const userMemoryPreferences = document.querySelector("#userMemoryPreferences");
 const userMemoryProjectNotes = document.querySelector("#userMemoryProjectNotes");
+const userMemoryScopeFilter = document.querySelector("#userMemoryScopeFilter");
+const userMemoryProjectFilter = document.querySelector("#userMemoryProjectFilter");
+const userMemoryConversationFilter = document.querySelector("#userMemoryConversationFilter");
 const userMemorySaveBtn = document.querySelector("#userMemorySaveBtn");
 const userMemoryState = document.querySelector("#userMemoryState");
 const userMemoryApprovedState = document.querySelector("#userMemoryApprovedState");
@@ -3989,26 +3992,66 @@ function parseProjectMemoryLines(text = "") {
     .filter((item) => item.text);
 }
 
+function getUserMemoryFilter() {
+  return {
+    scope: userMemoryScopeFilter?.value || "all",
+    projectId: userMemoryProjectFilter?.value.trim() || "",
+    conversationId: userMemoryConversationFilter?.value.trim() || ""
+  };
+}
+
+function getMemoryScopeIdentity(item = {}, profile = {}) {
+  const proposal = item?.proposalId
+    ? (profile.proposals ?? []).find((candidate) => candidate?.proposalId === item.proposalId)
+    : null;
+  const memory = item?.memoryId
+    ? (profile.approvedMemories ?? []).find((candidate) => candidate?.id === item.memoryId)
+    : null;
+  const undoMemory = item?.undo?.memory && typeof item.undo.memory === "object" ? item.undo.memory : null;
+  const source = item?.action ? (proposal ?? memory ?? undoMemory ?? item) : item;
+  return {
+    scope: source?.scope ?? "global",
+    projectId: source?.projectId ?? source?.project_id ?? "",
+    conversationId: source?.conversationId ?? source?.conversation_id ?? "",
+    artifactId: source?.artifactId ?? source?.artifact_id ?? ""
+  };
+}
+
+function matchesUserMemoryFilter(item = {}, profile = {}, filter = getUserMemoryFilter()) {
+  const identity = getMemoryScopeIdentity(item, profile);
+  if (filter.scope && filter.scope !== "all" && identity.scope !== filter.scope) return false;
+  if (filter.projectId && identity.scope === "project" && identity.projectId !== filter.projectId) return false;
+  if (filter.projectId && identity.scope !== "global" && identity.scope !== "project") return false;
+  if (filter.conversationId && identity.scope === "conversation" && identity.conversationId !== filter.conversationId) return false;
+  if (filter.conversationId && identity.scope !== "global" && identity.scope !== "conversation") return false;
+  return true;
+}
+
 function renderGovernedMemoryList(profile = {}) {
   const approved = Array.isArray(profile.approvedMemories) ? profile.approvedMemories : [];
   const proposals = Array.isArray(profile.proposals) ? profile.proposals : [];
   const reviewHistory = Array.isArray(profile.reviewHistory) ? profile.reviewHistory : [];
-  const pending = proposals.filter((item) => item?.status === "pending");
+  const filter = getUserMemoryFilter();
+  const filteredApproved = approved.filter((item) => matchesUserMemoryFilter(item, profile, filter));
+  const filteredProposals = proposals.filter((item) => matchesUserMemoryFilter(item, profile, filter));
+  const filteredReviewHistory = reviewHistory.filter((item) => matchesUserMemoryFilter(item, profile, filter));
+  const pending = filteredProposals.filter((item) => item?.status === "pending");
   if (userMemoryApprovedState) {
-    userMemoryApprovedState.textContent = `${approved.length} approved`;
+    userMemoryApprovedState.textContent = `${filteredApproved.length}/${approved.length} approved`;
   }
   if (userMemoryProposalState) {
-    userMemoryProposalState.textContent = `${pending.length} pending`;
+    const totalPending = proposals.filter((item) => item?.status === "pending").length;
+    userMemoryProposalState.textContent = `${pending.length}/${totalPending} pending`;
   }
   if (userMemoryReviewState) {
-    const undoable = reviewHistory.filter((item) => item?.status !== "undone").length;
-    userMemoryReviewState.textContent = `${reviewHistory.length} reviews · ${undoable} undoable`;
+    const undoable = filteredReviewHistory.filter((item) => item?.status !== "undone").length;
+    userMemoryReviewState.textContent = `${filteredReviewHistory.length}/${reviewHistory.length} reviews · ${undoable} undoable`;
   }
   if (userMemoryApprovedList) {
-    if (approved.length === 0) {
-      renderEmpty(userMemoryApprovedList, "No approved governed memory.");
+    if (filteredApproved.length === 0) {
+      renderEmpty(userMemoryApprovedList, "No approved governed memory for this filter.");
     } else {
-      userMemoryApprovedList.innerHTML = approved.map((item) => `
+      userMemoryApprovedList.innerHTML = filteredApproved.map((item) => `
         <div class="surface" style="padding:10px 12px;">
           <div class="row">
             <strong style="font-size:13px;">${escapeHtml(item.type ?? "memory")}</strong>
@@ -4073,10 +4116,10 @@ function renderGovernedMemoryList(profile = {}) {
     }
   }
   if (userMemoryReviewList) {
-    if (reviewHistory.length === 0) {
-      renderEmpty(userMemoryReviewList, "No memory review history.");
+    if (filteredReviewHistory.length === 0) {
+      renderEmpty(userMemoryReviewList, "No memory review history for this filter.");
     } else {
-      userMemoryReviewList.innerHTML = reviewHistory.slice(0, 12).map((item) => {
+      userMemoryReviewList.innerHTML = filteredReviewHistory.slice(0, 12).map((item) => {
         const canUndo = item.status !== "undone";
         return `
           <div class="surface" style="padding:10px 12px;">
@@ -10275,6 +10318,10 @@ emailDigestSaveBtn?.addEventListener("click", async () => {
 });
 
 userMemorySaveBtn?.addEventListener("click", () => void saveUserMemorySettings());
+for (const control of [userMemoryScopeFilter, userMemoryProjectFilter, userMemoryConversationFilter]) {
+  control?.addEventListener("input", () => renderGovernedMemoryList(state.workspace.userMemory ?? {}));
+  control?.addEventListener("change", () => renderGovernedMemoryList(state.workspace.userMemory ?? {}));
+}
 
 // DAG editor retired from the UI (UCA-126); wiring stays null-safe so the
 // backend APIs (/dag/preview, /dag/execute/:id/resume) remain reachable

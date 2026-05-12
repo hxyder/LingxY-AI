@@ -33,7 +33,7 @@ protocol in `AGENTS.md`.
 | Phase | Status | Tracking rule |
 | --- | --- | --- |
 | MR-001 Memory review history and undo | complete | Memory proposal approve/reject/delete actions are reviewable and undoable typed governance records. |
-| MR-002 Memory project scope and review filters | pending | Approved/proposed memory can be filtered by scope/project/conversation without leaking unrelated scope. |
+| MR-002 Memory project scope and review filters | complete | Approved/proposed memory can be filtered by scope/project/conversation without leaking unrelated scope. |
 | SA-003 Planner-selected delegation enablement audit | pending | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
 | PM-004 Marketplace management UI | pending | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
 | SH-004 OS sandbox implementation decision | pending | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
@@ -67,8 +67,40 @@ Acceptance:
 Verification:
 
 - `node scripts/verify-memory-review-history.mjs`
+- `node scripts/verify-memory-scope-filters.mjs`
 - `node --test tests/behavior/user-memory-profile.test.mjs`
 - `node --test tests/behavior/runtime-user-memory-client.test.mjs`
+
+## MR-002: Memory Project Scope And Review Filters
+
+Status: complete as of 2026-05-12.
+
+Scope:
+
+- Add a service-owned governance filter for approved memory, proposals, and
+  review history across `scope`, `projectId`, `conversationId`, and `artifactId`.
+- Prevent project/conversation/artifact-scoped approved memory from being
+  injected when the current task has no matching scope id.
+- Persist scope identity on new memory review history records so filtering does
+  not depend on renderer-only inference.
+- Add Console memory-panel filters for scope, project id, and conversation id
+  without importing service modules into the renderer.
+
+Acceptance:
+
+- Unscoped context still receives global reviewed memory.
+- Unscoped context does not receive arbitrary project or conversation memory.
+- Project-scoped filtering includes the selected project and excludes unrelated
+  project memory/proposals/reviews.
+- Conversation-scoped filtering includes the selected conversation and excludes
+  project memory unless the user explicitly changes the filter.
+- Renderer filtering is a view concern only; durable scope rules remain in
+  `src/service/memory/user-profile.mjs`.
+
+Verification:
+
+- `node scripts/verify-memory-scope-filters.mjs`
+- `node --test tests/behavior/user-memory-profile.test.mjs`
 
 ## Recommended PR Order
 

@@ -10,6 +10,7 @@ import {
   buildUserMemoryBackgroundEntries,
   createMemoryProposal,
   deleteApprovedMemory,
+  filterMemoryGovernanceProfile,
   rejectMemoryProposal,
   sanitizeUserMemoryProfile,
   undoMemoryReview
@@ -52,6 +53,35 @@ test("user memory profile builds background-only entries for matching project", 
   assert.match(entries[0].content, /Current user instruction override/i);
   assert.match(entries[1].content, /Playwright smoke tests/);
   assert.doesNotMatch(entries[1].content, /Do not inject this note/);
+});
+
+test("user memory profile does not leak project memory without matching scope context", () => {
+  const profile = sanitizeUserMemoryProfile({
+    projectMemories: [
+      { projectId: "proj_a", text: "Only project A." },
+      { projectId: "proj_b", text: "Only project B." }
+    ],
+    approvedMemories: [
+      { id: "global_1", scope: "global", type: "user_preference", text: "Global preference." },
+      { id: "proj_a_1", scope: "project", projectId: "proj_a", type: "project_fact", text: "Project A fact." },
+      { id: "conv_1", scope: "conversation", conversationId: "conv_a", type: "episodic_task", text: "Conversation A fact." }
+    ]
+  }, { now: "2026-05-08T00:00:00.000Z" });
+
+  const unscopedBlock = buildUserMemoryBackgroundEntries(profile)
+    .map((entry) => entry.content)
+    .join("\n");
+  assert.match(unscopedBlock, /Global preference/);
+  assert.doesNotMatch(unscopedBlock, /Only project A/);
+  assert.doesNotMatch(unscopedBlock, /Project A fact/);
+  assert.doesNotMatch(unscopedBlock, /Conversation A fact/);
+
+  const scopedBlock = buildUserMemoryBackgroundEntries(profile, { projectId: "proj_a" })
+    .map((entry) => entry.content)
+    .join("\n");
+  assert.match(scopedBlock, /Only project A/);
+  assert.match(scopedBlock, /Project A fact/);
+  assert.doesNotMatch(scopedBlock, /Only project B/);
 });
 
 test("user memory injection stamps context metadata and remains background-only", () => {
@@ -190,6 +220,61 @@ test("memory governance review history can undo approval, rejection, and deletio
   });
   assert.equal(deleteUndone.approvedMemories.length, 1);
   assert.equal(deleteUndone.approvedMemories[0].text, "Prefer structured acceptance checks.");
+});
+
+test("memory governance filters approved, proposed, and review records by scope", () => {
+  const projectProposal = createMemoryProposal({
+    type: "project_fact",
+    text: "Project A uses strict screenshots.",
+    scope: "project",
+    projectId: "proj_a"
+  });
+  const otherProjectProposal = createMemoryProposal({
+    type: "project_fact",
+    text: "Project B uses a different flow.",
+    scope: "project",
+    projectId: "proj_b"
+  });
+  const conversationProposal = createMemoryProposal({
+    type: "episodic_task",
+    text: "Conversation A discussed launch notes.",
+    scope: "conversation",
+    conversationId: "conv_a"
+  });
+  const profile = sanitizeUserMemoryProfile({
+    proposals: [projectProposal, otherProjectProposal, conversationProposal],
+    approvedMemories: [
+      { id: "global_1", type: "user_preference", text: "Global reviewed note.", scope: "global" }
+    ]
+  }, { now: "2026-05-08T00:00:00.000Z" });
+  const approved = approveMemoryProposal(profile, projectProposal.proposalId, {}, {
+    now: "2026-05-08T00:01:00.000Z"
+  });
+  const rejected = rejectMemoryProposal(approved, conversationProposal.proposalId, {
+    now: "2026-05-08T00:02:00.000Z"
+  });
+
+  const projectFiltered = filterMemoryGovernanceProfile(rejected, {
+    scope: "project",
+    projectId: "proj_a"
+  });
+  assert.deepEqual(projectFiltered.approvedMemories.map((item) => item.projectId), ["proj_a"]);
+  assert.deepEqual(projectFiltered.proposals.map((item) => item.projectId), ["proj_a"]);
+  assert.equal(projectFiltered.reviewHistory.length, 1);
+  assert.equal(projectFiltered.reviewHistory[0].projectId, "proj_a");
+
+  const conversationFiltered = filterMemoryGovernanceProfile(rejected, {
+    scope: "conversation",
+    conversationId: "conv_a"
+  });
+  assert.equal(conversationFiltered.approvedMemories.length, 0);
+  assert.deepEqual(conversationFiltered.proposals.map((item) => item.conversationId), ["conv_a"]);
+  assert.equal(conversationFiltered.reviewHistory[0].conversationId, "conv_a");
+
+  const projectAContext = filterMemoryGovernanceProfile(rejected, { projectId: "proj_a" });
+  assert.ok(projectAContext.approvedMemories.some((item) => item.scope === "global"));
+  assert.ok(projectAContext.approvedMemories.some((item) => item.projectId === "proj_a"));
+  assert.ok(!projectAContext.proposals.some((item) => item.projectId === "proj_b"));
 });
 
 test("context compiler can select scoped reviewed memory", () => {

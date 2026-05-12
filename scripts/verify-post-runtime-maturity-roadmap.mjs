@@ -26,6 +26,7 @@ for (const required of [
   "SH-004 OS sandbox implementation decision",
   "DX-006 Desktop product acceptance matrix",
   "node scripts/verify-memory-review-history.mjs",
+  "node scripts/verify-memory-scope-filters.mjs",
   "node --test tests/behavior/user-memory-profile.test.mjs"
 ]) {
   assert.ok(roadmap.includes(required), `maturity roadmap missing required text: ${required}`);

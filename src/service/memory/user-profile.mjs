@@ -164,6 +164,10 @@ function normalizeMemoryReviewHistory(items = [], { now = nowIso() } = {}) {
       status: REVIEW_STATUSES.has(raw?.status) ? raw.status : "applied",
       proposalId: normalizeText(raw?.proposalId ?? raw?.proposal_id, 120) || null,
       memoryId: normalizeText(raw?.memoryId ?? raw?.memory_id, 120) || null,
+      scope: normalizeScope(raw?.scope, "global"),
+      projectId: normalizeText(raw?.projectId ?? raw?.project_id, 120) || null,
+      conversationId: normalizeText(raw?.conversationId ?? raw?.conversation_id, 120) || null,
+      artifactId: normalizeText(raw?.artifactId ?? raw?.artifact_id, 120) || null,
       actor: normalizeText(raw?.actor, 80) || "desktop_console",
       createdAt: normalizeText(raw?.createdAt ?? raw?.created_at, 40) || now,
       undoneAt: normalizeText(raw?.undoneAt ?? raw?.undone_at, 40) || null,
@@ -207,11 +211,69 @@ function relevantGovernedMemories(items = [], { projectId = null, conversationId
   const normalizedArtifactId = normalizeText(artifactId, 120);
   return items.filter((item) => {
     if (item.scope === "global") return true;
-    if (item.scope === "project") return !normalizedProjectId || item.projectId === normalizedProjectId;
-    if (item.scope === "conversation") return !normalizedConversationId || item.conversationId === normalizedConversationId;
-    if (item.scope === "artifact") return !normalizedArtifactId || item.artifactId === normalizedArtifactId;
+    if (item.scope === "project") return Boolean(normalizedProjectId) && item.projectId === normalizedProjectId;
+    if (item.scope === "conversation") return Boolean(normalizedConversationId) && item.conversationId === normalizedConversationId;
+    if (item.scope === "artifact") return Boolean(normalizedArtifactId) && item.artifactId === normalizedArtifactId;
     return false;
   });
+}
+
+function scopedIdentity(item = {}, profile = {}) {
+  const proposal = item.proposalId
+    ? profile.proposals?.find((candidate) => candidate.proposalId === item.proposalId)
+    : null;
+  const memory = item.memoryId
+    ? profile.approvedMemories?.find((candidate) => candidate.id === item.memoryId)
+    : null;
+  const undoMemory = item.undo?.memory && typeof item.undo.memory === "object" ? item.undo.memory : null;
+  const source = item.action ? (proposal ?? memory ?? undoMemory ?? item) : item;
+  return {
+    scope: normalizeScope(source.scope, "global"),
+    projectId: normalizeText(source.projectId ?? source.project_id, 120) || null,
+    conversationId: normalizeText(source.conversationId ?? source.conversation_id, 120) || null,
+    artifactId: normalizeText(source.artifactId ?? source.artifact_id, 120) || null
+  };
+}
+
+function matchesGovernanceFilter(item = {}, filters = {}, profile = {}) {
+  const scopeFilter = normalizeText(filters.scope, 40) || "all";
+  const projectId = normalizeText(filters.projectId ?? filters.project_id, 120) || null;
+  const conversationId = normalizeText(filters.conversationId ?? filters.conversation_id, 120) || null;
+  const artifactId = normalizeText(filters.artifactId ?? filters.artifact_id, 120) || null;
+  const identity = scopedIdentity(item, profile);
+
+  if (scopeFilter !== "all" && identity.scope !== scopeFilter) return false;
+  if (projectId && identity.scope === "project" && identity.projectId !== projectId) return false;
+  if (projectId && identity.scope !== "global" && identity.scope !== "project") return false;
+  if (conversationId && identity.scope === "conversation" && identity.conversationId !== conversationId) return false;
+  if (conversationId && identity.scope !== "global" && identity.scope !== "conversation") return false;
+  if (artifactId && identity.scope === "artifact" && identity.artifactId !== artifactId) return false;
+  if (artifactId && identity.scope !== "global" && identity.scope !== "artifact") return false;
+  if (identity.scope === "project" && projectId && identity.projectId !== projectId) return false;
+  if (identity.scope === "conversation" && conversationId && identity.conversationId !== conversationId) return false;
+  if (identity.scope === "artifact" && artifactId && identity.artifactId !== artifactId) return false;
+  return true;
+}
+
+export function filterMemoryGovernanceProfile(profile = {}, filters = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? new Date().toISOString() });
+  const approvedMemories = sanitized.approvedMemories
+    .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
+  const proposals = sanitized.proposals
+    .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
+  const reviewHistory = sanitized.reviewHistory
+    .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
+  return {
+    ...sanitized,
+    approvedMemories,
+    proposals,
+    reviewHistory,
+    totals: {
+      approvedMemories: sanitized.approvedMemories.length,
+      proposals: sanitized.proposals.length,
+      reviewHistory: sanitized.reviewHistory.length
+    }
+  };
 }
 
 function renderGovernedMemoryList(items = []) {
@@ -259,7 +321,7 @@ export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = nul
 
   const normalizedProjectId = normalizeText(projectId, 120);
   const projectItems = sanitized.projectMemories
-    .filter((item) => !normalizedProjectId || item.projectId === normalizedProjectId);
+    .filter((item) => Boolean(normalizedProjectId) && item.projectId === normalizedProjectId);
   const projectGoverned = governed.filter((item) => item.scope === "project");
   if (projectItems.length > 0 || projectGoverned.length > 0) {
     entries.push({
@@ -341,6 +403,10 @@ export function approveMemoryProposal(profile = {}, proposalId, patch = {}, { no
     action: "approve_proposal",
     proposalId,
     memoryId: approved.id,
+    scope: approved.scope,
+    projectId: approved.projectId,
+    conversationId: approved.conversationId,
+    artifactId: approved.artifactId,
     actor: patch.actor,
     summary: `Approved ${approved.type} memory`,
     undo: { kind: "proposal_approval", proposalId, memoryId: approved.id },
@@ -364,6 +430,10 @@ export function rejectMemoryProposal(profile = {}, proposalId, { actor = "deskto
   const review = createMemoryReviewRecord({
     action: "reject_proposal",
     proposalId,
+    scope: proposal.scope,
+    projectId: proposal.projectId,
+    conversationId: proposal.conversationId,
+    artifactId: proposal.artifactId,
     actor,
     summary: `Rejected ${proposal.type} memory proposal`,
     undo: { kind: "proposal_rejection", proposalId },
@@ -386,6 +456,10 @@ export function deleteApprovedMemory(profile = {}, memoryId, { actor = "desktop_
   const review = createMemoryReviewRecord({
     action: "delete_memory",
     memoryId,
+    scope: memory.scope,
+    projectId: memory.projectId,
+    conversationId: memory.conversationId,
+    artifactId: memory.artifactId,
     actor,
     summary: `Deleted ${memory.type} memory`,
     undo: { kind: "memory_delete", memory },
@@ -403,6 +477,10 @@ export function createMemoryReviewRecord({
   action,
   proposalId = null,
   memoryId = null,
+  scope = "global",
+  projectId = null,
+  conversationId = null,
+  artifactId = null,
   actor = "desktop_console",
   summary = null,
   undo = {},
@@ -414,6 +492,10 @@ export function createMemoryReviewRecord({
     status: "applied",
     proposalId,
     memoryId,
+    scope,
+    projectId,
+    conversationId,
+    artifactId,
     actor,
     createdAt: now,
     summary,
