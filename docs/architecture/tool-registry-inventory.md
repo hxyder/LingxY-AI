@@ -59,6 +59,12 @@ is a live aggregator plus remaining inline high-risk families.
 | `READ_CLIPBOARD_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 | `SEND_EMAIL_SMTP_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 
+### Preflighted high-risk families
+
+| Family | Current owner | Target owner | Tool IDs |
+|--------|---------------|--------------|----------|
+| File Content / Artifact Output | `src/service/action_tools/tools/index.mjs` | `src/service/capabilities/tools/file-content-tools.mjs` | `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` |
+
 ### External families (aggregated into `BUILTIN_ACTION_TOOLS`)
 
 | Family | Source module |
