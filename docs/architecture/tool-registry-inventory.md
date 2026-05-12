@@ -40,10 +40,17 @@ Status after CAP-1 low-risk/helper tool-family migration (2026-05-11). `tools/in
 | Shared OS helper | `src/service/capabilities/tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
 | Shared file manifest helpers | `src/service/capabilities/tools/file-manifest-helpers.mjs` | `resolveDefaultOutputDir`, `readManifest`, `writeManifest`, `globToRegex` |
 
+### Preflighted high-risk families
+
+| Family | Current owner | Target owner | Tool IDs |
+|--------|---------------|--------------|----------|
+| Desktop Launch | `src/service/action_tools/tools/index.mjs` | `src/service/capabilities/tools/desktop-launch-tools.mjs` | `launch_app` |
+
 ### Inline families (still in `tools/index.mjs`)
 
 | Family | Tool IDs | Lines (approx) | Risk |
 |--------|----------|----------------|------|
+| Desktop Launch | `launch_app` | ~220 | medium (OS integration) |
 | File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects) |
 | Document / Artifact / Diagram / SVG | `generate_document`, `render_diagram`, `render_svg` | ~680 | high (artifact-producing) |
 | File Read / Index / Search | `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` | ~840 | medium |
