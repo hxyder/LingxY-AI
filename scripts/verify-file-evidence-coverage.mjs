@@ -10,6 +10,7 @@ function read(relPath) {
 const contract = read("src/service/core/file-evidence-coverage.mjs");
 const tools = read("src/service/action_tools/tools/index.mjs");
 const fileReadTools = read("src/service/capabilities/tools/file-read-tools.mjs");
+const fileContentTools = read("src/service/capabilities/tools/file-content-tools.mjs");
 const guard = read("src/service/executors/tool_using/truthfulness-guard.mjs");
 
 function sliceBetween(source, startNeedle, endNeedle) {
@@ -20,8 +21,10 @@ function sliceBetween(source, startNeedle, endNeedle) {
   return source.slice(start, end);
 }
 
-const readFileTool = sliceBetween(tools, "export const READ_FILE_TEXT_TOOL", "function clampNumber");
-const readFolderTool = sliceBetween(tools, "export const READ_FOLDER_TEXT_TOOL", "export const SEARCH_FILE_CONTENT_TOOL");
+const readFileTool = sliceBetween(fileContentTools, "export const READ_FILE_TEXT_TOOL", "function clampNumber");
+const readFolderTool = sliceBetween(fileContentTools, "export const READ_FOLDER_TEXT_TOOL", "export const SEARCH_FILE_CONTENT_TOOL");
+assert.ok(tools.includes("from \"../../capabilities/tools/file-content-tools.mjs\""),
+  "index.mjs must import file-content-tools.mjs from capabilities/tools/");
 
 for (const scope of [
   "single_file_text",

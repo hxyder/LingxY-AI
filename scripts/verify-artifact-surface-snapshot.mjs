@@ -22,6 +22,7 @@ const requiredOwnerPaths = [
   "src/service/preview/registry.mjs",
   "src/service/core/http-routes/preview-file-routes.mjs",
   "src/service/capabilities/tools/file-reversibility.mjs",
+  "src/service/capabilities/tools/file-content-tools.mjs",
   "src/service/core/artifact-path-helper.mjs"
 ];
 

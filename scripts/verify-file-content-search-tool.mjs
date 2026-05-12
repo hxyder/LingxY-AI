@@ -8,7 +8,8 @@ function read(relPath) {
 }
 
 const schemas = read("src/service/capabilities/schemas/index.mjs");
-const tools = read("src/service/action_tools/tools/index.mjs");
+const tools = read("src/service/capabilities/tools/file-content-tools.mjs");
+const aggregator = read("src/service/action_tools/tools/index.mjs");
 const surface = read("src/service/executors/tool_using/tool-surface.mjs");
 const toolStart = tools.indexOf("export const SEARCH_FILE_CONTENT_TOOL");
 const toolEnd = tools.indexOf("export const INDEX_FILE_CONTENT_TOOL");
@@ -17,6 +18,8 @@ assert.ok(toolEnd > toolStart, "SEARCH_FILE_CONTENT_TOOL must stay before INDEX_
 const searchTool = tools.slice(toolStart, toolEnd);
 
 assert.match(schemas, /search_file_content/);
+assert.match(aggregator, /from "\.\.\/\.\.\/capabilities\/tools\/file-content-tools\.mjs"/,
+  "index.mjs must import file-content-tools.mjs from capabilities/tools/");
 assert.match(searchTool, /SEARCH_FILE_CONTENT_TOOL/);
 assert.match(searchTool, /EMBEDDING_NAMESPACES\.FILE_CONTENT/);
 assert.match(searchTool, /store\.search\(query,\s*limit,\s*\{[\s\S]*namespace:\s*EMBEDDING_NAMESPACES\.FILE_CONTENT[\s\S]*projectId[\s\S]*\}\)/,

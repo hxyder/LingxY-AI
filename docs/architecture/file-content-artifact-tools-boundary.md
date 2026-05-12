@@ -1,13 +1,12 @@
 # File Content And Artifact Tools Boundary
 
-CAP inline medium/high-risk family extraction preflight. Status: 2026-05-11,
-current owner remains `src/service/action_tools/tools/index.mjs`; target owner
-is `src/service/capabilities/tools/file-content-tools.mjs`.
+CAP inline medium/high-risk family extraction. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/file-content-tools.mjs` after static and
+runtime-contract preflight verification.
 
 ## Current State
 
-- Current owner: `src/service/action_tools/tools/index.mjs`
-- Target owner: `src/service/capabilities/tools/file-content-tools.mjs`
+- Current owner: `src/service/capabilities/tools/file-content-tools.mjs`
 - Registry aggregator: `src/service/action_tools/tools/index.mjs`
 - Tool family:
   - `read_file_text`
@@ -61,21 +60,18 @@ is `src/service/capabilities/tools/file-content-tools.mjs`.
 
 ## Verification
 
-- `scripts/verify-file-content-tools-contract.mjs` currently locks this
-  preflight state: inline owner, helper presence, tool metadata, source
-  dependencies, file-read coverage, index no-disk-read invariant,
-  register-artifact artifact path shape, resolve-output non-artifact behavior,
-  and this document.
+- `scripts/verify-file-content-tools-contract.mjs` locks the moved owner,
+  helper presence, tool metadata, source dependencies, file-read coverage,
+  index no-disk-read invariant, register-artifact artifact path shape,
+  resolve-output non-artifact behavior, old inline body absence, and this
+  document.
 - Existing targeted behavior coverage includes:
   - `tests/behavior/read-file-text-tool.test.mjs`
   - `tests/behavior/local-file-fresh-read-contract.test.mjs`
   - `tests/behavior/file-content-index-records.test.mjs`
-- The physical move must update the verifier to require
-  `src/service/capabilities/tools/file-content-tools.mjs`, require
-  `index.mjs` to import from that owner, and require absence of old inline
-  file-content/artifact helper and tool definitions.
-
 ## Decision
 
-Preflight only. Do not claim this family moved until the verifier requires the
-new capability owner and proves the old inline owner text is gone.
+Moved. The current owner is
+`src/service/capabilities/tools/file-content-tools.mjs`.
+`src/service/action_tools/tools/index.mjs` remains the live aggregator and must
+not reintroduce inline file-content/artifact helper or tool bodies.

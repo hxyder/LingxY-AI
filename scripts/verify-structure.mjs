@@ -298,6 +298,7 @@ const requiredPaths = [
   "src/service/capabilities/tools/file-reversibility.mjs",
   "src/service/capabilities/tools/desktop-capture-gui-tools.mjs",
   "src/service/capabilities/tools/desktop-launch-tools.mjs",
+  "src/service/capabilities/tools/file-content-tools.mjs",
   "src/service/capabilities/tools/mermaid-assets.mjs",
   "src/service/capabilities/tools/svg-sanitize.mjs",
   "src/service/core/file-submission.mjs",

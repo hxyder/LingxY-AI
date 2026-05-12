@@ -280,6 +280,7 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/open-with-default-handler.mjs",
   "src/service/action_tools/tools/desktop-capture-gui-tools.mjs",
   "src/service/action_tools/tools/desktop-launch-tools.mjs",
+  "src/service/action_tools/tools/file-content-tools.mjs",
 ];
 for (const oldPath of cap1MovedPaths) {
   assert(!existsSync(path.join(root, oldPath)),
@@ -292,6 +293,8 @@ assert(indexSrc.includes("from \"../../capabilities/tools/desktop-capture-gui-to
   "index.mjs must import desktop-capture-gui-tools.mjs from capabilities/tools/");
 assert(indexSrc.includes("from \"../../capabilities/tools/desktop-launch-tools.mjs\""),
   "index.mjs must import desktop-launch-tools.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/file-content-tools.mjs\""),
+  "index.mjs must import file-content-tools.mjs from capabilities/tools/");
 for (const tool of ["TAKE_SCREENSHOT_TOOL", "GUI_FIND_ELEMENT_TOOL", "GUI_CLICK_TOOL", "GUI_TYPE_TEXT_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must not redefine extracted ${tool}`);
@@ -315,6 +318,30 @@ for (const ownerText of [
 ]) {
   assert(desktopLaunchSrc.includes(ownerText), `desktop-launch-tools.mjs missing ${ownerText}`);
   assert(!indexSrc.includes(ownerText), `index.mjs must not retain desktop launch owner text: ${ownerText}`);
+}
+
+const fileContentSrc = read("src/service/capabilities/tools/file-content-tools.mjs");
+for (const tool of [
+  "READ_FILE_TEXT_TOOL",
+  "READ_FOLDER_TEXT_TOOL",
+  "SEARCH_FILE_CONTENT_TOOL",
+  "INDEX_FILE_CONTENT_TOOL",
+  "REGISTER_ARTIFACT_TOOL",
+  "RESOLVE_OUTPUT_PATH_TOOL"
+]) {
+  assert(fileContentSrc.includes(`export const ${tool}`),
+    `file-content-tools.mjs must own ${tool}`);
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must not redefine extracted ${tool}`);
+}
+for (const ownerText of [
+  "function clampNumber",
+  "function emitFileReadEvent",
+  "function emitToolFileReadTiming",
+  "function fileReadResultFromTranscriptEntry"
+]) {
+  assert(fileContentSrc.includes(ownerText), `file-content-tools.mjs missing ${ownerText}`);
+  assert(!indexSrc.includes(ownerText), `index.mjs must not retain file-content owner text: ${ownerText}`);
 }
 
 assert(indexSrc.includes("READ_CLIPBOARD_TOOL"),

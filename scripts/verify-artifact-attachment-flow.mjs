@@ -34,7 +34,8 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 const agentic = read("src/service/executors/agentic/planner.mjs");
 const toolUsingAgentLoop = read("src/service/executors/tool_using/agent-loop.mjs");
 const toolUsingMessages = read("src/service/executors/tool_using/conversation-messages.mjs");
-const actionTools = read("src/service/action_tools/tools/index.mjs");
+const actionTools = read("src/service/capabilities/tools/file-content-tools.mjs");
+const actionToolAggregator = read("src/service/action_tools/tools/index.mjs");
 const writeTools = read("src/service/capabilities/connectors/tools/write-tools.mjs");
 const msConnector = read("src/service/capabilities/connectors/microsoft/microsoft-connector.mjs");
 const contextSubmission = read("src/service/core/context-submission.mjs");
@@ -93,5 +94,7 @@ assert.match(taskRoutes, /derived_from_event:\s*true/,
   "event-derived artifacts must be marked for observability");
 assert.match(actionTools, /REGISTER_ARTIFACT_TOOL[\s\S]{0,1800}artifactPaths:\s*\[filePath\]/,
   "register_artifact must return artifactPaths so core submissions can persist it");
+assert.match(actionToolAggregator, /from "\.\.\/\.\.\/capabilities\/tools\/file-content-tools\.mjs"/,
+  "index.mjs must import file-content-tools.mjs from capabilities/tools/");
 
 console.log("ok verify-artifact-attachment-flow");

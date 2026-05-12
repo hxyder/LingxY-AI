@@ -78,9 +78,9 @@ const spec = createTaskSpec("Analyze local materials", {
 assert.equal(spec.file_read?.depth, FILE_READ_DEPTHS.DEEP);
 assert.ok(spec.decision_trace.some((entry) => entry.stage === "file-read-budget"));
 
-const tools = read("src/service/action_tools/tools/index.mjs");
+const tools = read("src/service/capabilities/tools/file-content-tools.mjs");
 assert.match(tools, /resolveFileReadBudgetFromTask/);
-assert.match(tools, /READ_FILE_TEXT_TOOL[\s\S]{0,1800}READ_FOLDER_TEXT_TOOL\.execute\([\s\S]{0,900}, ctx\)/,
+assert.match(tools, /READ_FILE_TEXT_TOOL[\s\S]*?READ_FOLDER_TEXT_TOOL\.execute\([\s\S]*?, ctx\)/,
   "read_file_text directory delegation must forward ctx so task budgets apply");
 assert.match(tools, /args\.max_depth \?\? fileReadBudget\.max_depth/,
   "folder depth must prefer explicit tool args, then task budget");

@@ -8,7 +8,8 @@ function read(relPath) {
 }
 
 const schemas = read("src/service/capabilities/schemas/index.mjs");
-const tools = read("src/service/action_tools/tools/index.mjs");
+const tools = read("src/service/capabilities/tools/file-content-tools.mjs");
+const aggregator = read("src/service/action_tools/tools/index.mjs");
 const surface = read("src/service/executors/tool_using/tool-surface.mjs");
 const agentLoop = read("src/service/executors/tool_using/agent-loop.mjs");
 const agenticToolExecution = read("src/service/executors/agentic/tool-execution.mjs");
@@ -21,6 +22,8 @@ assert.ok(toolEnd > toolStart, "INDEX_FILE_CONTENT_TOOL must stay before REGISTE
 const indexTool = tools.slice(toolStart, toolEnd);
 
 assert.match(schemas, /index_file_content/);
+assert.match(aggregator, /from "\.\.\/\.\.\/capabilities\/tools\/file-content-tools\.mjs"/,
+  "index.mjs must import file-content-tools.mjs from capabilities/tools/");
 assert.match(indexTool, /INDEX_FILE_CONTENT_TOOL/);
 assert.match(indexTool, /requires_confirmation:\s*true/);
 assert.match(indexTool, /risk_level:\s*"high"/);

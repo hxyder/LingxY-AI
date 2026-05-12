@@ -91,7 +91,7 @@ Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 | File | Role |
 |------|------|
 | `src/service/store/artifact-store.mjs` | `registerArtifact` |
-| `src/service/action_tools/tools/index.mjs` | `REGISTER_ARTIFACT_TOOL` |
+| `src/service/capabilities/tools/file-content-tools.mjs` | `REGISTER_ARTIFACT_TOOL` |
 | `src/service/core/action-tool-submission.mjs` | `persistArtifacts` caller |
 | `src/service/core/browser-submission.mjs` | 4x `registerArtifact` calls |
 | `src/service/core/context-submission.mjs` | 2x `registerArtifact` calls |
