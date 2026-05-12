@@ -3494,3 +3494,34 @@ Decision:
 - Phase G marketplace foundation is complete at the service-contract level.
 - Next valid work is Phase H sandbox/sidecar/security export decision-record
   preflight, starting with SH-001.
+
+## Codex Review: SH-001/SH-002 Sandbox And Sidecar Decision Records
+
+Date: 2026-05-12
+
+Scope:
+- Added service-owned isolation decision inventory and validators in
+  `src/service/security/isolation-decision-records.mjs`.
+- Added `docs/architecture/os-sandbox-decision-records.md` with current
+  decisions for file operations, external commands, browser automation, OCR,
+  audio daemons, and MCP install sandbox.
+- Added `docs/architecture/sidecar-decision-record.md` as the mandatory
+  template before any new native helper, long-running daemon, sidecar, or
+  OS-level sandbox.
+- Added `scripts/verify-sandbox-decision-records.mjs` and
+  `tests/behavior/isolation-decision-records.test.mjs`.
+- No new sidecar, OS sandbox, IPC channel, HTTP route, tool id, provider id,
+  storage schema, or runtime behavior change was introduced.
+
+Verification run by Codex:
+- `node --check` on changed SH modules/tests/verifier: passed.
+- `node --test tests/behavior/isolation-decision-records.test.mjs`: passed,
+  4/4.
+- `node scripts/verify-sandbox-decision-records.mjs`: passed.
+- `node scripts/verify-privacy-sandbox-policy.mjs`: passed.
+- `npm run check:fast`: passed, 114/114 commands including 1038/1038 behavior
+  tests.
+
+Decision:
+- SH-001 and SH-002 are ready to commit.
+- Next valid work is SH-003 audit export and policy trace.

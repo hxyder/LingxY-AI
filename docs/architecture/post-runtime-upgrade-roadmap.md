@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 113/113 after PM-003
-  marketplace distribution policy coverage was added, including 1034/1034 behavior
+- Current green gate: `npm run check:fast` passed 114/114 after SH-001/SH-002
+  sandbox/sidecar decision-record coverage was added, including 1038/1038 behavior
   tests.
   `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
@@ -49,10 +49,10 @@ Last updated: 2026-05-12.
 | Memory governance next pass | `verify-memory-governance.mjs`, `verify-user-memory-profile.mjs`, context compiler tests. | Editable memory exists; auto-learning proposals, review history, undo, and richer project scoping remain. |
 | SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
 | Permission/mode model | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` Wave 12; `lingxy_electron_js_codex_execution_plan.md` queue-class notes | `execution_mode` exists, privacy policy exists, and approvals exist; user-visible mode/tool-surface mapping remains incomplete. |
-| Sidecar decision record | `lingxy_electron_js_codex_execution_plan.md` PR-09/PR-19; sidecar decision gate | Sidecars are constrained by guardrails, but a dedicated decision-record template/verifier is still missing. |
+| Sidecar decision record | `docs/architecture/sidecar-decision-record.md`, `src/service/security/isolation-decision-records.mjs`, and `verify-sandbox-decision-records.mjs`. | SH-001 and SH-002 are complete for current isolation decisions and mandatory sidecar decision template; no new sidecars are introduced. |
 | Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | Complete for opt-in metadata: file reversibility remains default, while `ctx.reversibility.gitCheckpoint.enabled` can create a non-worktree git checkpoint ref for project rollback. |
 | Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs, `docs/architecture/marketplace-trust-model.md`, and marketplace distribution policy tests. | PM-001 is complete for shared trust preview metadata across skills, plugins, and MCP; PM-002 is complete for external MCP isolated-token governance; PM-003 is complete for normalized signature/share/archive metadata and non-discoverable plugin archives. Broader marketplace UI remains. |
-| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner. | Privacy policy/broker foundation exists; OS-level sandbox/codesign boundaries and richer controls remain. |
+| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner, and OS sandbox decision records. | Privacy policy/broker foundation exists; OS-level sandbox/codesign execution remains deferred behind decision records. |
 | Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers. | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
 
 ## Tracking Register
@@ -77,7 +77,9 @@ Last updated: 2026-05-12.
 | PM-001 Marketplace trust model | complete | Skills, connector plugins, and MCP statuses now expose shared `trustPreview` metadata with trusted/local-only/third-party/unsigned/disabled/deleted flags. |
 | PM-002 External MCP governance | complete | External MCP must use isolated token stores, is blocked from reusing LingxY OAuth/account token refs, and remains catalog-only with confirmation required by default. |
 | PM-003 Plugin/skill/MCP marketplace | complete | Marketplace distribution policy normalizes signature/share/archive metadata, plugin uninstall archives recoverably, and archived plugins are not discoverable as runnable catalog entries. |
-| SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
+| SH-001 OS sandbox decision records | complete | File operations, external commands, browser automation, OCR, audio daemons, and MCP install sandbox have explicit isolation decisions, rollback paths, and user recovery contracts. |
+| SH-002 Sidecar decision record template | complete | New native helpers, daemons, OS sandboxes, or sidecars require a measured decision record and cannot be justified as a general business-logic rewrite. |
+| SH-003 Audit export and policy trace | pending | Security/privacy decisions still need user-readable export coverage without leaking secrets. |
 | OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
 
 ## Execution Rules
@@ -813,30 +815,39 @@ Verification:
 - `node --test tests/behavior/marketplace-distribution-policy.test.mjs`
 - `node scripts/verify-plugin-registry.mjs`
 
-- New stale-plugin-reference verifier.
-
 ## Phase H: Privacy, Sandbox, Sidecars, And Release Hardening
 
 ### SH-001: OS-Level Sandbox Decision Records
+
+Status: complete as of 2026-05-12.
 
 Scope:
 
 - For file operations, external commands, browser automation, OCR, and optional
   sidecars, decide which need process isolation.
 - Require measured risk/benefit before native sidecars or OS sandboxing.
+- Implemented current decision inventory in
+  `src/service/security/isolation-decision-records.mjs`.
+- Added `docs/architecture/os-sandbox-decision-records.md`.
+- Covered file operations, external commands, browser automation, OCR
+  extractors, audio daemons, and MCP install sandbox.
 
 Acceptance:
 
 - High-risk actions have explicit isolation decisions, rollback paths, and user
   recovery behavior.
 - No whole-app language rewrite.
+- No new OS sandbox or native sidecar is introduced by this phase.
 
 Verification:
 
 - `node scripts/verify-privacy-sandbox-policy.mjs`
-- New sandbox decision-record verifier.
+- `node scripts/verify-sandbox-decision-records.mjs`
+- `node --test tests/behavior/isolation-decision-records.test.mjs`
 
 ### SH-002: Sidecar Decision Record Template
+
+Status: complete as of 2026-05-12.
 
 Scope:
 
@@ -845,16 +856,22 @@ Scope:
   serialization/cancellation boundary, failure behavior, packaging impact, and
   rollback path.
 - Explicitly prohibit sidecars as a general business-logic rewrite.
+- Added service validator for required sidecar decision fields in
+  `src/service/security/isolation-decision-records.mjs`.
 
 Acceptance:
 
 - No Rust/Go/Python/native sidecar can be introduced without filling the record
   and passing the verifier.
 - Sidecar decisions distinguish performance isolation from security isolation.
+- Required fields include measured bottleneck, worker insufficiency,
+  serialization/cancellation boundaries, failure behavior, packaging impact,
+  rollback path, user recovery, and explicit business-logic rewrite prohibition.
 
 Verification:
 
-- New `verify-sidecar-decision-record`
+- `node scripts/verify-sandbox-decision-records.mjs`
+- `node --test tests/behavior/isolation-decision-records.test.mjs`
 
 ### SH-003: Audit Export And Policy Trace
 

@@ -164,6 +164,14 @@ for (const required of [
   "distribution.archive",
   "node scripts/verify-marketplace-distribution-policy.mjs",
   "node --test tests/behavior/marketplace-distribution-policy.test.mjs",
+  "SH-001: OS-Level Sandbox Decision Records",
+  "src/service/security/isolation-decision-records.mjs",
+  "docs/architecture/os-sandbox-decision-records.md",
+  "node scripts/verify-sandbox-decision-records.mjs",
+  "node --test tests/behavior/isolation-decision-records.test.mjs",
+  "SH-002: Sidecar Decision Record Template",
+  "docs/architecture/sidecar-decision-record.md",
+  "business-logic rewrite",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
