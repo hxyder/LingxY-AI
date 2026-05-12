@@ -15,8 +15,8 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 131/131 with 1078/1078
-  behavior tests after CONN-001.
+- Current green gate: `npm run check:fast` passed 132/132 with 1082/1082
+  behavior tests after SBOX-001.
 - `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-002
   visible Console skill-install preview integration. The first CAPM-002 GUI
   smoke attempt hit the known task-list keyboard focus timing failure and the
@@ -64,7 +64,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | CONN-001 Real connector/OAuth acceptance | complete | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
-| SBOX-001 High-risk sandbox evidence pack | pending | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
+| SBOX-001 High-risk sandbox evidence pack | complete | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
 | MMX-001 Model role management surface | pending | Users must see and test planner/executor/reviewer/fast roles, health, cost, fallback, and feature-flag state without editing config files. |
 | MMX-002 Budgeted fallback and cascade evidence | pending | Any model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
 | CTX-001 Context selection and project packs | pending | Users must see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
@@ -322,9 +322,20 @@ Verification:
 
 ### SBOX-001: High-Risk Sandbox Evidence Pack
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Decide future sandboxing from measurements, not vibes.
+
+Implemented:
+
+- `src/shared/sandbox-evidence-pack.mjs`
+- `scripts/run-sandbox-evidence-pack.mjs`
+- `docs/architecture/sandbox-evidence-pack.md`
+- `docs/release/evidence/sandbox-evidence-pack.template.json`
+- `scripts/verify-sandbox-evidence-pack.mjs`
+- `tests/behavior/sandbox-evidence-pack.test.mjs`
 
 Required surfaces:
 
@@ -341,6 +352,15 @@ Acceptance:
   rollback, user recovery, and whether worker/child-process remains sufficient.
 - No new OS sandbox, native helper, or sidecar without updating SH-004 decision
   records and passing targeted tests.
+
+Verification:
+
+- `node scripts/verify-sandbox-evidence-pack.mjs`
+- `node --test tests/behavior/sandbox-evidence-pack.test.mjs`
+- `node scripts/run-sandbox-evidence-pack.mjs`
+- Evidence pack records command, measured result, and mitigation for each
+  surface.
+- No sandbox boundary change is allowed in this phase.
 
 ### MMX-001: Model Role Management Surface
 

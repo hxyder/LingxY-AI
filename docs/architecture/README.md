@@ -25,6 +25,7 @@ This directory contains the Phase 0 architecture baseline that Phase 1 engineers
 - [desktop-gui-daily-workflow-coverage.md](desktop-gui-daily-workflow-coverage.md)
 - [live-provider-acceptance-harness.md](live-provider-acceptance-harness.md)
 - [connector-oauth-acceptance-harness.md](connector-oauth-acceptance-harness.md)
+- [sandbox-evidence-pack.md](sandbox-evidence-pack.md)
 - [capability-inventory-manager.md](capability-inventory-manager.md)
 - [capability-creation-lifecycle.md](capability-creation-lifecycle.md)
 

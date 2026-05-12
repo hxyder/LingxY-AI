@@ -2,6 +2,43 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: SBOX-001 High-Risk Sandbox Evidence Pack
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/sandbox-evidence-pack.mjs` as the typed evidence contract
+  for high-risk runtime surfaces.
+- Added `scripts/run-sandbox-evidence-pack.mjs` to run deterministic evidence
+  commands for file mutation, command execution, MCP install, OCR, browser
+  automation, and audio daemon surfaces.
+- Added `docs/architecture/sandbox-evidence-pack.md`,
+  `docs/release/evidence/sandbox-evidence-pack.template.json`,
+  `scripts/verify-sandbox-evidence-pack.mjs`, and
+  `tests/behavior/sandbox-evidence-pack.test.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs`, `package.json`, and the
+  post-runtime product gap roadmap. No sandbox boundary, IPC channel, HTTP
+  route, tool id, artifact kind, provider id, or storage schema changed.
+
+Decision:
+- SBOX-001 is evidence-only. The shared contract requires
+  `boundaryChange: false`.
+- Future OS sandbox, native helper, or sidecar changes must reference measured
+  evidence and update the SH-004 decision record rather than changing runtime
+  boundaries ad hoc.
+
+Verification:
+- `node --test tests/behavior/sandbox-evidence-pack.test.mjs`: passed, 4/4.
+- `node scripts/verify-sandbox-evidence-pack.mjs`: passed.
+- `node scripts/run-sandbox-evidence-pack.mjs`: passed and wrote a redacted
+  report under `.tmp/sandbox-evidence-pack`.
+- `npm run check:fast`: passed, 132/132; behavior tests passed, 1082/1082.
+
+Next valid work:
+- Start `MMX-001` model role management surface: expose planner/executor/
+  reviewer/fast role assignments, provider health, cost/fallback state, and
+  test actions without requiring config-file edits.
+
 ## Codex Update: CONN-001 Connector OAuth Acceptance Harness
 
 Date: 2026-05-12

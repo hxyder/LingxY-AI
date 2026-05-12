@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "commit": "template",
+  "branch": "template",
+  "boundaryChange": false,
+  "redaction": "secrets, tokens, auth headers, local private paths, and file contents are omitted or redacted",
+  "surfaces": [
+    {
+      "id": "file_mutation",
+      "status": "not_run",
+      "command": "",
+      "evidence": "",
+      "measured": false,
+      "mitigation": "",
+      "notes": ""
+    },
+    {
+      "id": "command_execution",
+      "status": "not_run",
+      "command": "",
+      "evidence": "",
+      "measured": false,
+      "mitigation": "",
+      "notes": ""
+    },
+    {
+      "id": "mcp_install",
+      "status": "not_run",
+      "command": "",
+      "evidence": "",
+      "measured": false,
+      "mitigation": "",
+      "notes": ""
+    },
+    {
+      "id": "ocr",
+      "status": "not_run",
+      "command": "",
+      "evidence": "",
+      "measured": false,
+      "mitigation": "",
+      "notes": ""
+    },
+    {
+      "id": "browser_automation",
+      "status": "not_run",
+      "command": "",
+      "evidence": "",
+      "measured": false,
+      "mitigation": "",
+      "notes": ""
+    },
+    {
+      "id": "audio_daemon",
+      "status": "not_run",
+      "command": "",
+      "evidence": "",
+      "measured": false,
+      "mitigation": "",
+      "notes": ""
+    }
+  ],
+  "notes": [
+    "template only; no sandbox boundary changed"
+  ]
+}
