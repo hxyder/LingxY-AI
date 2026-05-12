@@ -182,6 +182,11 @@ for (const required of [
   "eval-trends.jsonl",
   "node scripts/verify-eval-trend-store.mjs",
   "node --test tests/behavior/eval-trend-store.test.mjs",
+  "OQ-002: Span Taxonomy And Optional OTEL Export",
+  "src/shared/task-span-taxonomy.mjs",
+  "local_otel_span_v1",
+  "node scripts/verify-task-span-taxonomy.mjs",
+  "node --test tests/behavior/task-span-taxonomy.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

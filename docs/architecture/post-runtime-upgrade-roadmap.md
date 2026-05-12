@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 116/116 after OQ-001
-  eval trend store coverage was added, including 1044/1044 behavior tests.
+- Current green gate: `npm run check:fast` passed 117/117 after OQ-002
+  task span taxonomy coverage was added, including 1046/1046 behavior tests.
   `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
   `npm run verify:desktop-gui-smoke`
@@ -80,7 +80,7 @@ Last updated: 2026-05-12.
 | SH-002 Sidecar decision record template | complete | New native helpers, daemons, OS sandboxes, or sidecars require a measured decision record and cannot be justified as a general business-logic rewrite. |
 | SH-003 Audit export and policy trace | complete | Runtime and diagnostic bundles include redacted policy trace summaries for blocked decisions, approvals, and policy task events without raw tool args or context text. |
 | OQ-001 Eval trend store | complete | Real-LLM corpus reports append compact JSONL trend records and compare against the previous run without storing raw commands or reports. |
-| OQ-002 Observability span taxonomy | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
+| OQ-002 Observability span taxonomy | complete | Shared task span taxonomy and local OTEL-shaped export records are verifier-locked without network export or hot-path overhead. |
 
 ## Execution Rules
 
@@ -927,21 +927,31 @@ Verification:
 
 ### OQ-002: Span Taxonomy And Optional OTEL Export
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Define stable span names for routing, context, memory, graph nodes, tool calls,
   model calls, artifacts, approvals, desktop UI, and connectors.
 - Add optional OTEL/export shape after local trace taxonomy stabilizes.
+- Implemented `src/shared/task-span-taxonomy.mjs` as the shared phase/span name
+  contract consumed by `src/shared/task-trace-summary.mjs`.
+- Added a local `buildTaskSpanExport()` shape named `local_otel_span_v1`; this
+  is a deterministic export shape only and does not send network telemetry.
 
 Acceptance:
 
 - Local trace remains useful without OTEL.
 - Optional export does not add hot-path overhead.
+- Span names are stable (`tool.call`, `model.call`, `artifact.event`,
+  `approval.decision`, `planning.decision`, `recovery.event`,
+  `runtime.lifecycle`) and verifier-locked.
 
 Verification:
 
 - `node scripts/verify-task-trace-timeline.mjs`
-- New span taxonomy verifier.
+- `node scripts/verify-task-span-taxonomy.mjs`
+- `node --test tests/behavior/task-span-taxonomy.test.mjs`
 
 ## Recommended PR Order
 

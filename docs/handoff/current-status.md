@@ -3597,3 +3597,44 @@ Testing note:
 Decision:
 - OQ-001 is ready to commit.
 - Next valid work is OQ-002 span taxonomy and optional OTEL export preflight.
+
+## Codex Review: OQ-002 Span Taxonomy And Optional OTEL Export
+
+Date: 2026-05-12
+
+Scope:
+- Added shared task span taxonomy in `src/shared/task-span-taxonomy.mjs`.
+- Updated `src/shared/task-trace-summary.mjs` to consume the shared phase/span
+  classifier while preserving existing trace panel phase behavior.
+- Added local OTEL-shaped export records through `buildTaskSpanExport()` using
+  `local_otel_span_v1`; this is a deterministic export shape only and does not
+  send telemetry over the network.
+- Added `scripts/verify-task-span-taxonomy.mjs` and
+  `tests/behavior/task-span-taxonomy.test.mjs`.
+- Updated the post-runtime roadmap and check manifest.
+- No product runtime execution behavior, IPC channels, HTTP routes, tool ids,
+  artifact kinds, provider ids, storage schema, or desktop UI behavior changed.
+
+Issue found and handled:
+- Initial taxonomy classified `tool_call_completed` with `success:false` as a
+  recovery phase, which broke the existing Tools phase failure count. The
+  classifier now keeps tool events in the tool phase and records failure through
+  the phase failure counter, preserving existing trace panel behavior.
+
+Verification run by Codex:
+- `node --check` on changed OQ-002 modules/tests/verifier: passed.
+- `node --test tests/behavior/task-span-taxonomy.test.mjs tests/behavior/task-trace-summary.test.mjs`:
+  passed, 5/5.
+- `node scripts/verify-task-span-taxonomy.mjs`: passed.
+- `node scripts/verify-task-trace-timeline.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 117/117 commands including 1046/1046 behavior
+  tests.
+
+Decision:
+- OQ-002 is ready to commit.
+- The post-runtime roadmap's tracked phases are complete through OQ-002. Next
+  work should either extend the roadmap with the next user-visible capability
+  tranche or begin a new execution board for desktop experience/plugin sandbox
+  maturity.

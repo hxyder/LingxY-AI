@@ -1,3 +1,10 @@
+import {
+  TASK_TRACE_PHASE_LABELS,
+  TASK_TRACE_PHASES,
+  classifyTaskTraceEvent,
+  normalizeTaskTraceSpan
+} from "./task-span-taxonomy.mjs";
+
 function normalizeEventType(event = {}) {
   return `${event.event_type ?? event.event ?? event.type ?? ""}`.trim();
 }
@@ -27,28 +34,8 @@ function spanStatusFromToolPayload(payload = {}) {
   return "completed";
 }
 
-const TRACE_PHASE_ORDER = ["lifecycle", "planning", "model", "tool", "artifact", "approval", "recovery", "system"];
-const TRACE_PHASE_LABELS = {
-  lifecycle: "Lifecycle",
-  planning: "Planning",
-  model: "Model",
-  tool: "Tools",
-  artifact: "Artifacts",
-  approval: "Approval",
-  recovery: "Recovery",
-  system: "System"
-};
-
 function tracePhaseForEvent(type = "", payload = {}) {
-  const t = String(type || "");
-  if (/approval|human|consent/i.test(t)) return "approval";
-  if (/artifact|document|checkpoint|reversib/i.test(t) || payload.artifact_action || payload.artifact_paths) return "artifact";
-  if (/^tool_|tool_call|tool_input|mcp/i.test(t)) return "tool";
-  if (/llm|model|provider|text_delta|token_delta|reasoning_delta|final_composer/i.test(t)) return "model";
-  if (/router|route|planner|phase_gate|task_spec|context|skill_context|prefetch|semantic/i.test(t)) return "planning";
-  if (/retry|recover|error|failure|failed|denied/i.test(t) || payload.success === false) return "recovery";
-  if (/task_created|status_changed|success|partial_success|cancelled|completed/i.test(t)) return "lifecycle";
-  return "system";
+  return classifyTaskTraceEvent(type, payload).phase;
 }
 
 function eventLabel(type = "", payload = {}) {
@@ -63,7 +50,7 @@ function updateTimelinePhase(phases, entry) {
   const phaseId = tracePhaseForEvent(entry.type, entry.payload);
   const existing = phases.get(phaseId) ?? {
     id: phaseId,
-    label: TRACE_PHASE_LABELS[phaseId] ?? phaseId,
+    label: TASK_TRACE_PHASE_LABELS[phaseId] ?? phaseId,
     count: 0,
     started_at_ms: null,
     ended_at_ms: null,
@@ -88,11 +75,11 @@ function updateTimelinePhase(phases, entry) {
 
 function pushSpan(spans, span) {
   if (!span?.id) return;
-  spans.push({
+  spans.push(normalizeTaskTraceSpan({
     status: "completed",
     duration_ms: durationMs(span.start_ms, span.end_ms),
     ...span
-  });
+  }));
 }
 
 export function buildTaskTraceSummary(events = []) {
@@ -150,6 +137,8 @@ export function buildTaskTraceSummary(events = []) {
       openTools.set(key, {
         id: key,
         kind: "tool",
+        name: "tool.call",
+        phase: "tool",
         label: formatToolLabel(entry.payload),
         start_ms: entry.tsMs,
         end_ms: null,
@@ -186,6 +175,8 @@ export function buildTaskTraceSummary(events = []) {
       pushSpan(spans, {
         id: `llm:${callSite}:${entry.index}`,
         kind: "llm",
+        name: "model.call",
+        phase: "model",
         label: callSite,
         start_ms: Number.isFinite(Number(entry.payload.started_at_ms)) ? Number(entry.payload.started_at_ms) : entry.tsMs,
         end_ms: entry.tsMs,
@@ -210,7 +201,7 @@ export function buildTaskTraceSummary(events = []) {
     .filter((span) => Number.isFinite(Number(span.duration_ms)))
     .sort((a, b) => Number(b.duration_ms) - Number(a.duration_ms))
     .slice(0, 6);
-  const timeline = TRACE_PHASE_ORDER
+  const timeline = TASK_TRACE_PHASES
     .map((id) => phases.get(id))
     .filter(Boolean)
     .map((phase) => ({
