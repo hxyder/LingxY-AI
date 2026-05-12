@@ -177,6 +177,11 @@ for (const required of [
   "docs/architecture/security-policy-trace-export.md",
   "node scripts/verify-policy-trace-export.mjs",
   "node --test tests/behavior/policy-trace-export.test.mjs",
+  "OQ-001: Eval Trend Store",
+  "scripts/real-llm-test/trend-store.mjs",
+  "eval-trends.jsonl",
+  "node scripts/verify-eval-trend-store.mjs",
+  "node --test tests/behavior/eval-trend-store.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

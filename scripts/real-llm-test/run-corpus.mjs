@@ -17,7 +17,7 @@
 //   node scripts/real-llm-test/run-corpus.mjs --foreground   # wait in POST
 //   node scripts/real-llm-test/run-corpus.mjs --corpus ./corpus-function-audit-100.mjs
 
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import ExcelJS from "exceljs";
 import path from "node:path";
@@ -25,6 +25,12 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { summariseEvalMetrics } from "./eval-metrics.mjs";
 import { collectTokenMetrics } from "./token-metrics.mjs";
+import {
+  appendEvalTrendRun,
+  buildEvalTrendRun,
+  compareEvalTrendRuns,
+  readEvalTrendRuns
+} from "./trend-store.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPORT_DIR = __dirname;
@@ -65,6 +71,15 @@ function parseArgs(argv) {
 
 const ARGS = parseArgs(process.argv.slice(2));
 const BASE_URL = `http://127.0.0.1:${ARGS.port}`;
+
+function currentGitCommit() {
+  if (process.env.GITHUB_SHA) return process.env.GITHUB_SHA;
+  const result = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
+    cwd: path.resolve(__dirname, "..", ".."),
+    encoding: "utf8"
+  });
+  return result.status === 0 ? result.stdout.trim() : null;
+}
 
 function resolveCorpusPath(rawPath = DEFAULT_CORPUS) {
   const value = String(rawPath || DEFAULT_CORPUS);
@@ -1034,8 +1049,19 @@ function writeReport(summary, results, runStartedAt) {
   const stamp = new Date(runStartedAt).toISOString().replace(/[:T]/g, "-").slice(0, 19);
   const jsonPath = path.join(REPORT_DIR, `report-${stamp}.json`);
   const mdPath = path.join(REPORT_DIR, `report-${stamp}.md`);
+  const trendPath = path.join(REPORT_DIR, "eval-trends.jsonl");
 
   writeFileSync(jsonPath, JSON.stringify({ summary, results }, null, 2), "utf8");
+  const priorTrendRuns = readEvalTrendRuns(trendPath);
+  const trendRun = buildEvalTrendRun({
+    summary,
+    runStartedAt,
+    commit: currentGitCommit(),
+    corpus: ARGS.corpus,
+    label: ARGS.idFilter ? [...ARGS.idFilter].join(",") : ARGS.categoryFilter ?? null
+  });
+  const trendComparison = compareEvalTrendRuns(trendRun, priorTrendRuns.at(-1));
+  appendEvalTrendRun(trendPath, trendRun);
 
   const lines = [];
   lines.push(`# Real-LLM corpus run · ${stamp}`);
@@ -1062,6 +1088,18 @@ function writeReport(summary, results, runStartedAt) {
     lines.push(`- Timing: elapsed avg/p95=${timing.elapsed_ms_avg ?? "n/a"}/${timing.elapsed_ms_p95 ?? "n/a"}ms; first-visible avg/p95=${timing.first_visible_ms_avg ?? "n/a"}/${timing.first_visible_ms_p95 ?? "n/a"}ms`);
     lines.push(`- Tokens: cases=${tokens.cases_with_usage ?? 0}/${summary.total}; total avg/p95=${tokens.total_tokens_avg ?? "n/a"}/${tokens.total_tokens_p95 ?? "n/a"}`);
     lines.push(`- Attention flags: ${flagRows || "none"}`);
+  }
+  lines.push("");
+  lines.push("## Trend");
+  lines.push("");
+  lines.push(`- Trend store: \`${path.relative(__dirname, trendPath)}\``);
+  lines.push(`- Commit: \`${trendRun.commit ?? "unknown"}\`; corpus: \`${trendRun.corpus ?? "unknown"}\``);
+  if (trendComparison) {
+    lines.push(`- Previous run: ${trendComparison.previous_run_started_at ?? "unknown"} (${trendComparison.previous_commit ?? "unknown"})`);
+    lines.push(`- Deltas: passRate=${trendComparison.pass_rate_delta ?? "n/a"}, blockedRate=${trendComparison.blocked_rate_delta ?? "n/a"}, tokens=${trendComparison.total_tokens_delta ?? "n/a"}, elapsedP95Ms=${trendComparison.elapsed_ms_p95_delta ?? "n/a"}`);
+    lines.push(`- New failure classes: ${trendComparison.top_failure_classes_added.join(", ") || "none"}`);
+  } else {
+    lines.push("- Previous run: none");
   }
   lines.push("");
   lines.push("## Token usage");

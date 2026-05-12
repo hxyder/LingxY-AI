@@ -25,9 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 115/115 after SH-003
-  audit export and policy trace coverage was added, including 1042/1042 behavior
-  tests.
+- Current green gate: `npm run check:fast` passed 116/116 after OQ-001
+  eval trend store coverage was added, including 1044/1044 behavior tests.
   `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
   `npm run verify:desktop-gui-smoke`
@@ -80,7 +79,8 @@ Last updated: 2026-05-12.
 | SH-001 OS sandbox decision records | complete | File operations, external commands, browser automation, OCR, audio daemons, and MCP install sandbox have explicit isolation decisions, rollback paths, and user recovery contracts. |
 | SH-002 Sidecar decision record template | complete | New native helpers, daemons, OS sandboxes, or sidecars require a measured decision record and cannot be justified as a general business-logic rewrite. |
 | SH-003 Audit export and policy trace | complete | Runtime and diagnostic bundles include redacted policy trace summaries for blocked decisions, approvals, and policy task events without raw tool args or context text. |
-| OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
+| OQ-001 Eval trend store | complete | Real-LLM corpus reports append compact JSONL trend records and compare against the previous run without storing raw commands or reports. |
+| OQ-002 Observability span taxonomy | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
 
 ## Execution Rules
 
@@ -901,20 +901,29 @@ Verification:
 
 ### OQ-001: Eval Trend Store
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Persist deterministic eval metrics across runs.
 - Add trend comparisons for pass rate, blocked rate, token cost, latency, and
   top failure classes.
+- Implemented `scripts/real-llm-test/trend-store.mjs`.
+- `scripts/real-llm-test/run-corpus.mjs` now appends compact
+  `eval-trends.jsonl` records and renders a `## Trend` report section with
+  previous-run deltas.
 
 Acceptance:
 
 - A regression can be identified across commits without reading raw reports.
+- Trend rows contain only deterministic summary metrics and top classes, not raw
+  user commands, raw task reports, or final answer text.
 
 Verification:
 
 - `node scripts/verify-eval-quality-metrics.mjs`
-- New trend-store verifier.
+- `node scripts/verify-eval-trend-store.mjs`
+- `node --test tests/behavior/eval-trend-store.test.mjs`
 
 ### OQ-002: Span Taxonomy And Optional OTEL Export
 

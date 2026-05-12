@@ -3562,3 +3562,38 @@ Decision:
 - Phase H sandbox/security export foundation is complete at the service-contract
   level.
 - Next valid work is OQ-001 eval trend store.
+
+## Codex Review: OQ-001 Eval Trend Store
+
+Date: 2026-05-12
+
+Scope:
+- Added append-only real-LLM eval trend helpers in
+  `scripts/real-llm-test/trend-store.mjs`.
+- Wired `scripts/real-llm-test/run-corpus.mjs` to append compact
+  `eval-trends.jsonl` rows and render a `## Trend` section with previous-run
+  deltas.
+- Added `scripts/verify-eval-trend-store.mjs` and
+  `tests/behavior/eval-trend-store.test.mjs`.
+- Updated the post-runtime roadmap and check manifest.
+- No product runtime behavior, IPC channels, HTTP routes, tool ids, artifact
+  kinds, provider ids, storage schema, or desktop UI behavior changed.
+
+Verification run by Codex:
+- `node --check` on changed OQ-001 modules/tests/verifier: passed.
+- `node --test tests/behavior/eval-trend-store.test.mjs`: passed, 2/2.
+- `node scripts/verify-eval-trend-store.mjs`: passed.
+- `node scripts/verify-eval-quality-metrics.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 116/116 commands including 1044/1044 behavior
+  tests.
+
+Testing note:
+- No live API call was required for OQ-001 because the change sits after corpus
+  execution and only persists deterministic report summaries. The target tests
+  exercise JSONL append/read and previous-run delta behavior directly.
+
+Decision:
+- OQ-001 is ready to commit.
+- Next valid work is OQ-002 span taxonomy and optional OTEL export preflight.
