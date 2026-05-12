@@ -432,7 +432,7 @@ Provider catalog/config:
 
 - `src/shared/provider-catalog.mjs`
 - `src/shared/provider-configuration.mjs`
-- `src/service/ai/providers/*.mjs`
+- `src/service/capabilities/providers/*.mjs`
 - `src/service/core/http-routes/config-provider-routes.mjs`
 
 Provider resolution:
@@ -457,8 +457,8 @@ Provider calls:
 
 Provider health/model discovery:
 
-- `src/service/ai/providers/runtime.mjs`
-- `src/service/ai/providers/model-discovery.mjs`
+- `src/service/capabilities/providers/runtime.mjs`
+- `src/service/capabilities/providers/model-discovery.mjs`
 - `src/service/core/http-routes/ai-status-routes.mjs`
 - `src/service/core/http-routes/config-provider-routes.mjs`
 

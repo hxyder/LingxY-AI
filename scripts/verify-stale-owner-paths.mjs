@@ -83,6 +83,9 @@ const phaseCap4BMcpOldOwners = [
 const phaseCap4CConnectorOldOwners = [
   { old: "src/service/connectors/", new: "src/service/capabilities/connectors/" },
 ];
+const phaseCap4DProviderOldOwners = [
+  { old: "src/service/ai/providers/", new: "src/service/capabilities/providers/" },
+];
 const allMoved = [
   ...phase2bOldOwners,
   ...phaseRepo1OldOwners,
@@ -91,7 +94,8 @@ const allMoved = [
   ...phaseCap3OldOwners,
   ...phaseCap4ASkillOldOwners,
   ...phaseCap4BMcpOldOwners,
-  ...phaseCap4CConnectorOldOwners
+  ...phaseCap4CConnectorOldOwners,
+  ...phaseCap4DProviderOldOwners
 ];
 
 // Post-migration: old physical paths must not exist as reachable files.
@@ -119,6 +123,7 @@ const forbiddenExistingPaths = [
   "src/service/ai/skills",
   "src/service/ai/mcp",
   "src/service/connectors",
+  "src/service/ai/providers",
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);
@@ -170,6 +175,7 @@ for (const file of allFiles) {
   if (rel === "scripts/verify-skill-surface-contract.mjs") continue;
   if (rel === "scripts/verify-mcp-surface-contract.mjs") continue;
   if (rel === "scripts/verify-connector-surface-contract.mjs") continue;
+  if (rel === "scripts/verify-provider-surface-contract.mjs") continue;
   // Skip the plan document (historical, not active)
   if (rel === "linxi_codebase_reorganization_execution_plan.md") continue;
 

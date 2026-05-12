@@ -165,7 +165,7 @@ Legend:
 | `src/service/executors/kimi/*.mjs` | Kimi/code-CLI task package, execution, output-format artifact writing/parsing. | service/provider/artifact | partial | CLI subprocess, artifact generation. | high | Artifact path overlaps with newer artifact services. |
 | `src/service/executors/multi_modal/multi-modal-executor.mjs` | Multimodal/vision execution path. | service/provider | no | Provider resolver/vision. | high | Provider/image contracts. |
 | `src/service/executors/translate/translate-executor.mjs` | Translation executor. | service | no | Free translator. | medium | Narrow. |
-| `src/service/ai/providers/*.mjs` | Provider registry, configured providers, health, model discovery. | service/provider | no | Config/routes/provider catalog/fetch. | medium/high | Correct owner. |
+| `src/service/capabilities/providers/*.mjs` | Provider registry, configured providers, health, model discovery. | service/provider | no | Config/routes/provider catalog/fetch. | medium/high | Correct owner. |
 | `src/service/ai/code_cli/*.mjs` | Code CLI configuration/runtime detection. | service/provider | no | spawnSync/path. | medium | Some sync detection acceptable in setup/status paths. |
 
 ## Action Tools

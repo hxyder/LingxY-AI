@@ -15,7 +15,7 @@ import { tryHandleSchedulerTemplateRoute } from "./http-routes/scheduler-templat
 import { tryHandleTaskRoute } from "./http-routes/task-routes.mjs";
 import { tryHandleTranslationRoute } from "./http-routes/translation-routes.mjs";
 import { sendJson } from "./http-helpers.mjs";
-import { createProviderModelDiscovery } from "../ai/providers/model-discovery.mjs";
+import { createProviderModelDiscovery } from "../capabilities/providers/model-discovery.mjs";
 
 export { handlePageExplain } from "./http-routes/browser-context-routes.mjs";
 export { buildTaskSummaryPayload } from "./http-routes/task-routes.mjs";

@@ -35,11 +35,11 @@ function assertConst(moduleNamespace, rel, name) {
   assert(Object.hasOwn(moduleNamespace, name), `${rel} must export ${name}`);
 }
 
-// CAP-4D preflight: lock the current provider catalog/config/model-discovery
-// surface before the physical move to capabilities/providers.
+// CAP-4D: lock the moved provider catalog/config/model-discovery surface under
+// capabilities/providers.
 
-const ownerDir = "src/service/ai/providers";
-const targetDir = "src/service/capabilities/providers";
+const ownerDir = "src/service/capabilities/providers";
+const oldOwnerDir = "src/service/ai/providers";
 const expectedFiles = [
   "README.md",
   "builtin.mjs",
@@ -50,8 +50,8 @@ const expectedFiles = [
 ];
 
 assert(existsSync(path.join(root, ownerDir)), `provider owner dir missing: ${ownerDir}`);
-assert(!existsSync(path.join(root, targetDir)),
-  `${targetDir} must not exist before CAP-4D physical move`);
+assert(!existsSync(path.join(root, oldOwnerDir)),
+  `${oldOwnerDir} must not exist after CAP-4D physical move`);
 for (const file of expectedFiles) {
   assert(existsSync(path.join(root, ownerDir, file)), `provider owner file missing: ${ownerDir}/${file}`);
 }
@@ -149,9 +149,9 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
 
 const aiRuntime = read("src/service/ai/integrations/runtime.mjs");
 for (const needle of [
-  "../providers/registry.mjs",
-  "../providers/builtin.mjs",
-  "../providers/configured.mjs",
+  "../../capabilities/providers/registry.mjs",
+  "../../capabilities/providers/builtin.mjs",
+  "../../capabilities/providers/configured.mjs",
   "createAIProviderRegistry(BUILTIN_AI_PROVIDERS)",
   "createConfiguredAIProvider(provider)"
 ]) {
@@ -159,7 +159,7 @@ for (const needle of [
 }
 
 const httpServer = read("src/service/core/http-server.mjs");
-assert(httpServer.includes("../ai/providers/model-discovery.mjs"),
+assert(httpServer.includes("../capabilities/providers/model-discovery.mjs"),
   "http-server.mjs must construct provider model discovery from provider owner");
 
 const aiStatusRoutes = read("src/service/core/http-routes/ai-status-routes.mjs");

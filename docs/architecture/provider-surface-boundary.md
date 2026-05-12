@@ -3,28 +3,31 @@
 Date: 2026-05-11
 
 This inventory locks the CAP-4D provider catalog/config/model-discovery surface
-before moving it into `src/service/capabilities/providers/`.
+after moving it into `src/service/capabilities/providers/`.
 
 ## Current Owner
 
 Current provider runtime owner:
 
-`src/service/ai/providers/`
+`src/service/capabilities/providers/`
 
 Target provider runtime owner:
 
 `src/service/capabilities/providers/`
 
+Former owner: the old AI provider directory. It is now forbidden and is checked
+by `verify-provider-surface-contract.mjs`.
+
 Files:
 
 | Path | Responsibility | Target layer |
 |---|---|---|
-| `src/service/ai/providers/registry.mjs` | Provider registry, status aggregation, lookup | service/capabilities/providers |
-| `src/service/ai/providers/builtin.mjs` | Built-in Anthropic/OpenAI/Kimi/Ollama provider descriptors | service/capabilities/providers |
-| `src/service/ai/providers/configured.mjs` | Runtime-configured provider adapter and status shaping | service/capabilities/providers |
-| `src/service/ai/providers/runtime.mjs` | Built-in provider health/status probes | service/capabilities/providers |
-| `src/service/ai/providers/model-discovery.mjs` | Provider model option discovery, curated fallbacks, cache | service/capabilities/providers |
-| `src/service/ai/providers/README.md` | Provider integration notes | service/capabilities/providers |
+| `src/service/capabilities/providers/registry.mjs` | Provider registry, status aggregation, lookup | service/capabilities/providers |
+| `src/service/capabilities/providers/builtin.mjs` | Built-in Anthropic/OpenAI/Kimi/Ollama provider descriptors | service/capabilities/providers |
+| `src/service/capabilities/providers/configured.mjs` | Runtime-configured provider adapter and status shaping | service/capabilities/providers |
+| `src/service/capabilities/providers/runtime.mjs` | Built-in provider health/status probes | service/capabilities/providers |
+| `src/service/capabilities/providers/model-discovery.mjs` | Provider model option discovery, curated fallbacks, cache | service/capabilities/providers |
+| `src/service/capabilities/providers/README.md` | Provider integration notes | service/capabilities/providers |
 
 ## Active Callers
 
@@ -52,8 +55,7 @@ They must not import provider runtime internals directly.
 
 The verifier locks these contracts:
 
-- Provider owner files exist at `src/service/ai/providers/` before the physical
-  move.
+- Provider owner files exist at `src/service/capabilities/providers/`.
 - Public exports remain available:
   `createAIProviderRegistry`, `BUILTIN_AI_PROVIDERS`,
   `createConfiguredAIProvider`, `createProviderModelDiscovery`, and
@@ -72,7 +74,7 @@ The verifier locks these contracts:
 ## Current Shape
 
 ```text
-src/service/ai/providers/
+src/service/capabilities/providers/
   README.md
   builtin.mjs
   configured.mjs
@@ -81,11 +83,11 @@ src/service/ai/providers/
   runtime.mjs
 ```
 
-Completion rules for the physical move:
+Completion rules:
 
 - Every active import in product code, tests, scripts, and active docs must
   point at `src/service/capabilities/providers/`.
-- `src/service/ai/providers/` must not remain as a compatibility barrel.
+- The old AI provider directory must not remain as a compatibility barrel.
 - `verify-provider-surface-contract.mjs`, `verify-provider-boundary.mjs`,
   `verify-provider-health.mjs`, `verify-provider-routing.mjs`,
   `verify-provider-streaming-parity.mjs`, `verify-prompt-cache-coverage.mjs`,

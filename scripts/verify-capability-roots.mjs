@@ -32,7 +32,7 @@ const capabilityRoots = [
   // Connectors
   "src/service/capabilities/connectors",
   // Providers
-  "src/service/ai/providers",
+  "src/service/capabilities/providers",
   // Extracted tool families and capability-owned helpers
   "src/service/capabilities/tools/browser-web-tools.mjs",
   "src/service/capabilities/tools/os-app-tools.mjs",

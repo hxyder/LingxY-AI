@@ -168,7 +168,7 @@ const forbiddenOwnerImports = [
   "../mcp/",
   "../../capabilities/connectors/",
   "src/service/capabilities/connectors/",
-  "src/service/ai/providers/",
+  "src/service/capabilities/providers/",
   "src/service/capabilities/mcp/"
 ];
 for (const file of walk(ownerDir)) {

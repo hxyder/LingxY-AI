@@ -3,7 +3,7 @@ import test from "node:test";
 
 import {
   createProviderModelDiscovery
-} from "../../src/service/ai/providers/model-discovery.mjs";
+} from "../../src/service/capabilities/providers/model-discovery.mjs";
 
 function jsonResponse(body, {
   ok = true,

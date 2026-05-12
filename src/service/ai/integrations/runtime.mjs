@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { createAIProviderRegistry } from "../providers/registry.mjs";
-import { BUILTIN_AI_PROVIDERS } from "../providers/builtin.mjs";
-import { createConfiguredAIProvider } from "../providers/configured.mjs";
+import { createAIProviderRegistry } from "../../capabilities/providers/registry.mjs";
+import { BUILTIN_AI_PROVIDERS } from "../../capabilities/providers/builtin.mjs";
+import { createConfiguredAIProvider } from "../../capabilities/providers/configured.mjs";
 import { createCodeCliRegistry } from "../code_cli/registry.mjs";
 import { BUILTIN_CODE_CLI_ADAPTERS } from "../code_cli/builtin.mjs";
 import { createConfiguredCodeCliAdapter } from "../code_cli/configured.mjs";
