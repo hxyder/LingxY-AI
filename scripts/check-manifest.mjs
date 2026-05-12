@@ -232,6 +232,7 @@ export const CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-unified-connectors.mjs",
   "node scripts/verify-connector-catalog.mjs",
   "node scripts/verify-connector-workflow-dispatcher.mjs",
+  "node scripts/verify-connector-oauth-acceptance-harness.mjs",
   "node scripts/verify-microsoft-contracts.mjs",
   "node scripts/verify-workflow-first-dispatch.mjs",
   "node scripts/verify-plugin-registry.mjs",
@@ -395,6 +396,7 @@ export const FAST_CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-desktop-gui-daily-workflow-coverage.mjs",
   "node scripts/verify-capability-inventory-manager.mjs",
   "node scripts/verify-capability-creation-lifecycle.mjs",
+  "node scripts/verify-connector-oauth-acceptance-harness.mjs",
   "node scripts/verify-user-interaction-smoke.mjs",
   "node scripts/verify-desktop-gui-perf-smoke.mjs"
 ]);

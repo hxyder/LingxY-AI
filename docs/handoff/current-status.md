@@ -2,6 +2,49 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: CONN-001 Connector OAuth Acceptance Harness
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/connector-oauth-acceptance-harness.mjs` as the typed,
+  redacted connector/OAuth acceptance evidence contract.
+- Added `scripts/real-connector-test/run-connector-oauth-acceptance.mjs` with
+  dry-run default and explicit live mode via `--live` or
+  `LINGXY_CONNECTOR_OAUTH_ACCEPTANCE=1`.
+- Added `docs/architecture/connector-oauth-acceptance-harness.md`,
+  `docs/release/evidence/connector-oauth-acceptance.template.json`,
+  `scripts/verify-connector-oauth-acceptance-harness.mjs`, and
+  `tests/behavior/connector-oauth-acceptance-harness.test.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs`, `package.json`, and the
+  post-runtime product gap roadmap. No IPC channels, HTTP routes, tool ids,
+  artifact kinds, provider ids, or storage schema changed.
+
+Decision:
+- Keep OAuth and connector acceptance opt-in so deterministic CI does not
+  depend on external tenants or disposable accounts.
+- Live mode verifies connector catalog, connector config, OAuth start URL,
+  connected-account state, and read-list endpoints. Reports store counts and
+  statuses only, not message bodies or file contents.
+- Guarded side effects and disconnect are present in the contract but blocked
+  by default; they require separate flags and disposable-account evidence.
+
+Verification:
+- `node --test tests/behavior/connector-oauth-acceptance-harness.test.mjs`:
+  passed, 4/4.
+- `node scripts/verify-connector-oauth-acceptance-harness.mjs`: passed.
+- `node scripts/real-connector-test/run-connector-oauth-acceptance.mjs`:
+  dry-run passed and wrote a redacted report under
+  `.tmp/connector-oauth-acceptance`.
+- `npm run check:fast`: passed, 131/131; behavior tests passed, 1078/1078.
+- No disposable OAuth account was available in this checkpoint, so live OAuth
+  browser login and side-effect rows were not executed.
+
+Next valid work:
+- Start `SBOX-001` high-risk sandbox evidence pack: add measured evidence for
+  file mutation, command execution, MCP install, OCR, browser automation, and
+  audio daemon surfaces before changing sandbox boundaries.
+
 ## Codex Update: LAPI-001 Live Provider Acceptance Harness
 
 Date: 2026-05-12

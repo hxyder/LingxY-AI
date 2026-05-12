@@ -227,6 +227,8 @@
     "verify:unified-connectors": "node scripts/verify-unified-connectors.mjs",
     "verify:connector-catalog": "node scripts/verify-connector-catalog.mjs",
     "verify:connector-workflow-dispatcher": "node scripts/verify-connector-workflow-dispatcher.mjs",
+    "verify:connector-oauth-acceptance-harness": "node scripts/verify-connector-oauth-acceptance-harness.mjs",
+    "real-connector:oauth-acceptance": "node scripts/real-connector-test/run-connector-oauth-acceptance.mjs",
     "verify:microsoft-contracts": "node scripts/verify-microsoft-contracts.mjs",
     "verify:workflow-first-dispatch": "node scripts/verify-workflow-first-dispatch.mjs",
     "verify:plugin-registry": "node scripts/verify-plugin-registry.mjs",

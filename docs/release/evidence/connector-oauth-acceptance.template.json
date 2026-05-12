@@ -1,0 +1,115 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "commit": "template",
+  "branch": "template",
+  "mode": "dry_run",
+  "liveOptIn": false,
+  "runtimeBaseUrl": "http://127.0.0.1:4360",
+  "providers": [
+    {
+      "provider": "google",
+      "configured": false,
+      "connected": false,
+      "accountCount": 0
+    },
+    {
+      "provider": "microsoft",
+      "configured": false,
+      "connected": false,
+      "accountCount": 0
+    }
+  ],
+  "sideEffects": {
+    "allowed": false,
+    "executed": false,
+    "approval": "not_requested"
+  },
+  "scenarios": [
+    {
+      "id": "connector_catalog",
+      "label": "Connector catalog",
+      "status": "not_run",
+      "command": "GET /connectors/catalog",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "oauth_config_and_start",
+      "label": "OAuth config and start",
+      "status": "not_run",
+      "command": "GET config + POST auth/start",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "oauth_callback_connect",
+      "label": "OAuth callback connect",
+      "status": "not_run",
+      "command": "browser OAuth callback",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "connected_accounts",
+      "label": "Connected accounts",
+      "status": "not_run",
+      "command": "GET /connectors/connected-accounts",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "token_refresh",
+      "label": "Token refresh",
+      "status": "not_run",
+      "command": "GET read-list endpoints",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "read_lists",
+      "label": "Mail/files/calendar list",
+      "status": "not_run",
+      "command": "GET files/emails/calendar",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "guarded_side_effect",
+      "label": "Guarded side effect",
+      "status": "not_run",
+      "command": "workflow run or task approval",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "disconnect_recovery",
+      "label": "Disconnect and recovery",
+      "status": "not_run",
+      "command": "DELETE /connectors/accounts/:type",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    },
+    {
+      "id": "auth_permission_recovery",
+      "label": "Auth and permission recovery",
+      "status": "not_run",
+      "command": "status and recovery surfaces",
+      "evidence": "",
+      "recovery": "",
+      "notes": ""
+    }
+  ],
+  "redaction": "tokens, OAuth codes, auth headers, message bodies, file contents, and personal data are omitted or redacted",
+  "notes": [
+    "template only; no OAuth or connector network call was made"
+  ]
+}

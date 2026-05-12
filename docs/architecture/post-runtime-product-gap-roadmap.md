@@ -15,8 +15,8 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 130/130 with 1074/1074
-  behavior tests after LAPI-001.
+- Current green gate: `npm run check:fast` passed 131/131 with 1078/1078
+  behavior tests after CONN-001.
 - `npm run verify:desktop-gui-smoke` last passed 49/49 during CAPM-002
   visible Console skill-install preview integration. The first CAPM-002 GUI
   smoke attempt hit the known task-list keyboard focus timing failure and the
@@ -61,7 +61,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | DXR-001 Desktop evidence pack runner | complete | Release acceptance rows must produce reusable evidence records with commit, gate, real environment, pass/partial/fail, and known-issue links. |
 | DXR-002 Daily conversation/task/artifact GUI matrix | complete | Real Electron smoke must cover attach, follow-up, generate/edit/open, timeline inspection, cancellation/retry, and recovery paths before declaring desktop workflows complete. |
 | LAPI-001 Live provider acceptance harness | complete | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
-| CONN-001 Real connector/OAuth acceptance | pending | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
+| CONN-001 Real connector/OAuth acceptance | complete | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
 | SBOX-001 High-risk sandbox evidence pack | pending | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
@@ -206,10 +206,21 @@ Verification:
 
 ### CONN-001: Real Connector/OAuth Acceptance
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Make connector readiness proveable with disposable Google/Microsoft accounts
   or equivalent test tenants.
+
+Implemented:
+
+- `src/shared/connector-oauth-acceptance-harness.mjs`
+- `scripts/real-connector-test/run-connector-oauth-acceptance.mjs`
+- `docs/architecture/connector-oauth-acceptance-harness.md`
+- `docs/release/evidence/connector-oauth-acceptance.template.json`
+- `scripts/verify-connector-oauth-acceptance-harness.mjs`
+- `tests/behavior/connector-oauth-acceptance-harness.test.mjs`
 
 Required scenarios:
 
@@ -222,9 +233,14 @@ Required scenarios:
 
 Verification:
 
-- Deterministic connector contract tests remain default.
-- Real connector tests are opt-in and must redact tokens, message bodies, and
-  file contents from reports.
+- `node scripts/verify-connector-oauth-acceptance-harness.mjs`
+- `node --test tests/behavior/connector-oauth-acceptance-harness.test.mjs`
+- Dry-run evidence command:
+  `node scripts/real-connector-test/run-connector-oauth-acceptance.mjs`
+- Real connector tests are opt-in:
+  `LINGXY_CONNECTOR_OAUTH_ACCEPTANCE=1 node scripts/real-connector-test/run-connector-oauth-acceptance.mjs --live`
+- Reports redact tokens, OAuth codes, auth headers, message bodies, file
+  contents, and personal data.
 
 ### CAPM-001: Capability Inventory Manager
 
