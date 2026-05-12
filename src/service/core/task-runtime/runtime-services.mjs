@@ -13,6 +13,7 @@ import { createArtifactLineageService } from "../artifact-lineage/artifact-linea
 import { createArtifactTransformService } from "../artifact-transforms/artifact-transform-service.mjs";
 import { createSessionCompactionService } from "../session/session-compaction-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
+import { createSubAgentRuntimeService } from "../subagents/sub-agent-runtime-contract.mjs";
 
 function hasConversationSessionStore(store) {
   return Boolean(
@@ -121,6 +122,7 @@ export function ensureRuntimeServices(runtime) {
   runtime.runtimeGraphScheduler ??= createRuntimeGraphScheduler({
     metrics: runtime.metrics
   });
+  runtime.subAgentRuntime ??= createSubAgentRuntimeService({ runtime });
   if (!runtime.artifactExtracts && hasArtifactExtractStore(runtime.store)) {
     runtime.artifactExtracts = createArtifactExtractService({
       store: runtime.store,

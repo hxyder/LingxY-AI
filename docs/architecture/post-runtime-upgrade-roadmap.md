@@ -25,9 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 107/107 after RV-001
-  optional git checkpoint metadata was added, including 1000/1000 behavior
-  tests.
+- Current green gate: `npm run check:fast` passed 108/108 after SA-001
+  sub-agent runtime contract was added, including 1008/1008 behavior tests.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
 - Next execution board: this document.
@@ -39,7 +38,7 @@ Last updated: 2026-05-12.
 
 | Area | Current program evidence | Current state |
 | --- | --- | --- |
-| True sub-agent runtime | `runtime-graph-*` verifiers exist; no child-run contract or UI trace exists. | Not implemented; deferred until session/context/evals stabilized. |
+| True sub-agent runtime | `runtime-graph-*` verifiers exist; `docs/architecture/sub-agent-runtime-contract.md` now defines the service contract. | SA-001 service contract is complete; child timeline UI, eval corpus, and automatic planner delegation remain deferred to SA-002 and later work. |
 | Multi-model execution | `verify-model-role-routing.mjs` exists; executor call sites still mostly use resolved provider/model directly. | Role-routing summary exists; executor call sites do not yet switch per role. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
 | Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | Real GUI smoke is strong; DX-001 owns preview/popup/window owner state and DX-002 locks extracted IPC boundaries. Real mic/KWS, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
@@ -68,7 +67,8 @@ Last updated: 2026-05-12.
 | VX-002 Hardware permission smoke | complete | Opt-in Electron GUI smoke can record from local microphone hardware with actionable diagnostics; default checks stay hardware-free. |
 | GX-003 Generic graph resume | complete | Generic agent tool approvals now resume on the original task through same-task graph resume; connector workflow resume remains intact. |
 | RV-001 Optional git checkpoint mode | complete | Opt-in git checkpoint metadata is implemented under `src/service/capabilities/tools/git-checkpoint-mode.mjs`; default file reversibility remains unchanged. |
-| SA-001 to SA-002 Sub-agents | pending | Requires sub-agent context isolation, budget, cancellation, timeline evidence, and eval coverage. |
+| SA-001 Sub-agent runtime contract | complete | Service-owned child-run contract now covers feature-flag gating, planner-selected delegation, context isolation, allowed tools, budget, cancellation, and structured child reports. |
+| SA-002 Sub-agent UI/evals | pending | Requires child timeline evidence, delegation eval corpus, and per-child token/timing/tool metrics. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
@@ -571,6 +571,8 @@ Verification:
 
 ### SA-001: Sub-Agent Runtime Contract
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Add a service-owned child-run contract: parent task id, child task id,
@@ -578,6 +580,10 @@ Scope:
   token, and result report.
 - Start with explicit planner-selected delegation only behind a feature flag.
 - Do not add unmanaged recursive agents or prompt-only delegation.
+- Implemented in `src/service/core/subagents/sub-agent-runtime-contract.mjs`
+  and wired as `runtime.subAgentRuntime` by runtime services.
+- Architecture contract is documented in
+  `docs/architecture/sub-agent-runtime-contract.md`.
 
 Acceptance:
 
@@ -585,11 +591,18 @@ Acceptance:
   context scope.
 - Parent task receives structured child reports and can synthesize them.
 - Cancellation propagates parent -> child.
+- The contract is disabled by default and rejects non-`planner_selected`
+  delegation.
+- No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds,
+  provider ids, or model routing behavior changed.
 
 Verification:
 
-- New `verify-sub-agent-runtime-contract`
-- Behavior tests for isolation, budget exhaustion, cancellation, and report merge.
+- `node scripts/verify-sub-agent-runtime-contract.mjs`
+- `node --test tests/behavior/sub-agent-runtime-contract.test.mjs`
+- Behavior tests cover disabled default, planner-selected gating, context
+  isolation, tool-surface escape rejection, budget exhaustion, cancellation
+  propagation, structured child reports, and runtime service wiring.
 
 ### SA-002: Sub-Agent UI, Trace, And Eval Coverage
 

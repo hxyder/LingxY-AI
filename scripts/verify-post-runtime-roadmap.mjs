@@ -114,6 +114,13 @@ for (const required of [
   "git update-ref",
   "stash_create_ref",
   "node --test tests/behavior/file-reversibility-checkpoint.test.mjs",
+  "SA-001 Sub-agent runtime contract",
+  "docs/architecture/sub-agent-runtime-contract.md",
+  "src/service/core/subagents/sub-agent-runtime-contract.mjs",
+  "runtime.subAgentRuntime",
+  "planner_selected",
+  "node scripts/verify-sub-agent-runtime-contract.mjs",
+  "node --test tests/behavior/sub-agent-runtime-contract.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

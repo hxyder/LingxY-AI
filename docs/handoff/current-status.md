@@ -3202,3 +3202,49 @@ Decision:
 - RV-001 implementation is ready to commit.
 - Next valid work after RV-001 commit is SA-001 sub-agent runtime contract
   preflight and implementation.
+
+## Codex Review: SA-001 Sub-Agent Runtime Contract
+
+Date: 2026-05-12
+
+Scope:
+- Added a service-owned sub-agent runtime contract at
+  `src/service/core/subagents/sub-agent-runtime-contract.mjs`.
+- Wired the contract service as `runtime.subAgentRuntime` through
+  `src/service/core/task-runtime/runtime-services.mjs`.
+- Documented the boundary in
+  `docs/architecture/sub-agent-runtime-contract.md`.
+- Added `scripts/verify-sub-agent-runtime-contract.mjs` and included it in
+  full and fast check manifests.
+- No Electron UI, IPC channels, HTTP routes, storage schema, tool ids,
+  artifact kinds, provider ids, or model routing behavior changed.
+
+Framework invariants:
+- Disabled by default unless `subAgentRuntime` is explicitly feature-flagged.
+- Delegation must be `planner_selected`; prompt-only delegation is rejected.
+- Child allowed tools must be a subset of the parent allowed tool surface.
+- Isolated compiled context includes only assigned context item ids.
+- Budget checks cover tool calls, prompt tokens, runtime duration, and context
+  item count.
+- Parent cancellation propagates to child cancellation token/signal.
+- Child result reports are structured and flag budget or tool-surface
+  violations.
+
+Verification run by Codex:
+- `node --check src/service/core/subagents/sub-agent-runtime-contract.mjs`: passed.
+- `node --check src/service/core/task-runtime/runtime-services.mjs`: passed.
+- `node --check tests/behavior/sub-agent-runtime-contract.test.mjs`: passed.
+- `node --check scripts/verify-sub-agent-runtime-contract.mjs`: passed.
+- `node --test tests/behavior/sub-agent-runtime-contract.test.mjs`: passed,
+  8/8.
+- `node scripts/verify-sub-agent-runtime-contract.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `git diff --check`: passed.
+- `npm run check:fast`: passed, 108/108 commands including 1008/1008 behavior
+  tests.
+
+Decision:
+- SA-001 service contract is ready to commit.
+- Next valid work after SA-001 commit is SA-002 sub-agent UI/evals.
