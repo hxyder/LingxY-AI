@@ -728,6 +728,14 @@ export function validateSuccessContract(taskSpec, transcript = []) {
         message: `success_contract.artifact_created requires a ${kind} artifact, but the created artifact paths/metadata do not match that kind.`
       });
     }
+    for (const requiredKind of artifactRequiredKindsFromSpec(taskSpec).filter((item) => item !== kind)) {
+      if (requiredKind && !transcriptHasArtifactKind(transcript, requiredKind)) {
+        violations.push({
+          kind: "artifact_required_kind_mismatch",
+          message: `success_contract.artifact_created requires a ${requiredKind} artifact from artifact.required_kinds, but the created artifact paths/metadata do not match that kind.`
+        });
+      }
+    }
   }
 
   return { satisfied: violations.length === 0, violations };
@@ -905,6 +913,15 @@ function artifactKindFromSpec(taskSpec = {}) {
   return String(taskSpec?.artifact?.kind
     ?? taskSpec?.contract?.output_contract?.kind
     ?? "").trim().toLowerCase();
+}
+
+function artifactRequiredKindsFromSpec(taskSpec = {}) {
+  const kinds = Array.isArray(taskSpec?.artifact?.required_kinds)
+    ? taskSpec.artifact.required_kinds
+    : [];
+  return [...new Set(kinds
+    .map((kind) => String(kind ?? "").trim().toLowerCase())
+    .filter(Boolean))];
 }
 
 function artifactPathMatchesKind(filePath = "", kind = "") {

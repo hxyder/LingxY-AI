@@ -65,6 +65,22 @@ function decodeWriteFileContent({ content, text, encoding }) {
   throw new Error(`unsupported encoding: ${encoding}`);
 }
 
+function looksDirectoryLikeWriteTarget(value) {
+  const target = String(value ?? "").trim();
+  if (!target) return false;
+  if (/[\\/]$/u.test(target)) return true;
+  return path.extname(target) === "";
+}
+
+function resolveWriteFileTargetArg(args = {}) {
+  const pathArg = typeof args.path === "string" ? args.path.trim() : "";
+  const filenameArg = typeof args.filename === "string" ? args.filename.trim() : "";
+  if (pathArg && filenameArg && looksDirectoryLikeWriteTarget(pathArg)) {
+    return path.join(pathArg, filenameArg);
+  }
+  return pathArg || filenameArg;
+}
+
 function isLikelyUtf8Text(buffer) {
   if (!buffer?.length) return true;
   if (buffer.includes(0)) return false;
@@ -122,7 +138,7 @@ export const WRITE_FILE_TOOL = {
   requires_confirmation: false,
   async execute(args = {}, ctx = {}) {
     const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
-    const targetArg = args.path ?? args.filename ?? "";
+    const targetArg = resolveWriteFileTargetArg(args);
     try {
       const absTarget = await resolveSandboxedTarget(outputDir, targetArg, {
         allowedRoots: configuredWritableArtifactRoots(ctx)

@@ -681,13 +681,20 @@ const FORMAT_PATTERNS = [
   { format: "csv",  pattern: /(\.csv|csv|逗号分隔)/i },
   { format: "md",   pattern: /(\.md|markdown)/i },
   { format: "txt",  pattern: /(\.txt|txt|纯文本)/i },
-  { format: "mjs",  pattern: /\.mjs/i },
-  { format: "js",   pattern: /\.js/i },
-  { format: "py",   pattern: /\.py/i },
-  { format: "ps1",  pattern: /\.ps1/i }
+  { format: "mjs",  pattern: /\.mjs\b/i },
+  { format: "js",   pattern: /\.js\b/i },
+  { format: "py",   pattern: /\.py\b/i },
+  { format: "ps1",  pattern: /\.ps1\b/i }
 ];
 
 const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html", "mjs", "js", "py", "ps1"]);
+const AD_HOC_FILE_ARTIFACT_FORMATS = new Set(["md", "json", "csv", "txt"]);
+const ALL_EXPLICIT_FILE_ARTIFACT_FORMATS = new Set([
+  ...FILE_ARTIFACT_FORMATS,
+  ...AD_HOC_FILE_ARTIFACT_FORMATS
+]);
+const EXPLICIT_FILE_ARTIFACT_REQUEST_RE =
+  /(?:生成(?!的)|创建|制作|保存|导出|写入|写成|做一个|整理成|转成|转换成).{0,48}(?:文件|文档|报告|表格|幻灯片|脚本|\.pptx|pptx|powerpoint|\bppt\b|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|纯文本)|\b(?:create|generate|save|export|write|make|turn\s+.*\s+into|convert)\b.{0,56}\b(?:file|document|report|spreadsheet|slide|deck|script|\.pptx|pptx|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|plain\s+text)\b/iu;
 
 function detectFormats(text) {
   if (isLaunchTaskText(text)) {
@@ -696,6 +703,16 @@ function detectFormats(text) {
   return FORMAT_PATTERNS
     .filter(({ pattern }) => pattern.test(text))
     .map(({ format }) => format);
+}
+
+function explicitFileArtifactKindFromRequest(text, suggestedFormats = []) {
+  if (!EXPLICIT_FILE_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) return null;
+  return suggestedFormats.find((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format)) ?? null;
+}
+
+function explicitFileArtifactKindsFromRequest(text, suggestedFormats = []) {
+  if (!EXPLICIT_FILE_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) return [];
+  return suggestedFormats.filter((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format));
 }
 
 function buildResearchExecutionConstraints(researchQuality) {
@@ -802,9 +819,12 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
 
   const suggestedFormats = detectFormats(text);
   const contextArtifactKind = detectArtifactKindFromContext(contextPacket);
+  const explicitFileArtifactKinds = noteIntent
+    ? (suggestedFormats.includes("md") ? ["md"] : [])
+    : explicitFileArtifactKindsFromRequest(text, suggestedFormats);
   const explicitFileArtifactKind = noteIntent
     ? (suggestedFormats.includes("md") ? "md" : null)
-    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null);
+    : (explicitFileArtifactKinds[0] ?? explicitFileArtifactKindFromRequest(text, suggestedFormats));
   const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal)
     ? (noteIntent ? "md" : "docx")
     : null;
@@ -815,6 +835,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     ? false
     : (noteIntent ||
       FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
+      AD_HOC_FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
       goal === "generate_document" ||
       goal === "analyze_and_report" ||
       goal === "transform_existing_file");
@@ -1087,6 +1108,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     artifact: {
       required: artifactRequired,
       kind: fileArtifactKind,
+      required_kinds: explicitFileArtifactKinds.length > 1 ? explicitFileArtifactKinds : [],
       quality: "draft"
     },
     source,

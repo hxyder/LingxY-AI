@@ -4602,7 +4602,58 @@ Verification run by Codex:
   `total=5719ms`).
 
 Next valid work:
-- Continue the live acceptance board by adding stricter generated-file
-  follow-up variants for non-script artifacts: generated markdown/json/csv
-  content inspection, follow-up edits in the same conversation, and topic
-  switches after artifact-heavy turns.
+- Continue with the separate product maturity board. FA-001 now covers strict
+  generated script and non-script artifact acceptance.
+
+## Codex Update: FA-001 Non-Script Artifact Live Acceptance
+
+Date: 2026-05-12
+
+Scope:
+- Extended `real-llm:followup-artifact` beyond generated scripts to cover
+  Markdown, JSON, and CSV real-file content inspection.
+- Added same-file Markdown follow-up edit acceptance, then verified topic
+  switching after artifact-heavy turns.
+- Fixed follow-up binding so standalone generated-file requests with local
+  pronouns such as "execute this newly written file" do not auto-parent to the
+  previous artifact task.
+- Refined task-spec artifact detection so "read the previous generated HTML
+  file" is a format reference, not a new HTML artifact obligation, while
+  explicit "generate/save/export JSON/CSV/Markdown file" still requires real
+  artifacts.
+- Added multi-format artifact obligations through `artifact.required_kinds` so
+  a request for md/json/csv cannot satisfy the success contract with only one
+  file.
+- Hardened `write_file` to treat `path` as a directory when the model also
+  supplies `filename`, avoiding directory-as-file failures.
+
+Live API result:
+- Intermediate strict run failed exactly where intended:
+  `.tmp/followup-artifact-acceptance/report-2026-05-12-21-56-56.json`.
+- After framework fixes, live run passed:
+  `.tmp/followup-artifact-acceptance/report-2026-05-12-22-04-53.json`.
+- Token trace from the passing live run: input 295807, output 7377, total
+  303184, cache_hit 6400, cache_miss 289407, `llm_usage_call_count` 37.
+  Price is intentionally not displayed.
+
+Verification run by Codex:
+- `node --test tests/behavior/file-reversibility-checkpoint.test.mjs`: passed,
+  11/11.
+- `node --test tests/behavior/task-spec-side-effect-gate.test.mjs`: passed,
+  9/9.
+- `node --test tests/behavior/follow-up-resolver.test.mjs`: passed, 7/7.
+- `node scripts/verify-write-edit-run-tools-contract.mjs`: passed.
+- `node scripts/verify-success-contract-groups.mjs`: passed, 36/36.
+- `node scripts/verify-follow-up-resolver-foundation.mjs`: passed.
+- `node scripts/verify-followup-artifact-acceptance-harness.mjs`: passed.
+- `node scripts/real-llm-test/run-followup-artifact-acceptance.mjs --live
+  --port 4350 --task-timeout 300000`: passed.
+- `npm run check:fast`: passed, 137/137 commands including 1103/1103 behavior
+  tests.
+- `npm run verify:desktop-gui-smoke`: passed 49/49 (`startup=470ms`,
+  `first_window=470ms`, `interaction=5236ms`, `total=5701ms`).
+
+Next valid work:
+- The post-runtime roadmap is complete. Use the separate product maturity board
+  for broader desktop/product polish, optional network OTEL, measured
+  multi-candidate model loops, or future automatic sub-agent delegation.

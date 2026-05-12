@@ -78,6 +78,23 @@ test("write_file exposes actual written content evidence for generated code arti
   });
 });
 
+test("write_file treats path plus filename as a directory target plus file name", async () => {
+  await withTempDir(async (outputDir) => {
+    const result = await registry.call("write_file", {
+      path: "scripts",
+      filename: "joined-target.mjs",
+      content: "console.log(\"joined\");"
+    }, {
+      outputDir,
+      task: { task_id: "task_write_file_joined_target" }
+    });
+
+    assert.equal(result.success, true, result.observation);
+    assert.equal(result.artifact_paths[0], path.join(outputDir, "scripts", "joined-target.mjs"));
+    assert.equal(await readFile(result.artifact_paths[0], "utf8"), "console.log(\"joined\");");
+  });
+});
+
 test("write_file overwrite records a restore checkpoint with the previous bytes", async () => {
   await withTempDir(async (outputDir) => {
     const target = path.join(outputDir, "notes", "existing.txt");

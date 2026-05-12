@@ -25,12 +25,18 @@ for (const required of [
   "followup_html_from_artifact",
   "followup_execute_generated_artifact_check",
   "generated_script_file_content_consistency",
+  "generated_text_artifact_content_consistency",
+  "followup_text_artifact_same_file_edit",
   "same_conversation_topic_switch",
   "new_topic_followup_isolation",
   "run_script",
   "artifactPaths",
   "pathCandidates",
   "console.log",
+  "followup_notes_",
+  "followup_data_",
+  "followup_rows_",
+  "LXMD-EDIT",
   "parent_task_id",
   "conversation_id",
   "cache_hit_tokens",
@@ -45,6 +51,10 @@ assert.match(runner, /readTextIfSmall/u, "runner must inspect generated artifact
 assert.match(runner, /existsSync/u, "runner must verify generated artifact paths exist");
 assert.match(runner, /generated_script_file_content_consistency/u,
   "runner must verify generated script file content before accepting execution claims");
+assert.match(runner, /generated_text_artifact_content_consistency/u,
+  "runner must verify generated markdown/json/csv artifact contents");
+assert.match(runner, /followup_text_artifact_same_file_edit/u,
+  "runner must verify same-file follow-up edits for generated text artifacts");
 assert.match(runner, /换个完全无关的问题/u, "runner must exercise same-conversation topic switching");
 assert.match(runner, /把刚才那个数字乘以 4/u, "runner must verify new-topic follow-up isolation");
 assert.match(runner, /读取上一个生成的 HTML 文件/u, "runner must validate generated artifact contents");

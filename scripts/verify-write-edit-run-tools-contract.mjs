@@ -50,6 +50,7 @@ const ownerRequiredTexts = [
   "configuredWritableArtifactRoots(ctx)",
   "prepareFileReversibilityCheckpoint(ctx,",
   "function buildWriteFileContentEvidence",
+  "function resolveWriteFileTargetArg",
   "content_sha256",
   "Content preview",
   "toolId: \"write_file\"",
@@ -130,6 +131,16 @@ assert.equal(typeof writeOk.metadata?.content_sha256, "string",
   "write_file metadata must include actual written content hash evidence");
 assert.ok(writeOk.metadata?.content_preview?.includes("CAP-5F preflight"),
   "write_file metadata must include actual written text preview evidence");
+
+const writePathPlusFilename = await registry.call("write_file", {
+  path: "notes",
+  filename: "joined.txt",
+  content: "joined path filename"
+}, { outputDir: toolSandbox, task: { task_id: "cap5f_preflight" } });
+assert.equal(writePathPlusFilename.success, true,
+  "write_file must support LLMs passing path as a directory and filename separately");
+assert.equal(writePathPlusFilename.artifact_paths?.[0], path.join(toolSandbox, "notes", "joined.txt"),
+  "write_file path+filename normalization must join the directory and file name");
 
 const writeDup = await registry.call("write_file", {
   path: "notes/preflight.txt",

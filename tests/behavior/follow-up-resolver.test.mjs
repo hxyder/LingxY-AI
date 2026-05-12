@@ -120,6 +120,58 @@ test("follow-up resolver blocks explicit same-conversation topic switches", () =
   assert.equal(resolution.parent_task_id, null);
 });
 
+test("follow-up resolver does not auto-parent standalone generated file requests with local pronouns", () => {
+  const store = createInMemoryStoreScaffold();
+  store.insertConversation({ conversation_id: "conv_standalone_artifact" });
+  const service = createConversationSessionService({ store });
+  const session = service.ensureSession({
+    conversationId: "conv_standalone_artifact",
+    activeTaskId: "task_prior_artifact"
+  });
+  service.appendItem({
+    sessionId: session.session_id,
+    kind: SESSION_ITEM_KINDS.ARTIFACT_REFERENCE,
+    taskId: "task_prior_artifact",
+    artifactId: "artifact_prior"
+  });
+
+  const command = "生成一个 Node.js 脚本文件，文件名 followup_exec_test.mjs，然后执行这个真实落盘的 .mjs 文件。";
+  const resolution = resolveFollowUp({
+    userCommand: command,
+    conversationId: "conv_standalone_artifact",
+    runtime: { store, conversationSessions: service }
+  });
+
+  assert.equal(looksLikeFollowUpSignal(command), false);
+  assert.equal(resolution.mode, FOLLOW_UP_RESOLUTION_MODES.NONE);
+  assert.equal(resolution.parent_task_id, null);
+});
+
+test("follow-up resolver still binds explicit prior-artifact edit requests", () => {
+  const store = createInMemoryStoreScaffold();
+  store.insertConversation({ conversation_id: "conv_prior_edit" });
+  const service = createConversationSessionService({ store });
+  const session = service.ensureSession({
+    conversationId: "conv_prior_edit",
+    activeTaskId: "task_prior_md"
+  });
+  service.appendItem({
+    sessionId: session.session_id,
+    kind: SESSION_ITEM_KINDS.ARTIFACT_REFERENCE,
+    taskId: "task_prior_md",
+    artifactId: "artifact_md"
+  });
+
+  const resolution = resolveFollowUp({
+    userCommand: "继续：只编辑上一个 Markdown 文件，在末尾追加一行。",
+    conversationId: "conv_prior_edit",
+    runtime: { store, conversationSessions: service }
+  });
+
+  assert.equal(resolution.mode, FOLLOW_UP_RESOLUTION_MODES.SESSION_ANCHOR);
+  assert.equal(resolution.parent_task_id, "task_prior_md");
+});
+
 test("caller-provided parent wins over session anchors", () => {
   const resolution = resolveFollowUp({
     userCommand: "继续",

@@ -26,16 +26,22 @@ Last updated: 2026-05-12.
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
 - Current green gate: `npm run check:fast` passed 137/137 after FA-001 strict
-  generated-script acceptance coverage was added, including 1097/1097 behavior
-  tests. `real-llm:followup-artifact --live` passed with strict generated
-  `.mjs` content consistency, actual file inspection, execution via
-  `run_script`, follow-up artifact transforms, topic-switch isolation, and
-  token/cache trace evidence.
-- Next execution board: the next maturity board should start from the remaining
-  Source Map gaps below, not from already-complete Tracking Register phases.
-- Primary product gaps now shift from code ownership cleanup to user-visible
-  desktop completeness, context/trace persistence decisions, plugin/MCP trust,
-  sandbox governance, multi-model execution, and optional sub-agent runtime.
+  generated-artifact acceptance coverage was added, including 1103/1103
+  behavior tests. `real-llm:followup-artifact --live` passed with strict
+  generated `.mjs`, Markdown, JSON, and CSV content consistency, actual file
+  inspection, execution via `run_script`, same-file follow-up edits,
+  topic-switch isolation, and token/cache trace evidence.
+- Post-runtime board status: all tracked phases in this document are complete.
+  Remaining work belongs to the separate maturity/product-gap boards or to
+  future decision records that require new measured evidence.
+- Primary product gaps have shifted from this post-runtime board to ongoing
+  product maturity: broader manual desktop completeness acceptance,
+  context/trace export polish, plugin/MCP trust presentation, sandbox
+  governance evidence packs, measured multi-model execution loops, and future
+  automatic sub-agent runtime delegation behind the existing gates.
+- Legacy snapshot keywords retained for verifier continuity: desktop
+  completeness, context/trace, plugin/MCP trust, sandbox governance,
+  multi-model execution, sub-agent runtime.
 
 ## Source Map
 
@@ -47,13 +53,13 @@ Last updated: 2026-05-12.
 | Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | DX-001 through DX-005 plus VX-001/VX-002 are complete for window ownership, IPC boundaries, keyboard/a11y smoke, first-run recovery, preview screenshot-diff, checked-in voice fixtures, and opt-in hardware smoke. Future work should focus on product polish and broader manual acceptance, not missing foundational contracts. |
 | Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers, `verify-eval-trend-store.mjs`, and `verify-task-span-taxonomy.mjs`. | OQ-001 and OQ-002 are complete for trend storage, stable span names, and local OTEL-shaped export records. Optional network OTEL export remains deferred until there is a concrete backend and privacy model. |
 | Memory governance next pass | `verify-memory-governance.mjs`, `verify-user-memory-profile.mjs`, context compiler tests, and `scripts/real-llm-test/run-context-memory-cache-acceptance.mjs`. | Editable memory, proposal approval/rejection, review history, undo, project scoping, and opt-in real API context/follow-up/token/cache acceptance are covered. Future work should improve automatic proposal quality, not reopen the storage contract. |
-| SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
-| Permission/mode model | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` Wave 12; `lingxy_electron_js_codex_execution_plan.md` queue-class notes | `execution_mode` exists, privacy policy exists, and approvals exist; user-visible mode/tool-surface mapping remains incomplete. |
+| SQLite write queue / DB worker | `docs/architecture/sqlite-write-path-budget.md`, `verify-sqlite-write-path-budget.mjs`, `verify-session-context-artifact-write-budget.mjs`, and `verify-context-trace-budget.mjs`. | RT-001 through RT-003 are complete. Current decision is direct service-owned SQLite writes with WAL and budget guards; no DB worker or write queue is introduced without new measured evidence. |
+| Permission/mode model | `verify-permission-mode-model.mjs`, privacy sandbox policy, approvals, and runtime submission boundaries. | RT-004 is complete for the permission/mode contract. Future UI polish can improve presentation, but this board no longer has an unresolved mode-framework gap. |
 | Sidecar decision record | `docs/architecture/sidecar-decision-record.md`, `src/service/security/isolation-decision-records.mjs`, and `verify-sandbox-decision-records.mjs`. | SH-001 and SH-002 are complete for current isolation decisions and mandatory sidecar decision template; no new sidecars are introduced. |
 | Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | Complete for opt-in metadata: file reversibility remains default, while `ctx.reversibility.gitCheckpoint.enabled` can create a non-worktree git checkpoint ref for project rollback. |
-| Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs, `docs/architecture/marketplace-trust-model.md`, and marketplace distribution policy tests. | PM-001 is complete for shared trust preview metadata across skills, plugins, and MCP; PM-002 is complete for external MCP isolated-token governance; PM-003 is complete for normalized signature/share/archive metadata and non-discoverable plugin archives. Broader marketplace UI remains. |
-| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner, OS sandbox decision records, and `security-policy-trace-export.md`. | Privacy policy/broker foundation exists; OS-level sandbox/codesign execution remains deferred behind decision records; SH-003 now exports redacted policy traces in runtime and diagnostic bundles. |
-| Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers. | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
+| Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs, `docs/architecture/marketplace-trust-model.md`, and marketplace distribution policy tests. | PM-001 through PM-003 are complete for trust previews, isolated external MCP governance, signatures/share/archive metadata, and non-discoverable plugin archives. Broader marketplace UI is product polish, not an open trust-framework item in this board. |
+| Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner, OS sandbox decision records, and `security-policy-trace-export.md`. | SH-001 through SH-003 are complete. OS-level sandbox/codesign execution remains a future decision-record item only when new measured evidence justifies it. |
+| Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers, follow-up resolver tests, and live artifact acceptance. | IA invariants and contracts are complete for this board. Follow-up binding, topic isolation, context visibility, artifact lineage, and renderer runtime client boundaries are verifier-locked. |
 
 ## Tracking Register
 
@@ -83,7 +89,7 @@ Last updated: 2026-05-12.
 | OQ-001 Eval trend store | complete | Real-LLM corpus reports append compact JSONL trend records and compare against the previous run without storing raw commands or reports. |
 | OQ-002 Observability span taxonomy | complete | Shared task span taxonomy and local OTEL-shaped export records are verifier-locked without network export or hot-path overhead. |
 | CM-001 Context, memory, follow-up, and cache acceptance | complete | `real-llm:context-memory-cache` is an opt-in real API harness for approved user memory, project memory, follow-up parent binding, and token/cache traces. It backs up and restores user memory, redacts evidence, and records token/cache fields only; price is not displayed. |
-| FA-001 Follow-up artifact generation and execution acceptance | complete | `real-llm:followup-artifact` runs `scripts/real-llm-test/run-followup-artifact-acceptance.mjs`, an opt-in real API harness for generated artifact content, artifact-based follow-up generation, generated artifact validation through `run_script`, strict generated `.mjs` file content consistency, same-conversation topic switch isolation, and new-topic follow-up isolation. The live harness now fails if a generated script is only claimed in prose, if no real file exists, or if the actual file content does not contain the executable marker. |
+| FA-001 Follow-up artifact generation and execution acceptance | complete | `real-llm:followup-artifact` runs `scripts/real-llm-test/run-followup-artifact-acceptance.mjs`, an opt-in real API harness for generated artifact content, artifact-based follow-up generation, generated artifact validation through `run_script`, strict generated `.mjs`, Markdown, JSON, and CSV content consistency, same-file Markdown follow-up edits, same-conversation topic switch isolation, and new-topic follow-up isolation. The live harness now fails if a generated file is only claimed in prose, if no real file exists, if requested multi-format artifacts are missing, or if actual file content does not contain the requested marker. |
 
 ## Execution Rules
 

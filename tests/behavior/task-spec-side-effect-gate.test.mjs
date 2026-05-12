@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
+import { validateSuccessContract } from "../../src/service/core/policy/success-contract-validator.mjs";
 
 // Regression: task_c7f592f0 (2026-05-03). SR LLM (deepseek-v4-flash) emitted
 // `required_policy_groups: ["email_send"]` for a "美股今天行情" research query
@@ -96,4 +97,54 @@ test("explicit generated script files are artifact-required and cannot finish as
   assert.equal(spec.success_contract.artifact_created, true);
   assert.ok(spec.required_steps.includes("generate_artifact"));
   assert.ok(spec.required_steps.includes("verify_file_exists"));
+});
+
+test("explicit ad-hoc markdown/json/csv files are artifact-required without hijacking ordinary JSON questions", () => {
+  const markdownSpec = createTaskSpec("生成一个 Markdown 文件，文件名 notes.md，必须保存为真实文件。", {}, {});
+  assert.equal(markdownSpec.artifact.required, true);
+  assert.equal(markdownSpec.artifact.kind, "md");
+  assert.equal(markdownSpec.success_contract.artifact_created, true);
+
+  const jsonSpec = createTaskSpec("创建一个 JSON 文件，文件名 data.json，内容包含 name 字段。", {}, {});
+  assert.equal(jsonSpec.artifact.required, true);
+  assert.equal(jsonSpec.artifact.kind, "json");
+
+  const csvSpec = createTaskSpec("导出一个 csv 文件，文件名 rows.csv，包含两行数据。", {}, {});
+  assert.equal(csvSpec.artifact.required, true);
+  assert.equal(csvSpec.artifact.kind, "csv");
+
+  const multiSpec = createTaskSpec("生成三个真实文件：notes.md、data.json、rows.csv。", {}, {});
+  assert.deepEqual(multiSpec.artifact.required_kinds, ["json", "csv", "md"]);
+
+  const ordinaryQuestion = createTaskSpec("JSON 是什么？请直接解释。", {}, {});
+  assert.equal(ordinaryQuestion.artifact.required, false);
+  assert.equal(ordinaryQuestion.artifact.kind, null);
+});
+
+test("multi-format generated file requests require every requested artifact kind", () => {
+  const spec = createTaskSpec("生成三个真实文件：notes.md、data.json、rows.csv。", {}, {});
+  const missing = validateSuccessContract(spec, [
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/notes.md"] }
+  ]);
+  assert.equal(missing.satisfied, false);
+  assert.ok(missing.violations.some((violation) =>
+    violation.kind === "artifact_required_kind_mismatch" && violation.message.includes("json")
+  ));
+  assert.ok(missing.violations.some((violation) =>
+    violation.kind === "artifact_required_kind_mismatch" && violation.message.includes("csv")
+  ));
+
+  const satisfied = validateSuccessContract(spec, [
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/notes.md"] },
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/data.json"] },
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/rows.csv"] }
+  ]);
+  assert.equal(satisfied.satisfied, true, JSON.stringify(satisfied.violations));
+});
+
+test("format references to existing artifacts do not create a new artifact obligation", () => {
+  const spec = createTaskSpec("继续：用 Node.js 执行一段脚本读取上一个生成的 HTML 文件，确认文件内容包含标记，并只回答 OK。", {}, {});
+  assert.equal(spec.artifact.required, false);
+  assert.equal(spec.artifact.kind, null);
+  assert.equal(spec.success_contract.artifact_created, false);
 });

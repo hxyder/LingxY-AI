@@ -285,6 +285,8 @@ async function buildDryRunReport() {
       scenario("followup_html_from_artifact", "skipped", "POST /task parent html", "dry run only"),
       scenario("followup_execute_generated_artifact_check", "skipped", "POST /task parent html + run_script", "dry run only"),
       scenario("generated_script_file_content_consistency", "skipped", "POST /task write .mjs and execute it", "dry run only"),
+      scenario("generated_text_artifact_content_consistency", "skipped", "POST /task write md/json/csv files", "dry run only"),
+      scenario("followup_text_artifact_same_file_edit", "skipped", "POST /task edit previous markdown file", "dry run only"),
       scenario("same_conversation_topic_switch", "skipped", "POST /task same conversation new topic", "dry run only"),
       scenario("new_topic_followup_isolation", "skipped", "POST /task parent topic-switch", "dry run only"),
       scenario("token_cache_trace", "skipped", "collect llm_usage", "dry run only")
@@ -309,6 +311,10 @@ async function buildLiveReport() {
   const summaryMarker = `LXSUMMARY-${runId}`.toUpperCase();
   const execMarker = `LXEXEC-${runId}`.toUpperCase();
   const scriptMarker = `LXSCRIPT-${runId}`.toUpperCase();
+  const mdMarker = `LXMD-${runId}`.toUpperCase();
+  const jsonMarker = `LXJSON-${runId}`.toUpperCase();
+  const csvMarker = `LXCSV-${runId}`.toUpperCase();
+  const mdEditMarker = `LXMD-EDIT-${runId}`.toUpperCase();
   const topicMarker = "5";
   const topicFollowMarker = "20";
   const tasks = [];
@@ -396,6 +402,50 @@ async function buildLiveReport() {
         : `write_file=${scriptUsedWrite}; run_script=${scriptUsedRun}; status=${scriptTask?.task?.status ?? "unknown"}; script_candidates=${scriptPathCandidates.join(", ")}; final=${finalText(scriptTask).slice(0, 120)}`
     ));
 
+    const textArtifactTask = await runTask({
+      conversationId,
+      userCommand: `生成三个真实文件并保存到磁盘，不要只回复内容：1) followup_notes_${runId}.md，正文必须包含 ${mdMarker}；2) followup_data_${runId}.json，JSON 字段 marker 必须等于 "${jsonMarker}"；3) followup_rows_${runId}.csv，单元格必须包含 ${csvMarker}。`,
+      sourceApp: "followup-artifact-acceptance:text-artifacts"
+    });
+    const mdArtifact = artifactWithContent(textArtifactTask, { extension: ".md", includes: [mdMarker] });
+    const jsonArtifact = artifactWithContent(textArtifactTask, { extension: ".json", includes: [jsonMarker] });
+    const csvArtifact = artifactWithContent(textArtifactTask, { extension: ".csv", includes: [csvMarker] });
+    const textArtifactTools = eventToolIds(textArtifactTask);
+    const textArtifactUsedWrite = textArtifactTools.includes("write_file");
+    tasks.push(compactTask(textArtifactTask));
+    scenarios.push(scenario(
+      "generated_text_artifact_content_consistency",
+      passFail(textArtifactTask?.task?.status !== "failed" && textArtifactUsedWrite && Boolean(mdArtifact) && Boolean(jsonArtifact) && Boolean(csvArtifact)),
+      "POST /task create md/json/csv artifacts and inspect real file contents",
+      mdArtifact && jsonArtifact && csvArtifact && textArtifactUsedWrite
+        ? `md/json/csv artifacts contain requested markers: ${mdArtifact.path}; ${jsonArtifact.path}; ${csvArtifact.path}`
+        : `write_file=${textArtifactUsedWrite}; status=${textArtifactTask?.task?.status ?? "unknown"}; artifact_paths=${artifactPaths(textArtifactTask).join(", ")}; final=${finalText(textArtifactTask).slice(0, 120)}`
+    ));
+
+    const mdEditTask = await runTask({
+      conversationId,
+      parentTaskId: textArtifactTask?.task?.task_id ?? null,
+      userCommand: `继续：只编辑上一个 Markdown 文件 ${mdArtifact?.path ?? ""}，在末尾追加一行 ${mdEditMarker}，保持同一个文件路径，不要新建第二个 Markdown 文件。`,
+      sourceApp: "followup-artifact-acceptance:text-artifact-edit"
+    });
+    const editedMdArtifact = mdArtifact
+      ? (readTextIfSmall(mdArtifact.path).includes(mdMarker) && readTextIfSmall(mdArtifact.path).includes(mdEditMarker)
+        ? { path: mdArtifact.path }
+        : null)
+      : artifactWithContent(mdEditTask, { extension: ".md", includes: [mdMarker, mdEditMarker] });
+    const mdEditTools = eventToolIds(mdEditTask);
+    const mdEditLinked = mdEditTask?.task?.parent_task_id === textArtifactTask?.task?.task_id
+      && mdEditTask?.task?.conversation_id === conversationId;
+    tasks.push(compactTask(mdEditTask));
+    scenarios.push(scenario(
+      "followup_text_artifact_same_file_edit",
+      passFail(mdEditTask?.task?.status !== "failed" && mdEditLinked && Boolean(editedMdArtifact) && (mdEditTools.includes("edit_file") || mdEditTools.includes("write_file"))),
+      "POST /task parent md artifact, edit same markdown file",
+      editedMdArtifact && mdEditLinked
+        ? `follow-up edited markdown artifact ${editedMdArtifact.path} and preserved original marker plus ${mdEditMarker}`
+        : `linked=${mdEditLinked}; tools=${mdEditTools.join(", ")}; status=${mdEditTask?.task?.status ?? "unknown"}; artifact_paths=${artifactPaths(mdEditTask).join(", ")}; final=${finalText(mdEditTask).slice(0, 120)}`
+    ));
+
     const topicTask = await runTask({
       conversationId,
       userCommand: "换个完全无关的问题：2+3 等于几？只回答数字，不要引用之前生成的文件或标记。",
@@ -460,6 +510,7 @@ async function buildLiveReport() {
       runtimeBaseUrl: BASE_URL,
       markers: { htmlMarker, summaryMarker, execMarker, conversationId },
       scriptMarker,
+      textMarkers: { mdMarker, jsonMarker, csvMarker, mdEditMarker },
       scenarios,
       tasks,
       tokenCache: {
@@ -481,6 +532,8 @@ function validateReport(report = {}) {
     "followup_html_from_artifact",
     "followup_execute_generated_artifact_check",
     "generated_script_file_content_consistency",
+    "generated_text_artifact_content_consistency",
+    "followup_text_artifact_same_file_edit",
     "same_conversation_topic_switch",
     "new_topic_followup_isolation",
     "token_cache_trace"
