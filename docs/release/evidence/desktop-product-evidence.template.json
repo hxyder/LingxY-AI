@@ -1,0 +1,122 @@
+{
+  "schemaVersion": 1,
+  "commit": "replace-with-git-sha",
+  "branch": "replace-with-branch",
+  "generatedAt": "2026-05-12T00:00:00.000Z",
+  "checkFast": {
+    "command": "npm run check:fast",
+    "status": "not_run",
+    "summary": ""
+  },
+  "electronGuiSmoke": {
+    "command": "npm run verify:desktop-gui-smoke",
+    "status": "not_run",
+    "summary": ""
+  },
+  "realEnvironments": [
+    {
+      "kind": "none",
+      "status": "not_run",
+      "redaction": "no live environment used"
+    }
+  ],
+  "rows": [
+    {
+      "workflow": "first_run_provider_setup",
+      "status": "not_run",
+      "automatedGates": ["verify:provider-setup-onboarding", "verify:provider-routing", "verify:console-runtime-client"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "conversation_continuity",
+      "status": "not_run",
+      "automatedGates": ["verify:conversation-message-flow", "verify:conversation-branch-contract", "verify:conversation-search-contract"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "task_operations",
+      "status": "not_run",
+      "automatedGates": ["verify:task-log", "verify:task-branch", "verify:cancellation-propagation"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "artifact_workflow",
+      "status": "not_run",
+      "automatedGates": ["verify:artifact-action-contract", "verify:artifact-transform-flows", "verify:preview-screenshot-diff"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "memory_governance",
+      "status": "not_run",
+      "automatedGates": ["verify:user-memory-profile", "verify:memory-review-history", "verify:memory-scope-filters", "verify:memory-governance"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "marketplace_governance",
+      "status": "not_run",
+      "automatedGates": ["verify:marketplace-management-ui", "verify:marketplace-trust-model", "verify:marketplace-distribution-policy", "verify:mcp-governance-policy"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "scheduler_and_approvals",
+      "status": "not_run",
+      "automatedGates": ["verify:scheduler", "verify:scheduled-fire-safety", "verify:schedule-create-obligation"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "connector_workflows",
+      "status": "not_run",
+      "automatedGates": ["verify:unified-connectors", "verify:connector-workflow-dispatcher", "verify:workflow-first-dispatch", "verify:email-send-routing"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "browser_and_office_entry",
+      "status": "not_run",
+      "automatedGates": ["verify:browser-ui-click-smoke", "verify:browser-overlay", "verify:office-base"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "native_windows_entry",
+      "status": "not_run",
+      "automatedGates": ["verify:native-integrations", "verify:active-window-probe", "verify:desktop-capture-gui-tools-contract", "verify:desktop-launch-tools-contract"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "recovery_and_diagnostics",
+      "status": "not_run",
+      "automatedGates": ["verify:approval-resume-state", "verify:policy-trace-export", "verify:runtime-graph-replay", "verify:file-reversibility-checkpoint"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    },
+    {
+      "workflow": "performance_and_accessibility",
+      "status": "not_run",
+      "automatedGates": ["verify:desktop-gui-perf-smoke", "verify:a11y-keyboard-contract", "verify:main-process-blocking", "verify:renderer-stream-batching"],
+      "manualEvidence": "not recorded",
+      "knownIssue": "",
+      "notes": ""
+    }
+  ],
+  "knownIssues": []
+}

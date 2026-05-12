@@ -12,6 +12,7 @@ This directory contains the Phase 0 architecture baseline that Phase 1 engineers
 - [electron-js-runtime-performance-plan.md](electron-js-runtime-performance-plan.md)
 - [post-runtime-upgrade-roadmap.md](post-runtime-upgrade-roadmap.md)
 - [post-runtime-maturity-roadmap.md](post-runtime-maturity-roadmap.md)
+- [post-runtime-product-gap-roadmap.md](post-runtime-product-gap-roadmap.md)
 - [sub-agent-runtime-contract.md](sub-agent-runtime-contract.md)
 - [planner-selected-delegation-enablement-audit.md](planner-selected-delegation-enablement-audit.md)
 - [sqlite-write-path-budget.md](sqlite-write-path-budget.md)

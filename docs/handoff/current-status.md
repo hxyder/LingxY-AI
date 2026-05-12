@@ -3932,3 +3932,65 @@ Decision:
 - The current maturity board is now complete. Next valid work is to open the
   next tracked roadmap board for desktop experience, long-term plugin/sandbox,
   multi-model, capability management, and real-world acceptance gaps.
+
+## Codex Update: Post Runtime Product Gap Roadmap
+
+Date: 2026-05-12
+
+Scope:
+- Added `docs/architecture/post-runtime-product-gap-roadmap.md` as the tracked
+  board for the remaining product gaps after the runtime upgrade and maturity
+  boards.
+- The board integrates desktop workflow completion, real provider/API
+  acceptance, connector/OAuth acceptance, skills/MCP/plugin/capability
+  management, sandbox evidence, multi-model management, context selection, and
+  release evidence work.
+- Added `scripts/verify-post-runtime-product-gap-roadmap.mjs` and wired the
+  roadmap into architecture docs, package scripts, and full/fast check
+  manifests.
+
+Execution rule:
+- These gaps should be integrated into the program as typed contracts,
+  verifiers, UI/service owners, and real-environment evidence where needed;
+  they should not remain as loose root-plan notes.
+
+Next valid work:
+- Start `DXR-001 Desktop evidence pack runner` so real GUI/API/connector
+  evidence can be recorded consistently before broad product workflow changes.
+
+## Codex Update: DXR-001 Desktop Evidence Pack Runner
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/desktop-product-evidence-pack.mjs` as the shared evidence
+  pack schema, builder, and validator.
+- Added `docs/release/desktop_product_evidence_pack.md` plus
+  `docs/release/evidence/desktop-product-evidence.template.json`.
+- Added `tests/behavior/desktop-product-evidence-pack.test.mjs` and
+  `scripts/verify-desktop-product-evidence-pack.mjs`.
+- Linked the evidence pack from the desktop product acceptance matrix and
+  release README.
+- Marked PG-001 and DXR-001 complete in
+  `docs/architecture/post-runtime-product-gap-roadmap.md`.
+
+Contract notes:
+- This is deterministic release/product evidence infrastructure; it does not
+  change runtime behavior, IPC channels, HTTP routes, tool ids, artifact kinds,
+  provider ids, storage schema, or renderer behavior.
+- Real API, OAuth, Office, browser, hardware, packaged-build, and Electron GUI
+  test results now have a shared redacted evidence-pack landing zone.
+
+Verification run by Codex:
+- `node --check` on new DXR-001 shared/test/verifier files: passed.
+- `node --test tests/behavior/desktop-product-evidence-pack.test.mjs`:
+  passed, 4/4.
+- `node scripts/verify-desktop-product-evidence-pack.mjs`: passed.
+- `node scripts/verify-post-runtime-product-gap-roadmap.mjs`: passed.
+- `node scripts/verify-desktop-product-acceptance-matrix.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+
+Next valid work:
+- Start `DXR-002 Daily conversation/task/artifact GUI matrix`, because the
+  evidence pack now gives real GUI runs a durable place to report results.

@@ -8,6 +8,10 @@ Rule: a workflow can be considered release-ready only when it has both an
 automated gate and a manual or real-environment evidence path. `npm run check:fast`
 is not enough by itself for user-visible desktop workflow changes.
 
+Record release-candidate evidence with
+`docs/release/desktop_product_evidence_pack.md` and the template at
+`docs/release/evidence/desktop-product-evidence.template.json`.
+
 ## Workflow Matrix
 
 | Workflow | User path | Automated gate | Manual / real evidence |
@@ -48,3 +52,4 @@ Each release candidate should record:
 - Rows manually exercised, with pass/partial/fail.
 - Real provider/account/browser/Office/hardware environment used, when any.
 - Links to known issues for every partial/fail row.
+- A validated desktop product evidence pack for release-candidate work.
