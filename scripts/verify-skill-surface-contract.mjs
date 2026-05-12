@@ -169,7 +169,7 @@ const forbiddenOwnerImports = [
   "../../connectors/",
   "src/service/connectors/",
   "src/service/ai/providers/",
-  "src/service/ai/mcp/"
+  "src/service/capabilities/mcp/"
 ];
 for (const file of walk(ownerDir)) {
   const rel = path.relative(root, file).replace(/\\/g, "/");

@@ -1,6 +1,6 @@
 import { createSkillMarkdown, slugifySkillId } from "../../capabilities/skills/lifecycle.mjs";
 import { validateSkillDescriptorMarkdown } from "../../capabilities/skills/discovery.mjs";
-import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import { validateMcpServerDescriptor } from "../../capabilities/mcp/descriptor-validation.mjs";
 
 const SUPPORTED_KINDS = new Set(["skill", "mcp"]);
 const REQUIRED_FIELDS = ["purpose", "permissions", "config", "confirmation"];

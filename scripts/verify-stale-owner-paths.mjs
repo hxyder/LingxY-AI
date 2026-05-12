@@ -65,13 +65,29 @@ const phaseCap4ASkillOldOwners = [
   { old: "ai/skills/registry.mjs", new: "capabilities/skills/registry.mjs" },
   { old: "src/service/ai/skills/", new: "src/service/capabilities/skills/" },
 ];
+const phaseCap4BMcpOldOwners = [
+  { old: "ai/mcp/auto-install.mjs", new: "capabilities/mcp/auto-install.mjs" },
+  { old: "ai/mcp/builtin.mjs", new: "capabilities/mcp/builtin.mjs" },
+  { old: "ai/mcp/client-bridge.mjs", new: "capabilities/mcp/client-bridge.mjs" },
+  { old: "ai/mcp/configured.mjs", new: "capabilities/mcp/configured.mjs" },
+  { old: "ai/mcp/descriptor-validation.mjs", new: "capabilities/mcp/descriptor-validation.mjs" },
+  { old: "ai/mcp/drafts.mjs", new: "capabilities/mcp/drafts.mjs" },
+  { old: "ai/mcp/env-resolver.mjs", new: "capabilities/mcp/env-resolver.mjs" },
+  { old: "ai/mcp/install-detection.mjs", new: "capabilities/mcp/install-detection.mjs" },
+  { old: "ai/mcp/install-execution.mjs", new: "capabilities/mcp/install-execution.mjs" },
+  { old: "ai/mcp/install-sandbox.mjs", new: "capabilities/mcp/install-sandbox.mjs" },
+  { old: "ai/mcp/internal-server/connector-mcp-server.mjs", new: "capabilities/mcp/internal-server/connector-mcp-server.mjs" },
+  { old: "ai/mcp/registry.mjs", new: "capabilities/mcp/registry.mjs" },
+  { old: "src/service/ai/mcp/", new: "src/service/capabilities/mcp/" },
+];
 const allMoved = [
   ...phase2bOldOwners,
   ...phaseRepo1OldOwners,
   ...phaseCap1OldOwners,
   ...phaseCap2OldOwners,
   ...phaseCap3OldOwners,
-  ...phaseCap4ASkillOldOwners
+  ...phaseCap4ASkillOldOwners,
+  ...phaseCap4BMcpOldOwners
 ];
 
 // Post-migration: old physical paths must not exist as reachable files.
@@ -97,6 +113,7 @@ const forbiddenExistingPaths = [
   "src/service/action_tools/risk_matrix.mjs",
   "src/service/action_tools/policy-guard.mjs",
   "src/service/ai/skills",
+  "src/service/ai/mcp",
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);
@@ -146,6 +163,7 @@ for (const file of allFiles) {
   if (rel === "scripts/verify-action-tool-schemas-contract.mjs") continue;
   if (rel === "scripts/verify-action-tool-registry-contract.mjs") continue;
   if (rel === "scripts/verify-skill-surface-contract.mjs") continue;
+  if (rel === "scripts/verify-mcp-surface-contract.mjs") continue;
   // Skip the plan document (historical, not active)
   if (rel === "linxi_codebase_reorganization_execution_plan.md") continue;
 

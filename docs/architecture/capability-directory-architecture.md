@@ -14,7 +14,7 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 | Action tool types | `src/service/capabilities/registry/types.mjs` | `createActionResult` |
 | Risk/policy | `src/service/capabilities/registry/risk_matrix.mjs`, `src/service/capabilities/registry/policy-guard.mjs`, `src/service/action_tools/file-reversibility.mjs` | Tool risk evaluation, policy guard, file reversibility |
 | Skills | `src/service/capabilities/skills/` | Skill lifecycle (`lifecycle.mjs`), skill installer, skill markdown editor |
-| MCP | `src/service/ai/mcp/` | MCP server config, install, drafts, test runner |
+| MCP | `src/service/capabilities/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/connectors/` | Connector tool aggregator, connector plugins, account tools |
 | Providers | `src/service/ai/providers/` | Provider catalog, config, model discovery |
 | Shared capability helpers | `src/service/capabilities/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs` |
@@ -40,7 +40,7 @@ src/service/capabilities/
 
 - Built-in source capabilities belong in `src/service/capabilities/**`.
 - User-installed skills/MCP/tools/connectors must live under runtime data paths, NOT under `src/`.
-- Legacy paths for moved capability families, plus `src/service/ai/mcp/**` and `src/service/connectors/**` once their phases move, must be deleted after active callers migrate unless a phase explicitly names a temporary migration window and guards it with a verifier.
+- Legacy paths for moved capability families, plus `src/service/capabilities/mcp/**` and `src/service/connectors/**` once their phases move, must be deleted after active callers migrate unless a phase explicitly names a temporary migration window and guards it with a verifier.
 - Compatibility barrels may re-export only during a named migration window; they must not remain in a completion claim.
 - Do not start broad source moves until each family has owner documentation and migration verifiers.
 

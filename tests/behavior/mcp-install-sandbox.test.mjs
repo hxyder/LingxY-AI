@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   classifyMcpInstallSource,
   createMcpInstallSandboxPlan
-} from "../../src/service/ai/mcp/install-sandbox.mjs";
+} from "../../src/service/capabilities/mcp/install-sandbox.mjs";
 
 const installDir = path.join(process.cwd(), ".tmp", "mcp-install-sandbox");
 

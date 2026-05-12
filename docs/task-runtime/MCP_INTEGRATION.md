@@ -8,7 +8,7 @@ This file documents both directions. For the higher-level architecture see [ARCH
 
 ## 1. Internal MCP server (`lingxy-connectors`)
 
-`src/service/ai/mcp/internal-server/connector-mcp-server.mjs` turns the in-process connector catalog into a stdio MCP server:
+`src/service/capabilities/mcp/internal-server/connector-mcp-server.mjs` turns the in-process connector catalog into a stdio MCP server:
 
 - `tools/list` comes from `runtime.connectorCatalog.toMcpToolSummaries()`.
 - `resources/list` comes from `runtime.connectorCatalog.toMcpResources()`.
@@ -19,7 +19,7 @@ This file documents both directions. For the higher-level architecture see [ARCH
 
 Start it with `npm run mcp:server -- --providers=google` (or `--providers=microsoft,google`). Under the hood the script calls `scripts/start-lingxy-mcp-server.mjs`, which spawns a memory-backed runtime, loads the catalog, and hands stdio to `connector-mcp-server.mjs`.
 
-The descriptor also exists in `src/service/ai/mcp/builtin.mjs` as the `lingxy-google` entry, disabled by default. A user enables it from the Console → Connectors → MCP tab and points Claude Desktop / Codex at the resulting stdio command:
+The descriptor also exists in `src/service/capabilities/mcp/builtin.mjs` as the `lingxy-google` entry, disabled by default. A user enables it from the Console → Connectors → MCP tab and points Claude Desktop / Codex at the resulting stdio command:
 
 ```jsonc
 // claude-desktop mcp config

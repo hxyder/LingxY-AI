@@ -2,33 +2,32 @@
 
 Date: 2026-05-11
 
-This inventory locks the current MCP runtime surface before CAP-4B physical
-reorganization work. It is a preflight document: no MCP product source files are
-moved in this phase.
+This inventory locks the CAP-4B MCP runtime surface after the physical move into
+`src/service/capabilities/mcp/`.
 
 ## Current Owner
 
 Current MCP runtime owner:
 
-`src/service/ai/mcp/`
+`src/service/capabilities/mcp/`
 
 Files:
 
 | Path | Responsibility | Target layer |
 |---|---|---|
-| `src/service/ai/mcp/registry.mjs` | MCP server registry aggregation, status, resources | service/capabilities/mcp |
-| `src/service/ai/mcp/builtin.mjs` | Built-in MCP server descriptors | service/capabilities/mcp |
-| `src/service/ai/mcp/configured.mjs` | Runtime-configured MCP server adapter and command availability | service/capabilities/mcp |
-| `src/service/ai/mcp/descriptor-validation.mjs` | MCP server descriptor validation | service/capabilities/mcp |
-| `src/service/ai/mcp/drafts.mjs` | Runtime-local MCP draft listing and import source reading | service/capabilities/mcp |
-| `src/service/ai/mcp/env-resolver.mjs` | MCP env/secret reference resolution | service/capabilities/mcp |
-| `src/service/ai/mcp/install-detection.mjs` | Installed package descriptor detection | service/capabilities/mcp/install |
-| `src/service/ai/mcp/install-execution.mjs` | Sandboxed MCP package install execution and atomic promotion | service/capabilities/mcp/install |
-| `src/service/ai/mcp/install-sandbox.mjs` | MCP install source classification and sandbox plan building | service/capabilities/mcp/install |
-| `src/service/ai/mcp/auto-install.mjs` | First-run curated MCP auto-enable wiring | service/capabilities/mcp |
-| `src/service/ai/mcp/client-bridge.mjs` | External MCP client connection cache and action-tool wrapping | service/capabilities/mcp/client |
-| `src/service/ai/mcp/internal-server/connector-mcp-server.mjs` | Internal connector catalog MCP stdio server | service/capabilities/mcp/internal-server |
-| `src/service/ai/mcp/README.md` | Runtime MCP integration notes | service/capabilities/mcp |
+| `src/service/capabilities/mcp/registry.mjs` | MCP server registry aggregation, status, resources | service/capabilities/mcp |
+| `src/service/capabilities/mcp/builtin.mjs` | Built-in MCP server descriptors | service/capabilities/mcp |
+| `src/service/capabilities/mcp/configured.mjs` | Runtime-configured MCP server adapter and command availability | service/capabilities/mcp |
+| `src/service/capabilities/mcp/descriptor-validation.mjs` | MCP server descriptor validation | service/capabilities/mcp |
+| `src/service/capabilities/mcp/drafts.mjs` | Runtime-local MCP draft listing and import source reading | service/capabilities/mcp |
+| `src/service/capabilities/mcp/env-resolver.mjs` | MCP env/secret reference resolution | service/capabilities/mcp |
+| `src/service/capabilities/mcp/install-detection.mjs` | Installed package descriptor detection | service/capabilities/mcp/install |
+| `src/service/capabilities/mcp/install-execution.mjs` | Sandboxed MCP package install execution and atomic promotion | service/capabilities/mcp/install |
+| `src/service/capabilities/mcp/install-sandbox.mjs` | MCP install source classification and sandbox plan building | service/capabilities/mcp/install |
+| `src/service/capabilities/mcp/auto-install.mjs` | First-run curated MCP auto-enable wiring | service/capabilities/mcp |
+| `src/service/capabilities/mcp/client-bridge.mjs` | External MCP client connection cache and action-tool wrapping | service/capabilities/mcp/client |
+| `src/service/capabilities/mcp/internal-server/connector-mcp-server.mjs` | Internal connector catalog MCP stdio server | service/capabilities/mcp/internal-server |
+| `src/service/capabilities/mcp/README.md` | Runtime MCP integration notes | service/capabilities/mcp |
 
 ## Active Callers
 
@@ -50,13 +49,14 @@ Product callers that currently depend on this surface:
 | `scripts/start-lingxy-mcp-server.mjs` | internal MCP stdio server entrypoint |
 
 Renderer and desktop code must reach MCP through IPC/HTTP contracts only. They
-must not import `src/service/ai/mcp/**` directly.
+must not import MCP runtime internals directly.
 
 ## Stable Contracts
 
-The preflight verifier locks these contracts:
+The verifier locks these contracts:
 
-- MCP owner files exist at the current path until the physical move phase.
+- MCP owner files exist at the capabilities path.
+- The former service AI MCP owner directory is absent.
 - Public exports needed by existing callers remain available.
 - MCP owner files do not import Electron, desktop, or renderer modules.
 - MCP install execution continues to use `spawnExternal` and must not mutate
@@ -71,9 +71,9 @@ The preflight verifier locks these contracts:
   `/config/mcp/install/plan`, `/config/mcp/install/preview`, and
   `/config/mcp/install/run` remain stable service HTTP contracts.
 
-## Target Shape
+## Current Shape
 
-The intended CAP-4B physical move should be:
+The CAP-4B physical move produced:
 
 ```text
 src/service/capabilities/mcp/
@@ -93,14 +93,15 @@ src/service/capabilities/mcp/
     connector-mcp-server.mjs
 ```
 
-After the physical move:
+Completion rules:
 
-- Update every active import in product code, tests, scripts, and docs.
-- Update `verify-mcp-surface-contract.mjs`, `verify-capability-roots.mjs`,
+- Every active import in product code, tests, scripts, and docs must point at
+  `src/service/capabilities/mcp/`.
+- `verify-mcp-surface-contract.mjs`, `verify-capability-roots.mjs`,
   `verify-structure.mjs`, `verify-service-core.mjs`,
-  `verify-internal-mcp-server.mjs`, and `verify-stale-owner-paths.mjs`.
-- Delete the old `src/service/ai/mcp/` implementation path if empty.
-- Do not keep compatibility barrels once all callers are migrated.
+  `verify-internal-mcp-server.mjs`, and `verify-stale-owner-paths.mjs` must all
+  agree on the owner.
+- Compatibility barrels are not allowed after CAP-4B completion.
 
 ## Risk
 

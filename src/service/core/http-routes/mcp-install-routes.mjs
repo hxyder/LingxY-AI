@@ -1,7 +1,7 @@
-import { detectMcpInstallCandidate } from "../../ai/mcp/install-detection.mjs";
-import { executeMcpInstall } from "../../ai/mcp/install-execution.mjs";
-import { createMcpInstallSandboxPlan } from "../../ai/mcp/install-sandbox.mjs";
-import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import { detectMcpInstallCandidate } from "../../capabilities/mcp/install-detection.mjs";
+import { executeMcpInstall } from "../../capabilities/mcp/install-execution.mjs";
+import { createMcpInstallSandboxPlan } from "../../capabilities/mcp/install-sandbox.mjs";
+import { validateMcpServerDescriptor } from "../../capabilities/mcp/descriptor-validation.mjs";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 

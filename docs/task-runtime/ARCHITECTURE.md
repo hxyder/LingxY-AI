@@ -26,7 +26,7 @@ The replacement is a layered dispatch that keeps the fast paths fast and makes s
 | Concept | Owns | Directory | Must not own |
 |---|---|---|---|
 | Skills | reusable reasoning/work instructions rendered into prompts | [src/service/capabilities/skills/](../../src/service/capabilities/skills/) | OAuth, account state, provider APIs, service execution |
-| MCP adapters | external MCP server transport, discovery, bridge | [src/service/ai/mcp/](../../src/service/ai/mcp/) | provider-specific business rules, confirmation bypass |
+| MCP adapters | external MCP server transport, discovery, bridge | [src/service/capabilities/mcp/](../../src/service/capabilities/mcp/) | provider-specific business rules, confirmation bypass |
 | Action tools | local execution primitives, schema validation, risk matrix | [src/service/action_tools/](../../src/service/action_tools/) | Gmail/Calendar/Drive semantics |
 | Connectors | provider accounts, scopes, service contracts, workflows | [src/service/connectors/\<provider\>/](../../src/service/connectors/) | generic planner behavior |
 | Connector core | shared account routing, token status, validators, dispatcher | [src/service/connectors/core/](../../src/service/connectors/core/) | provider-specific payload shaping |
@@ -162,4 +162,4 @@ Empty Gmail subject/body fails the workflow. Verifier success alone is not enoug
 | `connectors/account-connectors.mjs` | OAuth config | kept; HTTP reads route through canonical action tools |
 | `executors/tool_using/agent-loop.mjs` | planner heuristics | workflow-first catalog dispatch (no more Gmail regex) |
 | `action_tools/tools/index.mjs` | action tool registry | registers `CONNECTOR_ACTION_TOOLS` as single group |
-| `ai/mcp/client-bridge.mjs` | external MCP client | funnels through `mcp-catalog-bridge` instead of direct prompt injection |
+| `capabilities/mcp/client-bridge.mjs` | external MCP client | funnels through `mcp-catalog-bridge` instead of direct prompt injection |

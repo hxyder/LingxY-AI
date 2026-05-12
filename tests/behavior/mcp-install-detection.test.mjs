@@ -3,7 +3,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { detectMcpInstallCandidate } from "../../src/service/ai/mcp/install-detection.mjs";
+import { detectMcpInstallCandidate } from "../../src/service/capabilities/mcp/install-detection.mjs";
 
 async function withPackage(files, fn) {
   const dir = path.join(os.tmpdir(), `linxi-mcp-detect-${Date.now()}-${Math.random().toString(16).slice(2)}`);

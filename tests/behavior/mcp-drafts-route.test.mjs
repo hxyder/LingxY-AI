@@ -7,7 +7,7 @@ import test from "node:test";
 
 import { DESKTOP_ACTOR_HEADER } from "../../src/service/core/http-route-guards.mjs";
 import { tryHandleConfigProviderRoute } from "../../src/service/core/http-routes/config-provider-routes.mjs";
-import { listMcpDrafts } from "../../src/service/ai/mcp/drafts.mjs";
+import { listMcpDrafts } from "../../src/service/capabilities/mcp/drafts.mjs";
 
 function requestWithJson(body = {}, headers = {}) {
   const request = Readable.from([`${JSON.stringify(body)}\n`]);

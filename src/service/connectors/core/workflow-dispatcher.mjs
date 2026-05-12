@@ -224,7 +224,7 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
       return { status: "failed", error: `External MCP server not registered: ${serverId}` };
     }
     try {
-      const { getMcpClient } = await import("../../ai/mcp/client-bridge.mjs");
+      const { getMcpClient } = await import("../../capabilities/mcp/client-bridge.mjs");
       const client = runtime.__mcpClientOverride?.(serverId) ?? await getMcpClient(mcpServer);
       if (!client) {
         return { status: "failed", error: `External MCP client unavailable for server: ${serverId}` };

@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { executeMcpInstall } from "../../src/service/ai/mcp/install-execution.mjs";
+import { executeMcpInstall } from "../../src/service/capabilities/mcp/install-execution.mjs";
 
 async function withInstallDir(fn) {
   const dir = path.join(os.tmpdir(), `linxi-mcp-install-${Date.now()}-${Math.random().toString(16).slice(2)}`);

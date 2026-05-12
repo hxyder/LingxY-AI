@@ -35,7 +35,7 @@ import { createBuiltinTemplateRegistry, createPersistentTemplateRegistry } from 
 import { createBudgetManager } from "../cost/budget.mjs";
 import { createEmbeddingStore } from "../embeddings/store.mjs";
 import { createAIIntegrationRuntime } from "../ai/integrations/runtime.mjs";
-import { runMcpAutoInstall } from "../ai/mcp/auto-install.mjs";
+import { runMcpAutoInstall } from "../capabilities/mcp/auto-install.mjs";
 import { createDagCheckpointStore } from "../dag/scheduler.mjs";
 import { createEmailMonitor } from "../email/monitor.mjs";
 import { createConnectorCatalog } from "../connectors/core/catalog.mjs";

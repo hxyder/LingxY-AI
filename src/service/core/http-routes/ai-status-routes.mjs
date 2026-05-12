@@ -210,7 +210,7 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
     runtime.configStore?.save?.(updatedConfig);
     // Also invalidate any cached MCP client connection so it picks up the new state.
     try {
-      const { disconnectAll } = await import("../../ai/mcp/client-bridge.mjs");
+      const { disconnectAll } = await import("../../capabilities/mcp/client-bridge.mjs");
       await disconnectAll();
     } catch { /* bridge may not be loaded yet */ }
     try {
@@ -242,7 +242,7 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
     });
     runtime.configStore?.save?.(updatedConfig);
     try {
-      const { disconnectAll } = await import("../../ai/mcp/client-bridge.mjs");
+      const { disconnectAll } = await import("../../capabilities/mcp/client-bridge.mjs");
       await disconnectAll();
     } catch { /* bridge may not be loaded yet */ }
     try {

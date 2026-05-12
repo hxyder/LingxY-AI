@@ -28,7 +28,7 @@ const capabilityRoots = [
   // Skills
   "src/service/capabilities/skills/lifecycle.mjs",
   // MCP
-  "src/service/ai/mcp",
+  "src/service/capabilities/mcp",
   // Connectors
   "src/service/connectors",
   // Providers

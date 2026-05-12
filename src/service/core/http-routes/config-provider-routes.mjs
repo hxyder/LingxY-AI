@@ -8,9 +8,9 @@ import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../..
 import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
-import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
-import { createConfiguredMCPServer } from "../../ai/mcp/configured.mjs";
-import { listMcpDrafts, readMcpDraft } from "../../ai/mcp/drafts.mjs";
+import { validateMcpServerDescriptor } from "../../capabilities/mcp/descriptor-validation.mjs";
+import { createConfiguredMCPServer } from "../../capabilities/mcp/configured.mjs";
+import { listMcpDrafts, readMcpDraft } from "../../capabilities/mcp/drafts.mjs";
 import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 import {
   removeProviderOnboardingSuggestions,

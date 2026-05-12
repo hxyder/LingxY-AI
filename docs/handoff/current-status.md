@@ -2690,3 +2690,55 @@ Decision:
   - prove `src/service/ai/mcp/` is gone or contains no reachable
     implementation files;
   - do not leave compatibility barrels once callers are migrated.
+
+## Codex Review: CAP-4B MCP Surface Physical Move
+
+Date: 2026-05-11
+
+Scope:
+- Moved the MCP runtime surface from the former service AI MCP owner into
+  `src/service/capabilities/mcp/`.
+- Updated active imports in product code, behavior tests, scripts, and
+  architecture docs.
+- Updated `verify-mcp-surface-contract.mjs`, `verify-capability-roots.mjs`,
+  `verify-structure.mjs`, `verify-service-core.mjs`,
+  `verify-internal-mcp-server.mjs`, and `verify-stale-owner-paths.mjs`.
+- Removed the old owner directory rather than leaving a compatibility barrel.
+- Did not change MCP behavior, IPC channels, HTTP routes, tool ids, artifact
+  kinds, provider ids, or storage schema.
+
+Migration result:
+- Current owner: `src/service/capabilities/mcp/`.
+- Old owner directory: absent.
+- `/ai/mcp` and `/config/mcp/*` HTTP contracts remain unchanged.
+- MCP install/config/drafts routes now import from `../../capabilities/mcp/`.
+- Planner, connector catalog bridge, workflow dispatcher, persistent runtime,
+  and service bootstrap now import from the moved MCP owner.
+
+Verification run by Codex:
+- `node --check` on all moved MCP modules and
+  `scripts/verify-mcp-surface-contract.mjs`: passed.
+- `node scripts/verify-mcp-surface-contract.mjs`: passed.
+- `node scripts/verify-capability-roots.mjs`: passed.
+- `node scripts/verify-structure.mjs`: passed.
+- `node scripts/verify-stale-owner-paths.mjs`: passed.
+- `node --test tests/behavior/mcp-env-resolver.test.mjs tests/behavior/mcp-drafts-route.test.mjs tests/behavior/mcp-config-route.test.mjs tests/behavior/mcp-install-sandbox.test.mjs tests/behavior/mcp-install-route.test.mjs tests/behavior/mcp-install-execution.test.mjs tests/behavior/mcp-install-detection.test.mjs`: passed, 48/48.
+- `node scripts/verify-internal-mcp-server.mjs`: passed.
+- `node scripts/verify-ai-integrations.mjs`: passed.
+- `node scripts/verify-service-core.mjs`: passed.
+- `node scripts/verify-planner-prefetch.mjs`: passed.
+- `node scripts/verify-unified-connectors.mjs`: passed.
+- `node scripts/verify-connector-workflow-dispatcher.mjs`: passed.
+- `node scripts/verify-workflow-first-dispatch.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-tool-registry-snapshot.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: first run had one non-reproduced behavior-test failure;
+  immediate standalone `node scripts/verify-behavior-tests.mjs` passed, 986/986;
+  rerun `npm run check:fast` passed, 88/88.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Decision:
+- CAP-4B physical move is ready to commit.
+- After CAP-4B is committed, the next valid phase is CAP-4C connector surface
+  preflight, not a broad connector/provider move.

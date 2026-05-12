@@ -31,11 +31,10 @@ function assertFunction(moduleNamespace, rel, name) {
   assert.equal(typeof moduleNamespace[name], "function", `${rel} must export function ${name}`);
 }
 
-// CAP-4B preflight: lock the current MCP runtime surface before moving it
-// under capabilities/mcp. The physical move phase must update this verifier to
-// the new owner and add old-owner absence checks.
+// CAP-4B: lock the moved MCP runtime surface under capabilities/mcp.
 
-const ownerDir = "src/service/ai/mcp";
+const ownerDir = "src/service/capabilities/mcp";
+const oldOwnerDir = "src/service/ai/mcp";
 const expectedFiles = [
   "auto-install.mjs",
   "builtin.mjs",
@@ -53,6 +52,8 @@ const expectedFiles = [
 ];
 
 assert(existsSync(path.join(root, ownerDir)), `MCP owner dir missing: ${ownerDir}`);
+assert(!existsSync(path.join(root, oldOwnerDir)),
+  `${oldOwnerDir} must not exist after CAP-4B physical move`);
 for (const file of expectedFiles) {
   assert(existsSync(path.join(root, ownerDir, file)), `MCP owner file missing: ${ownerDir}/${file}`);
 }
@@ -164,26 +165,26 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
   for (const file of walk(uiRoot)) {
     const rel = path.relative(root, file).replace(/\\/g, "/");
     const source = read(rel);
-    assert(!source.includes("src/service/ai/mcp") && !source.includes("/ai/mcp/"),
+    assert(!source.includes("src/service/capabilities/mcp") && !source.includes("/capabilities/mcp/"),
       `${rel} must not import MCP runtime internals`);
   }
 }
 
 const runtimeIntegrations = read("src/service/ai/integrations/runtime.mjs");
 for (const needle of [
-  "../mcp/registry.mjs",
-  "../mcp/builtin.mjs",
-  "../mcp/configured.mjs",
-  "../mcp/env-resolver.mjs"
+  "../../capabilities/mcp/registry.mjs",
+  "../../capabilities/mcp/builtin.mjs",
+  "../../capabilities/mcp/configured.mjs",
+  "../../capabilities/mcp/env-resolver.mjs"
 ]) {
   assert(runtimeIntegrations.includes(needle), `AI integration runtime must use ${needle}`);
 }
 
 const configRoutes = read("src/service/core/http-routes/config-provider-routes.mjs");
 for (const needle of [
-  "../../ai/mcp/descriptor-validation.mjs",
-  "../../ai/mcp/configured.mjs",
-  "../../ai/mcp/drafts.mjs",
+  "../../capabilities/mcp/descriptor-validation.mjs",
+  "../../capabilities/mcp/configured.mjs",
+  "../../capabilities/mcp/drafts.mjs",
   'url.pathname === "/config/mcp/servers"',
   'url.pathname === "/config/mcp/test"',
   'url.pathname === "/config/mcp/drafts"'
@@ -193,10 +194,10 @@ for (const needle of [
 
 const installRoutes = read("src/service/core/http-routes/mcp-install-routes.mjs");
 for (const needle of [
-  "../../ai/mcp/install-detection.mjs",
-  "../../ai/mcp/install-execution.mjs",
-  "../../ai/mcp/install-sandbox.mjs",
-  "../../ai/mcp/descriptor-validation.mjs",
+  "../../capabilities/mcp/install-detection.mjs",
+  "../../capabilities/mcp/install-execution.mjs",
+  "../../capabilities/mcp/install-sandbox.mjs",
+  "../../capabilities/mcp/descriptor-validation.mjs",
   'url.pathname === "/config/mcp/install/plan"',
   'url.pathname === "/config/mcp/install/preview"',
   'url.pathname === "/config/mcp/install/run"'
@@ -209,26 +210,26 @@ for (const needle of [
   'url.pathname === "/ai/mcp"',
   '^\\/ai\\/mcp\\/[^/]+\\/toggle$',
   '^\\/ai\\/mcp\\/[^/]+\\/config$',
-  "../../ai/mcp/client-bridge.mjs"
+  "../../capabilities/mcp/client-bridge.mjs"
 ]) {
   assert(aiStatusRoutes.includes(needle), `ai-status-routes.mjs must retain MCP contract ${needle}`);
 }
 
-assert(read("src/service/executors/agentic/planner.mjs").includes("../../ai/mcp/client-bridge.mjs"),
+assert(read("src/service/executors/agentic/planner.mjs").includes("../../capabilities/mcp/client-bridge.mjs"),
   "agentic planner must still load MCP action tools through client-bridge");
-assert(read("src/service/connectors/core/mcp-catalog-bridge.mjs").includes("../../ai/mcp/client-bridge.mjs"),
+assert(read("src/service/connectors/core/mcp-catalog-bridge.mjs").includes("../../capabilities/mcp/client-bridge.mjs"),
   "MCP catalog bridge must still delegate to client-bridge");
-assert(read("src/service/connectors/core/workflow-dispatcher.mjs").includes("../../ai/mcp/client-bridge.mjs"),
+assert(read("src/service/connectors/core/workflow-dispatcher.mjs").includes("../../capabilities/mcp/client-bridge.mjs"),
   "workflow dispatcher must still execute external MCP via client-bridge");
-assert(read("src/service/core/persistent-runtime.mjs").includes("../ai/mcp/client-bridge.mjs"),
+assert(read("src/service/core/persistent-runtime.mjs").includes("../capabilities/mcp/client-bridge.mjs"),
   "persistent runtime must disconnect MCP clients on shutdown");
-assert(read("src/service/core/service-bootstrap.mjs").includes("../ai/mcp/auto-install.mjs"),
+assert(read("src/service/core/service-bootstrap.mjs").includes("../capabilities/mcp/auto-install.mjs"),
   "service bootstrap must retain MCP auto-install owner wiring");
-assert(read("scripts/start-lingxy-mcp-server.mjs").includes("../src/service/ai/mcp/internal-server/connector-mcp-server.mjs"),
+assert(read("scripts/start-lingxy-mcp-server.mjs").includes("../src/service/capabilities/mcp/internal-server/connector-mcp-server.mjs"),
   "internal MCP server start script must point at the MCP internal-server owner");
 
 const bridgeSource = read(`${ownerDir}/client-bridge.mjs`);
-assert(bridgeSource.includes("../../capabilities/registry/types.mjs"),
+assert(bridgeSource.includes("../registry/types.mjs"),
   "MCP client bridge must return createActionResult-compatible tool results");
 assert(bridgeSource.includes("resolveMcpEnv"),
   "MCP client bridge must resolve env/secret refs before spawning servers");

@@ -3,17 +3,17 @@ import test from "node:test";
 import {
   describeMcpEnvRequirements,
   resolveMcpEnv
-} from "../../src/service/ai/mcp/env-resolver.mjs";
+} from "../../src/service/capabilities/mcp/env-resolver.mjs";
 import {
   clearMcpCommandExistsCacheForTests,
   commandExists,
   createConfiguredMCPServer
-} from "../../src/service/ai/mcp/configured.mjs";
+} from "../../src/service/capabilities/mcp/configured.mjs";
 import {
   connectMcpServer,
   disconnectAll,
   getMcpSkipReason
-} from "../../src/service/ai/mcp/client-bridge.mjs";
+} from "../../src/service/capabilities/mcp/client-bridge.mjs";
 import { buildAIIntegrationRegistries } from "../../src/service/ai/integrations/runtime.mjs";
 
 // ── Pure resolver ────────────────────────────────────────────────────────────

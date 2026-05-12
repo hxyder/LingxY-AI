@@ -43,7 +43,7 @@ import {
   resolveTaskMaxIterations,
   shouldCheckSaturation
 } from "../shared/loop-policy.mjs";
-import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
+import { getMcpActionTools } from "../../capabilities/mcp/client-bridge.mjs";
 import { transcriptForValidator } from "./validator-transcript.mjs";
 import { processAgenticToolResultForControls } from "./tool-result-controls.mjs";
 import {
