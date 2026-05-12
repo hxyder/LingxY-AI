@@ -3,28 +3,27 @@
 Date: 2026-05-11
 
 This inventory locks the CAP-4E Code CLI adapter/config/runtime-probe surface
-before any physical move into `src/service/capabilities/`.
+after moving it into `src/service/capabilities/code_cli/`.
 
 ## Current Owner
 
 Current Code CLI adapter owner:
 
-`src/service/ai/code_cli/`
-
-Target Code CLI adapter owner:
-
 `src/service/capabilities/code_cli/`
+
+Former owner: the old AI Code CLI directory. It is now forbidden and is checked
+by `verify-code-cli-surface-contract.mjs`.
 
 Files:
 
 | Path | Responsibility | Target layer |
 |---|---|---|
-| `src/service/ai/code_cli/registry.mjs` | Code CLI adapter registry and status fan-out | service/capabilities/code_cli |
-| `src/service/ai/code_cli/builtin.mjs` | Built-in Kimi Code CLI and Codex CLI descriptors | service/capabilities/code_cli |
-| `src/service/ai/code_cli/configured.mjs` | Runtime-configured Code CLI adapter descriptor/status shaping | service/capabilities/code_cli |
-| `src/service/ai/code_cli/kimi/runtime.mjs` | Kimi CLI runtime resolution, env merge, config/credential/MCP path probing | service/capabilities/code_cli/kimi |
-| `src/service/ai/code_cli/README.md` | Code CLI adapter integration notes | service/capabilities/code_cli |
-| `src/service/ai/code_cli/kimi/README.md` | Kimi adapter notes | service/capabilities/code_cli/kimi |
+| `src/service/capabilities/code_cli/registry.mjs` | Code CLI adapter registry and status fan-out | service/capabilities/code_cli |
+| `src/service/capabilities/code_cli/builtin.mjs` | Built-in Kimi Code CLI and Codex CLI descriptors | service/capabilities/code_cli |
+| `src/service/capabilities/code_cli/configured.mjs` | Runtime-configured Code CLI adapter descriptor/status shaping | service/capabilities/code_cli |
+| `src/service/capabilities/code_cli/kimi/runtime.mjs` | Kimi CLI runtime resolution, env merge, config/credential/MCP path probing | service/capabilities/code_cli/kimi |
+| `src/service/capabilities/code_cli/README.md` | Code CLI adapter integration notes | service/capabilities/code_cli |
+| `src/service/capabilities/code_cli/kimi/README.md` | Kimi adapter notes | service/capabilities/code_cli/kimi |
 
 ## Active Callers
 
@@ -42,10 +41,7 @@ Files:
 
 ## Locked Contracts
 
-- Code CLI source owner remains `src/service/ai/code_cli/` until the physical
-  CAP-4E move.
-- `src/service/capabilities/code_cli/` must not exist before CAP-4E physical
-  migration.
+- Code CLI source owner is `src/service/capabilities/code_cli/`.
 - Public exports remain available:
   `createCodeCliRegistry`, `BUILTIN_CODE_CLI_ADAPTERS`,
   `createConfiguredCodeCliAdapter`, `getKimiRuntimeStatus`, and
@@ -66,7 +62,7 @@ Files:
 ## Current Shape
 
 ```text
-src/service/ai/code_cli/
+src/service/capabilities/code_cli/
   README.md
   builtin.mjs
   configured.mjs
@@ -76,11 +72,11 @@ src/service/ai/code_cli/
     runtime.mjs
 ```
 
-Completion rules for the physical move:
+Completion rules:
 
 - Every active import in product code, tests, scripts, and active docs must
   point at `src/service/capabilities/code_cli/`.
-- `src/service/ai/code_cli/` must not remain as a compatibility barrel.
+- The old AI Code CLI directory must not remain as a compatibility barrel.
 - The installed Code CLI detection logic in `config-provider-routes.mjs` must
   either stay explicitly documented as route-local logic or move in a separate
   targeted cleanup with route behavior tests.

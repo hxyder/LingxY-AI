@@ -166,7 +166,7 @@ Legend:
 | `src/service/executors/multi_modal/multi-modal-executor.mjs` | Multimodal/vision execution path. | service/provider | no | Provider resolver/vision. | high | Provider/image contracts. |
 | `src/service/executors/translate/translate-executor.mjs` | Translation executor. | service | no | Free translator. | medium | Narrow. |
 | `src/service/capabilities/providers/*.mjs` | Provider registry, configured providers, health, model discovery. | service/provider | no | Config/routes/provider catalog/fetch. | medium/high | Correct owner. |
-| `src/service/ai/code_cli/*.mjs` | Code CLI configuration/runtime detection. | service/provider | no | spawnSync/path. | medium | Some sync detection acceptable in setup/status paths. |
+| `src/service/capabilities/code_cli/*.mjs` | Code CLI configuration/runtime detection. | service/provider | no | spawnSync/path. | medium | Correct capability owner. Some sync detection acceptable in setup/status paths. |
 
 ## Action Tools
 

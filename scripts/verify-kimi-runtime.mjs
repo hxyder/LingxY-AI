@@ -22,7 +22,7 @@ const { createEventBusScaffold } = await import("../src/service/core/events/even
 const { createInMemoryStoreScaffold } = await import("../src/service/core/store/memory-store.mjs");
 const { createTaskQueueScaffold } = await import("../src/service/core/queue/task-queue.mjs");
 const { submitFileTask } = await import("../src/service/core/file-submission.mjs");
-const { getKimiRuntimeStatus, resolveKimiRuntime } = await import("../src/service/ai/code_cli/kimi/runtime.mjs");
+const { getKimiRuntimeStatus, resolveKimiRuntime } = await import("../src/service/capabilities/code_cli/kimi/runtime.mjs");
 
 const sampleNote = path.join(repoRoot, "tests", "fixtures", "sample-note.md");
 

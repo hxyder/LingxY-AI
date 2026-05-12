@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { getKimiRuntimeStatus } from "../../ai/code_cli/kimi/runtime.mjs";
+import { getKimiRuntimeStatus } from "../code_cli/kimi/runtime.mjs";
 
 const DEFAULT_TIMEOUT_MS = 3_000;
 

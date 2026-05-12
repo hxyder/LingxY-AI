@@ -1,7 +1,7 @@
 # Capability Directory Architecture
 
 Phase CAP-0 inventory of current capability roots and target `src/service/capabilities/**` layout.
-Status: inventory verified against the current repository on 2026-05-11 during CAP-4E Code CLI preflight.
+Status: inventory verified against the current repository on 2026-05-11 after CAP-4E Code CLI migration.
 
 ## Current Capability Roots
 
@@ -17,7 +17,7 @@ Status: inventory verified against the current repository on 2026-05-11 during C
 | MCP | `src/service/capabilities/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/capabilities/connectors/` | Connector tool aggregator, connector plugins, account tools |
 | Providers | `src/service/capabilities/providers/` | Provider catalog, config, model discovery |
-| Code CLI adapters | `src/service/ai/code_cli/` | Code CLI adapter catalog, configured adapters, Kimi runtime probing |
+| Code CLI adapters | `src/service/capabilities/code_cli/` | Code CLI adapter catalog, configured adapters, Kimi runtime probing |
 | Shared capability helpers | `src/service/capabilities/tools/` | `open-with-default-handler.mjs`, `file-manifest-helpers.mjs` |
 | Service core helpers | `src/service/core/` | `artifact-path-helper.mjs` (artifact boundary) |
 

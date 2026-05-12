@@ -35,11 +35,11 @@ function assertConst(moduleNamespace, rel, name) {
   assert(Object.hasOwn(moduleNamespace, name), `${rel} must export ${name}`);
 }
 
-// CAP-4E preflight: lock the current Code CLI adapter/config/runtime-probe
-// surface before the physical move to capabilities/code_cli.
+// CAP-4E: lock the moved Code CLI adapter/config/runtime-probe surface under
+// capabilities/code_cli.
 
-const ownerDir = "src/service/ai/code_cli";
-const targetDir = "src/service/capabilities/code_cli";
+const ownerDir = "src/service/capabilities/code_cli";
+const oldOwnerDir = "src/service/ai/code_cli";
 const expectedFiles = [
   "README.md",
   "builtin.mjs",
@@ -50,8 +50,8 @@ const expectedFiles = [
 ];
 
 assert(existsSync(path.join(root, ownerDir)), `Code CLI owner dir missing: ${ownerDir}`);
-assert(!existsSync(path.join(root, targetDir)),
-  `${targetDir} must not exist before CAP-4E physical move`);
+assert(!existsSync(path.join(root, oldOwnerDir)),
+  `${oldOwnerDir} must not exist after CAP-4E physical move`);
 for (const file of expectedFiles) {
   assert(existsSync(path.join(root, ownerDir, file)), `Code CLI owner file missing: ${ownerDir}/${file}`);
 }
@@ -134,15 +134,15 @@ for (const uiRoot of ["src/desktop/renderer", "src/desktop/console", "src/deskto
     assert(!source.includes("src/service/ai/code_cli") && !source.includes("/ai/code_cli/"),
       `${rel} must not import Code CLI runtime internals`);
     assert(!source.includes("src/service/capabilities/code_cli") && !source.includes("/capabilities/code_cli/"),
-      `${rel} must not import target Code CLI capability internals before CAP-4E move`);
+      `${rel} must not import Code CLI capability internals`);
   }
 }
 
 const aiRuntime = read("src/service/ai/integrations/runtime.mjs");
 for (const needle of [
-  "../code_cli/registry.mjs",
-  "../code_cli/builtin.mjs",
-  "../code_cli/configured.mjs",
+  "../../capabilities/code_cli/registry.mjs",
+  "../../capabilities/code_cli/builtin.mjs",
+  "../../capabilities/code_cli/configured.mjs",
   "createCodeCliRegistry(BUILTIN_CODE_CLI_ADAPTERS)",
   "createConfiguredCodeCliAdapter(adapter)"
 ]) {
@@ -150,11 +150,11 @@ for (const needle of [
 }
 
 const persistentRuntime = read("src/service/core/persistent-runtime.mjs");
-assert(persistentRuntime.includes("../ai/code_cli/kimi/runtime.mjs"),
+assert(persistentRuntime.includes("../capabilities/code_cli/kimi/runtime.mjs"),
   "persistent-runtime.mjs must retain Kimi runtime resolver wiring");
 
 const providerRuntime = read("src/service/capabilities/providers/runtime.mjs");
-assert(providerRuntime.includes("../../ai/code_cli/kimi/runtime.mjs"),
+assert(providerRuntime.includes("../code_cli/kimi/runtime.mjs"),
   "provider runtime must retain Kimi provider health wiring through Code CLI runtime");
 
 const aiStatusRoutes = read("src/service/core/http-routes/ai-status-routes.mjs");
@@ -185,7 +185,6 @@ const boundaryDoc = "docs/architecture/code-cli-surface-boundary.md";
 assert(existsSync(path.join(root, boundaryDoc)), "Code CLI surface boundary doc missing");
 const boundarySource = read(boundaryDoc);
 assert(boundarySource.includes("Code CLI Surface Boundary"), "Code CLI surface boundary doc title missing");
-assert(boundarySource.includes("src/service/ai/code_cli/"), "Code CLI boundary doc must name current owner");
-assert(boundarySource.includes("src/service/capabilities/code_cli/"), "Code CLI boundary doc must name target owner");
+assert(boundarySource.includes("src/service/capabilities/code_cli/"), "Code CLI boundary doc must name capability owner");
 
 console.log("[code-cli-surface] Code CLI surface contract verified");
