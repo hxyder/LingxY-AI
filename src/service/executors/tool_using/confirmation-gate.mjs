@@ -3,6 +3,7 @@ import {
   buildDeferredToolContext,
   buildToolApprovalPreview
 } from "../shared/tool-approval-context.mjs";
+import { shouldBlockToolForExecutionMode } from "../../../shared/permission-mode-model.mjs";
 
 export async function resolveInteractiveConfirmation({
   runtime,
@@ -102,5 +103,8 @@ export function shouldBlockHighRiskUnattended({ task, risk, tool }) {
   if (resolveScheduledSideEffectAuthorization({ task, tool }).authorized) {
     return false;
   }
-  return task.execution_mode === "unattended_safe" && risk.risk_level === "high";
+  return shouldBlockToolForExecutionMode({
+    executionMode: task?.execution_mode,
+    risk
+  });
 }

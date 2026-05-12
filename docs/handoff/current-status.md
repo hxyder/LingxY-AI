@@ -91,6 +91,47 @@ Verification:
 Next valid work:
 - Start RT-004 permission and mode model.
 
+## Codex Update: RT-004 Permission And Mode Model
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/permission-mode-model.mjs` as the shared execution-mode,
+  approval-threshold, privacy-sandbox, and user-visible mode contract.
+- Persisted `permission_mode_contract` into task selection metadata and mirrored
+  it into durable `task_created` trace payloads.
+- Updated the existing tool_using fast path, tool_using confirmation gate, and
+  agentic tool execution gate to use shared mode helpers instead of scattered
+  raw `execution_mode` checks.
+- Exposed mode labels in Console task detail and Overlay active-task surfaces.
+- Added `docs/architecture/permission-mode-model.md`,
+  `scripts/verify-permission-mode-model.mjs`, and
+  `tests/behavior/permission-mode-model.test.mjs`.
+
+Decision:
+- Keep existing approval semantics: interactive/approval-required/background
+  modes prompt for confirmation-required tools; `unattended_safe` does not
+  prompt and blocks high-risk tools.
+- Keep privacy sandbox enforcement in the existing shared privacy policy and
+  security broker; the mode model summarizes that state for users and trace.
+- There is no implemented dry-run runtime path yet, so the contract explicitly
+  reports `dry_run_like: false`.
+
+Verification:
+- `node --test tests/behavior/permission-mode-model.test.mjs`: passed, 3/3.
+- `node scripts/verify-permission-mode-model.mjs`: passed.
+- `node scripts/verify-privacy-sandbox-policy.mjs`: passed.
+- `node scripts/verify-approval-task-bridge.mjs`: passed, 31/31.
+- `node --test tests/behavior/action-tool-submission.test.mjs tests/behavior/agent-loop-confirmation-gate.test.mjs tests/behavior/context-debug-panel.test.mjs`: passed, 11/11.
+- `npm run check:fast`: passed, 101/101; behavior tests passed, 990/990.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Next valid work:
+- Start DX-001 WindowSession state machine.
+- Keep the same discipline: define typed state ownership first, wire Overlay /
+  Console / Preview / Popup ownership through service/desktop boundary modules,
+  and prove stale task/window events are rejected before broader UI cleanup.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

@@ -1,4 +1,5 @@
 import { collectLlmUsageSummary } from "../../../shared/llm-usage-summary.mjs";
+import { describePermissionModeContract } from "../../../shared/permission-mode-model.mjs";
 import { buildTaskTraceSummary } from "../../../shared/task-trace-summary.mjs";
 
 export function buildTaskDetailViewModel(task, events = [], artifacts = []) {
@@ -10,6 +11,10 @@ export function buildTaskDetailViewModel(task, events = [], artifacts = []) {
     progress: task.progress ?? 0,
     currentStep: task.current_step ?? null,
     executor: task.executor,
+    mode: {
+      label: describePermissionModeContract(task),
+      contract: task.context_packet?.selection_metadata?.permission_mode_contract ?? null
+    },
     provider: task.provider_id ?? null,
     model: task.model_id ?? null,
     retryCount: task.retry_count ?? 0,

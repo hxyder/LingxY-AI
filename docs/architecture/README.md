@@ -14,5 +14,6 @@ This directory contains the Phase 0 architecture baseline that Phase 1 engineers
 - [sqlite-write-path-budget.md](sqlite-write-path-budget.md)
 - [session-context-artifact-write-budget.md](session-context-artifact-write-budget.md)
 - [context-trace-budget.md](context-trace-budget.md)
+- [permission-mode-model.md](permission-mode-model.md)
 
 These documents are high-level by design. Protocol-level details move into the next task, `UCA-002`.

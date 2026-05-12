@@ -193,17 +193,19 @@ function taskCreatedPayloadWithSubmissionOrigin(runtime, taskId, payload = {}) {
     task = null;
   }
   const metadata = task?.context_packet?.selection_metadata ?? {};
+  const permissionMode = metadata.permission_mode_contract ?? null;
   const submissionOrigin = typeof metadata.submission_origin === "string"
     ? metadata.submission_origin.trim().slice(0, 80)
     : "";
   const voiceSessionId = typeof metadata.voice_session_id === "string"
     ? metadata.voice_session_id.trim().slice(0, 120)
     : "";
-  if (!submissionOrigin && !voiceSessionId) return payload ?? {};
+  if (!submissionOrigin && !voiceSessionId && !permissionMode) return payload ?? {};
   return {
     ...(payload ?? {}),
     ...(submissionOrigin ? { submission_origin: submissionOrigin } : {}),
-    ...(voiceSessionId ? { voice_session_id: voiceSessionId } : {})
+    ...(voiceSessionId ? { voice_session_id: voiceSessionId } : {}),
+    ...(permissionMode ? { permission_mode: permissionMode } : {})
   };
 }
 

@@ -3,6 +3,7 @@ import {
 } from "./shared-ui.mjs";
 import { collectLlmUsageSummary } from "../../shared/llm-usage-summary.mjs";
 import { buildTaskTraceSummary } from "../../shared/task-trace-summary.mjs";
+import { describePermissionModeContract } from "../../shared/permission-mode-model.mjs";
 
 // C17 (lingxy_codex_ready_agent_runtime_upgrade_plan.md §C17, R rule "cost 不准 → 改 token"):
 // Task detail KV grid displays Tokens (in/out/total) as the primary
@@ -17,7 +18,8 @@ export function renderTaskKvGrid({
   retry,
   tokens,
   duration,
-  transport
+  transport,
+  mode
 } = {}) {
   const hasText = (value) => value != null && value !== "" && value !== "—";
   const cells = [];
@@ -28,6 +30,7 @@ export function renderTaskKvGrid({
   if (retry && Number(retry) > 0) cells.push(["Retry", String(retry)]);
   if (hasText(tokens)) cells.push(["Tokens", String(tokens)]);
   if (hasText(duration)) cells.push(["Duration", duration]);
+  if (hasText(mode)) cells.push(["Mode", mode]);
   if (hasText(transport)) cells.push(["Transport", transport]);
   if (cells.length === 0) return "";
   return `
@@ -35,6 +38,10 @@ export function renderTaskKvGrid({
       ${cells.map(([key, value]) => `<div class="kv-cell"><div class="kv-k">${escapeHtml(key)}</div><div class="kv-v">${escapeHtml(String(value))}</div></div>`).join("")}
     </div>
   `;
+}
+
+export function describeTaskMode(task = {}) {
+  return describePermissionModeContract(task);
 }
 
 // C17: derive a human-readable token-usage string from a task record.

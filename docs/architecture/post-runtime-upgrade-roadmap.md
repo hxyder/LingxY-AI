@@ -18,15 +18,15 @@ observability.
 
 ## Current Status Snapshot
 
-Last updated: 2026-05-11.
+Last updated: 2026-05-12.
 
 - Canonical runtime spine: complete.
 - Capability/tool owner cleanup: complete. `src/service/action_tools/tools/index.mjs`
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 100/100 after RT-003
-  context trace budget verification was added.
+- Current green gate: `npm run check:fast` passed 101/101 after RT-004
+  permission mode model verification was added.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
   desktop completeness, context/trace persistence decisions, plugin/MCP trust,
@@ -55,7 +55,7 @@ Last updated: 2026-05-11.
 | Phase | Status | Tracking rule |
 | --- | --- | --- |
 | PX-001 Roadmap/status hygiene | complete | This roadmap is linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
-| RT-001 to RT-004 Runtime persistence/context/mode | in progress | RT-001, RT-002, and RT-003 are complete as direct-write/compact-trace audit phases; RT-004 is next. Each later phase needs a verifier and measured decision record. |
+| RT-001 to RT-004 Runtime persistence/context/mode | complete | RT-001, RT-002, RT-003, and RT-004 are complete with direct-write/compact-trace/mode-contract verifiers. |
 | DX-001 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
@@ -238,6 +238,8 @@ Verification:
 
 ### RT-004: Permission And Mode Model
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Map existing `execution_mode`, approval policy, privacy sandbox policy, and
@@ -257,7 +259,20 @@ Verification:
 
 - `node scripts/verify-privacy-sandbox-policy.mjs`
 - `node scripts/verify-approval-task-bridge.mjs`
-- New mode-model behavior/UI verifier.
+- `node scripts/verify-permission-mode-model.mjs`
+- `npm run verify:desktop-gui-smoke`
+- `npm run check:fast`
+
+Decision:
+
+- See `docs/architecture/permission-mode-model.md`.
+- `src/shared/permission-mode-model.mjs` is the shared contract for
+  execution mode, approval threshold, privacy sandbox summary, and
+  user-visible mode labels.
+- The service persists `permission_mode_contract` on task selection metadata
+  and mirrors it into `task_created` trace payloads.
+- Console task detail and Overlay active-task surfaces render the shared
+  contract instead of inferring approval behavior locally.
 
 ## Phase C: Desktop Experience Completion
 

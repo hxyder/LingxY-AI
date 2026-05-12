@@ -12,6 +12,7 @@ import {
   compactFollowUpResolution,
   resolveFollowUp
 } from "../session/follow-up-resolver.mjs";
+import { buildPermissionModeContract } from "../../../shared/permission-mode-model.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -107,15 +108,39 @@ export function createTaskRecord({
     runtime
   );
   const compactResolution = compactFollowUpResolution(followUpResolution);
+  const effectiveExecutionMode = executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive");
+  const privacyConfig = (() => {
+    try {
+      return runtime?.securityBroker?.getConfig?.() ?? {};
+    } catch {
+      return {};
+    }
+  })();
+  const permissionModeContract = buildPermissionModeContract({
+    executionMode: effectiveExecutionMode,
+    privacyConfig,
+    task: {
+      task_id: taskId,
+      conversation_id: effectiveConversationId,
+      parent_task_id: effectiveParentTaskId
+    }
+  });
   const contextWithFollowUpResolution = compactResolution
     ? {
         ...(withRecentArtifacts ?? {}),
         selection_metadata: {
           ...((withRecentArtifacts ?? {}).selection_metadata ?? {}),
-          follow_up_resolution: compactResolution
+          follow_up_resolution: compactResolution,
+          permission_mode_contract: permissionModeContract
         }
       }
-    : withRecentArtifacts;
+    : {
+        ...(withRecentArtifacts ?? {}),
+        selection_metadata: {
+          ...((withRecentArtifacts ?? {}).selection_metadata ?? {}),
+          permission_mode_contract: permissionModeContract
+        }
+      };
   const enrichedContext = attachCompiledContext(
     contextWithFollowUpResolution,
     {
@@ -170,7 +195,7 @@ export function createTaskRecord({
     task_spec_source: "deterministic",
     task_spec_valid: taskSpecValidation.valid,
     task_spec_errors: taskSpecValidation.errors,
-    execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
+    execution_mode: effectiveExecutionMode,
     context_packet: contextWithRuntimeGraph,
     source_dedupe_key: buildSourceDedupeKey(
       contextWithRuntimeGraph,

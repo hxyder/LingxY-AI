@@ -44,6 +44,8 @@ function listTaskSummaries(runtime, { deleted = false } = {}) {
     progress: task.progress ?? 0,
     intent: task.intent,
     executor: task.executor,
+    execution_mode: task.execution_mode ?? null,
+    permission_mode: task.context_packet?.selection_metadata?.permission_mode_contract ?? null,
     source_type: task.context_packet?.source_type ?? null,
     source_app: task.context_packet?.source_app ?? null,
     capture_mode: task.context_packet?.capture_mode ?? null,

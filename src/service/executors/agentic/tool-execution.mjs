@@ -10,6 +10,10 @@ import {
   isSideEffectTool,
   transcriptHasSuccessfulToolCall
 } from "./tool-surface.mjs";
+import {
+  shouldBlockToolForExecutionMode,
+  shouldPromptForToolApproval
+} from "../../../shared/permission-mode-model.mjs";
 
 export async function executeAgenticToolCall({
   registry,
@@ -83,7 +87,20 @@ export async function executeAgenticToolCall({
   try {
     const { evaluateToolRisk } = await import("../../capabilities/registry/risk_matrix.mjs");
     const risk = evaluateToolRisk(tool, callArgs, toolContext ?? {});
-    if (risk.requires_confirmation && runtime?.pendingApprovals?.create) {
+    if (shouldBlockToolForExecutionMode({ executionMode: task?.execution_mode, risk })) {
+      return {
+        success: false,
+        observation: `Blocked high-risk tool ${tool.id} in unattended mode.`,
+        metadata: {
+          tool_id: tool.id,
+          reason: "high_risk_blocked_in_unattended_safe",
+          risk_level: risk.risk_level ?? tool.risk_level ?? "high"
+        },
+        artifact_paths: [],
+        error: "high_risk_blocked_in_unattended_safe"
+      };
+    }
+    if (shouldPromptForToolApproval({ executionMode: task?.execution_mode, risk }) && runtime?.pendingApprovals?.create) {
       // C18 #2c: pass runtime through so install_skill_from_github
       // approvals can pull the staged SKILL.md preview out of
       // runtime.skillInstallState.inspect(state_token). Other tools

@@ -142,6 +142,7 @@ import {
 } from "./capability-tool-view.mjs";
 import {
   renderTaskKvGrid,
+  describeTaskMode,
   describeTaskTokens,
   renderLlmUsagePanel,
   renderTaskTracePanel,
@@ -6249,6 +6250,7 @@ function renderTaskDetail(detail) {
   // total is known, and null when no usage data is available (so the
   // KV grid omits the cell rather than displaying a misleading 0).
   const tokensDisplay = describeTaskTokens(task);
+  const modeDisplay = describeTaskMode(task);
   const canRetry = !!task.retryable;
   const canCancel = ["queued", "running", "cancelling"].includes(task.status);
   // UCA-125 Phase 2b: action buttons live INSIDE the hero now (v3 style)
@@ -6283,7 +6285,7 @@ function renderTaskDetail(detail) {
         ${task.retry_count ? `<span>Retry ${escapeHtml(task.retry_count)}</span>` : ""}
       ${parentLink}
       </div>
-      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, tokens: tokensDisplay, duration, transport })}
+      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, tokens: tokensDisplay, duration, mode: modeDisplay, transport })}
       ${conversationLinkBlock}
       ${llmUsageBlock}
       ${traceBlock}

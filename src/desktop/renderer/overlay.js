@@ -76,6 +76,7 @@ import {
 import {
   collectLlmUsageSummary
 } from "../../shared/llm-usage-summary.mjs";
+import { describePermissionModeContract } from "../../shared/permission-mode-model.mjs";
 import {
   buildOverlayProjectStore,
   ensureDefaultProjectInStore,
@@ -4354,6 +4355,7 @@ function renderTaskListDock() {
     const status = task.status ?? "unknown";
     const active = taskIsActive(status);
     const statusClass = status === "success" ? "ready" : status === "failed" ? "danger" : "warning";
+    const modeLabel = describePermissionModeContract(task);
     const source = task.source_app === "uca.scheduler" || task.capture_mode === "scheduler"
       ? "定时任务"
       : task.source_app === "uca.email" || task.capture_mode === "email_digest"
@@ -4367,6 +4369,7 @@ function renderTaskListDock() {
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
           <div class="task-progress-ring ${active ? "is-running" : ""}">${active ? "" : `${progress}%`}</div>
+          <span class="chip" title="Execution mode" style="font-size:10px;">${escapeHtml(modeLabel)}</span>
           <span class="chip ${statusClass}" style="font-size:10px;">${escapeHtml(status)}</span>
           <button class="ghost" data-task-open="${escapeHtml(task.task_id)}" style="font-size:10px;padding:2px 6px;">查看</button>
         </div>

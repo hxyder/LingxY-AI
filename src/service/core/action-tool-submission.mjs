@@ -18,6 +18,7 @@ import {
   artifactRegistrationOptionsForPath,
   rememberArtifactMetadataFromToolEvent
 } from "./artifact-action-contract.mjs";
+import { shouldPromptForToolApproval } from "../../shared/permission-mode-model.mjs";
 
 function persistArtifacts(runtime, taskId, artifactPaths, { metadataByPath = null, payload = null } = {}) {
   if (!artifactPaths?.length) return;
@@ -221,7 +222,7 @@ export async function submitActionToolTask({
         const registry = runtime.actionToolRegistry;
         const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
         const risk = registry.evaluate(fastPathTool, fastPathArgs ?? {}, toolContext);
-        if (risk.requires_confirmation && task.execution_mode !== "unattended_safe") {
+        if (shouldPromptForToolApproval({ executionMode: task.execution_mode, risk })) {
           const approval = createFastPathApproval({
             runtime,
             task,

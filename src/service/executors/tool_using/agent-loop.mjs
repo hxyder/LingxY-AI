@@ -130,6 +130,7 @@ import {
 } from "./side-effect-gate.mjs";
 import { planScheduledFireRegistryGuard } from "./scheduled-fire-gate.mjs";
 import { planSaturationHint } from "./saturation-gate.mjs";
+import { shouldPromptForToolApproval } from "../../../shared/permission-mode-model.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -2314,7 +2315,7 @@ async function _runToolAgentLoopCore({
         }
 
         decision.args = interactiveDecision.args;
-      } else if (task.execution_mode !== "unattended_safe") {
+      } else if (shouldPromptForToolApproval({ executionMode: task.execution_mode, risk })) {
         const approval = createPendingToolApproval({
           runtime,
           task,
