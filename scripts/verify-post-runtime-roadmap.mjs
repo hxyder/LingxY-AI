@@ -121,6 +121,13 @@ for (const required of [
   "planner_selected",
   "node scripts/verify-sub-agent-runtime-contract.mjs",
   "node --test tests/behavior/sub-agent-runtime-contract.test.mjs",
+  "SA-002 Sub-agent UI/evals",
+  "src/shared/sub-agent-timeline-summary.mjs",
+  "src/service/core/evals/sub-agent-delegation-corpus.mjs",
+  "sub_agent_report",
+  "renderSubAgentTimelinePanel",
+  "node scripts/verify-sub-agent-ui-evals.mjs",
+  "node --test tests/behavior/sub-agent-timeline-evals.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

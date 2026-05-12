@@ -4,6 +4,7 @@ import {
 import { collectLlmUsageSummary } from "../../shared/llm-usage-summary.mjs";
 import { buildTaskTraceSummary } from "../../shared/task-trace-summary.mjs";
 import { describePermissionModeContract } from "../../shared/permission-mode-model.mjs";
+import { buildSubAgentTimelineSummary } from "../../shared/sub-agent-timeline-summary.mjs";
 
 // C17 (lingxy_codex_ready_agent_runtime_upgrade_plan.md §C17, R rule "cost 不准 → 改 token"):
 // Task detail KV grid displays Tokens (in/out/total) as the primary
@@ -452,6 +453,54 @@ export function renderTaskTracePanel(events = []) {
           `).join("")}
         </div>
       ` : ""}
+    </section>
+  `;
+}
+
+export function renderSubAgentTimelinePanel({
+  task = {},
+  children = [],
+  events = []
+} = {}) {
+  const summary = buildSubAgentTimelineSummary({
+    parentTask: task,
+    childTasks: children,
+    events
+  });
+  if (!summary.has_sub_agents) return "";
+  return `
+    <section class="sub-agent-timeline-panel" aria-label="Sub-agent runs">
+      <div class="task-trace-head">
+        <div>
+          <div class="task-trace-title">Sub-agents<span class="zh">子任务</span></div>
+          <div class="muted">${summary.totals.success}/${summary.totals.total} completed${summary.totals.violations ? ` · ${summary.totals.violations} violations` : ""}</div>
+        </div>
+        <div class="llm-usage-total">${summary.totals.token_total ? `${fmtNumber(summary.totals.token_total)} tokens` : "bounded"}</div>
+      </div>
+      <div class="sub-agent-run-list">
+        ${summary.items.slice(0, 12).map((item) => {
+          const status = item.status || "unknown";
+          const statusClass = status === "success" || status === "partial_success" ? "pill pill-ok"
+            : status === "failed" || status === "cancelled" ? "pill pill-err"
+              : status === "running" || status === "queued" || status === "cancelling" ? "pill pill-run"
+                : "pill pill-neutral";
+          return `
+            <div class="sub-agent-run-row" data-sub-agent-child-task-id="${escapeHtml(item.child_task_id ?? "")}">
+              <span class="st-num">${escapeHtml(String((item.child_index ?? 0) + 1))}</span>
+              <span class="sub-agent-run-main">
+                <span class="sub-agent-run-title">${escapeHtml(item.label)}</span>
+                ${item.summary ? `<span class="sub-agent-run-summary">${escapeHtml(item.summary)}</span>` : ""}
+                <span class="sub-agent-run-meta">
+                  ${item.assigned_scope_id ? `scope ${escapeHtml(item.assigned_scope_id)} · ` : ""}
+                  ${item.tool_call_count} tools${item.duration_ms ? ` · ${escapeHtml(fmtMs(item.duration_ms))}` : ""}
+                </span>
+              </span>
+              <span class="${statusClass}">${escapeHtml(status)}</span>
+              ${item.violation_count ? `<span class="trace-attention-pill">${escapeHtml(String(item.violation_count))} issues</span>` : ""}
+            </div>
+          `;
+        }).join("")}
+      </div>
     </section>
   `;
 }

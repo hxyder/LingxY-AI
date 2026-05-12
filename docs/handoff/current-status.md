@@ -3248,3 +3248,45 @@ Verification run by Codex:
 Decision:
 - SA-001 service contract is ready to commit.
 - Next valid work after SA-001 commit is SA-002 sub-agent UI/evals.
+
+## Codex Review: SA-002 Sub-Agent UI, Trace, And Eval Coverage
+
+Date: 2026-05-12
+
+Scope:
+- Added shared child-run timeline summary:
+  `src/shared/sub-agent-timeline-summary.mjs`.
+- Added console task detail panel:
+  `renderSubAgentTimelinePanel` in
+  `src/desktop/renderer/console-task-detail.mjs`.
+- Added child task summaries to the existing task detail response in
+  `src/service/core/http-routes/task-routes.mjs`; no new route was added.
+- Added delegation eval corpus and deterministic evaluator:
+  `src/service/core/evals/sub-agent-delegation-corpus.mjs`.
+- Added `scripts/verify-sub-agent-ui-evals.mjs` and included it in full and
+  fast check manifests.
+- No automatic sub-agent delegation, new IPC channels, new HTTP routes, storage
+  schema changes, tool id changes, provider changes, or model routing changes.
+
+Verification run by Codex:
+- `node --check` on changed SA-002 modules/tests/verifier: passed.
+- `node --test tests/behavior/sub-agent-timeline-evals.test.mjs`: passed, 5/5.
+- `node scripts/verify-sub-agent-ui-evals.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-task-trace-timeline.mjs`: passed.
+- `node scripts/verify-desktop-renderer.mjs`: passed.
+- `node scripts/verify-console-rendered-workspace.mjs`: passed.
+- `node scripts/verify-ui-extras.mjs`: passed.
+- `git diff --check`: passed.
+- `npm run check:fast`: passed, 109/109 commands including 1013/1013 behavior
+  tests.
+- `npm run verify:desktop-gui-smoke`: first run failed at
+  `overlay_task_list_keyboard_open_failed`; immediate rerun passed 49/49. The
+  failed check is in overlay task-list keyboard smoke, while SA-002 changed
+  console task detail/sub-agent timeline surfaces and did not touch overlay.
+
+Decision:
+- SA-002 is ready to commit.
+- Next valid work after SA-002 commit is MM-001 model-role binding at real
+  call sites, unless a further roadmap audit changes the order.

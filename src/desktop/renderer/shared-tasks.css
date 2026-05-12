@@ -874,6 +874,59 @@
   white-space: nowrap;
 }
 
+.sub-agent-timeline-panel {
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.sub-agent-run-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sub-agent-run-row {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.sub-agent-run-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sub-agent-run-title,
+.sub-agent-run-summary,
+.sub-agent-run-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sub-agent-run-title {
+  color: var(--text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+
+.sub-agent-run-summary,
+.sub-agent-run-meta {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
 /* UCA-125 Phase 2b: hero action bar — Retry + Cancel on the left,
    Delete pushed to the right via flex spacer so the destructive action
    is visually quarantined from the primary recovery action. */

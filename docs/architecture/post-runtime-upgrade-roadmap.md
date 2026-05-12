@@ -25,8 +25,10 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 108/108 after SA-001
-  sub-agent runtime contract was added, including 1008/1008 behavior tests.
+- Current green gate: `npm run check:fast` passed 109/109 after SA-002
+  sub-agent timeline/eval coverage was added, including 1013/1013 behavior
+  tests. `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after one
+  non-reproduced overlay keyboard-open smoke failure.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
 - Next execution board: this document.
@@ -38,7 +40,7 @@ Last updated: 2026-05-12.
 
 | Area | Current program evidence | Current state |
 | --- | --- | --- |
-| True sub-agent runtime | `runtime-graph-*` verifiers exist; `docs/architecture/sub-agent-runtime-contract.md` now defines the service contract. | SA-001 service contract is complete; child timeline UI, eval corpus, and automatic planner delegation remain deferred to SA-002 and later work. |
+| True sub-agent runtime | `runtime-graph-*` verifiers exist; `docs/architecture/sub-agent-runtime-contract.md` defines the service contract; `src/shared/sub-agent-timeline-summary.mjs` defines the UI trace summary. | SA-001 and SA-002 are complete for contracts, timeline visibility, and eval corpus; automatic planner delegation remains deferred. |
 | Multi-model execution | `verify-model-role-routing.mjs` exists; executor call sites still mostly use resolved provider/model directly. | Role-routing summary exists; executor call sites do not yet switch per role. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
 | Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | Real GUI smoke is strong; DX-001 owns preview/popup/window owner state and DX-002 locks extracted IPC boundaries. Real mic/KWS, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
@@ -68,7 +70,7 @@ Last updated: 2026-05-12.
 | GX-003 Generic graph resume | complete | Generic agent tool approvals now resume on the original task through same-task graph resume; connector workflow resume remains intact. |
 | RV-001 Optional git checkpoint mode | complete | Opt-in git checkpoint metadata is implemented under `src/service/capabilities/tools/git-checkpoint-mode.mjs`; default file reversibility remains unchanged. |
 | SA-001 Sub-agent runtime contract | complete | Service-owned child-run contract now covers feature-flag gating, planner-selected delegation, context isolation, allowed tools, budget, cancellation, and structured child reports. |
-| SA-002 Sub-agent UI/evals | pending | Requires child timeline evidence, delegation eval corpus, and per-child token/timing/tool metrics. |
+| SA-002 Sub-agent UI/evals | complete | Parent task detail now renders child runs from task detail children and `sub_agent_report` events; delegation eval corpus guards when to delegate and when not to. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
@@ -606,21 +608,33 @@ Verification:
 
 ### SA-002: Sub-Agent UI, Trace, And Eval Coverage
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Show child runs under the parent task timeline.
 - Add evals for when delegation should and should not happen.
 - Record per-child token/timing/tool metrics.
+- Implemented shared summary in `src/shared/sub-agent-timeline-summary.mjs`.
+- Console task detail renders `renderSubAgentTimelinePanel` from task detail
+  `children` plus `sub_agent_report` events.
+- Added `src/service/core/evals/sub-agent-delegation-corpus.mjs` to cover
+  delegation-positive and delegation-negative cases.
 
 Acceptance:
 
 - Users can inspect what each child agent did and why.
 - Delegation does not hide failures or inflate success claims.
+- The UI panel does not dump raw event JSON.
+- The eval corpus catches wrong delegation, unsafe tool surfaces, and forbidden
+  context exposure.
 
 Verification:
 
 - New sub-agent eval corpus.
 - `node scripts/verify-task-trace-timeline.mjs`
+- `node scripts/verify-sub-agent-ui-evals.mjs`
+- `node --test tests/behavior/sub-agent-timeline-evals.test.mjs`
 
 ## Phase F: Multi-Model Execution
 

@@ -156,6 +156,7 @@ import {
   describeTaskTokens,
   renderLlmUsagePanel,
   renderTaskTracePanel,
+  renderSubAgentTimelinePanel,
   renderFileReversibilityPanel,
   renderContextDebugPanel
 } from "./console-task-detail.mjs";
@@ -6297,6 +6298,11 @@ function renderTaskDetail(detail) {
   const evidenceSummaryBlock = renderTaskEvidenceSummary(detail);
   const llmUsageBlock = renderLlmUsagePanel(detail.events ?? []);
   const traceBlock = renderTaskTracePanel(detail.events ?? []);
+  const subAgentTimelineBlock = renderSubAgentTimelinePanel({
+    task,
+    children: detail.children ?? [],
+    events: detail.events ?? []
+  });
   const reversibilityBlock = renderFileReversibilityPanel(detail.events ?? []);
   const conversationLinkBlock = renderTaskConversationLink(task);
   // UCA-122: v3 detail-hero + KV grid. Hero shows title + status pill +
@@ -6357,6 +6363,7 @@ function renderTaskDetail(detail) {
       ${conversationLinkBlock}
       ${llmUsageBlock}
       ${traceBlock}
+      ${subAgentTimelineBlock}
       ${reversibilityBlock}
       ${heroActions}
     </div>

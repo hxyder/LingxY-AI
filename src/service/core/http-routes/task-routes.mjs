@@ -155,9 +155,31 @@ function summarizeTask(runtime, taskId) {
     return null;
   }
   const events = runtime.store.getTaskEvents(taskId);
+  const children = Array.isArray(task.child_task_ids)
+    ? task.child_task_ids
+      .map((childId) => runtime.store.getTask(childId))
+      .filter(Boolean)
+      .map((child) => ({
+        task_id: child.task_id,
+        parent_task_id: child.parent_task_id ?? null,
+        child_index: child.child_index ?? null,
+        status: child.status,
+        sub_status: child.sub_status,
+        progress: child.progress ?? 0,
+        user_command: child.user_command,
+        intent: child.intent,
+        executor: child.executor,
+        result_summary: child.result_summary ?? null,
+        failure_user_message: child.failure_user_message ?? null,
+        usage_summary: child.usage_summary ?? null,
+        elapsed_ms: child.elapsed_ms ?? null,
+        updated_at: child.updated_at ?? null
+      }))
+    : [];
   return {
     task,
     events,
+    children,
     artifacts: mergeArtifactsForTask(taskId, runtime.store.getArtifactsForTask(taskId), events)
   };
 }
