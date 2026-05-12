@@ -93,6 +93,11 @@ for (const required of [
   "node scripts/verify-preview-screenshot-diff.mjs",
   "first-run provider recovery",
   "generate_document preview screenshot-diff",
+  "VX-001: Real Audio Fixture And KWS Corpus",
+  "Status: complete as of 2026-05-12.",
+  "node scripts/verify-real-audio-kws-fixtures.mjs",
+  "checked-in WAV corpus",
+  "LINGXY_REAL_AUDIO_FIXTURE_DIR",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 105/105 after DX-005
-  first-run and preview screenshot-diff coverage was added.
+- Current green gate: `npm run check:fast` passed 106/106 after VX-001
+  real audio/KWS fixture corpus coverage was added.
   `npm run verify:desktop-gui-smoke`
   passed 49/49.
 - Next execution board: this document.
@@ -63,7 +63,8 @@ Last updated: 2026-05-12.
 | DX-003 Renderer runtime client consolidation | complete | Console and Overlay runtime mutations are routed through shared renderer clients and locked by `verify-renderer-runtime-client-consolidation.mjs`. |
 | DX-004 Keyboard/a11y GUI pass | complete | Real Electron smoke now drives Overlay task-list keyboard navigation, Console Settings/Schedules keyboard paths, and approval popup keyboard reject. |
 | DX-005 Desktop first-run/i18n/preview fidelity | complete | First-run provider recovery and generate_document preview screenshot-diff are covered by real Electron GUI smoke and verifier contracts. |
-| VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
+| VX-001 Voice fixture corpus | complete | Checked-in WAV corpus now backs transcription and KWS metrics; optional private fixture directory is documented for larger local samples. |
+| VX-002 Hardware permission smoke | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
 | PM-001 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve trust preview, disabled defaults, stale-reference cleanup, and auditability. |
@@ -447,23 +448,31 @@ Verification:
 
 ### VX-001: Real Audio Fixture And KWS Corpus
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Add checked-in small audio fixtures for transcription and KWS, or a documented
   optional private fixture path for larger samples.
 - Measure WER, empty-rate, final-chunk rate, wake false-positive, and wake
   false-negative rates.
+- Completed slice adds a checked-in WAV corpus under `tests/fixtures/audio/`,
+  locks hashes and PCM metadata through
+  `src/service/audio/audio-fixture-corpus.mjs`, and allows larger local fixture
+  directories through `LINGXY_REAL_AUDIO_FIXTURE_DIR`.
 
 Acceptance:
 
 - Voice quality is proven by real audio samples, not only synthetic text and
   MediaRecorder renderer paths.
 - KWS near-misses and custom wake profiles remain guarded.
+- Default CI remains deterministic and does not require microphone hardware,
+  local Whisper, or Sherpa model downloads.
 
 Verification:
 
 - `node scripts/verify-voice-fixture-testbed.mjs`
-- New `verify-real-audio-kws-fixtures`
+- `node scripts/verify-real-audio-kws-fixtures.mjs`
 
 ### VX-002: Optional Hardware Permission Smoke
 

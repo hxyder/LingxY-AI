@@ -309,6 +309,39 @@ Verification:
 Next valid work:
 - Commit DX-005 and move to VX-001 real audio/KWS fixtures.
 
+## Codex Review: VX-001 Real Audio And KWS Fixture Corpus
+
+Date: 2026-05-12
+
+Status:
+- VX-001 is complete.
+
+Scope:
+- Added checked-in PCM WAV fixtures under `tests/fixtures/audio/` for
+  transcription and wake-word coverage.
+- Added `tests/fixtures/audio/manifest.json` with SHA-256 locks, locales,
+  expected transcript labels, wake expectations, near-miss cases, and the
+  optional `LINGXY_REAL_AUDIO_FIXTURE_DIR` private corpus path.
+- Added `src/service/audio/audio-fixture-corpus.mjs` to validate RIFF/WAVE PCM
+  metadata, duration, RMS/peak, hashes, transcription WER, empty-rate, and wake
+  false-positive/false-negative rates.
+- Added `scripts/verify-real-audio-kws-fixtures.mjs`, wired it into
+  `package.json`, `scripts/check-manifest.mjs`, and the post-runtime roadmap
+  verifier.
+
+Verification:
+- `node --check src/service/audio/audio-fixture-corpus.mjs`: passed.
+- `node --check scripts/verify-real-audio-kws-fixtures.mjs`: passed.
+- `node scripts/verify-voice-fixture-testbed.mjs`: passed.
+- `npm run verify:real-audio-kws-fixtures`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `npm run check:fast`: passed, 106/106; behavior tests passed, 998/998.
+
+Next valid work:
+- Commit VX-001 and move to VX-002 optional desktop audio hardware permission
+  smoke.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

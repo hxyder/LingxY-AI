@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "description": "Small checked-in WAV corpus for deterministic voice transcription and wake-word fixture gates. These files were generated with local Windows System.Speech voices and are intentionally small enough for CI.",
+  "optionalPrivateFixtureEnv": "LINGXY_REAL_AUDIO_FIXTURE_DIR",
+  "minimumDurationMs": 350,
+  "minimumRms": 0.001,
+  "transcriptionFixtures": [
+    {
+      "id": "voice_en_short_command",
+      "audio": "speech/voice_en_short_command.wav",
+      "expected": "open the latest product notes",
+      "output_locale": "en-US",
+      "sha256": "c65f233f82fecb53b90d3a26ef9a7614b045ea607ee77cf7897e3807ae1498cd"
+    },
+    {
+      "id": "note_zh_cn_final_chunk",
+      "audio": "speech/note_zh_cn_final_chunk.wav",
+      "expected": "请帮我总结这段会议，并保留 English action items。",
+      "output_locale": "zh-CN",
+      "sha256": "837d06c31fbc294050aaee5a304fad22eafa3f1975eecb894afa9aa01df47689"
+    },
+    {
+      "id": "note_mixed_language_web_context",
+      "audio": "speech/note_mixed_language_web_context.wav",
+      "expected": "分析这个网页然后生成 Markdown 笔记",
+      "output_locale": "zh-CN",
+      "sha256": "5fd2194bc17f04d600f6a944277b9038261e7369327ebbaf58c23529eea765fb"
+    }
+  ],
+  "wakeFixtures": [
+    {
+      "id": "default_latin_exact",
+      "audio": "wake/default_latin_exact.wav",
+      "transcript": "linxi",
+      "expected_match": true,
+      "expected_kind": "voice",
+      "sha256": "e28b57f7a0bbabb6f1e46023a4d0cc09bcb83ae62b4ee872a6227721d3e1bd4c"
+    },
+    {
+      "id": "default_latin_stt_variant",
+      "audio": "wake/default_latin_stt_variant.wav",
+      "transcript": "ling xi",
+      "expected_match": true,
+      "expected_kind": "voice",
+      "sha256": "576ef6ff82bd4134f8d946132de0c1cca5df4ac82624bbcb0d211a9eaf0194af"
+    },
+    {
+      "id": "default_zh_cn_variant",
+      "audio": "wake/default_zh_cn_variant.wav",
+      "transcript": "灵犀",
+      "expected_match": true,
+      "expected_kind": "voice",
+      "sha256": "6ca7a57a9c54eaebc57a9b6f50e87c001594bb718b6bdc9dc9369077994624da"
+    },
+    {
+      "id": "default_note_intent",
+      "audio": "wake/default_note_intent.wav",
+      "transcript": "灵犀 开始录音",
+      "expected_match": true,
+      "expected_kind": "note",
+      "sha256": "56881333881bfccad4a786f87dda7a30114cfce5eda229809493059508d7702c"
+    },
+    {
+      "id": "near_miss_generic_recording_command",
+      "audio": "wake/near_miss_generic_recording_command.wav",
+      "transcript": "开始录音",
+      "expected_match": false,
+      "sha256": "26f1fb73110b36130c5e5a127fc5de40a3424a5c01049f01769e9a3f23f699bd"
+    },
+    {
+      "id": "near_miss_browser_command",
+      "audio": "wake/near_miss_browser_command.wav",
+      "transcript": "打开浏览器然后搜索产品文档",
+      "expected_match": false,
+      "sha256": "e4451bc32dff4f759e227541357f34d7ee2d54ed4c6810f060a4323ec2be232c"
+    },
+    {
+      "id": "custom_profile_exact",
+      "audio": "wake/custom_profile_exact.wav",
+      "profile": {
+        "displayName": "小灵",
+        "phrases": ["小灵"],
+        "includeDefault": false
+      },
+      "transcript": "小灵 帮我打开日历",
+      "expected_match": true,
+      "expected_kind": "voice",
+      "sha256": "7cdc8de1d69be8611ade78ce10dbb0f2d409257c8617d726cd61c8799d0b85c4"
+    },
+    {
+      "id": "custom_profile_excludes_default",
+      "audio": "wake/default_latin_exact.wav",
+      "profile": {
+        "displayName": "小灵",
+        "phrases": ["小灵"],
+        "includeDefault": false
+      },
+      "transcript": "linxi",
+      "expected_match": false,
+      "sha256": "e28b57f7a0bbabb6f1e46023a4d0cc09bcb83ae62b4ee872a6227721d3e1bd4c"
+    }
+  ]
+}
