@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 102/102 after DX-001
-  WindowSession verification was added; `npm run verify:desktop-gui-smoke`
+- Current green gate: `npm run check:fast` passed 103/103 after DX-002
+  desktop IPC boundary verification was added; `npm run verify:desktop-gui-smoke`
   passed 44/44.
 - Next execution board: this document.
 - Primary product gaps now shift from code ownership cleanup to user-visible
@@ -40,7 +40,7 @@ Last updated: 2026-05-12.
 | True sub-agent runtime | `runtime-graph-*` verifiers exist; no child-run contract or UI trace exists. | Not implemented; deferred until session/context/evals stabilized. |
 | Multi-model execution | `verify-model-role-routing.mjs` exists; executor call sites still mostly use resolved provider/model directly. | Role-routing summary exists; executor call sites do not yet switch per role. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | Approval resume metadata and connector-workflow resume exist; generic agent/tool same-run resume remains. |
-| Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`. | Real GUI smoke is strong and DX-001 now owns preview/popup/window owner state; real mic/KWS, keyboard-only settings/approval, first-run GUI, richer preview fidelity, and IPC boundary cleanup remain. |
+| Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | Real GUI smoke is strong; DX-001 owns preview/popup/window owner state and DX-002 locks extracted IPC boundaries. Real mic/KWS, keyboard-only settings/approval, first-run GUI, and richer preview fidelity remain. |
 | Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers. | Local trace summary exists; trend storage, richer span taxonomy, optional LLM judge, and OTEL/export remain. |
 | Memory governance next pass | `verify-memory-governance.mjs`, `verify-user-memory-profile.mjs`, context compiler tests. | Editable memory exists; auto-learning proposals, review history, undo, and richer project scoping remain. |
 | SQLite write queue / DB worker | `lingxy_electron_js_codex_execution_plan.md` PR-04/PR-05 and final acceptance checklist | Not proven as a unified contract; session/context/artifact writes should be audited and queued by priority before further broad state growth. |
@@ -58,7 +58,8 @@ Last updated: 2026-05-12.
 | PX-001 Roadmap/status hygiene | complete | This roadmap is linked from architecture docs and guarded by `verify-post-runtime-roadmap.mjs`. |
 | RT-001 to RT-004 Runtime persistence/context/mode | complete | RT-001, RT-002, RT-003, and RT-004 are complete with direct-write/compact-trace/mode-contract verifiers. |
 | DX-001 Desktop WindowSession | complete | Window owner state, preview stale-delta rejection, popup owner tracking, and GUI smoke coverage are locked by `verify-window-session-state-machine.mjs`. |
-| DX-002 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
+| DX-002 Desktop IPC boundary | complete | `electron-main.mjs` is locked as lifecycle/composition only; 112 IPC registrations live under `src/desktop/main/ipc/` and are guarded against duplicates and large handlers. |
+| DX-003 to DX-005 Desktop experience completion | pending | Requires real GUI or focused renderer/service-client verification, not only static tests. |
 | VX-001 to VX-002 Voice/hardware | pending | CI-safe by default; hardware checks opt-in only. |
 | GX/RV/SA Graph resume/reversibility/sub-agents | pending | Requires graph checkpoints, cancellation, budget, context isolation, and timeline evidence. |
 | MM-001 to MM-002 Multi-model execution | pending | Must be feature-flagged and measured against single-model baselines. |
@@ -319,6 +320,8 @@ Decision:
 
 ### DX-002: Electron Main IPC Boundary Split
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Split `src/desktop/tray/electron-main.mjs` IPC groups into small modules under
@@ -337,7 +340,19 @@ Verification:
 
 - `npm run verify:main-process-blocking`
 - `node scripts/verify-desktop-shell.mjs`
-- New `verify-desktop-ipc-boundaries`
+- `node scripts/verify-desktop-ipc-boundaries.mjs`
+
+Decision:
+
+- See `docs/architecture/desktop-ipc-boundaries.md`.
+- Current code already has the physical IPC split: `electron-main.mjs` imports
+  and composes `src/desktop/main/ipc/register-*.mjs` modules and has no inline
+  `ipcMain.handle/on` registrations.
+- DX-002 adds the missing framework lock: no inline handler regression in
+  `electron-main.mjs`, no duplicate channel registration, no direct
+  `src/service/**` imports from IPC modules, and no oversized handler bodies.
+- No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds,
+  or provider ids changed in this phase.
 
 ### DX-003: Renderer Runtime Client Consolidation
 

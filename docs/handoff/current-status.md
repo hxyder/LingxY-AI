@@ -172,6 +172,43 @@ Next valid work:
   time into `src/desktop/main/ipc/` with targeted static verifier coverage and
   a full GUI smoke gate before completion.
 
+## Codex Update: DX-002 Electron Main IPC Boundary
+
+Date: 2026-05-12
+
+Scope:
+- Added `docs/architecture/desktop-ipc-boundaries.md` as the DX-002 IPC
+  composition decision record.
+- Added `scripts/verify-desktop-ipc-boundaries.mjs` and wired it into full and
+  fast check manifests.
+- Verified that `src/desktop/tray/electron-main.mjs` has no inline
+  `ipcMain.handle/on` registrations and only composes extracted registration
+  modules.
+- Locked 112 IPC registrations under `src/desktop/main/ipc/register-*.mjs`
+  against duplicate channels, oversized handler bodies, and direct
+  `src/service/**` imports.
+
+Decision:
+- DX-002 is complete as a boundary-lock phase because the physical IPC split
+  already exists in the current code.
+- No IPC channel name, HTTP route, storage schema, tool id, artifact kind,
+  provider id, or runtime behavior changed.
+
+Verification:
+- `node scripts/verify-desktop-ipc-boundaries.mjs`: passed.
+- `node scripts/verify-ipc-contract-inventory.mjs`: passed.
+- `node scripts/verify-main-process-blocking.mjs`: passed.
+- `node scripts/verify-desktop-shell.mjs`: passed.
+- `npm run check:fast`: passed, 103/103; behavior tests passed, 993/993.
+- `npm run verify:desktop-gui-smoke`: passed, 44/44.
+
+Next valid work:
+- Start DX-003 Renderer Runtime Client Consolidation.
+- First inventory renderer mutation/request call sites by Console, Overlay,
+  Preview, and shared panel surfaces; then extract typed clients without a
+  frontend framework rewrite and prove no direct service/runtime imports or
+  duplicated mutation helpers remain.
+
 ## Completed Phases
 
 | Phase | Module | Lines |

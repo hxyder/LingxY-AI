@@ -77,7 +77,11 @@ for (const required of [
   "docs/architecture/window-session-state-machine.md",
   "node scripts/verify-window-session-state-machine.mjs",
   "Window owner state, preview stale-delta rejection, popup owner tracking",
-  "This phase intentionally does not split more IPC handlers"
+  "This phase intentionally does not split more IPC handlers",
+  "docs/architecture/desktop-ipc-boundaries.md",
+  "node scripts/verify-desktop-ipc-boundaries.mjs",
+  "`electron-main.mjs` is locked as lifecycle/composition only",
+  "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);
 }
