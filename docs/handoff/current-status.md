@@ -4553,3 +4553,56 @@ Next valid work:
   CAPM-002 now cover the capability management foundation and the remaining
   product gaps move into opt-in real provider/OAuth/sandbox/model/context
   evidence.
+
+## Codex Update: FA-001 Strict Generated Script Acceptance
+
+Date: 2026-05-12
+
+Scope:
+- Fixed a live API regression where a task could claim a generated `.mjs`
+  script and execution result without any tool call or without matching actual
+  disk content.
+- `write_file` now returns actual written content evidence: SHA-256, bounded
+  UTF-8 preview, preview truncation metadata, and binary-preview gating.
+- Explicit script/code file paths such as `.mjs`, `.js`, `.py`, and `.ps1` now
+  enter the artifact-required task contract so prose-only completion cannot
+  satisfy a real-file request.
+- Extended `real-llm:followup-artifact` with
+  `generated_script_file_content_consistency`; the live harness reads real
+  candidate paths from artifacts/events/final text and verifies actual `.mjs`
+  content before accepting execution claims.
+
+Live API result:
+- First strict run correctly failed
+  `.tmp/followup-artifact-acceptance/report-2026-05-12-21-43-38.json` because
+  the task returned `LXSCRIPT-*` with no `write_file` or `run_script` calls.
+- After the framework fix, live run passed:
+  `.tmp/followup-artifact-acceptance/report-2026-05-12-21-46-07.json`.
+- Token trace from the passing live run: input 130278, output 3588, total
+  133866, cache_hit 1024, cache_miss 129254, `llm_usage_call_count` 17.
+  Price is intentionally not displayed.
+
+Verification run by Codex:
+- `node --test tests/behavior/file-reversibility-checkpoint.test.mjs`: passed,
+  10/10.
+- `node --test tests/behavior/task-spec-side-effect-gate.test.mjs`: passed,
+  6/6.
+- `node scripts/verify-write-edit-run-tools-contract.mjs`: passed.
+- `node scripts/verify-followup-artifact-acceptance-harness.mjs`: passed.
+- `node scripts/verify-action-tools.mjs`: passed.
+- `node scripts/verify-success-contract-groups.mjs`: passed, 36/36.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/real-llm-test/run-followup-artifact-acceptance.mjs --live
+  --port 4350 --task-timeout 300000`: passed.
+- `npm run check:fast`: passed, 137/137 commands including 1097/1097 behavior
+  tests.
+- `npm run verify:desktop-gui-smoke`: first attempt hit the known
+  `overlay_task_list_keyboard_open_failed` focus timing issue; immediate rerun
+  passed 49/49 (`startup=462ms`, `first_window=462ms`, `interaction=5260ms`,
+  `total=5719ms`).
+
+Next valid work:
+- Continue the live acceptance board by adding stricter generated-file
+  follow-up variants for non-script artifacts: generated markdown/json/csv
+  content inspection, follow-up edits in the same conversation, and topic
+  switches after artifact-heavy turns.

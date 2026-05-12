@@ -19,6 +19,9 @@ import {
   writePdfFromHtmlArtifact
 } from "./document-artifact-helpers.mjs";
 
+const WRITE_FILE_CONTENT_PREVIEW_BYTES = 1600;
+const WRITE_FILE_OBSERVATION_PREVIEW_CHARS = 900;
+
 async function resolveEditableTargetForEdit(ctx, targetArg) {
   const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
   if (!path.isAbsolute(targetArg)) {
@@ -62,6 +65,53 @@ function decodeWriteFileContent({ content, text, encoding }) {
   throw new Error(`unsupported encoding: ${encoding}`);
 }
 
+function isLikelyUtf8Text(buffer) {
+  if (!buffer?.length) return true;
+  if (buffer.includes(0)) return false;
+  const decoded = buffer.toString("utf8");
+  const replacementCount = (decoded.match(/\uFFFD/gu) ?? []).length;
+  return replacementCount <= Math.max(1, Math.floor(decoded.length * 0.01));
+}
+
+function buildWriteFileContentEvidence(buffer, targetPath) {
+  const contentSha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+  const previewAvailable = isLikelyUtf8Text(buffer);
+  if (!previewAvailable) {
+    return {
+      content_sha256: contentSha256,
+      content_preview_available: false,
+      content_preview: "",
+      content_preview_bytes: 0,
+      content_preview_truncated: false,
+      content_preview_encoding: "binary"
+    };
+  }
+
+  const previewBytes = buffer.subarray(0, WRITE_FILE_CONTENT_PREVIEW_BYTES);
+  const preview = previewBytes.toString("utf8").replace(/\r\n/g, "\n");
+  return {
+    content_sha256: contentSha256,
+    content_preview_available: true,
+    content_preview: preview,
+    content_preview_bytes: previewBytes.length,
+    content_preview_truncated: buffer.length > previewBytes.length,
+    content_preview_encoding: "utf8",
+    content_extension: path.extname(targetPath).toLowerCase()
+  };
+}
+
+function formatWriteFileObservation({ byteLength, relativePath, evidence }) {
+  const base = `Wrote ${byteLength} bytes to ${relativePath}`;
+  if (!evidence.content_preview_available) {
+    return `${base}\nContent sha256: ${evidence.content_sha256}\nContent preview: unavailable for binary content.`;
+  }
+  const preview = evidence.content_preview.length > WRITE_FILE_OBSERVATION_PREVIEW_CHARS
+    ? `${evidence.content_preview.slice(0, WRITE_FILE_OBSERVATION_PREVIEW_CHARS)}\n...`
+    : evidence.content_preview;
+  const suffix = evidence.content_preview_truncated ? " (truncated)" : "";
+  return `${base}\nContent sha256: ${evidence.content_sha256}\nContent preview${suffix}:\n${preview}`;
+}
+
 export const WRITE_FILE_TOOL = {
   id: "write_file",
   name: "Write File",
@@ -97,13 +147,20 @@ export const WRITE_FILE_TOOL = {
         operation: args.overwrite ? "overwrite_file" : "create_file"
       });
       await writeFile(absTarget, buffer);
+      const contentEvidence = buildWriteFileContentEvidence(buffer, absTarget);
+      const relativeTarget = path.relative(outputDir, absTarget) || path.basename(absTarget);
       return createActionResult({
         success: true,
-        observation: `Wrote ${buffer.length} bytes to ${path.relative(outputDir, absTarget) || path.basename(absTarget)}`,
+        observation: formatWriteFileObservation({
+          byteLength: buffer.length,
+          relativePath: relativeTarget,
+          evidence: contentEvidence
+        }),
         metadata: {
           tool_id: "write_file",
           path: absTarget,
           bytes: buffer.length,
+          ...contentEvidence,
           reversibility
         },
         artifactPaths: [absTarget]

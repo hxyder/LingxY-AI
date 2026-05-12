@@ -25,12 +25,12 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 117/117 after OQ-002
-  task span taxonomy coverage was added, including 1046/1046 behavior tests.
-  `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
-  non-reproduced overlay keyboard-open smoke failure.
-  `npm run verify:desktop-gui-smoke`
-  passed 49/49.
+- Current green gate: `npm run check:fast` passed 137/137 after FA-001 strict
+  generated-script acceptance coverage was added, including 1097/1097 behavior
+  tests. `real-llm:followup-artifact --live` passed with strict generated
+  `.mjs` content consistency, actual file inspection, execution via
+  `run_script`, follow-up artifact transforms, topic-switch isolation, and
+  token/cache trace evidence.
 - Next execution board: the next maturity board should start from the remaining
   Source Map gaps below, not from already-complete Tracking Register phases.
 - Primary product gaps now shift from code ownership cleanup to user-visible
@@ -83,7 +83,7 @@ Last updated: 2026-05-12.
 | OQ-001 Eval trend store | complete | Real-LLM corpus reports append compact JSONL trend records and compare against the previous run without storing raw commands or reports. |
 | OQ-002 Observability span taxonomy | complete | Shared task span taxonomy and local OTEL-shaped export records are verifier-locked without network export or hot-path overhead. |
 | CM-001 Context, memory, follow-up, and cache acceptance | complete | `real-llm:context-memory-cache` is an opt-in real API harness for approved user memory, project memory, follow-up parent binding, and token/cache traces. It backs up and restores user memory, redacts evidence, and records token/cache fields only; price is not displayed. |
-| FA-001 Follow-up artifact generation and execution acceptance | complete | `real-llm:followup-artifact` runs `scripts/real-llm-test/run-followup-artifact-acceptance.mjs`, an opt-in real API harness for generated artifact content, artifact-based follow-up generation, generated artifact validation through `run_script`, same-conversation topic switch isolation, and new-topic follow-up isolation. A stricter generated-script-file content validator remains a future high-risk acceptance item because live testing caught models claiming script content that was not actually on disk. |
+| FA-001 Follow-up artifact generation and execution acceptance | complete | `real-llm:followup-artifact` runs `scripts/real-llm-test/run-followup-artifact-acceptance.mjs`, an opt-in real API harness for generated artifact content, artifact-based follow-up generation, generated artifact validation through `run_script`, strict generated `.mjs` file content consistency, same-conversation topic switch isolation, and new-topic follow-up isolation. The live harness now fails if a generated script is only claimed in prose, if no real file exists, or if the actual file content does not contain the executable marker. |
 
 ## Execution Rules
 

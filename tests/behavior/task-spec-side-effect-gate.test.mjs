@@ -88,3 +88,12 @@ test("schedule_create remains SR-only (no regex entity layer for it)", () => {
   assert.ok(groups.includes("schedule_create"),
     `schedule_create should pass through SR judgement, got groups=${JSON.stringify(groups)}`);
 });
+
+test("explicit generated script files are artifact-required and cannot finish as prose", () => {
+  const spec = createTaskSpec("生成一个 Node.js 脚本文件，文件名 followup_exec_test.mjs，必须保存为真实文件并执行。", {}, {});
+  assert.equal(spec.artifact.required, true);
+  assert.equal(spec.artifact.kind, "mjs");
+  assert.equal(spec.success_contract.artifact_created, true);
+  assert.ok(spec.required_steps.includes("generate_artifact"));
+  assert.ok(spec.required_steps.includes("verify_file_exists"));
+});

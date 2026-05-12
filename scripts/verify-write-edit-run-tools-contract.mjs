@@ -49,6 +49,9 @@ const ownerRequiredTexts = [
   "resolveSandboxedTarget(outputDir, targetArg",
   "configuredWritableArtifactRoots(ctx)",
   "prepareFileReversibilityCheckpoint(ctx,",
+  "function buildWriteFileContentEvidence",
+  "content_sha256",
+  "Content preview",
   "toolId: \"write_file\"",
   "operation: args.overwrite ? \"overwrite_file\" : \"create_file\"",
   "toolId: \"edit_file\"",
@@ -119,6 +122,14 @@ assert.equal(writeOk.metadata?.tool_id, "write_file", "write_file metadata tool_
 assert.ok(writeOk.artifact_paths?.[0], "write_file must return artifact path");
 assert.ok(writeOk.metadata?.reversibility?.checkpoint_id,
   "write_file must expose file reversibility checkpoint metadata");
+assert.match(writeOk.observation, /Content sha256:/u,
+  "write_file observation must include actual written content hash evidence");
+assert.match(writeOk.observation, /Content preview/u,
+  "write_file observation must include a bounded actual written content preview for text files");
+assert.equal(typeof writeOk.metadata?.content_sha256, "string",
+  "write_file metadata must include actual written content hash evidence");
+assert.ok(writeOk.metadata?.content_preview?.includes("CAP-5F preflight"),
+  "write_file metadata must include actual written text preview evidence");
 
 const writeDup = await registry.call("write_file", {
   path: "notes/preflight.txt",

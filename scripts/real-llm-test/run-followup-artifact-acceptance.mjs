@@ -190,6 +190,24 @@ function artifactPaths(record = {}) {
   return [...new Set(paths)];
 }
 
+function normalizeCandidatePath(candidate) {
+  return String(candidate ?? "")
+    .replace(/\\\\/gu, "\\")
+    .replace(/[),.;:，。；：）】\]}]+$/u, "");
+}
+
+function pathCandidates(record = {}) {
+  const candidates = [...artifactPaths(record)];
+  const haystack = [
+    finalText(record),
+    JSON.stringify(record.events ?? [])
+  ].join("\n");
+  for (const match of haystack.match(/[A-Za-z]:[\\/][^\s"'<>|]+/gu) ?? []) {
+    candidates.push(normalizeCandidatePath(match));
+  }
+  return [...new Set(candidates.filter(Boolean))];
+}
+
 function readTextIfSmall(filePath) {
   if (!filePath || !existsSync(filePath)) return "";
   const size = statSync(filePath).size;
@@ -198,7 +216,7 @@ function readTextIfSmall(filePath) {
 }
 
 function artifactWithContent(record, { extension, includes }) {
-  for (const filePath of artifactPaths(record)) {
+  for (const filePath of pathCandidates(record)) {
     if (extension && !filePath.toLowerCase().endsWith(extension)) continue;
     const text = readTextIfSmall(filePath);
     if (includes.every((marker) => text.includes(marker))) {
@@ -266,6 +284,7 @@ async function buildDryRunReport() {
       scenario("html_artifact_created", "skipped", "POST /task generate html", "dry run only"),
       scenario("followup_html_from_artifact", "skipped", "POST /task parent html", "dry run only"),
       scenario("followup_execute_generated_artifact_check", "skipped", "POST /task parent html + run_script", "dry run only"),
+      scenario("generated_script_file_content_consistency", "skipped", "POST /task write .mjs and execute it", "dry run only"),
       scenario("same_conversation_topic_switch", "skipped", "POST /task same conversation new topic", "dry run only"),
       scenario("new_topic_followup_isolation", "skipped", "POST /task parent topic-switch", "dry run only"),
       scenario("token_cache_trace", "skipped", "collect llm_usage", "dry run only")
@@ -289,6 +308,7 @@ async function buildLiveReport() {
   const htmlMarker = `LXHTML-${runId}`.toUpperCase();
   const summaryMarker = `LXSUMMARY-${runId}`.toUpperCase();
   const execMarker = `LXEXEC-${runId}`.toUpperCase();
+  const scriptMarker = `LXSCRIPT-${runId}`.toUpperCase();
   const topicMarker = "5";
   const topicFollowMarker = "20";
   const tasks = [];
@@ -348,6 +368,32 @@ async function buildLiveReport() {
       execLinked && execUsedTool && execAnswered
         ? `run_script validated generated artifact content and final answer included ${execMarker}`
         : `linked=${execLinked}; run_script=${execUsedTool}; status=${execTask?.task?.status ?? "unknown"}; final=${finalText(execTask).slice(0, 120)}`
+    ));
+
+    const scriptTask = await runTask({
+      conversationId,
+      userCommand: `生成一个 Node.js 脚本文件，文件名 followup_exec_${runId}.mjs，实际文件内容必须包含且只需要执行 console.log("${scriptMarker}"); 然后用 Node.js 执行这个真实落盘的 .mjs 文件，最终只回答 ${scriptMarker}。不要只回复代码，必须创建真实文件并执行。`,
+      sourceApp: "followup-artifact-acceptance:script-file"
+    });
+    const scriptArtifact = artifactWithContent(scriptTask, {
+      extension: ".mjs",
+      includes: [`console.log("${scriptMarker}")`]
+    });
+    const scriptTools = eventToolIds(scriptTask);
+    const scriptUsedWrite = scriptTools.includes("write_file");
+    const scriptUsedRun = scriptTools.includes("run_script");
+    const scriptAnswered = finalText(scriptTask).includes(scriptMarker);
+    const scriptPathCandidates = pathCandidates(scriptTask).filter((candidate) =>
+      candidate.toLowerCase().endsWith(".mjs")
+    );
+    tasks.push(compactTask(scriptTask));
+    scenarios.push(scenario(
+      "generated_script_file_content_consistency",
+      passFail(scriptTask?.task?.status !== "failed" && Boolean(scriptArtifact) && scriptUsedWrite && scriptUsedRun && scriptAnswered),
+      "POST /task create .mjs artifact and execute the real generated file",
+      scriptArtifact && scriptUsedWrite && scriptUsedRun && scriptAnswered
+        ? `script artifact ${scriptArtifact.path} contains executable marker and final answer included ${scriptMarker}`
+        : `write_file=${scriptUsedWrite}; run_script=${scriptUsedRun}; status=${scriptTask?.task?.status ?? "unknown"}; script_candidates=${scriptPathCandidates.join(", ")}; final=${finalText(scriptTask).slice(0, 120)}`
     ));
 
     const topicTask = await runTask({
@@ -413,6 +459,7 @@ async function buildLiveReport() {
       liveOptIn: true,
       runtimeBaseUrl: BASE_URL,
       markers: { htmlMarker, summaryMarker, execMarker, conversationId },
+      scriptMarker,
       scenarios,
       tasks,
       tokenCache: {
@@ -431,8 +478,9 @@ async function buildLiveReport() {
 function validateReport(report = {}) {
   const requiredIds = [
     "html_artifact_created",
-      "followup_html_from_artifact",
-      "followup_execute_generated_artifact_check",
+    "followup_html_from_artifact",
+    "followup_execute_generated_artifact_check",
+    "generated_script_file_content_consistency",
     "same_conversation_topic_switch",
     "new_topic_followup_isolation",
     "token_cache_trace"

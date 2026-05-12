@@ -74,7 +74,7 @@ function isLaunchTaskText(text) {
 /**
  * @typedef {Object} ArtifactSpec
  * @property {boolean} required
- * @property {"pptx"|"docx"|"xlsx"|"pdf"|"html"|"csv"|"md"|"txt"|null} kind
+ * @property {"pptx"|"docx"|"xlsx"|"pdf"|"html"|"csv"|"md"|"txt"|"json"|"mjs"|"js"|"py"|"ps1"|null} kind
  * @property {"draft"|"formal"} quality
  */
 
@@ -532,7 +532,11 @@ const EDITABLE_ARTIFACT_EXTENSIONS = new Set([
   ".html",
   ".htm",
   ".csv",
-  ".json"
+  ".json",
+  ".mjs",
+  ".js",
+  ".py",
+  ".ps1"
 ]);
 
 const ARTIFACT_REFINEMENT_PATTERNS = [
@@ -558,6 +562,11 @@ function artifactKindFromPath(filePath = "") {
   if (normalized.endsWith(".csv")) return "csv";
   if (normalized.endsWith(".md")) return "md";
   if (normalized.endsWith(".txt")) return "txt";
+  if (normalized.endsWith(".json")) return "json";
+  if (normalized.endsWith(".mjs")) return "mjs";
+  if (normalized.endsWith(".js")) return "js";
+  if (normalized.endsWith(".py")) return "py";
+  if (normalized.endsWith(".ps1")) return "ps1";
   return null;
 }
 
@@ -671,10 +680,14 @@ const FORMAT_PATTERNS = [
   { format: "json", pattern: /(\.json|json)/i },
   { format: "csv",  pattern: /(\.csv|csv|逗号分隔)/i },
   { format: "md",   pattern: /(\.md|markdown)/i },
-  { format: "txt",  pattern: /(\.txt|txt|纯文本)/i }
+  { format: "txt",  pattern: /(\.txt|txt|纯文本)/i },
+  { format: "mjs",  pattern: /\.mjs/i },
+  { format: "js",   pattern: /\.js/i },
+  { format: "py",   pattern: /\.py/i },
+  { format: "ps1",  pattern: /\.ps1/i }
 ];
 
-const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
+const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html", "mjs", "js", "py", "ps1"]);
 
 function detectFormats(text) {
   if (isLaunchTaskText(text)) {

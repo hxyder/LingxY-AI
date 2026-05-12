@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -17,6 +18,10 @@ import { renderFileReversibilityPanel } from "../../src/desktop/renderer/console
 
 const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
 const execFileAsync = promisify(execFile);
+
+function sha256(text) {
+  return createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
+}
 
 async function withTempDir(fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-fw018-"));
@@ -47,6 +52,29 @@ test("write_file records a delete-created-file reverse operation for new files",
     assert.equal(result.metadata.reversibility.existed_before, false);
     assert.equal(result.metadata.reversibility.reverse_operation, "delete_created_file");
     assert.equal(result.metadata.reversibility.backup_path, null);
+  });
+});
+
+test("write_file exposes actual written content evidence for generated code artifacts", async () => {
+  await withTempDir(async (outputDir) => {
+    const content = "console.log(\"LXEXEC-CONTENT-EVIDENCE\");\n";
+    const result = await registry.call("write_file", {
+      path: "scripts/generated-check.mjs",
+      content
+    }, {
+      outputDir,
+      task: { task_id: "task_write_file_content_evidence" }
+    });
+
+    assert.equal(result.success, true, result.observation);
+    assert.equal(await readFile(result.artifact_paths[0], "utf8"), content);
+    assert.equal(result.metadata.content_sha256, sha256(content));
+    assert.equal(result.metadata.content_preview_available, true);
+    assert.equal(result.metadata.content_preview_truncated, false);
+    assert.match(result.metadata.content_preview, /console\.log\("LXEXEC-CONTENT-EVIDENCE"\);/u);
+    assert.match(result.observation, /Content sha256:/u);
+    assert.match(result.observation, /Content preview/u);
+    assert.match(result.observation, /LXEXEC-CONTENT-EVIDENCE/u);
   });
 });
 
