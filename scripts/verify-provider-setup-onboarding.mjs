@@ -42,6 +42,16 @@ assert.match(
   "/config/integrations should include provider setup status for first-run recovery"
 );
 assert.match(
+  providerRoutes,
+  /listRuntimeAiProviderStatus/u,
+  "/config/integrations should merge live provider status into provider setup"
+);
+assert.match(
+  providerRoutes,
+  /codeCliAdapters:\s*codeCliAdapterStatuses/u,
+  "/config/integrations should merge live code CLI status into provider setup"
+);
+assert.match(
   firstRunWizard,
   /providerSetup/u,
   "first-run wizard should expose provider setup status"

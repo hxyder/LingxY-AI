@@ -2,6 +2,44 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: Final Live Provider Acceptance Fix
+
+Date: 2026-05-12
+
+Scope:
+- Ran `node scripts/real-llm-test/run-live-provider-acceptance.mjs --live`
+  with the configured DeepSeek-compatible provider.
+- Fixed `/config/integrations` so provider setup and model-role summaries merge
+  live `/ai/providers` and code CLI status instead of reporting only static
+  config state.
+- Updated live provider evidence to show token/cache trace only:
+  input/output/total tokens plus cache hit/miss tokens when present.
+
+Decision:
+- No provider price table was added. Cost estimates are not displayed by
+  default because prices drift; the compatibility field remains
+  `estimated_usd: null` with `rate_source:
+  not_displayed_token_trace_only`.
+- The final live report now shows provider setup pass, short task pass,
+  planner/executor/reviewer/fast role routing pass, and token/cache trace pass.
+- OAuth connector live tests remain dry/contract-only until disposable accounts
+  and side-effect opt-in are available.
+
+Verification:
+- `node scripts/real-llm-test/run-live-provider-acceptance.mjs --live --port
+  4350`: passed, report
+  `.tmp/live-provider-acceptance/report-2026-05-12-20-43-03.json`.
+- `node --test tests/behavior/live-provider-acceptance-harness.test.mjs
+  tests/behavior/model-role-routing.test.mjs
+  tests/behavior/provider-setup-status.test.mjs`: passed, 15/15.
+- `node scripts/verify-live-provider-acceptance-harness.mjs`: passed.
+- `node scripts/verify-model-role-routing.mjs`: passed.
+- `node scripts/verify-provider-setup-onboarding.mjs`: passed.
+- `npm run check:fast`: passed, 135/135; behavior tests passed, 1092/1092.
+- `npm run verify:desktop-gui-smoke`: passed 49/49
+  (`startup=488ms`, `first_window=488ms`, `interaction=5014ms`,
+  `total=5498ms`).
+
 ## Codex Update: REL-001 Release Evidence Bundle
 
 Date: 2026-05-12

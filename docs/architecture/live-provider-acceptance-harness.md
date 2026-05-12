@@ -30,7 +30,9 @@ node scripts/real-llm-test/run-live-provider-acceptance.mjs --live
 Live mode starts or attaches to the runtime, reads `/health`, `/ai/providers`,
 and `/config/integrations`, submits one short background `/task`, then polls
 `/task/:id` for `llm_usage` events. It records provider setup, role routing,
-token usage, and cost-rate visibility. Fault recovery rows are present in the
+token usage, and cache hit/miss visibility when the provider reports it. Cost
+estimates are not displayed by default because published prices can drift.
+Fault recovery rows are present in the
 contract but skipped unless a run intentionally induces missing-key, rate-limit,
 invalid-model, or provider-failure cases.
 

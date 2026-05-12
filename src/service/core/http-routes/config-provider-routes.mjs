@@ -185,6 +185,22 @@ function integrationPathsForRuntime(runtime = {}) {
   return runtime.platform?.integrationPaths ?? runtime.paths ?? null;
 }
 
+async function listRuntimeAiProviderStatus(runtime = null, config = {}) {
+  try {
+    return await runtime?.platform?.aiProviders?.listStatus?.({ runtime, config }) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function listRuntimeCodeCliAdapterStatus(runtime = null, config = {}) {
+  try {
+    return await runtime?.platform?.codeCliAdapters?.listStatus?.({ runtime, config }) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 function sanitizeProviderState(ai = {}, {
   runtime = null,
   hydrateSecrets = false,
@@ -543,8 +559,14 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       config.ai?.onboarding ?? {},
       capabilitySuggestions
     );
-    const providerSetup = buildProviderSetupStatus({ config });
-    const modelRoles = buildModelRoleRoutingSummary({ config });
+    const providerStatuses = await listRuntimeAiProviderStatus(runtime, config);
+    const codeCliAdapterStatuses = await listRuntimeCodeCliAdapterStatus(runtime, config);
+    const providerSetup = buildProviderSetupStatus({
+      config,
+      providers: providerStatuses,
+      codeCliAdapters: codeCliAdapterStatuses
+    });
+    const modelRoles = buildModelRoleRoutingSummary({ config, providers: providerStatuses });
     sendJson(response, 200, {
       paths: integrationPaths ?? {},
       mcp: config.ai?.mcp ?? { servers: [] },

@@ -10,7 +10,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
-import pricing from "../../src/service/cost/pricing.mjs";
+import { detectProviderFamily } from "../../src/shared/provider-catalog.mjs";
 import {
   buildLiveProviderAcceptanceReport,
   redactLiveProviderAcceptanceReport,
@@ -160,17 +160,26 @@ function providerEvidence(provider = null) {
   return `provider ${provider.id ?? "unknown"} configured=${provider.configured === true} available=${provider.available === true}`;
 }
 
-function estimateCost(provider = null, usage = null) {
-  const tokenUsage = usage?.token_usage ?? null;
-  if (!tokenUsage) return { estimated_usd: null, rate_source: "no_token_usage" };
-  const providerId = provider?.id ?? provider?.provider_id ?? null;
-  const rates = pricing.executors?.[providerId] ?? null;
-  if (!rates) return { estimated_usd: null, rate_source: "rate_not_configured" };
-  const usd = ((Number(tokenUsage.input_tokens ?? 0) / 1_000_000) * Number(rates.in ?? 0))
-    + ((Number(tokenUsage.output_tokens ?? 0) / 1_000_000) * Number(rates.out ?? 0));
+function summarizeTokenCache(tokenUsage = {}) {
+  const inputTokens = Number(tokenUsage.input_tokens ?? 0);
+  const cacheHitTokens = Number(tokenUsage.cache_hit_tokens ?? tokenUsage.prompt_cache_hit_tokens ?? 0);
+  const cacheMissTokens = Number(
+    tokenUsage.cache_miss_tokens
+      ?? tokenUsage.prompt_cache_miss_tokens
+      ?? Math.max(0, inputTokens - cacheHitTokens)
+  );
   return {
-    estimated_usd: Math.round(usd * 1_000_000) / 1_000_000,
-    rate_source: `src/service/cost/pricing.json#executors.${providerId}`
+    cache_hit_tokens: cacheHitTokens,
+    cache_miss_tokens: cacheMissTokens,
+    cache_observed: cacheHitTokens > 0 || cacheMissTokens > 0
+  };
+}
+
+function noDisplayedCost(usage = null) {
+  const tokenUsage = usage?.token_usage ?? null;
+  return {
+    estimated_usd: null,
+    rate_source: tokenUsage ? "not_displayed_token_trace_only" : "no_token_usage"
   };
 }
 
@@ -186,7 +195,8 @@ function buildUsageTrace(provider, metrics) {
       cache_hit_tokens: 0,
       cache_miss_tokens: 0
     },
-    costEstimate: estimateCost(provider, metrics),
+    tokenCache: summarizeTokenCache(tokenUsage ?? {}),
+    costEstimate: noDisplayedCost(metrics),
     llmUsageCallCount: Number(metrics?.llm_usage_call_count ?? 0),
     callSites: calls.map((call) => ({
       call_site: call.call_site ?? "unknown",
@@ -205,6 +215,7 @@ function compactProvider(provider = null) {
     id: provider.id ?? null,
     name: provider.displayName ?? provider.name ?? provider.id ?? null,
     kind: provider.kind ?? null,
+    providerFamily: detectProviderFamily(provider),
     configured: provider.configured === true,
     available: provider.available === true,
     detail: provider.detail ?? null,
@@ -342,7 +353,7 @@ async function buildLiveReport() {
       status: usageTrace.observed ? "pass" : "fail",
       command: "collect llm_usage from GET /task/:id events",
       evidence: usageTrace.observed
-        ? `tokens=${usageTrace.tokenUsage.total_tokens}; cost_rate=${usageTrace.costEstimate.rate_source}`
+        ? `tokens=${usageTrace.tokenUsage.total_tokens}; input=${usageTrace.tokenUsage.input_tokens}; output=${usageTrace.tokenUsage.output_tokens}; cache_hit=${usageTrace.tokenCache.cache_hit_tokens}; cache_miss=${usageTrace.tokenCache.cache_miss_tokens}`
         : "no llm_usage token trace observed on the live task"
     });
 

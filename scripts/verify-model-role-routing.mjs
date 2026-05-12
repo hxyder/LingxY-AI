@@ -41,6 +41,8 @@ assert.match(agenticPlanner, /resolveProviderForModelRole\("planner",\s*"chat"/u
 assert.match(finalComposer, /resolveProviderForModelRole\("executor",\s*"chat"/u, "final composer must use executor role call site");
 assert.match(configRoutes, /buildModelRoleRoutingSummary/u, "integrations route must expose model role summary");
 assert.match(configRoutes, /modelRoles/u, "integrations payload must include modelRoles");
+assert.match(configRoutes, /listRuntimeAiProviderStatus/u, "integrations route must merge runtime provider status");
+assert.match(configRoutes, /providers:\s*providerStatuses/u, "model roles must receive runtime provider readiness");
 assert.match(consoleHtml, /modelRoleManagementSurface/u, "Console routing settings must mount model role management surface");
 assert.match(consoleJs, /renderModelRoleManagementSurface/u, "Console renderer must render model role management surface");
 assert.match(consoleJs, /state\.workspace\.modelRoles/u, "Console must consume modelRoles from the service payload");

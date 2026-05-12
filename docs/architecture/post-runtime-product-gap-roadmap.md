@@ -16,10 +16,14 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 ## Current Gate
 
 - Current green gate: `npm run check:fast` passed 135/135 with 1092/1092
-  behavior tests after REL-001.
-- `npm run verify:desktop-gui-smoke` passed 49/49 after CTX-001. The earlier
+  behavior tests after the final live-provider acceptance fix.
+- `npm run verify:desktop-gui-smoke` passed 49/49 after the final
+  live-provider acceptance fix. The earlier
   MMX-001 smoke attempt hit the known task-list keyboard focus timing failure
   and the immediate rerun passed.
+- `node scripts/real-llm-test/run-live-provider-acceptance.mjs --live --port
+  4350` passed with provider setup, short task, model-role routing, and
+  token/cache trace scenarios green.
 - The next work must improve product capability, manageability, or real
   acceptance evidence; it must not repackage already-complete runtime phases as
   new work.
@@ -42,6 +46,9 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
   connector read/write guards, memory, fallback, and recovery. Problems found
   there must be fixed in framework contracts, tests, or verifiers rather than
   prompt-only or one-scenario patches.
+- Live provider acceptance evidence shows token/cache usage, not estimated
+  pricing. Price display stays off unless a future phase adds provider-owned
+  cache-hit/cache-miss billing evidence and an explicit freshness policy.
 
 ## Source Map
 
@@ -64,7 +71,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | PG-001 Product gap roadmap and verifier | complete | This board is linked from architecture docs and guarded by `verify-post-runtime-product-gap-roadmap.mjs`. |
 | DXR-001 Desktop evidence pack runner | complete | Release acceptance rows must produce reusable evidence records with commit, gate, real environment, pass/partial/fail, and known-issue links. |
 | DXR-002 Daily conversation/task/artifact GUI matrix | complete | Real Electron smoke must cover attach, follow-up, generate/edit/open, timeline inspection, cancellation/retry, and recovery paths before declaring desktop workflows complete. |
-| LAPI-001 Live provider acceptance harness | complete | Opt-in real API tests must verify provider setup, model role routing, token/cost trace, fallback, and user-visible recovery without storing secrets. |
+| LAPI-001 Live provider acceptance harness | complete | Opt-in real API tests must verify provider setup, model role routing, token/cache trace, fallback, and user-visible recovery without storing secrets. |
 | CONN-001 Real connector/OAuth acceptance | complete | Disposable-account tests must cover OAuth, list, refresh, guarded send/calendar action, and recovery copy for each connector family. |
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
@@ -194,7 +201,7 @@ Required scenarios:
 - Provider setup and health.
 - One short text task.
 - Role-aware planner/executor/reviewer routing when enabled.
-- Token and cost trace visibility.
+- Token and cache hit/miss trace visibility.
 - Recovery copy for missing key, rate limit, invalid model, and provider
   failure classes where practical.
 

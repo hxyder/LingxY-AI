@@ -28,7 +28,7 @@ export const LIVE_PROVIDER_ACCEPTANCE_SCENARIOS = Object.freeze([
   }),
   Object.freeze({
     id: "token_cost_trace",
-    label: "Token and cost trace"
+    label: "Token and cache trace"
   }),
   Object.freeze({
     id: "missing_key_recovery",
@@ -78,9 +78,14 @@ function emptyUsageTrace() {
       cache_hit_tokens: 0,
       cache_miss_tokens: 0
     },
+    tokenCache: {
+      cache_hit_tokens: 0,
+      cache_miss_tokens: 0,
+      cache_observed: false
+    },
     costEstimate: {
       estimated_usd: null,
-      rate_source: "not_available"
+      rate_source: "not_displayed_token_trace_only"
     },
     llmUsageCallCount: 0,
     callSites: []
@@ -170,6 +175,7 @@ export function validateLiveProviderAcceptanceReport(report = {}) {
   } else {
     if (typeof report.usageTrace.observed !== "boolean") missing.push("usageTrace.observed");
     if (!isObject(report.usageTrace.tokenUsage)) missing.push("usageTrace.tokenUsage");
+    if (!isObject(report.usageTrace.tokenCache)) missing.push("usageTrace.tokenCache");
     if (!isObject(report.usageTrace.costEstimate)) missing.push("usageTrace.costEstimate");
     if (!Array.isArray(report.usageTrace.callSites)) missing.push("usageTrace.callSites");
   }

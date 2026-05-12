@@ -36,6 +36,8 @@ test("live provider acceptance report validator accepts complete dry-run templat
   });
   const validation = validateLiveProviderAcceptanceReport(report);
   assert.equal(validation.ok, true, validation.missing.join(", "));
+  assert.equal(report.usageTrace.tokenCache.cache_hit_tokens, 0);
+  assert.equal(report.usageTrace.costEstimate.rate_source, "not_displayed_token_trace_only");
 });
 
 test("validator requires live mode provider setup, model roles, and opt-in", () => {

@@ -18,9 +18,14 @@
       "cache_hit_tokens": 0,
       "cache_miss_tokens": 0
     },
+    "tokenCache": {
+      "cache_hit_tokens": 0,
+      "cache_miss_tokens": 0,
+      "cache_observed": false
+    },
     "costEstimate": {
       "estimated_usd": null,
-      "rate_source": "not_available"
+      "rate_source": "not_displayed_token_trace_only"
     },
     "llmUsageCallCount": 0,
     "callSites": []
@@ -55,7 +60,7 @@
     },
     {
       "id": "token_cost_trace",
-      "label": "Token and cost trace",
+      "label": "Token and cache trace",
       "status": "not_run",
       "command": "GET /task/:id",
       "evidence": "",
