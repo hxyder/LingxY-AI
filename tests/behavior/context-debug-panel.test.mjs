@@ -13,7 +13,15 @@ function taskWithCompiledContext(extra = {}) {
     project_id: "proj_debug",
     parent_task_id: "task_parent",
     is_continuation: true,
+    metadata: {
+      branch: {
+        kind: "fork",
+        source_conversation_id: "conv_source"
+      }
+    },
     context_packet: {
+      file_paths: ["E:\\project\\brief.docx"],
+      image_paths: ["E:\\project\\screen.png"],
       selection_metadata: {
         follow_up_resolution: {
           mode: "session_anchor",
@@ -79,6 +87,9 @@ test("context debug view exposes session, resolver, artifact, selected, and omit
   assert.equal(view.session.resolver_mode, "session_anchor");
   assert.equal(view.session.resolver_confidence, 0.87);
   assert.deepEqual(view.action_target.source_artifact_ids, ["artifact_source_xlsx"]);
+  assert.equal(view.project_pack.project.packId, "project:proj_debug");
+  assert.equal(view.project_pack.attachments.count, 2);
+  assert.equal(view.project_pack.conversation.branch.kind, "fork");
   assert.ok(view.selected.some((item) => item.kind === "session_compaction"));
   assert.equal(view.omissions[0].reason, "omitted_by_item_budget");
 });
@@ -100,5 +111,8 @@ test("context debug panel lazy renders compact rows and keeps full JSON out of t
   assert.doesNotMatch(html, /data-context-debug-json/);
   assert.doesNotMatch(html, new RegExp("x{500}"));
   assert.match(html, /latest_artifact/);
+  assert.match(html, /Project pack/);
+  assert.match(html, /brief\.docx/);
+  assert.match(html, /screen\.png/);
   assert.match(html, /omitted_by_item_budget/);
 });

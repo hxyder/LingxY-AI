@@ -2,6 +2,46 @@
 
 **Date:** 2026-05-10
 
+## Codex Update: CTX-001 Context Selection And Project Packs
+
+Date: 2026-05-12
+
+Scope:
+- Added `src/shared/context-selection-project-pack.mjs` as the shared
+  view-model for selected/omitted context, project scope, attachments, memory
+  scope, and conversation provenance.
+- Added `docs/architecture/context-selection-project-pack.md`.
+- Updated Console task detail context panel to render the shared project pack
+  before selected/omitted rows.
+- Added `scripts/verify-context-selection-project-pack.mjs` and
+  `tests/behavior/context-selection-project-pack.test.mjs`.
+- Wired the verifier into `scripts/check-manifest.mjs` and `package.json`.
+
+Decision:
+- No context compiler selection behavior changed.
+- No storage schema, HTTP route, IPC channel, provider id, tool id, or approval
+  semantics changed.
+- Renderer consumes the shared pack view-model; project/context grouping logic
+  is not duplicated in the Console renderer.
+
+Verification:
+- `node --test tests/behavior/context-selection-project-pack.test.mjs`:
+  passed, 1/1.
+- `node --test tests/behavior/context-debug-panel.test.mjs`: passed, 2/2.
+- `node scripts/verify-context-selection-project-pack.mjs`: passed.
+- `node scripts/verify-context-debug-panel-lazy-load.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-post-runtime-product-gap-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 134/134; behavior tests passed, 1089/1089.
+- `npm run verify:desktop-gui-smoke`: passed 49/49
+  (`startup=462ms`, `first_window=462ms`, `interaction=5165ms`,
+  `total=5622ms`).
+
+Next valid work:
+- Start `REL-001` release evidence bundle.
+- Keep the final real API/common-agent acceptance pass as the release-blocking
+  closeout after REL-001 creates the evidence bundle shape.
+
 ## Codex Update: MMX-002 Budgeted Fallback And Cascade Evidence
 
 Date: 2026-05-12

@@ -15,11 +15,11 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 133/133 with 1088/1088
-  behavior tests after MMX-002.
-- `npm run verify:desktop-gui-smoke` passed 49/49 after MMX-001. The first
-  smoke attempt hit the known task-list keyboard focus timing failure and the
-  immediate rerun passed.
+- Current green gate: `npm run check:fast` passed 134/134 with 1089/1089
+  behavior tests after CTX-001.
+- `npm run verify:desktop-gui-smoke` passed 49/49 after CTX-001. The earlier
+  MMX-001 smoke attempt hit the known task-list keyboard focus timing failure
+  and the immediate rerun passed.
 - The next work must improve product capability, manageability, or real
   acceptance evidence; it must not repackage already-complete runtime phases as
   new work.
@@ -71,7 +71,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | SBOX-001 High-risk sandbox evidence pack | complete | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
 | MMX-001 Model role management surface | complete | Users can see planner/executor/reviewer/fast roles, health, cost, fallback, feature-flag state, and live-test action metadata without editing config files. |
 | MMX-002 Budgeted fallback and cascade evidence | complete | Any future model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
-| CTX-001 Context selection and project packs | pending | Users must see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
+| CTX-001 Context selection and project packs | complete | Users can see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
 | REL-001 Release evidence bundle | pending | Release readiness must bundle check results, GUI smoke, row evidence, known issues, policy traces, and environment notes. |
 
 ## Phase Details
@@ -441,21 +441,30 @@ Verification:
 
 ### CTX-001: Context Selection And Project Packs
 
+Status: complete as of 2026-05-12.
+
 Goal:
 
 - Make context visible and controllable instead of implicit.
 
-Required surface:
+Implemented:
 
-- Selected and omitted files/messages/memory.
-- Project pack membership.
-- Conversation branch provenance.
-- Attachment status and freshness.
-- “Why included” and “why omitted” reasons.
+- Added `src/shared/context-selection-project-pack.mjs` as the shared
+  context/project pack view-model.
+- Added `docs/architecture/context-selection-project-pack.md`.
+- Console task detail context panel now shows selected/omitted rows, project
+  pack membership, project memory scope, attachments, parent/conversation
+  provenance, and branch source when present.
+- The renderer consumes the shared view-model instead of rebuilding pack logic
+  from loose task fields.
 
 Verification:
 
 - Context compiler and visibility tests.
+- `node --test tests/behavior/context-selection-project-pack.test.mjs`
+- `node --test tests/behavior/context-debug-panel.test.mjs`
+- `node scripts/verify-context-selection-project-pack.mjs`
+- `npm run check:fast`
 - GUI smoke for visible context panel changes.
 
 ### REL-001: Release Evidence Bundle

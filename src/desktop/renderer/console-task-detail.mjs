@@ -5,6 +5,7 @@ import { collectLlmUsageSummary } from "../../shared/llm-usage-summary.mjs";
 import { buildTaskTraceSummary } from "../../shared/task-trace-summary.mjs";
 import { describePermissionModeContract } from "../../shared/permission-mode-model.mjs";
 import { buildSubAgentTimelineSummary } from "../../shared/sub-agent-timeline-summary.mjs";
+import { buildContextSelectionProjectPack } from "../../shared/context-selection-project-pack.mjs";
 
 // C17 (lingxy_codex_ready_agent_runtime_upgrade_plan.md §C17, R rule "cost 不准 → 改 token"):
 // Task detail KV grid displays Tokens (in/out/total) as the primary
@@ -233,6 +234,7 @@ export function buildContextDebugPanelView(task = {}) {
   const selected = safeArray(compiled.selected);
   const omissions = safeArray(compiled.omissions);
   const resolver = ctx.selection_metadata?.follow_up_resolution ?? {};
+  const projectPack = buildContextSelectionProjectPack(task);
   const sourceArtifactIds = selected
     .map((item) => item?.value?.artifact_id)
     .filter(Boolean);
@@ -263,7 +265,8 @@ export function buildContextDebugPanelView(task = {}) {
     action_target: {
       source_artifact_ids: [...new Set(sourceArtifactIds)],
       target_kinds: [...new Set(targetKinds)]
-    }
+    },
+    project_pack: projectPack
   };
 }
 
@@ -312,6 +315,9 @@ export function renderContextDebugPanel(task = {}, {
   if (!view) return "";
   const session = view.session;
   const action = view.action_target;
+  const pack = view.project_pack ?? {};
+  const attachments = pack.attachments ?? { count: 0, files: [], images: [] };
+  const branch = pack.conversation?.branch ?? null;
   return `
     <div class="context-debug-panel" data-context-debug-panel="compact">
       <div class="task-trace-head">
@@ -325,9 +331,22 @@ export function renderContextDebugPanel(task = {}, {
         ${renderContextDebugMetric("Session", session.session_id)}
         ${renderContextDebugMetric("Conversation", session.conversation_id)}
         ${renderContextDebugMetric("Parent", session.parent_task_id)}
+        ${renderContextDebugMetric("Project", pack.project?.projectId)}
+        ${renderContextDebugMetric("Attachments", attachments.count)}
+        ${renderContextDebugMetric("Branch", branch?.kind)}
         ${renderContextDebugMetric("Resolver", session.resolver_mode)}
         ${renderContextDebugMetric("Confidence", session.resolver_confidence)}
         ${renderContextDebugMetric("Candidates", view.stats.candidate_count)}
+      </div>
+      <div class="context-debug-section">
+        <div class="context-debug-section-head"><span>Project pack</span></div>
+        <div class="context-debug-kind-list">
+          <span class="context-debug-kind">${escapeHtml(pack.project?.packId ?? "global")}</span>
+          <span class="context-debug-kind">memory ${escapeHtml(pack.project?.memoryScope ?? "global")}</span>
+          ${branch?.sourceConversationId ? `<span class="context-debug-kind">from ${escapeHtml(branch.sourceConversationId)}</span>` : ""}
+          ${attachments.files.slice(0, 6).map((entry) => `<span class="context-debug-kind">file ${escapeHtml(entry.label)}</span>`).join("")}
+          ${attachments.images.slice(0, 4).map((entry) => `<span class="context-debug-kind">image ${escapeHtml(entry.label)}</span>`).join("")}
+        </div>
       </div>
       ${renderKindCounts(view.selected_counts)}
       <div class="context-debug-section">
