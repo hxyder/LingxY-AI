@@ -9,7 +9,7 @@ Status: verified against the current repository on 2026-05-11.
 | Surface | Path | Owner |
 | --- | --- | --- |
 | Registry implementation | `src/service/capabilities/registry/registry.mjs` | Service runtime |
-| Built-in tool definitions | `src/service/action_tools/tools/index.mjs` | Service runtime |
+| Built-in tool aggregation | `src/service/action_tools/tools/index.mjs` | Service runtime |
 | Schemas | `src/service/capabilities/schemas/index.mjs` | Service runtime |
 | Tool result shape | `src/service/capabilities/registry/types.mjs` | Service runtime |
 | Tool execution submission | `src/service/core/action-tool-submission.mjs` | Service runtime |
@@ -26,7 +26,8 @@ Status: verified against the current repository on 2026-05-11.
 
 ## Tool Family Ownership
 
-Status after CAP-1 low-risk/helper tool-family migration (2026-05-11). `tools/index.mjs` is now 3048 lines (down from 4105).
+Status after CAP-5C desktop launch migration (2026-05-11). `tools/index.mjs`
+is a live aggregator plus remaining inline high-risk families.
 
 ### Extracted families (own source modules)
 
@@ -37,32 +38,24 @@ Status after CAP-1 low-risk/helper tool-family migration (2026-05-11). `tools/in
 | Email | `src/service/capabilities/tools/email-tools.mjs` (~50 lines) | `compose_email` |
 | Scheduler | `src/service/capabilities/tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
 | File Discovery / Read / Stat / Artifact | `src/service/capabilities/tools/file-read-tools.mjs` (~330 lines) | `stat_file`, `verify_file_exists`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact` |
+| Desktop Launch | `src/service/capabilities/tools/desktop-launch-tools.mjs` (~365 lines) | `launch_app` |
+| Desktop Capture / GUI Automation | `src/service/capabilities/tools/desktop-capture-gui-tools.mjs` (~260 lines) | `take_screenshot`, `gui_find_element`, `gui_click`, `gui_type_text` |
 | Shared OS helper | `src/service/capabilities/tools/open-with-default-handler.mjs` | `openWithDefaultHandler` (used by browser-web, os-app, and email tools) |
 | Shared file manifest helpers | `src/service/capabilities/tools/file-manifest-helpers.mjs` | `resolveDefaultOutputDir`, `readManifest`, `writeManifest`, `globToRegex` |
-
-### Preflighted high-risk families
-
-| Family | Current owner | Target owner | Tool IDs |
-|--------|---------------|--------------|----------|
-| Desktop Launch | `src/service/action_tools/tools/index.mjs` | `src/service/capabilities/tools/desktop-launch-tools.mjs` | `launch_app` |
 
 ### Inline families (still in `tools/index.mjs`)
 
 | Family | Tool IDs | Lines (approx) | Risk |
 |--------|----------|----------------|------|
-| Desktop Launch | `launch_app` | ~220 | medium (OS integration) |
 | File Write / Script Execution | `write_file`, `edit_file`, `run_script` | ~740 | high (side effects) |
 | Document / Artifact / Diagram / SVG | `generate_document`, `render_diagram`, `render_svg` | ~680 | high (artifact-producing) |
 | File Read / Index / Search | `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, `resolve_output_path` | ~840 | medium |
-| GUI Automation | `gui_find_element`, `gui_click`, `gui_type_text` | ~240 | high (OS integration) |
 | Capability Creator | `draft_capability`, `save_capability_draft` | ~350 | high (confirmation-gated) |
 
 ### Deferred (still in `tools/index.mjs`, explicit reasons)
 
 | Tool | Reason |
 |------|--------|
-| `LAUNCH_APP_TOOL` | Depends on 200+ lines of Windows/Python launcher helpers |
-| `TAKE_SCREENSHOT_TOOL` | Owned by `src/service/capabilities/tools/desktop-capture-gui-tools.mjs`; depends on artifact output helpers |
 | `READ_CLIPBOARD_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 | `SEND_EMAIL_SMTP_TOOL` | References `NOOP_TOOLS` array in index.mjs |
 
@@ -85,7 +78,7 @@ Status after CAP-1 low-risk/helper tool-family migration (2026-05-11). `tools/in
 4. File Discovery / Read / Index: read/stat/artifact-lookup slice extracted in Phase 2D.4/2D.6, moved to `capabilities/tools/` in CAP-1; `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `register_artifact`, and `resolve_output_path` remain inline.
 5. Email: `compose_email` extracted in Phase 2D.5 and moved to `capabilities/tools/` in CAP-1; `send_email_smtp` remains a `NOOP_TOOLS` entry.
 
-Do not move without a dedicated high-risk phase and targeted tests: `write_file`, `edit_file`, `run_script`, `generate_document`, `render_diagram`, `render_svg`, `register_artifact`, `resolve_output_path`, `gui_*`, memory tools, vision tools, skill install tools, schemas, registry, policy, or type surfaces.
+Do not move without a dedicated high-risk phase and targeted tests: `write_file`, `edit_file`, `run_script`, `generate_document`, `render_diagram`, `render_svg`, `register_artifact`, `resolve_output_path`, memory tools, vision tools, skill install tools, schemas, registry, policy, or type surfaces.
 
 ### Deferred high-risk families
 
@@ -93,7 +86,6 @@ Do not move without a dedicated high-risk phase and targeted tests: `write_file`
 |--------|--------|
 | File Write / Script Execution | Side effects, reversibility, and sandbox policy. |
 | Document / Artifact / Diagram / SVG Generation | Artifact-producing behavior and renderer/preview coupling. |
-| GUI Automation | OS integration and GUI smoke coverage required. |
 | Capability Creator | Confirmation-gated capability generation and persistence. |
 
 ## Boundary Rules

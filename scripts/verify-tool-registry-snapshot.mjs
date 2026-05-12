@@ -279,6 +279,7 @@ const cap1MovedPaths = [
   "src/service/action_tools/tools/file-manifest-helpers.mjs",
   "src/service/action_tools/tools/open-with-default-handler.mjs",
   "src/service/action_tools/tools/desktop-capture-gui-tools.mjs",
+  "src/service/action_tools/tools/desktop-launch-tools.mjs",
 ];
 for (const oldPath of cap1MovedPaths) {
   assert(!existsSync(path.join(root, oldPath)),
@@ -289,16 +290,33 @@ for (const oldPath of cap1MovedPaths) {
 
 assert(indexSrc.includes("from \"../../capabilities/tools/desktop-capture-gui-tools.mjs\""),
   "index.mjs must import desktop-capture-gui-tools.mjs from capabilities/tools/");
+assert(indexSrc.includes("from \"../../capabilities/tools/desktop-launch-tools.mjs\""),
+  "index.mjs must import desktop-launch-tools.mjs from capabilities/tools/");
 for (const tool of ["TAKE_SCREENSHOT_TOOL", "GUI_FIND_ELEMENT_TOOL", "GUI_CLICK_TOOL", "GUI_TYPE_TEXT_TOOL"]) {
   assert(!indexSrc.includes(`export const ${tool} = {`),
     `index.mjs must not redefine extracted ${tool}`);
 }
-
-// Deferred tools still in index.mjs must still be present
+const desktopLaunchSrc = read("src/service/capabilities/tools/desktop-launch-tools.mjs");
 for (const tool of ["LAUNCH_APP_TOOL"]) {
-  assert(indexSrc.includes(`export const ${tool}`),
-    `index.mjs must still own deferred ${tool}`);
+  assert(desktopLaunchSrc.includes(`export const ${tool}`),
+    `desktop-launch-tools.mjs must own ${tool}`);
+  assert(!indexSrc.includes(`export const ${tool} = {`),
+    `index.mjs must not redefine extracted ${tool}`);
 }
+for (const ownerText of [
+  "const KNOWN_APPS",
+  "function resolveAppCommand",
+  "function hasKnownAppAlias",
+  "function looksLikeExecutableTarget",
+  "function stableLaunchCandidateId",
+  "async function findPythonLauncherScript",
+  "async function tryPythonLauncher",
+  "async function resolveAppViaStartMenu"
+]) {
+  assert(desktopLaunchSrc.includes(ownerText), `desktop-launch-tools.mjs missing ${ownerText}`);
+  assert(!indexSrc.includes(ownerText), `index.mjs must not retain desktop launch owner text: ${ownerText}`);
+}
+
 assert(indexSrc.includes("READ_CLIPBOARD_TOOL"),
   "index.mjs must still own deferred READ_CLIPBOARD_TOOL (NOOP_TOOLS reference)");
 

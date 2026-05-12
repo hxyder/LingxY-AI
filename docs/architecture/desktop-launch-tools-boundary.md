@@ -1,13 +1,12 @@
 # Desktop Launch Tools Boundary
 
-CAP inline high-risk family extraction preflight. Status: 2026-05-11, current
-owner remains `src/service/action_tools/tools/index.mjs`; target owner is
-`src/service/capabilities/tools/desktop-launch-tools.mjs`.
+CAP inline high-risk family extraction. Status: 2026-05-11, moved to
+`src/service/capabilities/tools/desktop-launch-tools.mjs` after static and
+runtime-contract preflight verification.
 
 ## Current State
 
-- Current owner: `src/service/action_tools/tools/index.mjs`
-- Target owner: `src/service/capabilities/tools/desktop-launch-tools.mjs`
+- Current owner: `src/service/capabilities/tools/desktop-launch-tools.mjs`
 - Registry aggregator: `src/service/action_tools/tools/index.mjs`
 - Tool family:
   - `launch_app`
@@ -51,17 +50,15 @@ owner remains `src/service/action_tools/tools/index.mjs`; target owner is
 
 ## Verification
 
-- `scripts/verify-desktop-launch-tools-contract.mjs` currently locks this
-  preflight state: inline owner, public helper exports, launcher helper
-  presence, Python script path, registry metadata, and this document.
-- The physical move must update the verifier to require
-  `src/service/capabilities/tools/desktop-launch-tools.mjs`, require
-  `index.mjs` to import/re-export from that owner, and require absence of old
-  inline launch helper/tool definitions.
+- `scripts/verify-desktop-launch-tools-contract.mjs` locks the moved owner,
+  public helper exports/re-exports, launcher helper presence, Python script
+  path, registry metadata, old inline body absence, and this document.
 - Existing behavior coverage includes `tests/behavior/launch-app-ambiguity.test.mjs`
   and `tests/behavior/agent-loop-sequencing.test.mjs`.
 
 ## Decision
 
-Preflight only. Do not claim this family moved until the verifier requires the
-new capability owner and proves the old inline owner text is gone.
+Moved. The current owner is
+`src/service/capabilities/tools/desktop-launch-tools.mjs`.
+`src/service/action_tools/tools/index.mjs` remains the live aggregator and must
+not reintroduce inline desktop launch helper or tool bodies.
