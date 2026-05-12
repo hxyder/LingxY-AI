@@ -144,6 +144,13 @@ for (const required of [
   "Reviewer note:",
   "node scripts/verify-final-answer-reviewer-loop.mjs",
   "node --test tests/behavior/agent-loop-final-composer.test.mjs",
+  "PM-001 Marketplace trust model",
+  "docs/architecture/marketplace-trust-model.md",
+  "src/service/capabilities/marketplace/trust-model.mjs",
+  "trustPreview",
+  "previewInstall()",
+  "node scripts/verify-marketplace-trust-model.mjs",
+  "node --test tests/behavior/marketplace-trust-model.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

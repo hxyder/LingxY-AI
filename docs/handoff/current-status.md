@@ -3376,3 +3376,46 @@ Decision:
 - MM-002 is ready to commit.
 - Next valid work is PM-001 marketplace trust model preflight unless the user
   chooses to start sandbox/sidecar or observability first.
+
+## Codex Review: PM-001 Marketplace Trust Model
+
+Date: 2026-05-12
+
+Scope:
+- Added shared trust helpers in
+  `src/service/capabilities/marketplace/trust-model.mjs`.
+- Added `docs/architecture/marketplace-trust-model.md`.
+- Skill registry entries, GitHub skill install previews, MCP statuses, and
+  connector plugin records now expose additive `trustPreview` metadata.
+- Skill install action metadata now surfaces `trust_preview` from the previewed
+  staged install.
+- Connector plugin registry now exposes `previewInstall()` so install UI can
+  show trust state before copying plugin files.
+- Existing install, enable, route, tool id, provider id, storage schema, IPC
+  channel, and HTTP route behavior was intentionally unchanged.
+
+Verification run by Codex:
+- `node --check` on changed PM-001 modules/tests/verifier: passed.
+- `node --test tests/behavior/marketplace-trust-model.test.mjs`: passed, 5/5.
+- `node scripts/verify-marketplace-trust-model.mjs`: passed.
+- `node scripts/verify-skill-surface-contract.mjs`: passed.
+- `node scripts/verify-skill-local-only-boundary.mjs`: passed.
+- `node scripts/verify-mcp-surface-contract.mjs`: passed.
+- `node scripts/verify-plugin-registry.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- Direct `node scripts/verify-behavior-tests.mjs`: passed 1023/1023 after the
+  first `check:fast` run reported one non-reproduced behavior aggregation
+  failure.
+- Rerun `npm run check:fast`: passed, 111/111 commands including 1023/1023
+  behavior tests.
+
+Issue found and handled:
+- The first full `check:fast` failed inside behavior-test aggregation with one
+  failure, but direct behavior aggregation immediately passed 1023/1023 and the
+  full fast-gate rerun passed. Treat this as a watched stability signal, not a
+  PM-001 product-code blocker.
+
+Decision:
+- PM-001 is ready to commit.
+- Next valid work is PM-002 external MCP governance preflight.

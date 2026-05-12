@@ -123,7 +123,8 @@ Use this tool BEFORE install_skill_from_github so the user sees what they're ins
         descriptor_heading: info.descriptor.heading,
         descriptor_description: info.descriptor.description,
         preview_size_bytes: info.preview.sizeBytes,
-        content_hash: info.preview.contentHash
+        content_hash: info.preview.contentHash,
+        trust_preview: info.preview.trustPreview ?? info.trustPreview ?? null
       }
     });
   }
@@ -207,6 +208,7 @@ Failure modes:
         root_path: result.rootPath,
         descriptor_heading: result.descriptor?.heading ?? null,
         descriptor_description: result.descriptor?.description ?? null,
+        trust_preview: stagingInfo.preview?.trustPreview ?? stagingInfo.trustPreview ?? null,
         warnings: result.warnings ?? []
       }
     });

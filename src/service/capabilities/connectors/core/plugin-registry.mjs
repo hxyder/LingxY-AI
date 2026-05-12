@@ -11,6 +11,7 @@ import {
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildMarketplaceTrustPreview } from "../../marketplace/trust-model.mjs";
 
 const STATE_FILE = ".state.json";
 const MANIFEST_FILE = "plugin.json";
@@ -70,16 +71,22 @@ function describeBuiltInPlugins(rootConnectorsDir) {
   if (!existsSync(rootConnectorsDir)) return [];
   return readdirSync(rootConnectorsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && !["core", "tools"].includes(entry.name))
-    .map((entry) => ({
-      id: entry.name,
-      displayName: entry.name,
-      version: "built-in",
-      provider: entry.name,
-      source: "builtin",
-      enabled: true,
-      directory: path.join(rootConnectorsDir, entry.name),
-      mcpServers: []
-    }));
+    .map((entry) => {
+      const plugin = {
+        id: entry.name,
+        displayName: entry.name,
+        version: "built-in",
+        provider: entry.name,
+        source: "builtin",
+        enabled: true,
+        directory: path.join(rootConnectorsDir, entry.name),
+        mcpServers: []
+      };
+      return {
+        ...plugin,
+        trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
+      };
+    });
 }
 
 /**
@@ -101,7 +108,7 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
     try {
       const manifest = readManifest(directory);
       const state = readStateFile(dir)[id] ?? { enabled: true };
-      return {
+      const plugin = {
         id: manifest.id ?? id,
         displayName: manifest.displayName ?? manifest.id ?? id,
         description: manifest.description ?? "",
@@ -113,8 +120,12 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
         directory,
         mcpServers: Array.isArray(manifest.mcpServers) ? manifest.mcpServers : []
       };
-    } catch (error) {
       return {
+        ...plugin,
+        trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
+      };
+    } catch (error) {
+      const plugin = {
         id,
         source: "installed",
         enabled: false,
@@ -123,16 +134,26 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
         error: error.message,
         mcpServers: []
       };
+      return {
+        ...plugin,
+        trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
+      };
     }
   }
 
   function snapshot() {
     const builtIns = describeBuiltInPlugins(builtInRoot);
     const state = readStateFile(dir);
-    const builtInsWithState = builtIns.map((plugin) => ({
-      ...plugin,
-      enabled: state[plugin.id]?.enabled !== false
-    }));
+    const builtInsWithState = builtIns.map((plugin) => {
+      const next = {
+        ...plugin,
+        enabled: state[plugin.id]?.enabled !== false
+      };
+      return {
+        ...next,
+        trustPreview: buildMarketplaceTrustPreview(next, { kind: "plugin" })
+      };
+    });
     const installed = listInstalledDirectories(dir).map(({ id, directory }) => readPluginRecord(id, directory));
     return [...builtInsWithState, ...installed];
   }
@@ -173,6 +194,36 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
     writeStateFile(dir, state);
     reload();
     return snapshot().find((entry) => entry.id === pluginId) ?? null;
+  }
+
+  function previewInstall({ sourcePath } = {}) {
+    if (!sourcePath || typeof sourcePath !== "string") {
+      throw new Error("sourcePath is required");
+    }
+    const resolved = path.resolve(sourcePath);
+    if (!existsSync(resolved)) {
+      throw new Error(`source_not_found: ${resolved}`);
+    }
+    const stats = statSync(resolved);
+    if (!stats.isDirectory()) {
+      throw new Error("only directory sources are supported in this release");
+    }
+    const manifest = readManifest(resolved);
+    const plugin = {
+      id: manifest.id,
+      displayName: manifest.displayName ?? manifest.id,
+      description: manifest.description ?? "",
+      version: manifest.version ?? "0.0.0",
+      provider: manifest.provider ?? manifest.id,
+      source: "installed",
+      enabled: false,
+      directory: resolved,
+      mcpServers: Array.isArray(manifest.mcpServers) ? manifest.mcpServers : []
+    };
+    return {
+      plugin,
+      trustPreview: buildMarketplaceTrustPreview(plugin, { kind: "plugin" })
+    };
   }
 
   async function install({ sourcePath } = {}) {
@@ -270,6 +321,7 @@ export function createPluginRegistry({ runtime, pluginsDir = null, builtInsDir =
     disabledBuiltInProviders,
     reload,
     setEnabled,
+    previewInstall,
     install,
     uninstall
   };

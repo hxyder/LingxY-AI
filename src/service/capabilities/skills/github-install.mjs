@@ -7,6 +7,7 @@ import {
   deriveSkillRegistryId,
   validateSkillDescriptorMarkdown
 } from "./discovery.mjs";
+import { buildMarketplaceTrustPreview } from "../marketplace/trust-model.mjs";
 
 // Codex review (2026-05-03): Skill GitHub install is not "execute code" —
 // SKILL.md is markdown — but it IS prompt-injection surface, so we cap
@@ -584,6 +585,15 @@ export async function stageSkillFromGitHub({
     .update([urlValidation.owner, urlValidation.repo, effectiveBranch ?? "", effectiveSubPath ?? "", guarded.markdown].join("\0"))
     .digest("hex")
     .slice(0, 16);
+  const trustPreview = buildMarketplaceTrustPreview({
+    id: finalName,
+    displayName: validation.heading,
+    description: validation.description,
+    source: "github_install",
+    thirdParty: true,
+    localOnly: true,
+    signatureVerified: false
+  }, { kind: "skill" });
 
   return {
     ok: true,
@@ -610,8 +620,10 @@ export async function stageSkillFromGitHub({
         // on-disk byte count, matching how readSkillMarkdownGuarded
         // checks against SKILL_MD_MAX_BYTES.
         sizeBytes: Buffer.byteLength(guarded.markdown, "utf8"),
-        contentHash
+        contentHash,
+        trustPreview
       },
+      trustPreview,
       gitRemoveFailed,
       // codex round-1: removeGitDir is dead state at finalize time
       // (the .git removal already ran in stage). Dropped. `now` is

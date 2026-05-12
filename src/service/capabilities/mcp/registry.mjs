@@ -1,3 +1,5 @@
+import { buildMarketplaceTrustPreview } from "../marketplace/trust-model.mjs";
+
 export function createMCPRegistry(servers = []) {
   const registered = new Map(servers.map((server) => [server.id, server]));
 
@@ -16,15 +18,27 @@ export function createMCPRegistry(servers = []) {
       return Promise.all(
         [...registered.values()].map(async (server) => {
           if (typeof server.getStatus === "function") {
-            return server.getStatus(context);
+            const status = await server.getStatus(context);
+            return {
+              ...status,
+              trustPreview: status?.trustPreview
+                ?? buildMarketplaceTrustPreview({
+                  ...status,
+                  source: status?.source ?? server.source
+                }, { kind: "mcp_server" })
+            };
           }
-          return {
+          const status = {
             id: server.id,
             displayName: server.displayName,
             transport: server.transport,
             available: typeof server.isAvailable === "function"
               ? await server.isAvailable(context)
               : true
+          };
+          return {
+            ...status,
+            trustPreview: buildMarketplaceTrustPreview(status, { kind: "mcp_server" })
           };
         })
       );

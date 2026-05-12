@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { describeMcpEnvRequirements, resolveMcpEnv } from "./env-resolver.mjs";
+import { buildMarketplaceTrustPreview } from "../marketplace/trust-model.mjs";
 
 const DEFAULT_TIMEOUT_MS = 3_000;
 const COMMAND_EXISTS_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -111,7 +112,7 @@ export function createConfiguredMCPServer(server = {}) {
       } else {
         detail = "ready";
       }
-      return {
+      const status = {
         id,
         displayName,
         transport,
@@ -130,6 +131,10 @@ export function createConfiguredMCPServer(server = {}) {
         ...(envCheck.missing.length > 0
           ? { missingEnv: envCheck.missing }
           : {})
+      };
+      return {
+        ...status,
+        trustPreview: buildMarketplaceTrustPreview(status, { kind: "mcp_server" })
       };
     },
     async listResources() {

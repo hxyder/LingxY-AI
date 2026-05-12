@@ -1,3 +1,5 @@
+import { buildMarketplaceTrustPreview } from "../marketplace/trust-model.mjs";
+
 export function skillStateKey(registryId = "", skillId = "") {
   const registry = String(registryId ?? "").trim();
   const skill = String(skillId ?? "").trim();
@@ -34,7 +36,7 @@ export function createSkillRegistry(adapters = []) {
             : [];
           const source = adapter.source ?? "runtime_config";
           const thirdParty = source === "github_install";
-          return {
+          const status = {
             id: adapter.id,
             displayName: adapter.displayName ?? adapter.id,
             rootPath: adapter.rootPath,
@@ -45,6 +47,10 @@ export function createSkillRegistry(adapters = []) {
             source,
             localOnly: thirdParty,
             thirdParty
+          };
+          return {
+            ...status,
+            trustPreview: buildMarketplaceTrustPreview(status, { kind: "skill_registry" })
           };
         })
       );
@@ -66,7 +72,7 @@ export function createSkillRegistry(adapters = []) {
           const stateKey = skillStateKey(adapter.id, skill?.id);
           if (stateKey && disabledKeys.has(stateKey)) {
             if (includeInactive) {
-              skills.push({
+              const inactiveSkill = {
                 registry: adapter.id,
                 ...skill,
                 registrySource: source,
@@ -75,13 +81,17 @@ export function createSkillRegistry(adapters = []) {
                 skillStateKey: stateKey,
                 active: false,
                 inactiveReason: "disabled_by_user"
+              };
+              skills.push({
+                ...inactiveSkill,
+                trustPreview: buildMarketplaceTrustPreview(inactiveSkill, { kind: "skill" })
               });
             }
             continue;
           }
           if (key && seen.has(key)) {
             if (includeInactive) {
-              skills.push({
+              const inactiveSkill = {
                 registry: adapter.id,
                 ...skill,
                 registrySource: source,
@@ -91,6 +101,10 @@ export function createSkillRegistry(adapters = []) {
                 active: false,
                 inactiveReason: "duplicate_skill_id",
                 duplicateOf: seen.get(key)
+              };
+              skills.push({
+                ...inactiveSkill,
+                trustPreview: buildMarketplaceTrustPreview(inactiveSkill, { kind: "skill" })
               });
             }
             continue;
@@ -102,7 +116,7 @@ export function createSkillRegistry(adapters = []) {
               displayName: skill?.displayName ?? skill?.name ?? skill?.id ?? null
             });
           }
-          skills.push({
+          const activeSkill = {
             registry: adapter.id,
             ...skill,
             registrySource: source,
@@ -110,6 +124,10 @@ export function createSkillRegistry(adapters = []) {
             thirdParty,
             skillStateKey: stateKey,
             active: true
+          };
+          skills.push({
+            ...activeSkill,
+            trustPreview: buildMarketplaceTrustPreview(activeSkill, { kind: "skill" })
           });
         }
       }
