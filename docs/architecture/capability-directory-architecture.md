@@ -12,7 +12,7 @@ Status: inventory verified against the current repository on 2026-05-11 after CA
 | Action tool schemas | `src/service/capabilities/schemas/index.mjs` | All tool parameter schemas |
 | Action tool registry | `src/service/capabilities/registry/registry.mjs` | `createActionToolRegistry` |
 | Action tool types | `src/service/capabilities/registry/types.mjs` | `createActionResult` |
-| Risk/policy | `src/service/capabilities/registry/risk_matrix.mjs`, `src/service/capabilities/registry/policy-guard.mjs`, `src/service/action_tools/file-reversibility.mjs` | Tool risk evaluation, policy guard, file reversibility |
+| Risk/policy | `src/service/capabilities/registry/risk_matrix.mjs`, `src/service/capabilities/registry/policy-guard.mjs`, `src/service/capabilities/tools/file-reversibility.mjs` | Tool risk evaluation, policy guard, file reversibility |
 | Skills | `src/service/capabilities/skills/` | Skill lifecycle (`lifecycle.mjs`), skill installer, skill markdown editor |
 | MCP | `src/service/capabilities/mcp/` | MCP server config, install, drafts, test runner |
 | Connectors | `src/service/capabilities/connectors/` | Connector tool aggregator, connector plugins, account tools |

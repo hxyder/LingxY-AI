@@ -183,7 +183,7 @@ Legend:
 | `src/service/capabilities/tools/vision-analyze.mjs` | Vision analysis action tool. | service/tools/provider | no | Provider resolver/adapter. | high | Provider/image boundary. |
 | `src/service/capabilities/registry/policy-guard.mjs` | Tool policy/rate limits. | service/policy | no | Runtime/tool policy. | high | Security-sensitive. |
 | `src/service/capabilities/registry/risk_matrix.mjs` | Tool risk evaluation. | service/policy | no | Tool calls. | high | Security-sensitive. |
-| `src/service/action_tools/file-reversibility.mjs` | File mutation checkpoint/restore helpers. | service/tools/artifact | no | FS, task events. | high | Must align with approvals and recovery. |
+| `src/service/capabilities/tools/file-reversibility.mjs` | File mutation checkpoint/restore helpers. | service/tools/artifact | no | FS, task events. | high | Correct capability owner; must align with approvals and recovery. |
 
 ## Artifacts and Preview
 

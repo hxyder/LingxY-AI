@@ -25,7 +25,7 @@ import { normalizeArtifactVersionMetadata } from "../store/artifact-metadata.mjs
 import {
   applyFileReversibilityCheckpoint,
   collectFileReversibilityCheckpoints
-} from "../../action_tools/file-reversibility.mjs";
+} from "../../capabilities/tools/file-reversibility.mjs";
 
 function taskDeletedFilterFromUrl(url) {
   return normalizeDeletedFilter(url.searchParams.get("deleted") ?? false);

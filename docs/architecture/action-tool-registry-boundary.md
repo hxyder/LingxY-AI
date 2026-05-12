@@ -14,7 +14,7 @@ verification.
   (moved from `src/service/action_tools/risk_matrix.mjs`)
 - Current policy owner: `src/service/capabilities/registry/policy-guard.mjs`
   (moved from `src/service/action_tools/policy-guard.mjs`)
-- Current file reversibility owner: `src/service/action_tools/file-reversibility.mjs`
+- Current file reversibility owner: `src/service/capabilities/tools/file-reversibility.mjs`
 
 ## Public Contract
 
@@ -54,10 +54,10 @@ CAP-3 happened in two commits:
    `src/service/capabilities/registry/`, update active imports, update
    inventories/verifiers, and prove old owner files are absent.
 
-`file-reversibility.mjs` is locked by this preflight because it is part of the
-tool execution safety surface, but it should only be physically moved in a
-separate file/artifact safety phase unless CAP-3 explicitly expands its scope
-with updated verifier coverage.
+`file-reversibility.mjs` is locked by this boundary because it is part of the
+tool execution safety surface. It was physically moved in CAP-5A after its
+dedicated verifier and behavior tests covered checkpoint creation, sidecar
+collection, task-route restore, and renderer recovery controls.
 
 ## Verification
 

@@ -9,7 +9,7 @@ import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index
 import {
   applyFileReversibilityCheckpoint,
   collectFileReversibilityCheckpoints
-} from "../../src/service/action_tools/file-reversibility.mjs";
+} from "../../src/service/capabilities/tools/file-reversibility.mjs";
 import { renderFileReversibilityPanel } from "../../src/desktop/renderer/console-task-detail.mjs";
 
 const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);

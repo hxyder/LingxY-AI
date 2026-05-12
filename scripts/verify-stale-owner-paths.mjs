@@ -89,6 +89,9 @@ const phaseCap4DProviderOldOwners = [
 const phaseCap4ECodeCliOldOwners = [
   { old: "src/service/ai/code_cli/", new: "src/service/capabilities/code_cli/" },
 ];
+const phaseCap5AFileReversibilityOldOwners = [
+  { old: "src/service/action_tools/file-reversibility.mjs", new: "src/service/capabilities/tools/file-reversibility.mjs" },
+];
 const allMoved = [
   ...phase2bOldOwners,
   ...phaseRepo1OldOwners,
@@ -99,7 +102,8 @@ const allMoved = [
   ...phaseCap4BMcpOldOwners,
   ...phaseCap4CConnectorOldOwners,
   ...phaseCap4DProviderOldOwners,
-  ...phaseCap4ECodeCliOldOwners
+  ...phaseCap4ECodeCliOldOwners,
+  ...phaseCap5AFileReversibilityOldOwners
 ];
 
 // Post-migration: old physical paths must not exist as reachable files.
@@ -129,6 +133,7 @@ const forbiddenExistingPaths = [
   "src/service/connectors",
   "src/service/ai/providers",
   "src/service/ai/code_cli",
+  "src/service/action_tools/file-reversibility.mjs",
 ];
 for (const rel of forbiddenExistingPaths) {
   const absolute = path.join(root, rel);

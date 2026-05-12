@@ -24,7 +24,7 @@ const capabilityRoots = [
   "src/service/capabilities/registry/types.mjs",
   "src/service/capabilities/registry/risk_matrix.mjs",
   "src/service/capabilities/registry/policy-guard.mjs",
-  "src/service/action_tools/file-reversibility.mjs",
+  "src/service/capabilities/tools/file-reversibility.mjs",
   // Skills
   "src/service/capabilities/skills/lifecycle.mjs",
   // MCP

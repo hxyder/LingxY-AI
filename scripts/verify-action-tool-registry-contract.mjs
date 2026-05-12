@@ -18,7 +18,7 @@ import {
   applyFileReversibilityCheckpoint,
   collectFileReversibilityCheckpoints,
   prepareFileReversibilityCheckpoint
-} from "../src/service/action_tools/file-reversibility.mjs";
+} from "../src/service/capabilities/tools/file-reversibility.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -32,7 +32,7 @@ const currentPaths = [
   "src/service/capabilities/registry/types.mjs",
   "src/service/capabilities/registry/risk_matrix.mjs",
   "src/service/capabilities/registry/policy-guard.mjs",
-  "src/service/action_tools/file-reversibility.mjs"
+  "src/service/capabilities/tools/file-reversibility.mjs"
 ];
 for (const rel of currentPaths) {
   assert(existsSync(path.join(root, rel)), `current CAP-3 owner missing: ${rel}`);
@@ -42,7 +42,8 @@ const removedOwnerPaths = [
   "src/service/action_tools/registry.mjs",
   "src/service/action_tools/types.mjs",
   "src/service/action_tools/risk_matrix.mjs",
-  "src/service/action_tools/policy-guard.mjs"
+  "src/service/action_tools/policy-guard.mjs",
+  "src/service/action_tools/file-reversibility.mjs"
 ];
 for (const rel of removedOwnerPaths) {
   assert(!existsSync(path.join(root, rel)),
@@ -241,7 +242,7 @@ for (const text of [
   "`src/service/capabilities/registry/types.mjs`",
   "`src/service/capabilities/registry/risk_matrix.mjs`",
   "`src/service/capabilities/registry/policy-guard.mjs`",
-  "`src/service/action_tools/file-reversibility.mjs`",
+  "`src/service/capabilities/tools/file-reversibility.mjs`",
   "moved from `src/service/action_tools/registry.mjs`",
   "`src/service/capabilities/registry/`",
   "Current State",

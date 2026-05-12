@@ -37,7 +37,7 @@ import {
   PREVIEW_SKILL_FROM_GITHUB_TOOL,
   INSTALL_SKILL_FROM_GITHUB_TOOL
 } from "../../capabilities/tools/skill-install-tools.mjs";
-import { prepareFileReversibilityCheckpoint } from "../file-reversibility.mjs";
+import { prepareFileReversibilityCheckpoint } from "../../capabilities/tools/file-reversibility.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";

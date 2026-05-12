@@ -22,7 +22,7 @@ Status: verified against the current repository on 2026-05-09.
 | Artifact transform service | `src/service/core/artifact-transforms/artifact-transform-service.mjs` | Service runtime |
 | Preview registry | `src/service/preview/registry.mjs` | Service runtime |
 | Preview HTTP routes | `src/service/core/http-routes/preview-file-routes.mjs` | Service runtime |
-| File reversibility helpers | `src/service/action_tools/file-reversibility.mjs` | Service runtime |
+| File reversibility helpers | `src/service/capabilities/tools/file-reversibility.mjs` | Service runtime |
 | Artifact path helper | `src/service/core/artifact-path-helper.mjs` | Service runtime (Phase 2E.1) |
 
 ## Artifact-Creating Tool Surfaces
