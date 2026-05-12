@@ -55,7 +55,32 @@ For each MCP tool discovered by `client-bridge.connectMcpServer()`:
 
 Critical: the external MCP tool is **not** re-injected into the agent loop as a raw action tool. The only entry point is through the catalog, which means every call passes confirmation and timeline rules.
 
-## 3. MCP candidates studied (unchanged reference)
+## 3. External MCP token policy
+
+External MCP servers must maintain isolated token/configuration stores. They
+must not reuse LingxY OAuth or connector account tokens through secret refs such
+as `${secret_ref:oauth/...}`, `${secret_ref:account/...}`, or
+`${secret_ref:connector/...}`.
+
+Allowed configuration forms:
+
+- environment references owned by the MCP server, such as `${env:SEARCH_TOKEN}`;
+- MCP-scoped secret refs, such as `${secret_ref:mcp/search/token}`;
+- literals only when the descriptor validation explicitly allows them.
+
+`src/service/capabilities/mcp/governance.mjs` enforces the policy in MCP status
+reporting and in the external MCP catalog bridge. A governance-blocked server is
+reported as unavailable with `detail: "governance_blocked"` and is not
+discovered into connector catalog tools.
+
+External MCP tool entries remain catalog-only:
+
+- `source: "external_mcp"`;
+- `requiresConfirmation: true` by default;
+- execution goes through `workflow-dispatcher.mjs`, not raw action-tool
+  injection.
+
+## 4. MCP candidates studied (unchanged reference)
 
 We did not vendor any third-party Google MCP server in this iteration. The studied candidates:
 
@@ -66,7 +91,7 @@ We did not vendor any third-party Google MCP server in this iteration. The studi
 
 The internal MCP server we ship borrows the *shape* (manifest-driven, per-service patches), not the code. Before vendoring any of them later, confirm license from the repository source (not a registry summary) and keep external MCP disabled by default.
 
-## 4. External dependency intake rules
+## 5. External dependency intake rules
 
 - Prefer MIT, Apache-2.0, BSD-style licenses.
 - Do not vendor GPL/AGPL into the core service.
@@ -74,9 +99,8 @@ The internal MCP server we ship borrows the *shape* (manifest-driven, per-servic
 - Keep external MCP support optional and disabled by default.
 - Document any borrowed design ideas in this file and [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## 5. Open questions (unchanged)
+## 6. Open questions
 
 - Should Gmail draft creation be local preview only (current behavior) or create a real Gmail draft object via API?
-- Should external MCP servers share the current OAuth tokens, or maintain their own token store?
 - Should we support Google's `gws` CLI directly, or only MCP servers wrapping it?
 - How should the UI represent pending confirmation across restarts?

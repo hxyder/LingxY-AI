@@ -9,6 +9,7 @@
  */
 
 import { connectMcpServer } from "../../mcp/client-bridge.mjs";
+import { evaluateExternalMcpGovernance } from "../../mcp/governance.mjs";
 
 const DEFAULT_RISK = "medium";
 
@@ -28,6 +29,11 @@ function buildCatalogEntry({ serverId, serverDisplayName, mcpTool, policy = {} }
     risk: policy.risk ?? DEFAULT_RISK,
     requiresConfirmation: policy.requiresConfirmation ?? true,
     source: "external_mcp",
+    governance: {
+      catalogOnly: true,
+      requiresConfirmation: true,
+      tokenPolicy: "isolated"
+    },
     execution: {
       kind: "external_mcp",
       serverId,
@@ -53,6 +59,8 @@ export async function discoverExternalMcpCatalogEntries({
   await Promise.all(
     servers.map(async (server) => {
       if (server.transport !== "stdio" || !server.command) return;
+      const governance = evaluateExternalMcpGovernance(server);
+      if (!governance.allowed) return;
       const available = typeof server.isAvailable === "function" ? await server.isAvailable() : true;
       if (!available) return;
       let tools = [];

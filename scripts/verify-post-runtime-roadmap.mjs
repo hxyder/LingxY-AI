@@ -151,6 +151,12 @@ for (const required of [
   "previewInstall()",
   "node scripts/verify-marketplace-trust-model.mjs",
   "node --test tests/behavior/marketplace-trust-model.test.mjs",
+  "PM-002 External MCP governance",
+  "src/service/capabilities/mcp/governance.mjs",
+  "isolated token stores",
+  "governance_blocked",
+  "node scripts/verify-mcp-governance-policy.mjs",
+  "node --test tests/behavior/mcp-governance.test.mjs",
   "No IPC channel names, HTTP routes, storage schema, tool ids, artifact kinds"
 ]) {
   assert(roadmap.includes(required), `roadmap runtime persistence status missing: ${required}`);

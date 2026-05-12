@@ -1,4 +1,5 @@
 import { buildMarketplaceTrustPreview } from "../marketplace/trust-model.mjs";
+import { applyExternalMcpGovernanceToStatus } from "./governance.mjs";
 
 export function createMCPRegistry(servers = []) {
   const registered = new Map(servers.map((server) => [server.id, server]));
@@ -19,12 +20,13 @@ export function createMCPRegistry(servers = []) {
         [...registered.values()].map(async (server) => {
           if (typeof server.getStatus === "function") {
             const status = await server.getStatus(context);
+            const governed = applyExternalMcpGovernanceToStatus(status, server);
             return {
-              ...status,
-              trustPreview: status?.trustPreview
+              ...governed,
+              trustPreview: governed?.trustPreview
                 ?? buildMarketplaceTrustPreview({
-                  ...status,
-                  source: status?.source ?? server.source
+                  ...governed,
+                  source: governed?.source ?? server.source
                 }, { kind: "mcp_server" })
             };
           }
@@ -36,9 +38,10 @@ export function createMCPRegistry(servers = []) {
               ? await server.isAvailable(context)
               : true
           };
+          const governed = applyExternalMcpGovernanceToStatus(status, server);
           return {
-            ...status,
-            trustPreview: buildMarketplaceTrustPreview(status, { kind: "mcp_server" })
+            ...governed,
+            trustPreview: buildMarketplaceTrustPreview(governed, { kind: "mcp_server" })
           };
         })
       );

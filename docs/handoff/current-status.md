@@ -3419,3 +3419,43 @@ Issue found and handled:
 Decision:
 - PM-001 is ready to commit.
 - Next valid work is PM-002 external MCP governance preflight.
+
+## Codex Review: PM-002 External MCP Governance
+
+Date: 2026-05-12
+
+Scope:
+- Added service-owned external MCP governance in
+  `src/service/capabilities/mcp/governance.mjs`.
+- External MCP servers now carry governance metadata and are blocked with
+  `governance_blocked` when they try to reuse LingxY OAuth/account/connector
+  token refs instead of isolated MCP token refs.
+- Configured MCP status, MCP registry status, and external MCP catalog discovery
+  all apply the same governance rule before surfacing availability or connect
+  candidates.
+- External MCP remains catalog-only and confirmation-required by default.
+- No IPC channels, HTTP routes, tool ids, artifact kinds, provider ids, storage
+  schema, or default internal MCP behavior changed.
+
+Verification run by Codex:
+- `node --check` on changed PM-002 modules/tests/verifier: passed.
+- `node --test tests/behavior/mcp-governance.test.mjs`: passed, 6/6.
+- `node scripts/verify-mcp-governance-policy.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `node scripts/verify-mcp-surface-contract.mjs`: passed.
+- `node scripts/verify-marketplace-trust-model.mjs`: passed.
+- `node scripts/verify-plugin-registry.mjs`: passed.
+- `node scripts/verify-check-runner.mjs`: passed.
+- First `npm run check:fast` reported 2 behavior aggregation failures, but
+  direct `node scripts/verify-behavior-tests.mjs` immediately passed
+  1029/1029 and the full `npm run check:fast` rerun passed 112/112 including
+  1029/1029 behavior tests.
+
+Issue found and handled:
+- The first behavior aggregation failure did not reproduce. Treat this as a
+  watched stability signal, not a PM-002 product-code blocker.
+
+Decision:
+- PM-002 is ready to commit.
+- Next valid work is PM-003 sharing/signatures/archive-cleanup preflight unless
+  sandbox/sidecar decision records are prioritized.

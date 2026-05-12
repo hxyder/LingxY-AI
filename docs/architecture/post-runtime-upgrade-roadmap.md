@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 111/111 after PM-001
-  marketplace trust model coverage was added, including 1023/1023 behavior
+- Current green gate: `npm run check:fast` passed 112/112 after PM-002
+  external MCP governance coverage was added, including 1029/1029 behavior
   tests.
   `npm run verify:desktop-gui-smoke` passed 49/49 on rerun after SA-002 had one
   non-reproduced overlay keyboard-open smoke failure.
@@ -51,7 +51,7 @@ Last updated: 2026-05-12.
 | Permission/mode model | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` Wave 12; `lingxy_electron_js_codex_execution_plan.md` queue-class notes | `execution_mode` exists, privacy policy exists, and approvals exist; user-visible mode/tool-surface mapping remains incomplete. |
 | Sidecar decision record | `lingxy_electron_js_codex_execution_plan.md` PR-09/PR-19; sidecar decision gate | Sidecars are constrained by guardrails, but a dedicated decision-record template/verifier is still missing. |
 | Optional git checkpoint mode | `lingxy_codex_ready_agent_runtime_upgrade_plan.md` section 3.9; `FUNCTION_AUDIT_AND_UPGRADE_PLAN.md` FW-018 | Complete for opt-in metadata: file reversibility remains default, while `ctx.reversibility.gitCheckpoint.enabled` can create a non-worktree git checkpoint ref for project rollback. |
-| Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs, and `docs/architecture/marketplace-trust-model.md`. | PM-001 is complete for shared trust preview metadata across skills, plugins, and MCP; signing, sharing UX, and external MCP governance remain. |
+| Plugin/MCP marketplace | `skill/mcp/connector` surface contracts, plugin registry verifier, connector boundary docs, and `docs/architecture/marketplace-trust-model.md`. | PM-001 is complete for shared trust preview metadata across skills, plugins, and MCP; PM-002 is complete for external MCP isolated-token governance. Signing and sharing UX remain. |
 | Privacy/sandbox hardening | `verify-privacy-sandbox-policy.mjs`, security broker/audit log owners, MCP install sandbox owner. | Privacy policy/broker foundation exists; OS-level sandbox/codesign boundaries and richer controls remain. |
 | Task/conversation/project IA migration | Conversation/session/context services, current codebase audit, renderer/runtime client verifiers. | IA invariants and contracts exist; broader storage/content migration and UI cleanup remain. |
 
@@ -75,7 +75,8 @@ Last updated: 2026-05-12.
 | MM-001 Model role call-site binding | complete | `resolveProviderForModelRole` binds planner/executor call sites only when model role routing is explicitly enabled and records role fields in `llm_usage`. |
 | MM-002 Reviewer/voting loops | complete | Feature-flagged final-answer reviewer pass runs only for high-risk artifact/connector/research tasks, binds to the `reviewer` role, records trace/usage, and cannot silently rewrite output. |
 | PM-001 Marketplace trust model | complete | Skills, connector plugins, and MCP statuses now expose shared `trustPreview` metadata with trusted/local-only/third-party/unsigned/disabled/deleted flags. |
-| PM-002 to PM-003 Plugin/skill/MCP marketplace | pending | Must preserve disabled defaults, stale-reference cleanup, signing, sharing UX, and auditability. |
+| PM-002 External MCP governance | complete | External MCP must use isolated token stores, is blocked from reusing LingxY OAuth/account token refs, and remains catalog-only with confirmation required by default. |
+| PM-003 Plugin/skill/MCP marketplace | pending | Must preserve disabled defaults, stale-reference cleanup, signing, sharing UX, and auditability. |
 | SH-001 to SH-003 Sandbox/sidecar/security export | pending | No native/OS sidecar work without decision record and rollback path. |
 | OQ-001 to OQ-002 Observability/quality trends | pending | Must use stable span/eval contracts and avoid hot-path overhead. |
 
@@ -747,23 +748,35 @@ Verification:
 
 ### PM-002: External MCP Governance
 
+Status: complete as of 2026-05-12.
+
 Scope:
 
 - Decide whether external MCP servers may reuse OAuth tokens or must maintain
   isolated token stores.
 - Keep external MCP optional and disabled by default.
 - Route MCP tools through connector catalog policy, not raw agent tools.
+- Decision: external MCP servers must maintain isolated token stores and must
+  not reuse LingxY OAuth/account token refs.
+- Implemented `src/service/capabilities/mcp/governance.mjs`.
+- MCP status and registry listing now include governance metadata and mark
+  forbidden shared-token refs as `governance_blocked`.
+- External MCP catalog discovery skips governance-blocked servers before
+  connecting to them.
 
 Acceptance:
 
 - External MCP tools retain confirmation, timeline, security broker, and audit
   behavior.
 - Token sharing rules are explicit and testable.
+- External MCP catalog entries remain `source: "external_mcp"` with
+  confirmation required by default.
 
 Verification:
 
 - `docs/task-runtime/MCP_INTEGRATION.md`
-- New MCP governance tests/verifiers.
+- `node scripts/verify-mcp-governance-policy.mjs`
+- `node --test tests/behavior/mcp-governance.test.mjs`
 
 ### PM-003: Sharing, Signatures, And Archive Cleanup
 
