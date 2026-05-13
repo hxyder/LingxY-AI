@@ -12,6 +12,18 @@ export async function readServiceJson(response) {
   }
 }
 
+async function fetchDesktopServiceJson(url, requestInit) {
+  try {
+    return await fetch(url, requestInit);
+  } catch (error) {
+    const cause = error?.cause?.code || error?.cause?.message || error?.message || "fetch_failed";
+    const wrapped = new Error(`Desktop service unreachable at ${url}: ${cause}`);
+    wrapped.code = "desktop_service_unreachable";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+}
+
 export async function requestDesktopServiceJson({
   base,
   pathname,
@@ -27,7 +39,7 @@ export async function requestDesktopServiceJson({
     headers["Content-Type"] = "application/json";
     requestInit.body = JSON.stringify(body ?? {});
   }
-  const response = await fetch(`${base}${pathname}`, {
+  const response = await fetchDesktopServiceJson(`${base}${pathname}`, {
     ...requestInit
   });
   const result = await readServiceJson(response);
@@ -64,7 +76,7 @@ export async function postDesktopServiceBinary({
   contentType = "application/octet-stream",
   actor = "desktop_shell"
 }) {
-  const response = await fetch(`${base}${pathname}${search}`, {
+  const response = await fetchDesktopServiceJson(`${base}${pathname}${search}`, {
     method: "POST",
     headers: {
       [DESKTOP_ACTOR_HEADER]: actor,
@@ -107,7 +119,7 @@ export async function postDesktopServiceBinaryStream({
   };
   firstFrameTimer = setTimeout(() => controller.abort(), firstFrameTimeoutMs);
   try {
-    const response = await fetch(`${base}${pathname}${search}`, {
+    const response = await fetchDesktopServiceJson(`${base}${pathname}${search}`, {
       method: "POST",
       headers: {
         [DESKTOP_ACTOR_HEADER]: actor,

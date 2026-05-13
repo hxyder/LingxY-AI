@@ -332,6 +332,10 @@ assert.match(desktopMorningDigest, /export async function requestMorningDigestCh
   "desktop-morning-digest.mjs must own morning digest check request details");
 assert.match(desktopMorningDigest, /pathname:\s*"\/email\/digest\/check"/,
   "desktop-morning-digest.mjs must preserve the morning digest HTTP route");
+assert.match(desktopMorningDigest, /waitForServiceHealth/,
+  "desktop-morning-digest.mjs must health-gate the startup digest check before posting");
+assert.match(desktopMorningDigest, /service_unavailable/,
+  "desktop-morning-digest.mjs must skip startup digest checks when the service is unavailable");
 assert.doesNotMatch(electronMain, /function buildDockContextMenu\(/,
   "electron-main.mjs must not own dock context menu templates");
 assert.doesNotMatch(electronMain, /function clearUserKeywordSamples\(/,
