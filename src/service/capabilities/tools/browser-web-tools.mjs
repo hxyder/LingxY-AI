@@ -223,20 +223,32 @@ export const FETCH_URL_CONTENT_TOOL = {
       }
 
       const excerpt = text.slice(0, maxChars);
+      const contentQuality = assessExtractedContentQuality({
+        text: excerpt,
+        fullTextLength: text.length,
+        maxChars,
+        url: finalUrl
+      });
       const truncated = text.length > maxChars ? `\n\n[截断：原文共 ${text.length} 字符，仅显示前 ${maxChars} 字符]` : "";
+      const qualityNote = contentQuality.usable === false
+        ? `\n\n[内容质量提示：当前截取内容疑似以导航、菜单、Cookie 或模板文本为主，可能未包含页面主体数据。]\n`
+        : "";
       const fallbackNote = fallbackUrl
         ? `\n（原始 URL 返回 404，已改用当前可用页面：${finalUrl}）\n`
         : "";
 
       return createActionResult({
         success: true,
-        observation: `来源：${finalUrl}${fallbackNote}\n${excerpt}${truncated}`,
+        observation: `来源：${finalUrl}${fallbackNote}\n${excerpt}${qualityNote}${truncated}`,
         metadata: {
           url: finalUrl,
           requested_url: url,
           fallback_url: fallbackUrl,
           chars_extracted: text.length,
-          chars_returned: excerpt.length
+          chars_returned: excerpt.length,
+          truncated: text.length > maxChars,
+          content_extracted: contentQuality.usable,
+          content_quality: contentQuality
         }
       });
     } catch (error) {
@@ -277,4 +289,47 @@ function extractTextFromHtml(html = "") {
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
+}
+
+function assessExtractedContentQuality({ text = "", fullTextLength = 0, maxChars = 0, url = "" } = {}) {
+  const source = String(text ?? "").replace(/\s+/g, " ").trim();
+  const lower = source.toLowerCase();
+  const charsReturned = source.length;
+  const navMarkers = [
+    "cookies in use",
+    "privacy policy",
+    "skip to content",
+    "navigation menu",
+    "toggle navigation",
+    "search search",
+    "places to stay",
+    "submit an event",
+    "foodie restaurants",
+    "things to do",
+    "plan a trip"
+  ];
+  const markerHits = navMarkers.filter((marker) => lower.includes(marker)).length;
+  const sentenceHits = (source.match(/[.!?。！？]\s+/g) ?? []).length;
+  const lineCount = String(text ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).length;
+  const shortLineCount = String(text ?? "").split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => line.length <= 32).length;
+  const shortLineRatio = lineCount > 0 ? shortLineCount / lineCount : 0;
+  const templateMarkers = /{{\s*(?:title|date|event)|data-event|no events were found/i.test(source);
+  const boilerplateDominant = markerHits >= 4 && (shortLineRatio >= 0.55 || sentenceHits <= 5);
+  const truncatedEarly = Number(fullTextLength) > Number(maxChars) && Number(maxChars) > 0;
+  const usable = charsReturned >= 200 && !boilerplateDominant && !templateMarkers;
+  return {
+    usable,
+    boilerplate_dominant: boilerplateDominant,
+    template_markers: templateMarkers,
+    nav_marker_hits: markerHits,
+    short_line_ratio: Number(shortLineRatio.toFixed(3)),
+    sentence_hits: sentenceHits,
+    chars_returned: charsReturned,
+    chars_extracted: Number(fullTextLength) || charsReturned,
+    truncated_early: truncatedEarly,
+    url
+  };
+}

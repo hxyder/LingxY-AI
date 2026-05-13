@@ -107,6 +107,20 @@ test("assistant visible text gate hides serialized tool invocations generically"
   assert.equal(sanitizeAssistantVisibleText(normalAnswer), normalAnswer);
 });
 
+test("assistant visible text gate strips embedded raw tool protocol JSON", () => {
+  const leaked = [
+    "Let me try a different angle — searching for specific upcoming events.",
+    "{\"tool\":\"web_search_fetch\",\"args\":{\"query\":\"Raleigh events calendar May 12 13 14 15 16 17 2026\",\"limit\":8,\"recency\":\"week\"}}",
+    "Then I will summarize."
+  ].join("");
+
+  const visible = sanitizeAssistantVisibleText(leaked);
+  assert.match(visible, /Let me try a different angle/);
+  assert.match(visible, /Then I will summarize/);
+  assert.ok(!visible.includes("\"tool\""));
+  assert.ok(!visible.includes("web_search_fetch"));
+});
+
 test("renderer tool display fallback folds unknown structured args", () => {
   const preview = formatToolArgsPreview("unknown_tool", {
     nested: { should: "not leak" },

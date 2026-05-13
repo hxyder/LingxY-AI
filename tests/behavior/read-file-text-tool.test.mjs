@@ -182,6 +182,8 @@ test("read_file_text delegates directory paths to recursive folder extraction", 
 test("file enumeration tools mark shallow coverage without claiming content extraction", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-file-coverage-"));
   try {
+    const nestedDir = path.join(dir, "杂项");
+    await mkdir(nestedDir);
     await writeFile(path.join(dir, "one.md"), "One", "utf8");
     const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
 
@@ -190,6 +192,12 @@ test("file enumeration tools mark shallow coverage without claiming content extr
     assert.equal(listed.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW);
     assert.equal(listed.metadata.content_extracted, false);
     assert.equal(listed.metadata.recursive, false);
+    assert.deepEqual(listed.metadata.directories, [nestedDir]);
+    assert.ok(listed.metadata.files.includes(path.join(dir, "one.md")));
+    assert.ok(listed.metadata.entries.some((entry) =>
+      entry.type === "directory" && entry.name === "杂项" && entry.path === nestedDir
+    ));
+    assert.match(listed.observation, /\[directory\].*杂项/);
 
     const globbed = await registry.call("glob_files", { pattern: path.join(dir, "**", "*.md") });
     assert.equal(globbed.success, true);

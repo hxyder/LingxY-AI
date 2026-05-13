@@ -2,6 +2,7 @@ import {
   detectUnbackedActionClaims,
   selectSuccessContractValidationSpec,
   validateAnswerSynthesis,
+  validateFinalAnswerQuality,
   validateSuccessContract
 } from "../../core/policy/success-contract-validator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
@@ -107,6 +108,20 @@ export function finalizeAgenticPlannerRun({
     downgraded = true;
     violations = (violations ?? []).concat(synthesisViolations);
     const reason = synthesisViolations[0].message;
+    outputText = `[LingxY] 注意：${reason}\n\n${outputText || ""}`;
+  }
+
+  const finalQualityViolations = waitingExternalDecision
+    ? []
+    : validateFinalAnswerQuality({
+      task,
+      transcript: validatorTranscript,
+      finalText: outputText
+    });
+  if (finalQualityViolations.length > 0) {
+    downgraded = true;
+    violations = (violations ?? []).concat(finalQualityViolations);
+    const reason = finalQualityViolations[0].message;
     outputText = `[LingxY] 注意：${reason}\n\n${outputText || ""}`;
   }
 

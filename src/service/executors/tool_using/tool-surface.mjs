@@ -337,23 +337,23 @@ function taskRequiresArtifactTools(task) {
   );
 }
 
-const ARTIFACT_REQUEST_RE = /(生成|创建|保存|导出|写入|修改|编辑|更新|制作|做一个|整理成|转成|转换成).{0,20}(文件|文档|报告|表格|幻灯片|图片|图表|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|\bmd\b)|\b(create|generate|save|export|write|edit|update|make|turn\s+.*\s+into|convert)\b.{0,32}\b(file|document|report|spreadsheet|slide|deck|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|md)\b/iu;
-const CODE_EXECUTION_REQUEST_RE = /(执行|运行|跑一下|用\s*(node|python|powershell).{0,12}(脚本|代码)|脚本.{0,12}(执行|运行)|代码.{0,12}(执行|运行)|\b(run|execute)\b.{0,24}\b(script|code|node|python|powershell)\b|\b(node|python|powershell)\b.{0,24}\b(run|execute|script|code)\b)/iu;
-
-function taskTextExplicitlyAsksForArtifact(task) {
-  return liveUserIntentSources(task).some((text) => ARTIFACT_REQUEST_RE.test(text));
+function taskHasTypedArtifactCapability(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  if (capabilities.includes("artifact_generation")) return true;
+  const decision = semanticDecisionOf(task);
+  if (decision?.artifact_required === true) return true;
+  if (decision?.expected_output === "artifact") return true;
+  return requiredPolicyGroupsOf(task).includes("artifact_generation");
 }
+
+const CODE_EXECUTION_REQUEST_RE = /(执行|运行|跑一下|用\s*(node|python|powershell).{0,12}(脚本|代码)|脚本.{0,12}(执行|运行)|代码.{0,12}(执行|运行)|\b(run|execute)\b.{0,24}\b(script|code|node|python|powershell)\b|\b(node|python|powershell)\b.{0,24}\b(run|execute|script|code)\b)/iu;
 
 function taskTextExplicitlyAsksForCodeExecution(task) {
   return liveUserIntentSources(task).some((text) => CODE_EXECUTION_REQUEST_RE.test(text));
 }
 
 function taskAllowsArtifactTools(task) {
-  if (taskTextExplicitlyAsksForArtifact(task)) return true;
-  if (liveUserIntentSources(task).length > 0) return false;
-  if (taskRequiresArtifactTools(task)) return true;
-  const requiredGroups = requiredPolicyGroupsOf(task);
-  if (requiredGroups.includes("artifact_generation")) return true;
+  if (taskRequiresArtifactTools(task) || taskHasTypedArtifactCapability(task)) return true;
   return false;
 }
 

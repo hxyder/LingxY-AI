@@ -220,6 +220,61 @@ test("agent loop carries tool_result into the next planner turn and final compos
   assert.ok(events.some((event) => event.eventType === "tool_call_completed" && event.payload?.success === true));
 });
 
+test("recent local event runs downgrade when final answer lacks dated event details", async () => {
+  const webTool = {
+    id: "web_search_fetch",
+    name: "Web Search Fetch",
+    description: "Search fixture.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: [],
+      properties: {}
+    },
+    async execute() {
+      return {
+        success: true,
+        observation: "搜索结果：Raleigh events this weekend. VisitRaleigh events calendar.",
+        metadata: {
+          results: [{ url: "https://www.visitraleigh.com/events/" }]
+        }
+      };
+    }
+  };
+  const { runtime } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([webTool])
+  });
+  const task = {
+    ...makeTask(),
+    user_command: "我的城市最近有什么有意思的活动吗？",
+    task_spec: {
+      goal: "qa",
+      synthesis: { expected_output: "summary", user_goal: "recent local events" },
+      tool_policy: { web_search_fetch: { mode: "required" } },
+      success_contract: { required_policy_groups: ["external_web_read"] },
+      research_quality: {
+        profile: "multi_source_research",
+        min_sources: 1,
+        min_distinct_domains: 1,
+        single_source_digest_satisfies: false
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration }) => iteration === 0
+      ? { type: "tool_call", tool: "web_search_fetch", args: { query: "Raleigh events" } }
+      : { type: "final", text: "没有直接列出具体的活动名称和日期。建议直接访问活动日历。" },
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "partial_success");
+  assert.equal(result.answer_quality_violations[0]?.kind, "local_event_answer_lacks_concrete_events");
+});
+
 test("invalid tool arguments do not poison repeated-call dedupe before repair", async () => {
   const { runtime, events } = makeRuntime({
     actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),
@@ -296,6 +351,77 @@ test("invalid tool arguments do not poison repeated-call dedupe before repair", 
   assert.ok(!events.some((event) =>
     event.eventType === "synthesis_retry"
     && event.payload?.reason === "repeated_tool_call"
+  ));
+});
+
+test("typed artifact contract exposes document generation without relying on artifact wording regex", async () => {
+  const { runtime } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),
+    finalAnswerComposer: async ({ transcript }) => {
+      assert.ok(transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "generate_document"
+        && entry.success === true
+      ));
+      return "excel generated";
+    }
+  });
+  const task = {
+    task_id: "task_typed_artifact_surface",
+    user_command: "继续处理这个",
+    execution_mode: "interactive",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["artifact_generation"],
+        artifact_required: true,
+        expected_output: "artifact",
+        output_kind: "xlsx"
+      }
+    },
+    task_spec: {
+      goal: "qa",
+      artifact: { required: true, kind: "xlsx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "turn prior context into a spreadsheet" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        tool_called: false,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ tools }) => {
+      assert.ok(tools.some((tool) => tool.id === "generate_document"));
+      return {
+        type: "tool_call",
+        tool: "generate_document",
+        args: {
+          kind: "xlsx",
+          outline: {
+            title: "Receipt Summary",
+            headers: ["Field", "Value"],
+            rows: [
+              ["Renter", "Xiaoyu Han"],
+              ["Total", "$1,128.60"]
+            ]
+          }
+        }
+      };
+    },
+    maxIterations: 1
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "excel generated");
+  assert.ok(!result.transcript.some((entry) =>
+    entry.type === "tool_denied"
+    && entry.reason === "tool_not_available_for_task"
   ));
 });
 

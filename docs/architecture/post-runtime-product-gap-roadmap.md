@@ -15,10 +15,9 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 
 ## Current Gate
 
-- Current green gate: `npm run check:fast` passed 135/135 with 1092/1092
-  behavior tests after the final live-provider acceptance fix.
-- `npm run verify:desktop-gui-smoke` passed 49/49 after the final
-  live-provider acceptance fix. The earlier
+- Current green gate: `npm run check:fast` passed 138/138 with 1113/1113
+  behavior tests after PMAT-006 tool-surface heuristic governance.
+- `npm run verify:desktop-gui-smoke` passed 49/49 after PMAT-006. The earlier
   MMX-001 smoke attempt hit the known task-list keyboard focus timing failure
   and the immediate rerun passed.
 - `node scripts/real-llm-test/run-live-provider-acceptance.mjs --live --port
@@ -56,7 +55,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | --- | --- | --- |
 | Desktop daily workflows | `docs/release/desktop_product_acceptance_matrix.md`, GUI smoke, desktop renderer/main verifiers | Turn release acceptance rows into repeatable evidence packs with clear pass/partial/fail records and broader real desktop scenarios. |
 | Conversation/task/artifact UX | Conversation branch/search/follow-up verifiers, task trace timeline, preview screenshot-diff | Exercise complete daily flows end-to-end: attach, follow up, generate/edit/open artifacts, inspect trace, recover from failure. |
-| Provider and model setup | Provider routing/health/onboarding verifiers, role routing, reviewer loop | Add opt-in live provider acceptance that records model role, token, cost, fallback, and recovery behavior without leaking secrets. |
+| Provider and model setup | Provider routing/health/onboarding verifiers, role routing, reviewer loop | Add opt-in live provider acceptance that records model role, token/cache usage, fallback, and recovery behavior without leaking secrets. |
 | Connectors and OAuth | Connector catalog/workflow dispatch verifiers, Google/Microsoft contracts | Add disposable-account real acceptance for OAuth, list, guarded side effect, token refresh, and recovery copy. |
 | Skills, MCP, plugins, capabilities | Capability roots, marketplace trust model, MCP governance, plugin lifecycle | Make user-added skills/MCP/plugins manageable as separate inventory groups with templates, archive/recover, trust, and policy state surfaced consistently. |
 | Long-term sandboxing | Privacy policy, security broker, OS sandbox implementation decision, sidecar decision record | Add measured sandbox candidate evidence before changing boundaries; keep high-risk execution lanes recoverable and auditable. |
@@ -76,7 +75,7 @@ credentials, hardware, Office, browser, packaging, or live provider behavior.
 | CAPM-001 Capability inventory manager | complete | Skills, MCP servers, plugins, connectors, providers/model roles, user-created drafts, and built-in tools are browsable as separate typed inventories with ownership, trust, policy, and archive state. |
 | CAPM-002 Capability creation lifecycle | complete | User-created skills/MCP/plugins have templates, dry-run validation, install preview, rollback/archive, and policy gates before activation. |
 | SBOX-001 High-risk sandbox evidence pack | complete | File mutation, command execution, MCP install, OCR, browser automation, and audio daemon surfaces must collect measured evidence before any sandbox boundary change. |
-| MMX-001 Model role management surface | complete | Users can see planner/executor/reviewer/fast roles, health, cost, fallback, feature-flag state, and live-test action metadata without editing config files. |
+| MMX-001 Model role management surface | complete | Users can see planner/executor/reviewer/fast roles, health, token/cache usage, fallback, feature-flag state, and live-test action metadata without editing config files. |
 | MMX-002 Budgeted fallback and cascade evidence | complete | Any future model fallback/cascade must be opt-in, traceable, budget-bounded, and eval-measured before ensemble/voting loops. |
 | CTX-001 Context selection and project packs | complete | Users can see selected/omitted context, project memory scope, attachments, and conversation provenance in one coherent context surface. |
 | REL-001 Release evidence bundle | complete | Release readiness bundles check results, GUI smoke, row evidence, known issues, policy traces, and environment notes. |
@@ -386,8 +385,8 @@ Implemented:
 - `src/service/ai/model-role-routing.mjs` now treats
   planner/executor/reviewer/fast as first-class roles.
 - The `/config/integrations` `modelRoles` payload now includes
-  `featureFlag`, `managementSurface`, per-role health, fallback, cost/usage
-  evidence, and safe live-test action metadata.
+  `featureFlag`, `managementSurface`, per-role health, fallback,
+  token/cache usage evidence, and safe live-test action metadata.
 - Console Settings > Routing renders a service-backed model-role management
   surface before the existing task-routing form.
 - The live provider acceptance harness records the model-role management
@@ -429,8 +428,8 @@ Implemented:
   evidence contract.
 - Added `docs/architecture/model-fallback-cascade-evidence.md`.
 - Model-role management now exposes the current fallback/cascade policy state.
-- Enabled fallback/cascade requires explicit opt-in, max attempts, cost budget,
-  trace events, and usage measurement keys.
+- Enabled fallback/cascade requires explicit opt-in, max attempts,
+  token/latency budget, trace events, and usage measurement keys.
 - Ensemble/voting remains blocked unless eval evidence id and passed quality
   gate are present.
 

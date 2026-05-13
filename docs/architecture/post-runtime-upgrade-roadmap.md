@@ -25,9 +25,10 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 137/137 after FA-001 strict
-  generated-artifact acceptance coverage was added, including 1103/1103
-  behavior tests. `real-llm:followup-artifact --live` passed with strict
+- Current green gate: `npm run check:fast` passed 138/138 after PMAT-006
+  tool-surface heuristic governance was added, including 1113/1113 behavior
+  tests. `npm run verify:desktop-gui-smoke` passed 49/49. The previous
+  `real-llm:followup-artifact --live` pass covered strict
   generated `.mjs`, Markdown, JSON, and CSV content consistency, actual file
   inspection, execution via `run_script`, same-file follow-up edits,
   topic-switch isolation, and token/cache trace evidence.
@@ -42,6 +43,32 @@ Last updated: 2026-05-12.
 - Legacy snapshot keywords retained for verifier continuity: desktop
   completeness, context/trace, plugin/MCP trust, sandbox governance,
   multi-model execution, sub-agent runtime.
+
+## Product Maturity Board
+
+These items are tracked after the completed post-runtime board. They must follow
+the same execution discipline: inspect current code first, add a targeted test
+or verifier before broad wiring, run real desktop/API acceptance when the
+feature is user-facing, and do not use prompt-only patches to hide framework
+gaps.
+
+| Item | Status | Scope | Acceptance / verification |
+| --- | --- | --- | --- |
+| PMAT-001 Desktop product polish and manual acceptance | framework complete, evidence ongoing | Broaden daily desktop workflows beyond foundational GUI smoke: first-run recovery, empty/error states, settings, task detail, artifact preview, keyboard/a11y, cancel/resume, and common file/folder workflows. | Covered by DXR-001/DXR-002 evidence pack and daily workflow matrix. Current real GUI smoke: `npm run verify:desktop-gui-smoke` passed 49/49. New visible workflow changes still require row evidence. |
+| PMAT-002 Optional network OTEL export | deferred until backend/privacy decision | Current span taxonomy and local OTEL-shaped records are complete. Add network export only after a concrete backend, redaction model, opt-in UX, and latency budget exist. | Decision record must prove privacy, redaction, retry/backpressure, and no hot-path overhead. Local trace export stays the default. |
+| PMAT-003 Measured multi-candidate model loops | evidence-gated, not auto-enabled | Broader voting/ensemble/model-candidate loops may be added only where the final-reviewer and eval trend data show measurable benefit. No silent answer rewrite. | Feature flag, role-aware provider routing, token/latency budget, trace fields, and regression corpus proving quality gain over single answer. Price display stays off; token/cache fields are enough unless provider-owned billing evidence exists. |
+| PMAT-004 Automatic sub-agent delegation enablement | evidence-gated, not auto-enabled | Use the completed sub-agent runtime contract for planner-selected delegation, context isolation, allowed tools, budget, cancellation, child reports, and UI timeline. | Feature flag plus delegation eval corpus, task timeline visibility, cancellation/budget tests, and real acceptance on multi-step tasks where delegation helps. Keep disabled until all SA-003 gates pass for the concrete task class. |
+| PMAT-005 Local file/folder reality checks | active | Local filesystem answers must be grounded in fresh tool evidence. Directory listings must include folders as folders, and final answers must not infer folder absence from file-only listings or stale memory. | `list_files` exposes files, directories, and typed entries; evidence summaries preserve listed folders as shallow locator evidence. Add regressions when new file/folder workflows are found. |
+| PMAT-006 Tool-surface heuristic governance | active | Tool, skill, and MCP exposure must be driven by typed TaskSpec/SemanticRouter/capability contracts. Regex may remain for structured parsing, sanitization, URLs, paths, time phrases, security filters, and narrow explicit-action gates, but not as a veto over typed runtime facts. | `tool_using` and `agentic` tool surfaces must not infer artifact writer exposure from raw user text. `node scripts/verify-tool-surface-heuristic-governance.mjs` locks this invariant. |
+
+PMAT-005 investigation note, 2026-05-12: task
+`task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
+`杂项` folder even though the real Desktop contained it. The task log showed
+two framework issues: a PowerShell `run_script` directory listing returned
+mojibake for Chinese names, and `list_files` listed only files, not
+directories. The fix is framework-level: `list_files` now returns typed
+`entries`, `files`, and `directories`, and evidence summaries preserve listed
+directories as shallow locator evidence.
 
 ## Source Map
 
@@ -915,7 +942,7 @@ Status: complete as of 2026-05-12.
 Scope:
 
 - Persist deterministic eval metrics across runs.
-- Add trend comparisons for pass rate, blocked rate, token cost, latency, and
+- Add trend comparisons for pass rate, blocked rate, token usage, latency, and
   top failure classes.
 - Implemented `scripts/real-llm-test/trend-store.mjs`.
 - `scripts/real-llm-test/run-corpus.mjs` now appends compact
@@ -962,6 +989,102 @@ Verification:
 - `node scripts/verify-task-span-taxonomy.mjs`
 - `node --test tests/behavior/task-span-taxonomy.test.mjs`
 
+### OQ-003: User-Visible Planner Boundary And Current-Events Quality Gate
+
+Status: complete as of 2026-05-12.
+
+Trigger:
+
+- Real run `task_c6c8b3cf-7e99-4dfb-b3c9-404547cfbf11` showed planner
+  narration and raw `{"tool":"...","args":...}` protocol leaking into the
+  assistant bubble while researching Raleigh events.
+- The same run reached `max_iterations_reached`, had `claim_density=0`, lacked
+  concrete event names/dates, and still emitted `success`.
+
+Scope:
+
+- Planner streaming is internal. `tool_using.planner` and `agentic.planner`
+  planner deltas now emit on `reasoning_delta`, not user-visible `text_delta`.
+- Renderer keeps a defense-in-depth sanitizer for embedded raw tool protocol
+  JSON if any future provider path leaks it.
+- `fetch_url_content` now emits content-quality metadata for boilerplate/menu
+  dominated pages and marks low-quality extraction as not usable evidence.
+- Success-contract substance checks reject `fetch_url_content` hits whose
+  content-quality metadata says the returned page was not usable.
+- Final-answer quality now has a deterministic current/local-events gate:
+  after web research, recent/local event answers must provide concrete dated
+  event items with time/location evidence, or downgrade to `partial_success`
+  / ask for missing location before spending tool calls.
+- Agentic finalization uses the same final-answer quality gate.
+
+Acceptance:
+
+- Planner prose/tool JSON cannot appear as assistant-visible progress.
+- Menu/cookie/event-template pages do not satisfy a required external web read.
+- Recent local-events tasks cannot be marked `success` when the final answer
+  admits that no concrete event names/dates were found.
+
+Verification:
+
+- `node --test tests/behavior/success-contract-validation-spec.test.mjs tests/behavior/browser-web-tools.test.mjs tests/behavior/renderer-evidence-tool-display.test.mjs`
+- `npm run check:fast`
+
+### OQ-004: Typed Artifact Contract Tool Surface
+
+Status: complete as of 2026-05-12.
+
+Trigger:
+
+- Real run `task_5b3df475-c556-485b-8392-ecb45e57ef5b` asked to turn the
+  active context into an Excel artifact.
+- TaskSpec and SemanticRouter correctly marked `artifact.required=true`,
+  `artifact.kind=xlsx`, and `needed_capabilities=["artifact_generation"]`.
+- The tool surface then re-filtered artifact tools through a live-text
+  heuristic, so `generate_document` and `run_script` were hidden and planner
+  calls were denied as `tool_not_available_for_task`.
+
+Framework rule:
+
+- Structured runtime facts win over text heuristics. TaskSpec,
+  SemanticRouter `needed_capabilities`, and success contracts may expose a tool
+  family. A regex over the user utterance must never veto that typed contract.
+- Text heuristics may remain in intent parsing and TaskSpec construction when
+  structured signals are absent or degraded, but executor tool surfaces must not
+  infer artifact-write permission directly from raw text.
+- Do not fix this class by adding individual words such as `excel` to a
+  regex. The invariant is typed capability/contract precedence.
+- This is a multilingual framework rule: adding Chinese or English keywords is
+  not sufficient. Artifact intent belongs in TaskSpec/SemanticRouter typed
+  fields, not in executor-local natural-language regex.
+
+Scope:
+
+- `tool_using` and `agentic` tool-surface artifact visibility now checks typed
+  artifact requirements and typed artifact capabilities instead of
+  unstructured-text artifact keyword fallbacks.
+- Artifact-generation capability, artifact-required SemanticRouter decisions,
+  output `artifact`, and `success_contract.artifact_created` all preserve the
+  artifact writer surface.
+- The old artifact-request text regex and `taskTextExplicitlyAsksForArtifact`
+  gate are removed from executor tool surfaces.
+
+Acceptance:
+
+- Artifact-required tasks cannot hide `generate_document`, `write_file`, or
+  related artifact tools merely because the live text is short, deictic, or
+  lacks a file keyword.
+- Hallucinated direct file-open tools remain hidden unless explicitly required.
+- Regex remains acceptable for structured parsing/security/explicit-action
+  detection, but not for artifact tool-family authorization at executor surface
+  time.
+
+Verification:
+
+- `node --test tests/behavior/agent-loop-tool-surface.test.mjs`
+- `node --test tests/behavior/agentic-tool-surface.test.mjs`
+- `node --test tests/behavior/agent-loop-sequencing.test.mjs`
+- `node scripts/verify-tool-surface-heuristic-governance.mjs`
+
 ## Recommended PR Order
 
 1. PX-001: tracked roadmap/status hygiene.
@@ -989,6 +1112,8 @@ Verification:
 23. SH-003: audit export and policy trace.
 24. OQ-001: eval trend store.
 25. OQ-002: span taxonomy and optional OTEL export.
+26. OQ-003: user-visible planner boundary and current-events quality gate.
+27. OQ-004: typed artifact contract tool surface.
 
 This order intentionally completes desktop state and observability before true
 sub-agents and multi-model collaboration. Sub-agents multiply failures if window

@@ -98,7 +98,7 @@ export const VERIFY_FILE_EXISTS_TOOL = {
 export const LIST_FILES_TOOL = {
   id: "list_files",
   name: "List Files",
-  description: "List files in a directory, optionally filtered by glob pattern (e.g. *.pptx).",
+  description: "List files and folders in a directory, optionally filtered by glob pattern (e.g. *.pptx).",
   parameters: ACTION_TOOL_SCHEMAS.list_files,
   risk_level: "low",
   required_capabilities: ["file_read"],
@@ -111,20 +111,36 @@ export const LIST_FILES_TOOL = {
     const patternRegex = args.pattern ? globToRegex(args.pattern) : null;
     try {
       const entries = await readdir(dir, { withFileTypes: true });
-      const files = entries
-        .filter((e) => e.isFile())
+      const listedEntries = entries
+        .filter((e) => e.isFile() || e.isDirectory())
         .filter((e) => !patternRegex || patternRegex.test(e.name))
         .slice(0, limit)
-        .map((e) => path.join(dir, e.name));
+        .map((e) => ({
+          path: path.join(dir, e.name),
+          name: e.name,
+          type: e.isDirectory() ? "directory" : "file"
+        }));
+      const files = listedEntries
+        .filter((entry) => entry.type === "file")
+        .map((entry) => entry.path);
+      const directories = listedEntries
+        .filter((entry) => entry.type === "directory")
+        .map((entry) => entry.path);
+      const entryLines = listedEntries.map((entry) => `[${entry.type}] ${entry.path}`);
       return createActionResult({
         success: true,
-        observation: files.length > 0
-          ? `Found ${files.length} file(s) in ${dir}:\n${files.join("\n")}`
-          : `No files found in ${dir}${args.pattern ? ` matching "${args.pattern}"` : ""}`,
+        observation: listedEntries.length > 0
+          ? `Found ${listedEntries.length} entries in ${dir} (${directories.length} directories, ${files.length} files):\n${entryLines.join("\n")}`
+          : `No files or folders found in ${dir}${args.pattern ? ` matching "${args.pattern}"` : ""}`,
         metadata: {
           tool_id: "list_files",
           dir,
           files,
+          directories,
+          entries: listedEntries,
+          file_count: files.length,
+          directory_count: directories.length,
+          entry_count: listedEntries.length,
           coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW,
           content_extracted: false,
           recursive: false

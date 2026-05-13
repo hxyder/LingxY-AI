@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   selectSuccessContractValidationSpec,
-  validateAnswerSynthesis
+  validateAnswerSynthesis,
+  validateFinalAnswerQuality,
+  validateSuccessContract
 } from "../../src/service/core/policy/success-contract-validator.mjs";
 
 const multiSource = {
@@ -99,4 +101,77 @@ test("synthesis validation rejects two-record connector lists for summary output
 
   assert.equal(violations[0]?.kind, "answer_not_synthesized");
   assert.match(violations[0]?.checkerReason ?? "", /record_list_not_synthesized=2/);
+});
+
+test("final answer quality rejects recent local event answers without concrete dated events", () => {
+  const violations = validateFinalAnswerQuality({
+    task: {
+      user_command: "我的城市最近有什么有意思的活动吗？",
+      task_spec: {
+        synthesis: { expected_output: "summary" },
+        research_quality: multiSource
+      }
+    },
+    transcript: [{
+      type: "tool_result",
+      tool: "web_search_fetch",
+      success: true,
+      observation: "搜索结果：Raleigh events this weekend...",
+      metadata: {
+        results: [{ url: "https://www.visitraleigh.com/events/" }]
+      }
+    }],
+    finalText: "没有直接列出具体的活动名称和日期。建议直接访问活动日历。"
+  });
+
+  assert.equal(violations[0]?.kind, "local_event_answer_lacks_concrete_events");
+});
+
+test("final answer quality accepts recent local event answers with dated venue details", () => {
+  const violations = validateFinalAnswerQuality({
+    task: {
+      user_command: "my city upcoming events this weekend",
+      task_spec: {
+        synthesis: { expected_output: "summary" },
+        research_quality: multiSource
+      }
+    },
+    transcript: [{
+      type: "tool_result",
+      tool: "fetch_url_content",
+      success: true,
+      observation: "Event calendar with listings.",
+      metadata: {
+        url: "https://example.com/events",
+        content_quality: { usable: true }
+      }
+    }],
+    finalText: [
+      "- May 16, 7:30 pm — Jazz Night at Downtown Theater.",
+      "- May 17, 10:00 am — Spring Market at Moore Square Park."
+    ].join("\n")
+  });
+
+  assert.deepEqual(violations, []);
+});
+
+test("external web read contract rejects fetch pages marked as boilerplate-dominant", () => {
+  const out = validateSuccessContract({
+    success_contract: { required_policy_groups: ["external_web_read"] }
+  }, [{
+    type: "tool_result",
+    tool: "fetch_url_content",
+    success: true,
+    observation: "Cookies in use Search Search Places to Stay Events This Weekend Submit an Event",
+    metadata: {
+      url: "https://example.com/events",
+      content_quality: {
+        usable: false,
+        boilerplate_dominant: true
+      }
+    }
+  }]);
+
+  assert.equal(out.satisfied, false);
+  assert.equal(out.violations[0]?.kind, "external_web_read_required_returned_empty");
 });

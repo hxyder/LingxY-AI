@@ -188,7 +188,9 @@ function sourcesFromIndexedFileSearch(entry) {
 
 function sourcesFromFileEnumeration(entry) {
   const metadata = entry?.metadata ?? {};
-  const files = Array.isArray(metadata.files) ? metadata.files : [];
+  const files = Array.isArray(metadata.entries) ? metadata.entries
+    : Array.isArray(metadata.files) ? metadata.files
+      : [];
   const scope = metadata.coverage_scope
     ?? (entry?.tool === "list_files"
       ? FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW

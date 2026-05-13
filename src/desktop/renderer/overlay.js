@@ -8245,16 +8245,19 @@ function activateTaskListFilter(btn) {
 }
 
 function handleTaskListFilterKeydown(event) {
+  const key = event.key === "Left" ? "ArrowLeft"
+    : event.key === "Right" ? "ArrowRight"
+      : event.key;
   const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
-  if (!keys.includes(event.key)) return;
+  if (!keys.includes(key)) return;
   event.preventDefault();
   const buttons = [...taskListFilterBtns];
   const currentIndex = Math.max(0, buttons.indexOf(event.currentTarget));
   let nextIndex = currentIndex;
-  if (event.key === "ArrowLeft") nextIndex = (currentIndex + buttons.length - 1) % buttons.length;
-  if (event.key === "ArrowRight") nextIndex = (currentIndex + 1) % buttons.length;
-  if (event.key === "Home") nextIndex = 0;
-  if (event.key === "End") nextIndex = buttons.length - 1;
+  if (key === "ArrowLeft") nextIndex = (currentIndex + buttons.length - 1) % buttons.length;
+  if (key === "ArrowRight") nextIndex = (currentIndex + 1) % buttons.length;
+  if (key === "Home") nextIndex = 0;
+  if (key === "End") nextIndex = buttons.length - 1;
   const next = buttons[nextIndex];
   if (!next) return;
   activateTaskListFilter(next);

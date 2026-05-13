@@ -69,6 +69,17 @@ function requiredPolicyGroupsOf(task) {
   return [...new Set(groups)];
 }
 
+function semanticDecisionOf(task) {
+  return task?.context_packet?.semantic_router_decision ?? null;
+}
+
+function neededCapabilitiesOf(task) {
+  const decision = semanticDecisionOf(task);
+  return Array.isArray(decision?.needed_capabilities)
+    ? decision.needed_capabilities.filter((value) => typeof value === "string" && value.trim())
+    : [];
+}
+
 function taskRequiresArtifactTools(task) {
   const specs = [task?.task_spec, task?.task_spec_initial];
   return specs.some((spec) =>
@@ -78,15 +89,17 @@ function taskRequiresArtifactTools(task) {
   );
 }
 
-const ARTIFACT_REQUEST_RE = /(生成|创建|保存|导出|写入|修改|编辑|更新|制作|做一个|整理成|转成|转换成).{0,20}(文件|文档|报告|表格|幻灯片|图片|图表|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|\bmd\b)|\b(create|generate|save|export|write|edit|update|make|turn\s+.*\s+into|convert)\b.{0,32}\b(file|document|report|spreadsheet|slide|deck|diagram|docx|word|pdf|xlsx|csv|pptx|html|markdown|md)\b/iu;
+function taskHasTypedArtifactCapability(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  if (capabilities.includes("artifact_generation")) return true;
+  const decision = semanticDecisionOf(task);
+  if (decision?.artifact_required === true) return true;
+  if (decision?.expected_output === "artifact") return true;
+  return requiredPolicyGroupsOf(task).includes("artifact_generation");
+}
 
 function taskAllowsArtifactTools(task) {
-  if (liveUserIntentSources(task).some((text) => ARTIFACT_REQUEST_RE.test(text))) return true;
-  if (liveUserIntentSources(task).length > 0) return false;
-  if (taskRequiresArtifactTools(task)) return true;
-  const requiredGroups = requiredPolicyGroupsOf(task);
-  if (requiredGroups.includes("artifact_generation")) return true;
-  return false;
+  return taskRequiresArtifactTools(task) || taskHasTypedArtifactCapability(task);
 }
 
 const CONNECTOR_SCOPE_RE = /(云盘|网盘|邮箱|邮件|日历|收件箱|google\s*drive|gmail|calendar|onedrive|outlook)/iu;

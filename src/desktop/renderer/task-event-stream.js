@@ -143,6 +143,23 @@ export function isInternalToolInvocationText(text = "") {
   return Boolean(parsed && !parsed.rest);
 }
 
+function stripInternalToolProtocolJson(text = "") {
+  const source = String(text ?? "");
+  return source.replace(/\{[\s\S]*?"tool"\s*:\s*"[^"]+"[\s\S]*?"args"\s*:\s*\{[\s\S]*?\}[\s\S]*?\}/g, (candidate) => {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)
+          && typeof parsed.tool === "string"
+          && parsed.args && typeof parsed.args === "object" && !Array.isArray(parsed.args)) {
+        return "";
+      }
+    } catch {
+      return candidate;
+    }
+    return candidate;
+  });
+}
+
 export function looksLikeInternalControlJsonText(text = "") {
   const normalized = normalizeMaybeJsonText(text);
   if (!normalized.startsWith("{")) return false;
@@ -181,7 +198,7 @@ export function sanitizeAssistantVisibleText(text = "") {
   if (isInternalControlJsonText(source)) return "";
   const parsedToolInvocation = parseVisibleToolInvocationText(source);
   if (parsedToolInvocation) return parsedToolInvocation.rest;
-  return source;
+  return stripInternalToolProtocolJson(source);
 }
 
 function formatPayloadFallbackMessage(payload = {}, fallback = "已收到执行事件。") {

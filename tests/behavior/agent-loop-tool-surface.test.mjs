@@ -158,7 +158,7 @@ test("agent tool surface preserves artifact tools when artifact is required", ()
   assert.ok(!visible.includes("launch_app"));
 });
 
-test("agent tool surface hides artifact writers for pure local-file reading", () => {
+test("agent tool surface preserves artifact writers for typed artifact contracts", () => {
   const task = {
     user_command: "读取会议纪要，提取 owner、goal、follow-up。",
     context_packet: {
@@ -174,12 +174,35 @@ test("agent tool surface hides artifact writers for pure local-file reading", ()
 
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
-  assert.ok(!visible.includes("write_file"));
-  assert.ok(!visible.includes("generate_document"));
-  assert.ok(!visible.includes("resolve_output_path"));
+  assert.ok(visible.includes("write_file"));
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("resolve_output_path"));
 });
 
-test("agent tool surface exposes artifact writers for explicit file output", () => {
+test("typed artifact_generation capability is not vetoed by live text heuristics", () => {
+  const task = {
+    user_command: "继续处理这个",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["artifact_generation"],
+        artifact_required: true,
+        expected_output: "artifact"
+      }
+    },
+    task_spec: {
+      artifact: { required: true, kind: "xlsx" },
+      success_contract: { artifact_created: true, artifact_registered: true }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("write_file"));
+  assert.ok(visible.includes("register_artifact"));
+});
+
+test("agent tool surface does not infer artifact writers from raw text without TaskSpec", () => {
   const task = {
     user_command: "读取附件并生成 markdown 报告文件。",
     context_packet: {
@@ -192,9 +215,9 @@ test("agent tool surface exposes artifact writers for explicit file output", () 
 
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
-  assert.ok(visible.includes("write_file"));
-  assert.ok(visible.includes("generate_document"));
-  assert.ok(visible.includes("resolve_output_path"));
+  assert.ok(!visible.includes("write_file"));
+  assert.ok(!visible.includes("generate_document"));
+  assert.ok(!visible.includes("resolve_output_path"));
 });
 
 test("agent tool surface preserves run_script for explicit execution over generated file context", () => {

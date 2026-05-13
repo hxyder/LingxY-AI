@@ -566,14 +566,11 @@ export async function runAgenticPlanner({
     let response;
     try {
       messages[1].content = buildSystemPrompt(transcriptForValidator(transcript));
-      // Stream planner text live so the user sees output flow in real time.
-      // Pre-fix this was disabled to stop providers from leaking control JSON
-      // (`{iteration,next_action,…}`) into the bubble; that also killed
-      // streaming on the final answer. Two-line defense instead: the system
-      // prompt rule forbids raw control JSON, and the renderer suppresses any
-      // chunk that still matches that shape.
+      // Planner text is internal reasoning, not assistant-visible output.
+      // Providers can stream prose plus JSON tool protocol while deciding;
+      // keep it off text_delta so UI bubbles only receive final synthesis.
       const onTextDelta = (adapter.supportsStreaming && onEvent)
-        ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
+        ? (delta) => onEvent({ event_type: "reasoning_delta", payload: { delta } })
         : undefined;
       const onToolInputDelta = (adapter.supportsStreaming && onEvent)
         ? (toolName, partialJson) => {

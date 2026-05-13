@@ -319,6 +319,78 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
   }];
 }
 
+const RECENT_EVENT_QUERY_RE = /(活动|近期|最近|本周|周末|展览|演出|音乐会|节日|赛事|events?|event\s+calendar|things\s+to\s+do|concerts?|festivals?|this\s+week(?:end)?|upcoming|nearby)/iu;
+const LOCALITY_QUERY_RE = /(我的城市|我这边|附近|当地|本地|near\s+me|my\s+city|local|nearby|in\s+[A-Z][A-Za-z .'-]{2,})/u;
+const EVENT_DETAIL_RE = /(活动|展览|演出|音乐会|节日|赛事|event|concert|festival|show|market|exhibit|performance|game)/iu;
+const DAY_LEVEL_DATE_RE = /(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{1,2}\s*月\s*\d{1,2}\s*日|周[一二三四五六日天]|星期[一二三四五六日天]|\b(?:today|tomorrow|tonight|this\s+(?:week|weekend)|Friday|Saturday|Sunday|Monday|Tuesday|Wednesday|Thursday)\b)/iu;
+const TIME_OR_VENUE_RE = /(\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(?:am|pm)\b|地点|场地|地址|venue| at | @ | arena|amphitheater|theatre|theater|center|centre|museum|park|hall|stadium|downtown|PNC|Red Hat)/iu;
+const INSUFFICIENT_EVENT_ANSWER_RE = /(无法确定.*城市|还无法确定.*城市|没法直接告诉|没有直接列出具体的活动名称和日期|没有.*具体.*活动.*日期|建议.*访问.*活动日历|请告诉我你所在的城市|could not determine.*city|no concrete event names?|no specific event dates?|visit .*event calendar)/iu;
+
+function eventQueryText(task = null) {
+  const spec = task?.task_spec ?? {};
+  return [
+    task?.user_command,
+    spec.user_goal_text,
+    spec.topic,
+    spec.goal,
+    task?.context_packet?.text
+  ].map((value) => String(value ?? "")).join("\n");
+}
+
+function isRecentLocalEventQuery(task = null) {
+  const text = eventQueryText(task);
+  if (!RECENT_EVENT_QUERY_RE.test(text)) return false;
+  return LOCALITY_QUERY_RE.test(text) || /(最近|近期|本周|周末|this\s+week(?:end)?|upcoming)/iu.test(text);
+}
+
+function hasExternalWebReadAttempt(transcript = []) {
+  return (transcript ?? []).some((entry) =>
+    entry?.type === "tool_result"
+    && ["web_search", "web_search_fetch", "fetch_url_content"].includes(entry?.tool)
+  );
+}
+
+function concreteEventDetailCount(finalText = "") {
+  const lines = String(finalText ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !/^\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)+\|?$/.test(line));
+  let count = 0;
+  for (const line of lines) {
+    if (line.length < 12) continue;
+    if (!EVENT_DETAIL_RE.test(line) && !TIME_OR_VENUE_RE.test(line)) continue;
+    if (!DAY_LEVEL_DATE_RE.test(line)) continue;
+    if (!TIME_OR_VENUE_RE.test(line)) continue;
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Final-answer quality gates that need task context, not just TaskSpec.
+ * These are deterministic "must not call this success" checks. They do not
+ * rewrite the answer or special-case a sample prompt; they catch broad answer
+ * contract failures such as current local-event answers with no dated events.
+ */
+export function validateFinalAnswerQuality({ task = null, transcript = [], finalText = "" } = {}) {
+  const violations = [];
+  const final = String(finalText ?? "").trim();
+  if (!final) return violations;
+
+  if (isRecentLocalEventQuery(task) && hasExternalWebReadAttempt(transcript)) {
+    const concreteCount = concreteEventDetailCount(final);
+    if (INSUFFICIENT_EVENT_ANSWER_RE.test(final) || concreteCount === 0) {
+      violations.push({
+        kind: "local_event_answer_lacks_concrete_events",
+        message: "The user asked for recent/local events, but the final answer did not provide concrete dated event items with location/time evidence. It must be partial_success or ask for the missing location before spending tool calls.",
+        concrete_event_detail_count: concreteCount
+      });
+    }
+  }
+
+  return violations;
+}
+
 /**
  * UCA-181: framework-level guard against fabricated action claims.
  *
@@ -1164,6 +1236,11 @@ export function validateStepGate(taskSpec, transcript = [], options = {}) {
 }
 
 function resultHasSubstance(entry) {
+  if (entry?.tool === "fetch_url_content"
+      && entry?.metadata?.content_quality
+      && entry.metadata.content_quality.usable === false) {
+    return false;
+  }
   // web_search_fetch returns results in different shapes depending on the
   // provider. Accept any of: a non-empty `results`/`sources` array, a
   // non-empty `observation` string, or any non-trivial nested data.

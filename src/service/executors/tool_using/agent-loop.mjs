@@ -15,7 +15,10 @@ import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { resolveProviderForModelRole } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
-import { validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
+import {
+  validateAnswerSynthesis,
+  validateFinalAnswerQuality
+} from "../../core/policy/success-contract-validator.mjs";
 import { artifactRecoveryBlockedReason } from "../../core/artifact-fallback-policy.mjs";
 import {
   formatResourceContext,
@@ -563,17 +566,14 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       tools: toolSchemas,
       maxTokens: 1024,
       signal,
-      // Stream planner text live so the user sees output flow in real time.
-      // The previous "buffer until final" version eliminated control-JSON
-      // leaks but also killed streaming on the final answer (planner returns
-      // text-only when the LLM is done). Two-line defense instead: the system
-      // prompt rule forbids raw control JSON, and the renderer suppresses any
-      // `{iteration,next_action,violation_kinds,satisfied}`-shaped chunk that
-      // does slip through.
+      // Planner text is not user-facing output. Some providers stream natural
+      // language planning or fallback JSON protocol before native tool calls
+      // are resolved; keep that on the reasoning channel so only final
+      // composer text reaches the assistant bubble.
       onTextDelta: adapter.supportsStreaming === true
         ? (delta) => {
             if (!delta) return;
-            runtime?.emitTaskEvent?.("text_delta", { delta });
+            runtime?.emitTaskEvent?.("reasoning_delta", { delta });
           }
         : undefined,
       onToolInputDelta: (toolName, partialJson) => {
@@ -813,6 +813,7 @@ export function createToolUsingExecutorScaffold() {
               text,
               phase_gate: result.phase_gate ?? null,
               error_budget: result.error_budget ?? null,
+              answer_quality_violations: result.answer_quality_violations ?? null,
               artifact_paths: terminalArtifactPaths
             }
           };
@@ -847,7 +848,34 @@ function appendAuditLog(runtime, task, subtype, payload) {
 export async function runToolAgentLoop(opts = {}) {
   const result = await _runToolAgentLoopCore(opts);
   const contracted = await finaliseWithArtifactContract(result, opts);
-  return finaliseWithEvidence(contracted, opts);
+  const qualityChecked = finaliseWithAnswerQuality(contracted, opts);
+  return finaliseWithEvidence(qualityChecked, opts);
+}
+
+function finaliseWithAnswerQuality(result, { runtime, task } = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (result.status !== "success") return result;
+  const violations = validateFinalAnswerQuality({
+    task,
+    transcript: result.transcript ?? [],
+    finalText: result.final_text ?? result.finalText ?? ""
+  });
+  if (violations.length === 0) return result;
+  try {
+    runtime?.emitTaskEvent?.("answer_quality_blocked", {
+      violation_kinds: violations.map((violation) => violation.kind).filter(Boolean)
+    });
+  } catch { /* audit failures must not break finalization */ }
+  try {
+    appendAuditLog(runtime, task, "tool_loop.answer_quality_blocked", {
+      violation_kinds: violations.map((violation) => violation.kind).filter(Boolean)
+    });
+  } catch { /* audit failures must not break finalization */ }
+  return {
+    ...result,
+    status: "partial_success",
+    answer_quality_violations: violations
+  };
 }
 
 function artifactContractViolations(task, transcript = []) {

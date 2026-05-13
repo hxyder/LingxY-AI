@@ -88,7 +88,7 @@ test("agentic prompt renders xlsx as a structured spreadsheet contract", () => {
   assert.match(prompt, /generic `Content` column/);
 });
 
-test("agentic tool surface hides artifact writers for pure local-file reading", () => {
+test("agentic tool surface preserves artifact writers for typed artifact contracts", () => {
   const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
     user_command: "读取会议纪要，提取 owner、goal、follow-up。",
     task_spec: {
@@ -97,14 +97,32 @@ test("agentic tool surface hides artifact writers for pure local-file reading", 
     }
   }).map((tool) => tool.id);
 
+  assert.ok(visible.includes("write_file"));
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("resolve_output_path"));
+});
+
+test("agentic tool surface does not infer artifact writers from raw text without TaskSpec", () => {
+  const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
+    user_command: "读取附件并生成 markdown 报告文件。",
+    task_spec: {}
+  }).map((tool) => tool.id);
+
   assert.ok(!visible.includes("write_file"));
   assert.ok(!visible.includes("generate_document"));
   assert.ok(!visible.includes("resolve_output_path"));
 });
 
-test("agentic tool surface exposes artifact writers for explicit file output", () => {
+test("agentic typed artifact_generation capability is not vetoed by live text heuristics", () => {
   const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
-    user_command: "读取附件并生成 markdown 报告文件。",
+    user_command: "继续处理这个",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["artifact_generation"],
+        artifact_required: true,
+        expected_output: "artifact"
+      }
+    },
     task_spec: {}
   }).map((tool) => tool.id);
 

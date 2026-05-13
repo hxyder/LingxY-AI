@@ -79,6 +79,19 @@ const ROUNDUP_MARKERS = [
   /\/(weekly|digest|roundup|recap|news-roundup)\//i
 ];
 
+function isWebEvidenceTool(tool) {
+  return tool === "web_search_fetch" || tool === "fetch_url_content";
+}
+
+function webEvidenceIsUsable(entry = {}) {
+  if (entry?.tool === "fetch_url_content"
+      && entry?.metadata?.content_quality
+      && entry.metadata.content_quality.usable === false) {
+    return false;
+  }
+  return true;
+}
+
 const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
   // UK
   "co.uk", "ac.uk", "gov.uk", "org.uk", "ltd.uk", "plc.uk", "me.uk", "net.uk", "sch.uk", "nhs.uk",
@@ -165,6 +178,7 @@ export function extractEvidence(transcript) {
     if (!entry || typeof entry !== "object") continue;
     if (entry.type !== "tool_result") continue;
     if (entry.success === false) continue;
+    if (isWebEvidenceTool(entry.tool) && !webEvidenceIsUsable(entry)) continue;
     ledgerSources.push(...normalizeSources(entry));
     if (entry.tool === "web_search_fetch") {
       const results = entry.metadata?.results;
@@ -239,7 +253,9 @@ export function extractEvidence(transcript) {
         });
       }
     } else if (entry.tool === "list_files" || entry.tool === "glob_files" || entry.tool === "find_recent_files") {
-      const files = Array.isArray(entry.metadata?.files) ? entry.metadata.files : [];
+      const files = Array.isArray(entry.metadata?.entries) ? entry.metadata.entries
+        : Array.isArray(entry.metadata?.files) ? entry.metadata.files
+          : [];
       const scope = entry.metadata?.coverage_scope
         ?? (entry.tool === "list_files"
           ? FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW
@@ -496,7 +512,8 @@ export function detectSearchSaturation(transcript, windowSize = 3) {
   for (const entry of transcript) {
     if (!entry || entry.type !== "tool_result") continue;
     if (entry.success === false) continue;
-    if (entry.tool !== "web_search_fetch" && entry.tool !== "fetch_url_content") continue;
+    if (!isWebEvidenceTool(entry.tool)) continue;
+    if (!webEvidenceIsUsable(entry)) continue;
     webHits.push(entry);
   }
   if (webHits.length <= safeWindow) return empty;

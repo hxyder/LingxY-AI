@@ -186,6 +186,7 @@
     "real-llm:context-memory-cache": "node scripts/real-llm-test/run-context-memory-cache-acceptance.mjs",
     "verify:followup-artifact-acceptance-harness": "node scripts/verify-followup-artifact-acceptance-harness.mjs",
     "real-llm:followup-artifact": "node scripts/real-llm-test/run-followup-artifact-acceptance.mjs",
+    "verify:tool-surface-heuristic-governance": "node scripts/verify-tool-surface-heuristic-governance.mjs",
     "verify:agentic-planner": "node scripts/verify-agentic-planner.mjs",
     "verify:file-kimi": "node scripts/verify-file-kimi.mjs",
     "verify:kimi-runtime": "node scripts/verify-kimi-runtime.mjs",
