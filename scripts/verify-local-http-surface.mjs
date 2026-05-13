@@ -546,6 +546,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("note-project-conversation-routes.mjs", "GET", "/^\\/projects\\/([^/]+)\\/workspace$/", {
+    domain: "projects",
+    effect: "privacy_sensitive_read",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("note-project-conversation-routes.mjs", "POST", "/^\\/projects\\/([^/]+)\\/files\\/attach$/", {
     domain: "projects",
     effect: "local_file_index_mutation",

@@ -16,6 +16,7 @@ export const CONTEXT_ITEM_PRIORITIES = Object.freeze({
   artifact_extract_section: 808,
   artifact_extract_table: 806,
   artifact_extract_metadata: 804,
+  project_scope: 790,
   session_task_anchor: 760,
   session_artifact_reference: 750,
   session_compaction: 735,
@@ -258,6 +259,36 @@ function collectArtifactExtractCandidates(candidates, { artifacts = [], runtime 
   }
 }
 
+function collectProjectScopeCandidate(candidates, { task = {}, runtime = null } = {}) {
+  const projectId = task?.project_id ?? task?.context_packet?.selection_metadata?.project_id ?? null;
+  if (!projectId) return;
+  let workspace = null;
+  try {
+    workspace = runtime?.projectWorkspaces?.getProjectWorkspace?.(projectId, {
+      conversationLimit: 20,
+      fileLimit: 50,
+      artifactLimit: 20
+    }) ?? null;
+  } catch {
+    workspace = null;
+  }
+  if (!workspace?.project) return;
+  pushCandidate(candidates, {
+    kind: "project_scope",
+    source: "project_workspace",
+    trust: "runtime_project",
+    value: {
+      project_id: workspace.project_id,
+      name: workspace.project.name ?? null,
+      file_paths: workspace.files.map((file) => file.path).slice(0, 20),
+      conversation_ids: workspace.conversations.map((conversation) => conversation.conversation_id).slice(0, 20),
+      artifact_ids: workspace.artifacts.map((artifact) => artifact.artifact_id).filter(Boolean).slice(0, 20),
+      stats: workspace.stats
+    },
+    reason: "service-owned project workspace groups this task with project conversations and files"
+  });
+}
+
 function collectCandidates({ task = {}, runtime = null, extraItems = [], limits = DEFAULT_LIMITS } = {}) {
   const ctx = task.context_packet ?? {};
   const candidates = [];
@@ -370,6 +401,8 @@ function collectCandidates({ task = {}, runtime = null, extraItems = [], limits 
     runtime,
     limits
   });
+
+  collectProjectScopeCandidate(candidates, { task, runtime });
 
   collectSessionCandidates(candidates, { task, runtime, limits });
 
@@ -498,6 +531,7 @@ export function compileContextForTask({
     compiled_at: now.toISOString(),
     task_id: task?.task_id ?? null,
     conversation_id: task?.conversation_id ?? null,
+    project_id: task?.project_id ?? task?.context_packet?.selection_metadata?.project_id ?? null,
     parent_task_id: task?.parent_task_id ?? null,
     limits: resolvedLimits,
     selected: selection.selected,

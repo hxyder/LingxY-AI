@@ -10,6 +10,7 @@ import {
   createConversationSessionService
 } from "../../src/service/core/session/conversation-session-service.mjs";
 import { createSessionCompactionService } from "../../src/service/core/session/session-compaction-service.mjs";
+import { createProjectWorkspaceService } from "../../src/service/core/projects/project-workspace-service.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 
 test("context compiler creates typed selected items with inclusion reasons", () => {
@@ -190,6 +191,46 @@ test("context compiler includes latest session compaction before stale transcrip
   assert.equal(compactionItem.source, "conversation_session.session_compactions");
   assert.ok(compactionItem.content.includes("Session compaction 0-4"));
   assert.equal(compactionItem.value.source_item_count, 5);
+});
+
+test("context compiler includes service-owned project scope without reading project files", () => {
+  const store = createInMemoryStoreScaffold();
+  const projectWorkspaces = createProjectWorkspaceService({ store });
+  projectWorkspaces.syncProjectStore({
+    currentProjectId: "proj_scope",
+    projects: [{
+      id: "proj_scope",
+      name: "Scope project",
+      attachedFilePaths: ["E:\\scope\\brief.md"]
+    }],
+    conversations: []
+  });
+  store.insertConversation({
+    conversation_id: "conv_scope",
+    project_id: "proj_scope",
+    title: "Scope conversation"
+  });
+
+  const compiled = compileContextForTask({
+    task: {
+      task_id: "task_project_scope",
+      conversation_id: "conv_scope",
+      project_id: "proj_scope",
+      user_command: "继续这个项目",
+      context_packet: {}
+    },
+    runtime: {
+      store,
+      projectWorkspaces
+    }
+  });
+
+  const projectScope = compiled.selected.find((item) => item.kind === "project_scope");
+  assert.equal(compiled.project_id, "proj_scope");
+  assert.ok(projectScope);
+  assert.equal(projectScope.source, "project_workspace");
+  assert.deepEqual(projectScope.value.file_paths, ["E:\\scope\\brief.md"]);
+  assert.deepEqual(projectScope.value.conversation_ids, ["conv_scope"]);
 });
 
 test("context compiler emits runtime metrics when available", () => {

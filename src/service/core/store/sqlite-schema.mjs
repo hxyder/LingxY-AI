@@ -78,6 +78,26 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   FOREIGN KEY(source_artifact_id) REFERENCES artifacts(artifact_id) ON DELETE CASCADE,
   FOREIGN KEY(source_extract_id) REFERENCES artifact_extracts(extract_id) ON DELETE SET NULL
 );`,
+  projects: `CREATE TABLE IF NOT EXISTS projects (
+  project_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  color TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  archived INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT
+);`,
+  projectFiles: `CREATE TABLE IF NOT EXISTS project_files (
+  project_id TEXT NOT NULL,
+  path TEXT NOT NULL,
+  status TEXT NOT NULL,
+  indexed_at TEXT,
+  metadata_json TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY(project_id, path),
+  FOREIGN KEY(project_id) REFERENCES projects(project_id) ON DELETE CASCADE
+);`,
   schedules: `CREATE TABLE IF NOT EXISTS schedules (
   schedule_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
@@ -312,7 +332,9 @@ export const SQLITE_INDEX_SQL = Object.freeze([
   `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_sources_source
      ON artifact_lineage_sources(source_artifact_id, created_at DESC)`,
   `CREATE INDEX IF NOT EXISTS idx_artifact_lineage_sources_extract
-     ON artifact_lineage_sources(source_extract_id, created_at DESC)`
+     ON artifact_lineage_sources(source_extract_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_project_files_project
+     ON project_files(project_id, updated_at DESC)`
 ]);
 
 export function buildStoreManifest() {

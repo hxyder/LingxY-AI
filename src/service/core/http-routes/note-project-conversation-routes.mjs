@@ -40,6 +40,13 @@ function normalizeProjectStore(store) {
   return normalizeProjectStoreBase(store, { withUpdatedAt: false });
 }
 
+function projectStoreForRuntime(runtime) {
+  const configStore = runtime.configStore?.load?.()?.ui?.projectStore;
+  if (!runtime.projectWorkspaces?.buildProjectStore) return normalizeProjectStore(configStore);
+  runtime.projectWorkspaces.syncProjectStore?.(configStore);
+  return runtime.projectWorkspaces.buildProjectStore();
+}
+
 function integrationPathsForRuntime(runtime = {}) {
   return runtime.platform?.integrationPaths ?? runtime.paths ?? null;
 }
@@ -439,9 +446,8 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "GET" && url.pathname === "/projects/store") {
-    const config = runtime.configStore?.load?.() ?? {};
     sendJson(response, 200, {
-      store: normalizeProjectStore(config.ui?.projectStore)
+      store: projectStoreForRuntime(runtime)
     });
     return true;
   }
@@ -450,14 +456,28 @@ export async function tryHandleNoteProjectConversationRoute({
     if (!requireDesktopActor({ request, response, allowedActors: PROJECT_STORE_ACTORS })) return true;
     const body = await readJsonBody(request);
     const store = normalizeProjectStore(body.store ?? body);
+    const serviceStore = runtime.projectWorkspaces?.syncProjectStore?.(store) ?? store;
     saveRuntimeConfig(runtime, (currentConfig) => ({
       ...currentConfig,
       ui: {
         ...(currentConfig.ui ?? {}),
-        projectStore: store
+        projectStore: serviceStore
       }
     }));
-    sendJson(response, 200, { ok: true, store });
+    sendJson(response, 200, { ok: true, store: serviceStore });
+    return true;
+  }
+
+  const projectWorkspaceMatch = url.pathname.match(/^\/projects\/([^/]+)\/workspace$/);
+  if (method === "GET" && projectWorkspaceMatch) {
+    if (!requireDesktopActor({ request, response, allowedActors: PROJECT_STORE_ACTORS })) return true;
+    const projectId = decodeURIComponent(projectWorkspaceMatch[1]);
+    const workspace = runtime.projectWorkspaces?.getProjectWorkspace?.(projectId);
+    if (!workspace) {
+      sendJson(response, 404, { error: "project workspace not available" });
+      return true;
+    }
+    sendJson(response, 200, workspace);
     return true;
   }
 
@@ -471,6 +491,13 @@ export async function tryHandleNoteProjectConversationRoute({
       projectId: decodeURIComponent(projectFilesAttachMatch[1]),
       paths: body.paths ?? body.filePaths ?? []
     });
+    if (result?.ok && result.attached_paths?.length) {
+      runtime.projectWorkspaces?.recordProjectFiles?.(result.project_id, result.attached_paths, {
+        status: "indexed",
+        indexedAt: new Date().toISOString(),
+        metadata: { source: "project_file_attach_route" }
+      });
+    }
     sendJson(response, statusForProjectFileResult(result), result);
     return true;
   }
@@ -488,6 +515,9 @@ export async function tryHandleNoteProjectConversationRoute({
       detach: body.detach === true,
       actor
     });
+    if (result?.ok && result.detached) {
+      runtime.projectWorkspaces?.removeProjectFiles?.(result.project_id, result.paths ?? []);
+    }
     sendJson(response, statusForProjectFileResult(result), result);
     return true;
   }

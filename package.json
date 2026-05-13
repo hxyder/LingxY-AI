@@ -186,6 +186,7 @@
     "verify:ai-integrations": "node scripts/verify-ai-integrations.mjs",
     "verify:context-memory-cache-acceptance-harness": "node scripts/verify-context-memory-cache-acceptance-harness.mjs",
     "real-llm:context-memory-cache": "node scripts/real-llm-test/run-context-memory-cache-acceptance.mjs",
+    "verify:project-workspace-service": "node scripts/verify-project-workspace-service.mjs",
     "verify:followup-artifact-acceptance-harness": "node scripts/verify-followup-artifact-acceptance-harness.mjs",
     "real-llm:followup-artifact": "node scripts/real-llm-test/run-followup-artifact-acceptance.mjs",
     "verify:tool-surface-heuristic-governance": "node scripts/verify-tool-surface-heuristic-governance.mjs",

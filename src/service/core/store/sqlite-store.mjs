@@ -69,6 +69,34 @@ function mapConversationSession(row) {
   };
 }
 
+function mapProject(row) {
+  if (!row) return null;
+  return {
+    project_id: row.project_id,
+    id: row.project_id,
+    name: row.name,
+    color: row.color,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    createdAt: Date.parse(row.created_at) || 0,
+    archived: Boolean(row.archived),
+    metadata: decodeJson(row.metadata_json, {})
+  };
+}
+
+function mapProjectFile(row) {
+  if (!row) return null;
+  return {
+    project_id: row.project_id,
+    path: row.path,
+    status: row.status,
+    indexed_at: row.indexed_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    metadata: decodeJson(row.metadata_json, {})
+  };
+}
+
 function mapSessionItem(row) {
   if (!row) return null;
   return {
@@ -594,6 +622,39 @@ export function createSqliteStore({ dbPath }) {
       completed_at = excluded.completed_at`),
     getReauthRequest: db.prepare("SELECT * FROM reauth_requests WHERE request_id = ?"),
     listReauthRequests: db.prepare("SELECT * FROM reauth_requests ORDER BY created_at DESC"),
+    upsertProject: db.prepare(`INSERT INTO projects (
+      project_id, name, color, created_at, updated_at, archived, metadata_json
+    ) VALUES (
+      @project_id, @name, @color, @created_at, @updated_at, @archived, @metadata_json
+    )
+    ON CONFLICT(project_id) DO UPDATE SET
+      name = excluded.name,
+      color = excluded.color,
+      archived = excluded.archived,
+      metadata_json = excluded.metadata_json,
+      updated_at = excluded.updated_at`),
+    getProject: db.prepare("SELECT * FROM projects WHERE project_id = ?"),
+    listProjects: db.prepare(`
+      SELECT * FROM projects
+       WHERE (@archived = -1 OR archived = @archived)
+       ORDER BY updated_at DESC, created_at DESC
+       LIMIT @limit`),
+    upsertProjectFile: db.prepare(`INSERT INTO project_files (
+      project_id, path, status, indexed_at, metadata_json, created_at, updated_at
+    ) VALUES (
+      @project_id, @path, @status, @indexed_at, @metadata_json, @created_at, @updated_at
+    )
+    ON CONFLICT(project_id, path) DO UPDATE SET
+      status = excluded.status,
+      indexed_at = excluded.indexed_at,
+      metadata_json = excluded.metadata_json,
+      updated_at = excluded.updated_at`),
+    listProjectFiles: db.prepare(`
+      SELECT * FROM project_files
+       WHERE project_id = @project_id
+       ORDER BY updated_at DESC
+       LIMIT @limit`),
+    deleteProjectFile: db.prepare("DELETE FROM project_files WHERE project_id = ? AND path = ?"),
     insertConversation: db.prepare(`INSERT INTO conversations
       (conversation_id, project_id, title, created_at, updated_at, message_count, task_count, archived, metadata_json)
       VALUES (@conversation_id, @project_id, @title, @created_at, @updated_at, 0, 0, 0, @metadata_json)`),
@@ -1138,6 +1199,68 @@ export function createSqliteStore({ dbPath }) {
     },
     listReauthRequests() {
       return statements.listReauthRequests.all().map(mapReauthRequest);
+    },
+
+    upsertProject(project = {}) {
+      const id = String(project.project_id ?? project.id ?? "").trim();
+      if (!id) throw new Error("upsertProject: project_id required");
+      const existing = mapProject(statements.getProject.get(id));
+      const ts = nowIso();
+      const createdAt = typeof project.created_at === "string"
+        ? project.created_at
+        : typeof project.createdAt === "number"
+          ? new Date(project.createdAt).toISOString()
+          : existing?.created_at ?? ts;
+      statements.upsertProject.run({
+        project_id: id,
+        name: String(project.name ?? existing?.name ?? "New project").slice(0, 200),
+        color: project.color ?? existing?.color ?? null,
+        created_at: createdAt,
+        updated_at: ts,
+        archived: project.archived === true ? 1 : 0,
+        metadata_json: encodeJson(project.metadata ?? existing?.metadata ?? {})
+      });
+      return mapProject(statements.getProject.get(id));
+    },
+    getProject(projectId) {
+      return mapProject(statements.getProject.get(projectId));
+    },
+    listProjects({ archived = 0, limit = 100 } = {}) {
+      const archivedFilter = archived === "any" || archived === -1 ? -1 : archived ? 1 : 0;
+      return statements.listProjects.all({
+        archived: archivedFilter,
+        limit: Math.max(1, Math.min(limit ?? 100, 500))
+      }).map(mapProject);
+    },
+    upsertProjectFile(file = {}) {
+      const projectId = String(file.project_id ?? file.projectId ?? "").trim();
+      const filePath = String(file.path ?? file.filePath ?? "").trim();
+      if (!projectId) throw new Error("upsertProjectFile: project_id required");
+      if (!filePath) throw new Error("upsertProjectFile: path required");
+      const existing = mapProjectFile(statements.listProjectFiles.all({
+        project_id: projectId,
+        limit: 500
+      }).find((row) => row.path === filePath));
+      const ts = nowIso();
+      statements.upsertProjectFile.run({
+        project_id: projectId,
+        path: filePath,
+        status: file.status ?? existing?.status ?? "attached",
+        indexed_at: file.indexed_at ?? file.indexedAt ?? existing?.indexed_at ?? null,
+        metadata_json: encodeJson(file.metadata ?? existing?.metadata ?? {}),
+        created_at: file.created_at ?? existing?.created_at ?? ts,
+        updated_at: ts
+      });
+      return this.listProjectFiles(projectId, { limit: 500 }).find((item) => item.path === filePath) ?? null;
+    },
+    listProjectFiles(projectId, { limit = 200 } = {}) {
+      return statements.listProjectFiles.all({
+        project_id: projectId,
+        limit: Math.max(1, Math.min(limit ?? 200, 1000))
+      }).map(mapProjectFile);
+    },
+    deleteProjectFile(projectId, filePath) {
+      return statements.deleteProjectFile.run(projectId, filePath).changes > 0;
     },
 
     runInTransaction(fn) {

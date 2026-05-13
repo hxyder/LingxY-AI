@@ -27,6 +27,8 @@ export function createInMemoryStoreScaffold() {
     connectedAccounts: new Map(),
     oauthTokens: new Map(),
     reauthRequests: new Map(),
+    projects: new Map(),
+    projectFiles: [],
     conversations: new Map(),
     conversationMessages: [],
     messageTaskLinks: [],
@@ -384,6 +386,71 @@ export function createInMemoryStoreScaffold() {
     },
     listReauthRequests() {
       return [...this.reauthRequests.values()];
+    },
+
+    upsertProject(project = {}) {
+      const id = String(project.project_id ?? project.id ?? "").trim();
+      if (!id) throw new Error("upsertProject: project_id required");
+      const existing = this.projects.get(id) ?? null;
+      const ts = memNowIso();
+      const record = {
+        project_id: id,
+        id,
+        name: String(project.name ?? existing?.name ?? "New project").slice(0, 200),
+        color: project.color ?? existing?.color ?? null,
+        created_at: typeof project.created_at === "string" ? project.created_at : existing?.created_at ?? ts,
+        updated_at: ts,
+        createdAt: Number.isFinite(Number(project.createdAt)) ? Number(project.createdAt) : existing?.createdAt ?? Date.parse(ts),
+        archived: project.archived === true,
+        metadata: project.metadata ?? existing?.metadata ?? {}
+      };
+      this.projects.set(id, record);
+      return { ...record, metadata: { ...(record.metadata ?? {}) } };
+    },
+    getProject(projectId) {
+      const project = this.projects.get(projectId);
+      return project ? { ...project, metadata: { ...(project.metadata ?? {}) } } : null;
+    },
+    listProjects({ archived = 0, limit = 100 } = {}) {
+      const archivedFilter = archived === "any" || archived === -1 ? null : Boolean(archived);
+      let list = [...this.projects.values()];
+      if (archivedFilter !== null) list = list.filter((project) => project.archived === archivedFilter);
+      list.sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)));
+      return list.slice(0, Math.max(1, Math.min(limit ?? 100, 500)))
+        .map((project) => ({ ...project, metadata: { ...(project.metadata ?? {}) } }));
+    },
+    upsertProjectFile(file = {}) {
+      const projectId = String(file.project_id ?? file.projectId ?? "").trim();
+      const filePath = String(file.path ?? file.filePath ?? "").trim();
+      if (!projectId) throw new Error("upsertProjectFile: project_id required");
+      if (!filePath) throw new Error("upsertProjectFile: path required");
+      const ts = memNowIso();
+      const index = this.projectFiles.findIndex((item) => item.project_id === projectId && item.path === filePath);
+      const existing = index >= 0 ? this.projectFiles[index] : null;
+      const record = {
+        project_id: projectId,
+        path: filePath,
+        status: file.status ?? existing?.status ?? "attached",
+        indexed_at: file.indexed_at ?? file.indexedAt ?? existing?.indexed_at ?? null,
+        created_at: file.created_at ?? existing?.created_at ?? ts,
+        updated_at: ts,
+        metadata: file.metadata ?? existing?.metadata ?? {}
+      };
+      if (index >= 0) this.projectFiles[index] = record;
+      else this.projectFiles.push(record);
+      return { ...record, metadata: { ...(record.metadata ?? {}) } };
+    },
+    listProjectFiles(projectId, { limit = 200 } = {}) {
+      return this.projectFiles
+        .filter((file) => file.project_id === projectId)
+        .sort((a, b) => String(b.updated_at).localeCompare(String(a.updated_at)))
+        .slice(0, Math.max(1, Math.min(limit ?? 200, 1000)))
+        .map((file) => ({ ...file, metadata: { ...(file.metadata ?? {}) } }));
+    },
+    deleteProjectFile(projectId, filePath) {
+      const before = this.projectFiles.length;
+      this.projectFiles = this.projectFiles.filter((file) => !(file.project_id === projectId && file.path === filePath));
+      return this.projectFiles.length !== before;
     },
 
     runInTransaction(fn) {

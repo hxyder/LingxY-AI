@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 140/140 after PMAT-002
-  opt-in Network OTEL export was added, including 1121/1121 behavior
+- Current green gate: `npm run check:fast` passed 141/141 after PMAT-007
+  project workspace separation was added, including 1124/1124 behavior
   tests. `npm run verify:desktop-gui-smoke` passed 49/49. The previous
   `real-llm:followup-artifact --live` pass covered strict
   generated `.mjs`, Markdown, JSON, and CSV content consistency, actual file
@@ -61,6 +61,7 @@ gaps.
 | PMAT-005 Runtime Labs user entry | active | Add a Settings > Labs surface that exposes the completed or gated capabilities without implying deferred work is enabled. | UI may enable existing safe gates (`ai.modelRoles.enabled`, `ai.reviewerLoop.enabled`) and the opt-in Network OTEL path (`observability.networkOtel.enabled`) only with explicit consent plus endpoint. Broad model voting and automatic sub-agent delegation stay visible but evidence-gated until their task-class gates pass. |
 | PMAT-005 Local file/folder reality checks | active | Local filesystem answers must be grounded in fresh tool evidence. Directory listings must include folders as folders, and final answers must not infer folder absence from file-only listings or stale memory. | `list_files` exposes files, directories, and typed entries; evidence summaries preserve listed folders as shallow locator evidence. Add regressions when new file/folder workflows are found. |
 | PMAT-006 Tool-surface heuristic governance | active | Tool, skill, and MCP exposure must be driven by typed TaskSpec/SemanticRouter/capability contracts. Regex may remain for structured parsing, sanitization, URLs, paths, time phrases, security filters, and narrow explicit-action gates, but not as a veto over typed runtime facts. | `tool_using` and `agentic` tool surfaces must not infer artifact writer exposure from raw user text. `node scripts/verify-tool-surface-heuristic-governance.mjs` locks this invariant. |
+| PMAT-007 Project workspace separation | complete | Make project a first-class service-owned workspace instead of only a renderer/config project store. A project contains many conversations, many attached/indexed files, and project-scoped artifacts/context. Sessions remain conversation-scoped runtime work threads under a project. | `ProjectWorkspaceService`, service store `projects`/`project_files`, compatible `/projects/store`, guarded `/projects/:id/workspace`, ContextCompiler `project_scope`, `project-workspace-boundary.md`, `verify-project-workspace-service.mjs`, and behavior tests lock the contract. Renderer remains UI-only; no prompt-only project binding. |
 
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no

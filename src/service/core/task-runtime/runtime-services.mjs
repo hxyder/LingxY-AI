@@ -14,6 +14,7 @@ import { createArtifactTransformService } from "../artifact-transforms/artifact-
 import { createSessionCompactionService } from "../session/session-compaction-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
 import { createSubAgentRuntimeService } from "../subagents/sub-agent-runtime-contract.mjs";
+import { createProjectWorkspaceService } from "../projects/project-workspace-service.mjs";
 import { createNetworkOtelExporter } from "../../observability/network-otel-exporter.mjs";
 
 function hasConversationSessionStore(store) {
@@ -100,6 +101,10 @@ export function ensureRuntimeServices(runtime) {
     runtime,
     configStore: runtime.configStore ?? null,
     store: runtime.store ?? null
+  });
+  runtime.projectWorkspaces ??= createProjectWorkspaceService({
+    store: runtime.store,
+    configStore: runtime.configStore ?? null
   });
   if (!runtime.conversationSessions && hasConversationSessionStore(runtime.store)) {
     runtime.conversationSessions = createConversationSessionService({

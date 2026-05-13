@@ -238,6 +238,11 @@ export async function attachProjectFiles({
         projectStore: store
       }
     }))?.ui?.projectStore ?? store;
+    runtime?.projectWorkspaces?.recordProjectFiles?.(id, attachedPaths, {
+      status: "indexed",
+      indexedAt: createdAt,
+      metadata: { source: "project_file_attach" }
+    });
   }
 
   return {
@@ -310,6 +315,7 @@ export async function removeProjectFileIndex({
         projectStore: store
       }
     }))?.ui?.projectStore ?? store;
+    runtime?.projectWorkspaces?.removeProjectFiles?.(id, normalizedPaths);
   }
 
   return {

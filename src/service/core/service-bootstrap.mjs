@@ -39,6 +39,7 @@ import { runMcpAutoInstall } from "../capabilities/mcp/auto-install.mjs";
 import { createDagCheckpointStore } from "../dag/scheduler.mjs";
 import { createEmailMonitor } from "../email/monitor.mjs";
 import { createNetworkOtelExporter } from "../observability/network-otel-exporter.mjs";
+import { createProjectWorkspaceService } from "./projects/project-workspace-service.mjs";
 import { createConnectorCatalog } from "../capabilities/connectors/core/catalog.mjs";
 import { createPluginRegistry } from "../capabilities/connectors/core/plugin-registry.mjs";
 import { hydrateUserLocation } from "../utils/location.mjs";
@@ -117,6 +118,10 @@ export function createServiceBootstrap({
     }),
     networkOtelExporter: null
   };
+  runtime.projectWorkspaces = createProjectWorkspaceService({
+    store: storeAdapter,
+    configStore
+  });
   runtime.networkOtelExporter = createNetworkOtelExporter({
     runtime,
     configStore,
