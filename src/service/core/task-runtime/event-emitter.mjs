@@ -246,6 +246,16 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   } catch {
     // Graph checkpoint observability must never break task execution.
   }
+  try {
+    runtime.networkOtelExporter?.recordTaskEvent?.({
+      taskId,
+      eventType,
+      payload: effectivePayload,
+      event: record
+    });
+  } catch {
+    // Network OTEL export is opt-in observability and must never affect task execution.
+  }
   if (taskId && !firstEventTimingEmitted.has(taskId) && isExecutorEvent(eventType, effectivePayload)) {
     firstEventTimingEmitted.add(taskId);
     emitPhaseTiming(runtime, taskId, "executor_first_event");

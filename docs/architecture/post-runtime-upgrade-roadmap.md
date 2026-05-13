@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 138/138 after PMAT-006
-  tool-surface heuristic governance was added, including 1113/1113 behavior
+- Current green gate: `npm run check:fast` passed 140/140 after PMAT-002
+  opt-in Network OTEL export was added, including 1121/1121 behavior
   tests. `npm run verify:desktop-gui-smoke` passed 49/49. The previous
   `real-llm:followup-artifact --live` pass covered strict
   generated `.mjs`, Markdown, JSON, and CSV content consistency, actual file
@@ -55,10 +55,10 @@ gaps.
 | Item | Status | Scope | Acceptance / verification |
 | --- | --- | --- | --- |
 | PMAT-001 Desktop product polish and manual acceptance | framework complete, evidence ongoing | Broaden daily desktop workflows beyond foundational GUI smoke: first-run recovery, empty/error states, settings, task detail, artifact preview, keyboard/a11y, cancel/resume, and common file/folder workflows. | Covered by DXR-001/DXR-002 evidence pack and daily workflow matrix. Current real GUI smoke: `npm run verify:desktop-gui-smoke` passed 49/49. New visible workflow changes still require row evidence. |
-| PMAT-002 Optional network OTEL export | deferred until backend/privacy decision | Current span taxonomy and local OTEL-shaped records are complete. Add network export only after a concrete backend, redaction model, opt-in UX, and latency budget exist. | Decision record must prove privacy, redaction, retry/backpressure, and no hot-path overhead. Local trace export stays the default. |
+| PMAT-002 Optional network OTEL export | opt-in implemented, endpoint required | Current span taxonomy and local OTEL-shaped records stay local by default. Runtime Labs can enable network export only when the user checks consent and supplies an HTTP(S) OTLP endpoint. The service exporter sends redacted task span summaries only, with bounded queue/backpressure and timeout handling. | `src/service/observability/network-otel-exporter.mjs`, `src/shared/network-otel-config.mjs`, `node scripts/verify-network-otel-exporter.mjs`, and `tests/behavior/network-otel-exporter.test.mjs` lock the contract. No raw prompt, raw tool args, observations, or artifact content may be exported. |
 | PMAT-003 Measured multi-candidate model loops | evidence-gated, not auto-enabled | Broader voting/ensemble/model-candidate loops may be added only where the final-reviewer and eval trend data show measurable benefit. No silent answer rewrite. | Feature flag, role-aware provider routing, token/latency budget, trace fields, and regression corpus proving quality gain over single answer. Price display stays off; token/cache fields are enough unless provider-owned billing evidence exists. |
 | PMAT-004 Automatic sub-agent delegation enablement | evidence-gated, not auto-enabled | Use the completed sub-agent runtime contract for planner-selected delegation, context isolation, allowed tools, budget, cancellation, child reports, and UI timeline. | Feature flag plus delegation eval corpus, task timeline visibility, cancellation/budget tests, and real acceptance on multi-step tasks where delegation helps. Keep disabled until all SA-003 gates pass for the concrete task class. |
-| PMAT-005 Runtime Labs user entry | in progress | Add a Settings > Labs surface that exposes the completed or gated capabilities without implying deferred work is enabled. | UI may enable only existing safe gates (`ai.modelRoles.enabled`, `ai.reviewerLoop.enabled`). Network OTEL, broad model voting, and automatic sub-agent delegation stay visible but blocked until their evidence gates pass. |
+| PMAT-005 Runtime Labs user entry | active | Add a Settings > Labs surface that exposes the completed or gated capabilities without implying deferred work is enabled. | UI may enable existing safe gates (`ai.modelRoles.enabled`, `ai.reviewerLoop.enabled`) and the opt-in Network OTEL path (`observability.networkOtel.enabled`) only with explicit consent plus endpoint. Broad model voting and automatic sub-agent delegation stay visible but evidence-gated until their task-class gates pass. |
 | PMAT-005 Local file/folder reality checks | active | Local filesystem answers must be grounded in fresh tool evidence. Directory listings must include folders as folders, and final answers must not infer folder absence from file-only listings or stale memory. | `list_files` exposes files, directories, and typed entries; evidence summaries preserve listed folders as shallow locator evidence. Add regressions when new file/folder workflows are found. |
 | PMAT-006 Tool-surface heuristic governance | active | Tool, skill, and MCP exposure must be driven by typed TaskSpec/SemanticRouter/capability contracts. Regex may remain for structured parsing, sanitization, URLs, paths, time phrases, security filters, and narrow explicit-action gates, but not as a veto over typed runtime facts. | `tool_using` and `agentic` tool surfaces must not infer artifact writer exposure from raw user text. `node scripts/verify-tool-surface-heuristic-governance.mjs` locks this invariant. |
 
@@ -71,6 +71,28 @@ directories. The fix is framework-level: `list_files` now returns typed
 `entries`, `files`, and `directories`, and evidence summaries preserve listed
 directories as shallow locator evidence.
 
+## Open-Source Framework Comparison Refresh
+
+Reviewed on 2026-05-12 against current official docs for OpenTelemetry OTLP,
+LangGraph persistence, OpenAI Agents SDK tracing/guardrails, CrewAI Flows, n8n
+executions/redaction, and MCP authorization.
+
+| Area | External reference signal | LingxY state | Remaining gap / next action |
+| --- | --- | --- | --- |
+| OTLP export | OpenTelemetry defines OTLP endpoint, HTTP(S) URL components, timeout/retry expectations, and JSON/protobuf trace request semantics. | Network OTEL is now opt-in through Runtime Labs with explicit consent, HTTP(S) endpoint sanitization, summary-only redaction, bounded queue, timeout, fail-soft task-event wiring, and `verify-network-otel-exporter.mjs`. | Add a later backend decision record only if users need vendor presets, custom headers, compression, or collector auth. Header secrets must go through secure config storage and redaction preview first. |
+| Trace privacy | n8n documents execution data redaction that hides input/output while preserving metadata. | Network export omits raw prompt/tool args/observations/artifact/final answer and sends span metadata only. | Add a UI preview of the exact redacted export payload before first network enablement if users request stronger trust affordances. |
+| Checkpoints and replay | LangGraph uses checkpoints for human-in-the-loop, memory, time travel, fault tolerance, and resume. | Runtime graph checkpoints, approval resume, session compaction, and task timeline are verifier-locked. | Product gap: a user-facing graph replay/fork debugger is still not as visual as mature graph frameworks. Track as future UX work, not runtime correctness work. |
+| Guardrails | OpenAI Agents SDK separates input, output, and tool guardrails, with tool guardrails applying around each function tool invocation. | LingxY has submission policy, permission modes, tool schemas, approval gates, success contracts, and heuristic-governance verifiers. | Product gap: expose per-tool guardrail decisions in task detail, especially denied/edited args and policy group satisfaction, so users can debug why an action did or did not run. |
+| Multi-agent/flows | CrewAI Flows and AutoGen-style systems emphasize explicit multi-step/multi-agent orchestration, state, visualization, and resumable long-running workflows. | Sub-agent runtime contract, child timeline summaries, and SA-003 enablement audit exist; automatic delegation remains evidence-gated. | Keep automatic delegation disabled until a concrete task class beats the single-agent baseline. Add visual flow/child-run presentation before broad enablement. |
+| Executions and retries | n8n separates manual vs production executions, lists execution history, and supports retrying failed runs. | Console task list/detail, inline retry, cancellation, and release evidence exist. | Product gap: add a clearer execution-history view with retry-from-original-context versus retry-current-context choices for failed task families. |
+| MCP authorization | MCP authorization requires OAuth best practices, resource/audience binding, HTTPS/localhost redirects, PKCE, and token-storage discipline for HTTP transports. | MCP governance policy, trust previews, local-only skill boundaries, and marketplace distribution policy are in place. | Audit external MCP OAuth wiring against the 2025-06-18 authorization spec before enabling broader remote MCP discovery or marketplace installs. |
+
+Comparison conclusion: the current runtime spine is close to mature frameworks on
+typed traces, persistence, approvals, memory, and local capability governance.
+The remaining meaningful gaps are mostly user-facing debuggability, visual
+workflow/replay UX, external MCP/OAuth hardening, and optional OTLP vendor
+integration polish. None require prompt-only patches or a second runtime stack.
+
 ## Source Map
 
 | Area | Current program evidence | Current state |
@@ -79,7 +101,7 @@ directories as shallow locator evidence.
 | Multi-model execution | `verify-model-role-routing.mjs` exists; real planner/executor call sites now use role-aware provider resolution behind an explicit feature flag. `verify-final-answer-reviewer-loop.mjs` locks the optional reviewer pass. | MM-001 is complete for planner/executor binding and measurement fields; MM-002 is complete for the feature-flagged final-answer reviewer pass. Broader voting/ensemble loops remain out of scope until measured need exists. |
 | Generic HITL graph resume | `verify-approval-resume-state.mjs`, connector workflow resume, runtime graph checkpoints. | GX-003 is complete for generic agent tool approvals resuming on the original task; connector workflow resume remains intact. |
 | Desktop/GUI completion | `verify:desktop-gui-smoke`, `verify-desktop-gui-perf-smoke`, desktop README/inventories, window/IPC split docs, `docs/architecture/window-session-state-machine.md`, `verify-window-session-state-machine.mjs`, `docs/architecture/desktop-ipc-boundaries.md`, `verify-desktop-ipc-boundaries.mjs`. | DX-001 through DX-005 plus VX-001/VX-002 are complete for window ownership, IPC boundaries, keyboard/a11y smoke, first-run recovery, preview screenshot-diff, checked-in voice fixtures, and opt-in hardware smoke. Future work should focus on product polish and broader manual acceptance, not missing foundational contracts. |
-| Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers, `verify-eval-trend-store.mjs`, and `verify-task-span-taxonomy.mjs`. | OQ-001 and OQ-002 are complete for trend storage, stable span names, and local OTEL-shaped export records. Optional network OTEL export remains deferred until there is a concrete backend and privacy model. |
+| Timeline/trace/export | `verify-task-trace-timeline.mjs`, `verify-context-debug-panel-lazy-load.mjs`, llm usage verifiers, `verify-eval-trend-store.mjs`, `verify-task-span-taxonomy.mjs`, and `verify-network-otel-exporter.mjs`. | OQ-001 and OQ-002 are complete for trend storage, stable span names, local OTEL-shaped export records, and an opt-in network OTEL exporter. Network export remains off by default and requires Runtime Labs consent plus HTTP(S) endpoint configuration. |
 | Memory governance next pass | `verify-memory-governance.mjs`, `verify-user-memory-profile.mjs`, context compiler tests, and `scripts/real-llm-test/run-context-memory-cache-acceptance.mjs`. | Editable memory, proposal approval/rejection, review history, undo, project scoping, and opt-in real API context/follow-up/token/cache acceptance are covered. Future work should improve automatic proposal quality, not reopen the storage contract. |
 | SQLite write queue / DB worker | `docs/architecture/sqlite-write-path-budget.md`, `verify-sqlite-write-path-budget.mjs`, `verify-session-context-artifact-write-budget.mjs`, and `verify-context-trace-budget.mjs`. | RT-001 through RT-003 are complete. Current decision is direct service-owned SQLite writes with WAL and budget guards; no DB worker or write queue is introduced without new measured evidence. |
 | Permission/mode model | `verify-permission-mode-model.mjs`, privacy sandbox policy, approvals, and runtime submission boundaries. | RT-004 is complete for the permission/mode contract. Future UI polish can improve presentation, but this board no longer has an unresolved mode-framework gap. |
@@ -964,7 +986,8 @@ Verification:
 
 ### OQ-002: Span Taxonomy And Optional OTEL Export
 
-Status: complete as of 2026-05-12.
+Status: complete as of 2026-05-12; Network OTEL export opt-in completed as of
+2026-05-12.
 
 Scope:
 
@@ -975,11 +998,20 @@ Scope:
   contract consumed by `src/shared/task-trace-summary.mjs`.
 - Added a local `buildTaskSpanExport()` shape named `local_otel_span_v1`; this
   is a deterministic export shape only and does not send network telemetry.
+- Added `src/shared/network-otel-config.mjs` and
+  `src/service/observability/network-otel-exporter.mjs` as the service-owned
+  network export path. Runtime Labs can enable it only when the user explicitly
+  consents and configures an HTTP(S) OTLP trace endpoint.
 
 Acceptance:
 
 - Local trace remains useful without OTEL.
 - Optional export does not add hot-path overhead.
+- Network export is off by default, fail-soft, bounded by queue size, batched,
+  and timeout guarded.
+- Exported payloads contain redacted span summaries only: task id, phase, kind,
+  status, label, span timing, service metadata, and no raw prompts, raw tool
+  args, observations, artifact content, or final answer text.
 - Span names are stable (`tool.call`, `model.call`, `artifact.event`,
   `approval.decision`, `planning.decision`, `recovery.event`,
   `runtime.lifecycle`) and verifier-locked.
@@ -988,7 +1020,9 @@ Verification:
 
 - `node scripts/verify-task-trace-timeline.mjs`
 - `node scripts/verify-task-span-taxonomy.mjs`
+- `node scripts/verify-network-otel-exporter.mjs`
 - `node --test tests/behavior/task-span-taxonomy.test.mjs`
+- `node --test tests/behavior/network-otel-exporter.test.mjs`
 
 ### OQ-003: User-Visible Planner Boundary And Current-Events Quality Gate
 

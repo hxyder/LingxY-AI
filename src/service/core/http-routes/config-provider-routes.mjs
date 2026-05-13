@@ -574,7 +574,11 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const modelRoles = buildModelRoleRoutingSummary({ config: nextConfig, providers: providerStatuses });
     sendJson(response, 200, {
       ok: true,
-      runtimeLabs: buildRuntimeLabsSurface({ config: nextConfig, modelRoles }),
+      runtimeLabs: buildRuntimeLabsSurface({
+        config: nextConfig,
+        modelRoles,
+        networkOtelStatus: runtime.networkOtelExporter?.getStatus?.() ?? null
+      }),
       modelRoles
     });
     return true;
@@ -610,7 +614,11 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       },
       providerSetup,
       modelRoles,
-      runtimeLabs: buildRuntimeLabsSurface({ config, modelRoles }),
+      runtimeLabs: buildRuntimeLabsSurface({
+        config,
+        modelRoles,
+        networkOtelStatus: runtime.networkOtelExporter?.getStatus?.() ?? null
+      }),
       userMemory: readUserMemoryProfileFromConfig(config),
       email: config.email ?? { accounts: [] }
     });

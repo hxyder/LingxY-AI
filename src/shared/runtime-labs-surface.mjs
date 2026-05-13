@@ -1,7 +1,11 @@
+import {
+  normalizeNetworkOtelConfig,
+  sanitizeNetworkOtelEndpoint
+} from "./network-otel-config.mjs";
+
 export const RUNTIME_LABS_SCHEMA_VERSION = 1;
 
 const BLOCKED_CAPABILITIES = Object.freeze(new Set([
-  "network_otel_export",
   "multi_candidate_voting",
   "automatic_sub_agent_delegation"
 ]));
@@ -30,7 +34,8 @@ function capability({
   configPath = null,
   evidence = [],
   blockedReason = "",
-  nextGate = ""
+  nextGate = "",
+  settings = null
 }) {
   return {
     id,
@@ -42,16 +47,21 @@ function capability({
     configPath,
     evidence,
     blockedReason,
-    nextGate
+    nextGate,
+    ...(settings ? { settings } : {})
   };
 }
 
 export function buildRuntimeLabsSurface({
   config = {},
-  modelRoles = null
+  modelRoles = null,
+  networkOtelStatus = null
 } = {}) {
   const modelRolesEnabled = modelRoleRoutingEnabled(config);
   const reviewerEnabled = reviewerLoopEnabled(config);
+  const networkOtel = normalizeNetworkOtelConfig(config);
+  const networkOtelEnabled = networkOtel.enabled;
+  const networkOtelActive = networkOtel.active;
   return {
     id: "runtime_labs_surface",
     schemaVersion: RUNTIME_LABS_SCHEMA_VERSION,
@@ -63,6 +73,13 @@ export function buildRuntimeLabsSurface({
       finalAnswerReviewer: {
         enabled: reviewerEnabled,
         configPath: "ai.reviewerLoop.enabled"
+      },
+      networkOtel: {
+        enabled: networkOtelEnabled,
+        active: networkOtelActive,
+        configPath: "observability.networkOtel.enabled",
+        endpointConfigured: Boolean(networkOtel.endpoint),
+        consentAccepted: networkOtel.consent.accepted
       }
     },
     capabilities: [
@@ -97,11 +114,28 @@ export function buildRuntimeLabsSurface({
       capability({
         id: "network_otel_export",
         label: "Network OTEL Export",
-        summary: "Local OTEL-shaped trace records are available; network upload is not enabled.",
-        enabled: false,
-        status: "deferred",
-        blockedReason: "Requires a concrete backend, privacy/redaction model, retry/backpressure policy, and latency budget.",
-        nextGate: "Write the backend/privacy decision record before adding an exporter."
+        summary: "Opt-in upload of redacted task span summaries to a configured OTLP HTTP endpoint.",
+        enabled: networkOtelEnabled,
+        status: networkOtelActive ? "enabled" : networkOtelEnabled ? "needs_endpoint" : "available",
+        userToggle: true,
+        configPath: "observability.networkOtel.enabled",
+        evidence: ["local_otel_span_v1", "summary_only_no_raw_payloads", "bounded_queue"],
+        blockedReason: networkOtelEnabled && !networkOtel.endpoint
+          ? "Consent is saved, but uploads need an HTTP(S) OTLP endpoint."
+          : "",
+        nextGate: networkOtelActive
+          ? "Exporter is active for terminal task traces."
+          : "Enter an endpoint and keep consent checked to activate uploads.",
+        settings: {
+          endpoint: networkOtel.endpoint,
+          endpointConfigured: Boolean(networkOtel.endpoint),
+          consentAccepted: networkOtel.consent.accepted,
+          redaction: networkOtel.redaction,
+          queueDepth: networkOtelStatus?.queueDepth ?? 0,
+          exportedSpans: networkOtelStatus?.exportedSpans ?? 0,
+          failedBatches: networkOtelStatus?.failedBatches ?? 0,
+          lastError: networkOtelStatus?.lastError ?? null
+        }
       }),
       capability({
         id: "multi_candidate_voting",
@@ -137,6 +171,25 @@ function readTogglePatch(patch = {}, key) {
   return { ok: true, enabled: value.enabled };
 }
 
+function readNetworkOtelPatch(patch = {}) {
+  const raw = patch?.networkOtel;
+  if (!raw || typeof raw !== "object") return null;
+  if (Object.prototype.hasOwnProperty.call(raw, "enabled") && typeof raw.enabled !== "boolean") {
+    return { ok: false, error: "networkOtel.enabled must be boolean" };
+  }
+  const consentAccepted = raw.consentAccepted === true || raw.consent?.accepted === true;
+  const endpoint = sanitizeNetworkOtelEndpoint(raw.endpoint ?? "");
+  if (raw.endpoint && !endpoint) {
+    return { ok: false, error: "networkOtel.endpoint must be http(s) without credentials" };
+  }
+  return {
+    ok: true,
+    enabled: raw.enabled === true && consentAccepted,
+    consentAccepted,
+    endpoint
+  };
+}
+
 export function applyRuntimeLabsPatch(config = {}, patch = {}) {
   const attemptedBlockedEnable = Object.entries(patch ?? {})
     .find(([key, value]) => BLOCKED_CAPABILITIES.has(key) && value?.enabled === true);
@@ -153,11 +206,16 @@ export function applyRuntimeLabsPatch(config = {}, patch = {}) {
   if (modelRoleToggle?.ok === false) return { ok: false, error: modelRoleToggle.error, config };
   const reviewerToggle = readTogglePatch(patch, "finalAnswerReviewer");
   if (reviewerToggle?.ok === false) return { ok: false, error: reviewerToggle.error, config };
+  const networkOtelPatch = readNetworkOtelPatch(patch);
+  if (networkOtelPatch?.ok === false) return { ok: false, error: networkOtelPatch.error, config };
 
   const next = {
     ...config,
     ai: {
       ...(config.ai ?? {})
+    },
+    observability: {
+      ...(config.observability ?? {})
     }
   };
 
@@ -173,6 +231,21 @@ export function applyRuntimeLabsPatch(config = {}, patch = {}) {
       enabled: reviewerToggle.enabled
     };
   }
+  if (networkOtelPatch?.ok) {
+    next.observability.networkOtel = {
+      ...(next.observability.networkOtel ?? {}),
+      enabled: networkOtelPatch.enabled,
+      endpoint: networkOtelPatch.endpoint,
+      consent: {
+        ...(next.observability.networkOtel?.consent ?? {}),
+        accepted: networkOtelPatch.consentAccepted,
+        acceptedAt: networkOtelPatch.consentAccepted
+          ? next.observability.networkOtel?.consent?.acceptedAt ?? new Date().toISOString()
+          : null
+      },
+      redaction: "summary_only_no_raw_payloads"
+    };
+  }
 
   return {
     ok: true,
@@ -181,7 +254,20 @@ export function applyRuntimeLabsPatch(config = {}, patch = {}) {
       ai: {
         ...(modelRoleToggle?.ok ? { modelRoles: { enabled: modelRoleToggle.enabled } } : {}),
         ...(reviewerToggle?.ok ? { reviewerLoop: { enabled: reviewerToggle.enabled } } : {})
-      }
+      },
+      ...(networkOtelPatch?.ok ? {
+        observability: {
+          networkOtel: {
+            enabled: networkOtelPatch.enabled,
+            endpoint: networkOtelPatch.endpoint,
+            consent: {
+              accepted: networkOtelPatch.consentAccepted,
+              acceptedAt: next.observability.networkOtel.consent.acceptedAt
+            },
+            redaction: "summary_only_no_raw_payloads"
+          }
+        }
+      } : {})
     }
   };
 }

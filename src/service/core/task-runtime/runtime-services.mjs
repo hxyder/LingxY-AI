@@ -14,6 +14,7 @@ import { createArtifactTransformService } from "../artifact-transforms/artifact-
 import { createSessionCompactionService } from "../session/session-compaction-service.mjs";
 import { createConversationSessionService } from "../session/conversation-session-service.mjs";
 import { createSubAgentRuntimeService } from "../subagents/sub-agent-runtime-contract.mjs";
+import { createNetworkOtelExporter } from "../../observability/network-otel-exporter.mjs";
 
 function hasConversationSessionStore(store) {
   return Boolean(
@@ -94,6 +95,11 @@ export function ensureRuntimeServices(runtime) {
   runtime.metrics ??= createMetricsRegistry({
     store: runtime.store,
     queue: runtime.queue
+  });
+  runtime.networkOtelExporter ??= createNetworkOtelExporter({
+    runtime,
+    configStore: runtime.configStore ?? null,
+    store: runtime.store ?? null
   });
   if (!runtime.conversationSessions && hasConversationSessionStore(runtime.store)) {
     runtime.conversationSessions = createConversationSessionService({

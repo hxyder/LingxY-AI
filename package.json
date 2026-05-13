@@ -180,6 +180,7 @@
     "run:sandbox-evidence-pack": "node scripts/run-sandbox-evidence-pack.mjs",
     "verify:model-role-routing": "node scripts/verify-model-role-routing.mjs",
     "verify:runtime-labs-surface": "node scripts/verify-runtime-labs-surface.mjs",
+    "verify:network-otel-exporter": "node scripts/verify-network-otel-exporter.mjs",
     "verify:model-fallback-cascade-evidence": "node scripts/verify-model-fallback-cascade-evidence.mjs",
     "verify:live-write-grading": "node scripts/verify-live-write-grading.mjs",
     "verify:ai-integrations": "node scripts/verify-ai-integrations.mjs",

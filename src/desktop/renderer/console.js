@@ -8176,7 +8176,7 @@ const FEATURE_DEFINITIONS = [
 function runtimeLabsChipClass(status = "") {
   if (status === "enabled" || status === "framework_complete") return "ready";
   if (status === "available") return "muted";
-  if (status === "deferred" || status === "evidence_gated") return "warning";
+  if (status === "deferred" || status === "evidence_gated" || status === "needs_endpoint") return "warning";
   return "muted";
 }
 
@@ -8209,8 +8209,18 @@ function renderRuntimeLabsPanel() {
     const nextGate = entry.nextGate
       ? `<div class="muted" style="font-size:11px;margin-top:4px;overflow-wrap:anywhere;">next: ${escapeHtml(entry.nextGate)}</div>`
       : "";
+    const networkOtelControls = entry.id === "network_otel_export"
+      ? `
+          <div style="margin-top:8px;display:grid;gap:6px;">
+            <label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--muted);" for="runtimeLabsNetworkOtelEndpoint">OTLP HTTP endpoint</label>
+            <input id="runtimeLabsNetworkOtelEndpoint" data-runtime-labs-network-otel-endpoint type="url" placeholder="https://otel.example.com/v1/traces" value="${escapeHtml(entry.settings?.endpoint ?? "")}" ${disabled ? "disabled" : ""}>
+            <div class="muted" style="font-size:11px;overflow-wrap:anywhere;">redaction: ${escapeHtml(entry.settings?.redaction ?? "summary_only_no_raw_payloads")} · queue: ${escapeHtml(entry.settings?.queueDepth ?? 0)} · exported spans: ${escapeHtml(entry.settings?.exportedSpans ?? 0)}</div>
+            ${entry.settings?.lastError ? `<div class="muted" style="font-size:11px;color:#b45309;overflow-wrap:anywhere;">last error: ${escapeHtml(entry.settings.lastError)}</div>` : ""}
+          </div>
+        `
+      : "";
     return `
-      <label class="switch-row" style="display:flex;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-strong);cursor:${disabled ? "default" : "pointer"};">
+      <div class="switch-row" style="display:flex;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-strong);cursor:${disabled ? "default" : "pointer"};">
         <input type="checkbox" class="switch-control" data-runtime-labs-toggle="${escapeHtml(entry.id)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
         <div style="min-width:0;flex:1;">
           <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
@@ -8222,8 +8232,9 @@ function renderRuntimeLabsPanel() {
           ${evidence}
           ${blocked}
           ${nextGate}
+          ${networkOtelControls}
         </div>
-      </label>
+      </div>
     `;
   }).join("");
 }
@@ -8307,6 +8318,14 @@ document.getElementById("saveRuntimeLabsBtn")?.addEventListener("click", async (
     }
     if (input.dataset.runtimeLabsToggle === "final_answer_reviewer") {
       patch.finalAnswerReviewer = { enabled: input.checked };
+    }
+    if (input.dataset.runtimeLabsToggle === "network_otel_export") {
+      const endpoint = document.querySelector("[data-runtime-labs-network-otel-endpoint]")?.value?.trim() ?? "";
+      patch.networkOtel = {
+        enabled: input.checked,
+        consentAccepted: input.checked,
+        endpoint
+      };
     }
   }
   try {

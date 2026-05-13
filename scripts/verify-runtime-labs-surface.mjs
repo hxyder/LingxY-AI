@@ -20,7 +20,8 @@ const behavior = readFileSync("tests/behavior/runtime-labs-surface.test.mjs", "u
 
 assert.match(surfaceSource, /buildRuntimeLabsSurface/u, "shared surface builder must exist");
 assert.match(surfaceSource, /applyRuntimeLabsPatch/u, "shared patch helper must exist");
-assert.match(surfaceSource, /network_otel_export/u, "network OTEL must be visible as a blocked capability");
+assert.match(surfaceSource, /network_otel_export/u, "network OTEL must be visible as an opt-in capability");
+assert.match(surfaceSource, /observability\.networkOtel\.enabled/u, "network OTEL must write a dedicated observability config path");
 assert.match(surfaceSource, /multi_candidate_voting/u, "multi-candidate voting must be visible as a gated capability");
 assert.match(surfaceSource, /automatic_sub_agent_delegation/u, "sub-agent delegation must be visible as a gated capability");
 assert.doesNotMatch(surfaceSource, /fetch\(|XMLHttpRequest|EventSource/u, "runtime labs surface must not perform network export");
@@ -35,21 +36,28 @@ assert.match(preload, /updateRuntimeLabsConfig/u, "preload must expose a safe ru
 assert.match(consoleHtml, /runtimeLabsPanel/u, "Console settings must mount Runtime Labs panel");
 assert.match(consoleJs, /renderRuntimeLabsPanel/u, "Console must render Runtime Labs panel");
 assert.match(consoleJs, /updateRuntimeLabsConfigViaShell/u, "Console must save Runtime Labs through preload bridge");
+assert.match(consoleJs, /data-runtime-labs-network-otel-endpoint/u, "Console must expose the Network OTEL endpoint field");
 assert.doesNotMatch(consoleJs, /price:/u, "Console Runtime Labs and model role UI must not display price labels");
 assert.match(roadmap, /Runtime Labs/u, "roadmap must track Runtime Labs as the user-facing entry");
 assert.match(behavior, /blocked capabilities/u, "behavior tests must cover blocked capabilities");
 
 const surface = buildRuntimeLabsSurface({ config: { ai: { modelRoles: { enabled: true } } } });
 assert.equal(surface.capabilities.some((entry) => entry.id === "model_role_routing" && entry.enabled), true);
-assert.equal(surface.capabilities.some((entry) => entry.id === "network_otel_export" && entry.userToggle === false), true);
+assert.equal(surface.capabilities.some((entry) => entry.id === "network_otel_export" && entry.userToggle === true), true);
 
 const patch = applyRuntimeLabsPatch({}, {
   modelRoleRouting: { enabled: true },
-  finalAnswerReviewer: { enabled: true }
+  finalAnswerReviewer: { enabled: true },
+  networkOtel: {
+    enabled: true,
+    consentAccepted: true,
+    endpoint: "https://otel.example.test/v1/traces"
+  }
 });
 assert.equal(patch.ok, true);
 assert.equal(patch.patch.ai.modelRoles.enabled, true);
 assert.equal(patch.patch.ai.reviewerLoop.enabled, true);
+assert.equal(patch.patch.observability.networkOtel.enabled, true);
 
 const blocked = applyRuntimeLabsPatch({}, { multi_candidate_voting: { enabled: true } });
 assert.equal(blocked.ok, false);
