@@ -403,6 +403,7 @@ const consoleChatForm = document.querySelector("#consoleChatForm");
 const consoleChatInput = document.querySelector("#consoleChatInput");
 const consoleChatMessages = document.querySelector("#consoleChatMessages");
 const consoleChatArtifacts = document.querySelector("#consoleChatArtifacts");
+const consoleChatFilesBtn = document.querySelector("#consoleChatFilesBtn");
 const consoleChatScrollDownBtn = document.querySelector("#consoleChatScrollDown");
 const consoleChatState = document.querySelector("#consoleChatState");
 const consoleChatAttachBtn = document.querySelector("#consoleChatAttachBtn");
@@ -703,6 +704,10 @@ renderEchoDiagnostics();
       savedView = "tasks";
       localStorage.setItem("lingxy.view", "tasks");
     }
+    if (savedView === "files") {
+      savedView = "chat";
+      localStorage.setItem("lingxy.view", "chat");
+    }
     if (savedView && document.querySelector(`[data-tab="${savedView}"]`)) {
       // Defer to next frame so any page-load hooks (applyConsoleInfo…
       // etc) finish their own default state first.
@@ -718,7 +723,7 @@ renderEchoDiagnostics();
 // localStorage pointing to "advanced" is rerouted to "settings" in
 // switchTab() below.
 const VIEW_CRUMBS = {
-  tasks: "Tasks", chat: "Chat", files: "Files", schedules: "Schedules",
+  tasks: "Tasks", chat: "Chat", files: "Chat", schedules: "Schedules",
   projects: "Projects", notes: "Notes",
   connectors: "Connectors", inbox: "Inbox",
   settings: "Settings"
@@ -728,6 +733,7 @@ function switchTab(tabId) {
   // UCA-126: reroute retired "advanced" to settings so stale localStorage
   // or deep links don't land on an empty panel.
   if (tabId === "advanced") tabId = "settings";
+  if (tabId === "files") tabId = "chat";
   tabButtons.forEach((btn) => {
     const isActive = btn.dataset.tab === tabId;
     btn.classList.toggle("active", isActive);
@@ -3066,7 +3072,7 @@ function getChatSidebarProject(projectId = chatSidebarProjectId) {
 
 function getChatSidebarProjectLabel(projectId = chatSidebarProjectId) {
   const project = getChatSidebarProject(projectId);
-  return project?.name || project?.id || null;
+  return project?.name || project?.id || projectId || null;
 }
 
 function getConsoleChatSubmitProjectId() {
@@ -3190,6 +3196,8 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
 
 async function openConversationArtifactPath(filePath) {
   if (!filePath) return;
+  const openedInline = await openInlinePreviewInChat({ filePath });
+  if (openedInline) return;
   if (typeof consoleShellClient?.openPath !== "function") {
     showConsoleToast("Open path bridge unavailable.", { kind: "err" });
     return;
@@ -3398,6 +3406,7 @@ async function loadConsoleConversationFromBackend(conversationId) {
     project_id: detail.conversation.project_id,
     metadata: detail.conversation.metadata ?? {}
   });
+  setChatSidebarProjectScope(detail.conversation.project_id ?? null);
   if (consoleChatMessages) {
     // Defensive: if a streaming answer is in flight, drop its reference
     // before wiping so future text_delta frames don't keep writing into
@@ -3455,6 +3464,37 @@ let chatSidebarCacheKey = "";
 let chatSidebarCacheLoaded = false;
 let chatSidebarShowingServerSearch = false;
 
+function syncChatSidebarProjectScopeStorage() {
+  try {
+    if (chatSidebarProjectId) localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, chatSidebarProjectId);
+    else localStorage.removeItem(CHAT_SIDEBAR_PROJECT_KEY);
+  } catch { /* sandbox */ }
+}
+
+function setChatSidebarProjectScope(projectId = null) {
+  const nextId = typeof projectId === "string" && projectId.trim() ? projectId.trim() : null;
+  if (chatSidebarProjectId === nextId) return false;
+  chatSidebarProjectId = nextId;
+  chatSidebarCacheLoaded = false;
+  chatSidebarCacheKey = "";
+  syncChatSidebarProjectScopeStorage();
+  renderConsoleChatHeader();
+  renderChatSidebarProjectFilter();
+  return true;
+}
+
+function conversationProjectId(conversation = {}) {
+  return conversation?.project_id ?? conversation?.projectId ?? null;
+}
+
+function filterConversationsByChatScope(items = [], projectId = chatSidebarProjectId) {
+  const source = Array.isArray(items) ? items : [];
+  if (projectId) {
+    return source.filter((conversation) => conversationProjectId(conversation) === projectId);
+  }
+  return source.filter((conversation) => !conversationProjectId(conversation));
+}
+
 function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = null } = {}) {
   return JSON.stringify({ limit, archived, projectId: projectId ?? null });
 }
@@ -3478,31 +3518,17 @@ async function searchConversationsList({
 }
 
 function renderChatSidebarProjectFilter() {
-  const select = document.querySelector("#chatSidebarProjectFilter");
-  if (!select) return;
+  const label = document.querySelector("#chatSidebarScopeLabel");
+  const clearBtn = document.querySelector("#chatSidebarScopeClearBtn");
+  if (!label && !clearBtn) return;
   const store = state.projectStore ?? loadConsoleProjectStore();
   const projects = Array.isArray(store.projects) ? store.projects : [];
   if (chatSidebarProjectId && !projects.some((project) => project.id === chatSidebarProjectId)) {
-    chatSidebarProjectId = null;
+    syncChatSidebarProjectScopeStorage();
   }
-  const options = [
-    `<option value="">All conversations</option>`,
-    ...projects.map((project) =>
-      `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name ?? project.id)}</option>`
-    )
-  ].join("");
-  const previous = select.value;
-  if (select.innerHTML !== options) {
-    select.innerHTML = options;
-  }
-  const nextValue = chatSidebarProjectId ?? "";
-  if (select.value !== nextValue) select.value = nextValue;
-  if (previous !== select.value) {
-    try {
-      if (chatSidebarProjectId) localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, chatSidebarProjectId);
-      else localStorage.removeItem(CHAT_SIDEBAR_PROJECT_KEY);
-    } catch { /* sandbox */ }
-  }
+  const projectLabel = getChatSidebarProjectLabel();
+  if (label) label.textContent = projectLabel ? `${projectLabel} · project chats` : "Personal chats";
+  if (clearBtn) clearBtn.hidden = !projectLabel;
 }
 
 async function ensureConversationsCache({
@@ -3521,7 +3547,7 @@ async function ensureConversationsCache({
         archived,
         projectId
       });
-      chatSidebarItems = items;
+      chatSidebarItems = filterConversationsByChatScope(items, projectId);
       chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId }) + `:search:${searchQuery}`;
       chatSidebarCacheLoaded = true;
       chatSidebarShowingServerSearch = true;
@@ -3535,8 +3561,9 @@ async function ensureConversationsCache({
     return chatSidebarItems;
   }
   try {
-    const items = await fetchConversationsList({ limit, archived, projectId });
-    chatSidebarItems = items;
+    const fetchLimit = projectId ? limit : Math.min(Math.max(Number(limit) || 100, 100), 500);
+    const items = await fetchConversationsList({ limit: fetchLimit, archived, projectId });
+    chatSidebarItems = filterConversationsByChatScope(items, projectId);
     chatSidebarCacheKey = key;
     chatSidebarCacheLoaded = true;
     chatSidebarShowingServerSearch = false;
@@ -6267,7 +6294,7 @@ function renderTaskArtifacts(detail) {
 }
 
 /* ═══════════════════════════════════════════════
-   FILES TAB — global artifact manager
+   LEGACY FILES PANEL — hidden compatibility artifact manager
    ═══════════════════════════════════════════════ */
 
 const filesListEl = document.querySelector("#filesList");
@@ -8919,6 +8946,21 @@ consoleChatInput?.addEventListener("keydown", (event) => {
     void submitConsoleChat();
   }
 });
+consoleChatFilesBtn?.addEventListener("click", async () => {
+  if (consoleActiveConversation?.conversation_id) {
+    await refreshConsoleChatArtifacts({ force: true });
+  } else {
+    renderConsoleChatArtifacts([]);
+  }
+  switchTab("chat");
+  if (consoleChatArtifacts && !consoleChatArtifacts.hidden) {
+    consoleChatArtifacts.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    const firstFile = consoleChatArtifacts.querySelector("[data-conversation-artifact-open]");
+    if (firstFile instanceof HTMLElement) firstFile.focus();
+    return;
+  }
+  showConsoleToast("当前对话还没有可预览的文件。", { kind: "info" });
+});
 consoleChatArtifacts?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const manageBtn = target?.closest?.("[data-chat-project-files-manage]");
@@ -9297,8 +9339,7 @@ projectRefreshBtn?.addEventListener("click", () => {
 function setSelectedProjectChatScope() {
   const store = state.projectStore ?? loadConsoleProjectStore();
   const projectId = state.selectedProjectId || store.currentProjectId || DEFAULT_PROJECT_ID;
-  chatSidebarProjectId = projectId;
-  try { localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, projectId); } catch { /* sandbox */ }
+  setChatSidebarProjectScope(projectId);
   store.currentProjectId = projectId;
   store.currentConversationId = null;
   saveConsoleProjectStore(store);
@@ -9310,7 +9351,7 @@ function openSelectedProjectChat({ startNew = false } = {}) {
   const projectId = setSelectedProjectChatScope();
   if (startNew) {
     startNewConsoleChat();
-  } else if (consoleActiveConversation?.project_id && consoleActiveConversation.project_id !== projectId) {
+  } else if (consoleActiveConversation?.conversation_id && (consoleActiveConversation.project_id ?? null) !== projectId) {
     startNewConsoleChat();
   }
   switchTab("chat");
@@ -9434,18 +9475,16 @@ document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) 
   }, 120);
 });
 
-document.querySelector("#chatSidebarProjectFilter")?.addEventListener("change", (event) => {
-  const value = event.target?.value ?? "";
-  chatSidebarProjectId = value || null;
-  chatSidebarCacheLoaded = false;
-  try {
-    if (chatSidebarProjectId) localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, chatSidebarProjectId);
-    else localStorage.removeItem(CHAT_SIDEBAR_PROJECT_KEY);
-  } catch { /* sandbox */ }
+document.querySelector("#chatSidebarScopeClearBtn")?.addEventListener("click", () => {
+  setChatSidebarProjectScope(null);
+  if (consoleActiveConversation?.project_id) {
+    clearConsoleActiveConversation();
+  }
   if (!consoleActiveConversation?.conversation_id) {
     renderConsoleChatEmptyState();
     renderConsoleChatArtifacts([]);
   }
+  renderChatSidebar();
   void refreshChatSidebar({ force: true });
 });
 
@@ -10920,11 +10959,9 @@ setInterval(refreshChatTimestamps, 30_000);
    FILE PREVIEW COMPATIBILITY (Console)
    ═══════════════════════════════════════════════ */
 
-/* Console file chips now open via the OS association (`openPath`) so Office
-   documents and generated spreadsheets land in the real app the user can
-   edit. The legacy inline split-pane is kept only for compatibility with
-   older smoke helpers; livePreview.openForFile is no longer overridden here,
-   so explicit preview actions use the dedicated Preview BrowserWindow. */
+/* Console file chips open inside the conversation split preview first. The
+   explicit "open external" button remains the route to the OS association
+   when the user wants to edit the file in a native app. */
 
 const consolePreviewLayout = document.querySelector(".chat-layout");
 const consolePreviewPane = document.querySelector("#consolePreviewPane");

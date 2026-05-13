@@ -194,6 +194,7 @@ export async function attachProjectFiles({
   };
 
   const attachedPaths = [];
+  const attachedEntries = [];
   const indexedRecords = [];
   const failures = [];
   let removedRecords = 0;
@@ -219,6 +220,16 @@ export async function attachProjectFiles({
         indexedRecords.push(record);
       }
       attachedPaths.push(inputPath);
+      attachedEntries.push({
+        path: inputPath,
+        kind: result.metadata.recursive ? "folder" : "file",
+        files_seen: result.metadata.files_seen,
+        files_read: result.metadata.files_read,
+        coverage_complete: result.metadata.coverage_complete,
+        truncated: result.metadata.truncated,
+        file_limit_hit: result.metadata.file_limit_hit,
+        depth_limit_hit: result.metadata.depth_limit_hit
+      });
     } catch (error) {
       failures.push({
         path: inputPath,
@@ -238,17 +249,29 @@ export async function attachProjectFiles({
         projectStore: store
       }
     }))?.ui?.projectStore ?? store;
-    runtime?.projectWorkspaces?.recordProjectFiles?.(id, attachedPaths, {
-      status: "indexed",
-      indexedAt: createdAt,
-      metadata: { source: "project_file_attach" }
-    });
+    for (const entry of attachedEntries) {
+      runtime?.projectWorkspaces?.recordProjectFiles?.(id, [entry.path], {
+        status: "indexed",
+        indexedAt: createdAt,
+        metadata: {
+          source: "project_file_attach",
+          kind: entry.kind,
+          files_seen: entry.files_seen,
+          files_read: entry.files_read,
+          coverage_complete: entry.coverage_complete,
+          truncated: entry.truncated,
+          file_limit_hit: entry.file_limit_hit,
+          depth_limit_hit: entry.depth_limit_hit
+        }
+      });
+    }
   }
 
   return {
     ok: true,
     project_id: id,
     attached_paths: attachedPaths,
+    attached_entries: attachedEntries,
     indexed_count: indexedRecords.length,
     removed_count: removedRecords,
     failed_paths: failures,

@@ -1,6 +1,6 @@
 # Project Workspace Boundary
 
-Status: PMAT-007 through PMAT-011 complete.
+Status: PMAT-007 through PMAT-012 complete.
 
 Project is a product workspace, not a conversation alias.
 
@@ -28,10 +28,26 @@ Layer contract:
 - Chat remains the only full conversation surface. Project pages set the Chat
   project scope, start or resume project conversations, and manage project
   context; they must not introduce a second parallel chat composer.
+- Ordinary conversations and project conversations are separate conversation
+  domains. The Chat sidebar's default domain is personal conversations with no
+  `project_id`; selecting a project switches Chat into that project's domain.
+  The UI must not present an "All conversations" mixed scope as the primary
+  browsing mode.
+- There is no top-level Files workspace. Generated artifacts and attached files
+  are conversation/project context assets: Chat shows the active conversation's
+  context files and generated artifacts, and Project shows the selected
+  project's files/artifacts. Legacy files view IDs may stay as compatibility
+  handles, but visible navigation must route users through Chat or Project.
+- Clicking a generated artifact from Console opens the Console inline preview
+  pane first. External open/reveal remains an explicit secondary action so users
+  can inspect generated content without leaving the conversation.
 - Project instructions are project metadata. They may be edited from the
   renderer, but persistence and future context use stay service-owned.
-- Project files are explicit project attachments and optional file-content index
-  inputs. They are not conversation messages.
+- Project files/folders are explicit project attachments and optional
+  file-content index inputs. They are not conversation messages. Folder
+  attachment is a bounded recursive index operation; the stored project file
+  record must preserve whether the attachment was a file or a folder so the UI
+  can manage it accurately.
 - Context compilation may include compact project scope evidence, but it must
   not read or parse project files on the hot path.
 

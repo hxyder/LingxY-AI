@@ -176,6 +176,8 @@ test("project folder attachment recursively indexes readable files but skips gen
 
     assert.equal(result.statusCode, 200);
     assert.equal(result.payload.attached_paths[0], folderPath);
+    assert.equal(result.payload.attached_entries[0].kind, "folder");
+    assert.equal(result.payload.attached_entries[0].files_seen, 1);
     const records = runtime.platform.embeddingStore.list({
       namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
       projectId: "proj_a"
@@ -184,6 +186,7 @@ test("project folder attachment recursively indexes readable files but skips gen
     assert.match(records.map((record) => record.text).join("\n"), /Project brief/);
     assert.doesNotMatch(records.map((record) => record.text).join("\n"), /Should not be indexed/);
     assert.equal(records[0].metadata.recursive, true);
+    assert.equal(records[0].metadata.coverage_scope, "folder_recursive_text");
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
   }

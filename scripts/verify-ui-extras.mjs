@@ -178,6 +178,8 @@ assert.ok(/removeProjectFileIndexViaShell/.test(consoleJs) && /(?:consoleShellCl
   "project files: console must use desktop shell bridge for index removal");
 assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(consoleJs),
   "project files: console must expose an explicit picker before attach/index");
+assert.ok(/openFile/.test(mainProcessIpc) && /openDirectory/.test(mainProcessIpc) && /Add files or folders to this project/.test(mainProcessIpc),
+  "project files: desktop picker must allow both local files and folders");
 assert.ok(/Context files/.test(consoleJs) && /data-chat-project-files-manage/.test(consoleJs),
   "project files: chat must surface project-scoped context files and a management path");
 assert.ok(/conversation-artifact--project-file/.test(sharedCss) && /conversation-artifacts-manage/.test(sharedCss),
@@ -464,16 +466,22 @@ assert.ok(/revealEvidenceSource/.test(overlayJs) && /\.cite-chip\[data-source-id
   "citations: overlay must reveal evidence rows when citation chips are clicked");
 assert.ok(/cite-source-row--flash/.test(sharedCss) && /cursor:\s*pointer/.test(sharedCss),
   "citations: citation chips and revealed source rows must have interactive styling");
-assert.ok(/id="chatSidebarProjectFilter"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
-  "chat projects: sidebar must expose a project/all conversation scope selector");
+assert.ok(/id="chatSidebarScopeLabel"/.test(consoleHtml) && /id="chatSidebarScopeClearBtn"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
+  "chat projects: sidebar must expose the active personal/project conversation domain");
+assert.ok(!/All conversations/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml),
+  "chat projects: UI must not expose a mixed conversation scope or a top-level Files rail entry");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
   "chat projects: console must persist chat sidebar project scope");
+assert.ok(/function\s+filterConversationsByChatScope/.test(consoleJs) && /return source\.filter\(\(conversation\) => !conversationProjectId\(conversation\)\)/.test(consoleJs),
+  "chat projects: personal Chat sidebar must filter out project conversations");
 assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project_id:\s*projectId/.test(consoleJs),
   "chat projects: /task submit must carry structured project_id when scoped");
 assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
   "chat empty: New chat must use the rich empty-state renderer instead of plain text");
 assert.ok(/id="consoleChatArtifacts"/.test(consoleHtml) && /\.conversation-artifacts\b/.test(sharedCss),
   "chat artifacts: console must expose a conversation-scoped file strip");
+assert.ok(/id="consoleChatFilesBtn"/.test(consoleHtml),
+  "chat artifacts: files must be reachable from the Chat header instead of a top-level Files tab");
 assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes) && /getArtifactsForConversation/.test(noteProjectConversationRoutes),
   "chat artifacts: conversation route must expose getArtifactsForConversation");
 assert.ok(/function\s+refreshConsoleChatArtifacts/.test(consoleJs) && /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/artifacts/.test(consoleJs),
@@ -1036,12 +1044,13 @@ assert.ok(!/data-tab="conversations"/.test(consoleHtml),
 assert.ok(/data-chat-context-open/.test(consoleJs) && /data-chat-context-reveal/.test(consoleJs),
   "conversation context: console message file chips must be openable and revealable");
 assert.ok(/openConversationArtifactPath/.test(consoleJs) && /revealConversationArtifactPath/.test(consoleJs),
-  "conversation context: console file chips must use shell open/reveal bridges");
+  "conversation context: console file chips must use preview/open and reveal bridges");
 assert.ok(!/window\.livePreview\.openForFile\s*=\s*function\s+consoleOpenForFile/.test(consoleJs),
-  "conversation context: console must not override file preview into the cramped inline pane");
-assert.ok(/async function openConversationArtifactPath[\s\S]{0,360}(?:consoleShellClient|overlayShellClient)\?\.openPath/.test(consoleJs)
-    && !/async function openConversationArtifactPath[\s\S]{0,220}livePreview\?\.openForFile/.test(consoleJs),
-  "conversation context: clicking file chips must open the real OS-associated file instead of fake inline preview");
+  "conversation context: console must not override the global livePreview bridge");
+assert.ok(/async function openConversationArtifactPath[\s\S]{0,180}openInlinePreviewInChat\(\{\s*filePath\s*\}/.test(consoleJs)
+    && /consolePreviewOpenExternalBtn\?\.addEventListener/.test(consoleJs)
+    && /consoleShellClient\?\.openPath/.test(consoleJs),
+  "conversation context: clicking generated files must preview inline first, with explicit external open available");
 assert.ok(/data-context-open-path/.test(overlayJs),
   "conversation context: overlay message file chips must be openable");
 assert.ok(/contextOpenPath/.test(overlayJs) && /(?:consoleShellClient|overlayShellClient)\?\.openPath/.test(overlayJs),

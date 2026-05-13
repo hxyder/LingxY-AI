@@ -136,14 +136,16 @@ export function renderProjectArtifactListHtml({
     const filePath = entry.path;
     const ext = artifactExtension(filePath);
     const label = labelForPath(filePath);
+    const kind = entry.metadata?.kind === "folder" || entry.kind === "folder" ? "folder" : "file";
     const status = entry.legacyScopeLabel ? "Project scope" : entry.status || (entry.indexed_at ? "indexed" : "attached");
+    const scopeLabel = kind === "folder" ? "Attached project folder" : "Attached project file";
     return `
       <div class="project-artifact-row project-artifact-row--attached">
         <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
         <button class="project-artifact-main" type="button" data-project-artifact-open="${escapeHtml(filePath)}" title="${escapeHtml(filePath)}">
           <span class="project-artifact-name">${escapeHtml(label)}</span>
           <span class="project-artifact-meta">
-            <span>Attached project file</span>
+            <span>${escapeHtml(scopeLabel)}</span>
             <span class="artifact-status artifact-status--project">${escapeHtml(status)}</span>
           </span>
         </button>

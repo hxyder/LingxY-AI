@@ -75,6 +75,10 @@ test("project files view can render service-owned project file records", () => {
       path: "E:\\project\\knowledge.pdf",
       status: "indexed",
       indexed_at: "2026-05-12T12:00:00.000Z"
+    }, {
+      path: "E:\\project\\research-folder",
+      status: "indexed",
+      metadata: { kind: "folder" }
     }],
     projectId: "project_docs",
     artifacts: [],
@@ -84,4 +88,6 @@ test("project files view can render service-owned project file records", () => {
   assert.match(html, /knowledge\.pdf/);
   assert.match(html, /indexed/);
   assert.match(html, /data-project-file-reindex="E:\\project\\knowledge\.pdf"/);
+  assert.match(html, /research-folder/);
+  assert.match(html, /Attached project folder/);
 });

@@ -4805,7 +4805,7 @@ async function refreshActiveTask() {
       }
       // Auto-open removed: previously the host file viewer would steal focus
       // every time a task finished. Users explicitly click the "打开文件"
-      // button or the artifact in the Console Files tab.
+      // button or the artifact from the Console Chat/Project file context.
     } else if (task.status === "success" && !task.artifacts?.length) {
       // UCA-182 Phase 9: conversational success (no artifacts) still
       // needs to thread — remember the task_id so follow-ups link.

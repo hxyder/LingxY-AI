@@ -580,23 +580,30 @@
   gap: 8px;
 }
 .chat-sidebar-scope {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
   font-size: 11px;
   color: var(--muted);
 }
-.chat-sidebar-scope select {
+.chat-sidebar-scope span {
   min-width: 0;
-  width: 100%;
-  height: 30px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--ink);
-  font: inherit;
-  padding: 0 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  font-weight: var(--fw-semibold);
+}
+.chat-sidebar-scope .btn {
+  height: 22px;
+  padding: 0 7px;
+  font-size: 10px;
 }
 .chat-sidebar-list {
   flex: 1;

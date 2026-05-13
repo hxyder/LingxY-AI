@@ -790,10 +790,6 @@
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="rail-item-label">Chat<span class="zh">对话</span></span>
         </button>
-        <button class="rail-item" data-tab="files" role="tab" aria-selected="false" title="Files">
-          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><polyline points="14 2 14 8 20 8"/></svg>
-          <span class="rail-item-label">Files<span class="zh">文件</span></span>
-        </button>
         <button class="rail-item" data-tab="schedules" role="tab" aria-selected="false" title="Schedules">
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           <span class="rail-item-label">Schedules<span class="zh">计划</span></span>
@@ -1067,6 +1063,10 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             New chat
           </button>
+          <button id="consoleChatFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Show context files">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Files
+          </button>
         </div>
       </header>
       <!-- IA Phase 2: Chat tab gets a 280px conversation sidebar on
@@ -1116,12 +1116,10 @@
             </button>
           </header>
           <div class="chat-sidebar-search">
-            <label class="chat-sidebar-scope" title="Filter conversations by project">
-              <span>Scope</span>
-              <select id="chatSidebarProjectFilter" aria-label="Chat conversation scope">
-                <option value="">All conversations</option>
-              </select>
-            </label>
+            <div class="chat-sidebar-scope" title="Conversation domain">
+              <span id="chatSidebarScopeLabel">Personal chats</span>
+              <button id="chatSidebarScopeClearBtn" class="btn btn-sm btn-ghost" type="button" hidden>Personal</button>
+            </div>
             <label class="search-input" style="margin:0;width:100%;">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input id="chatSidebarSearch" type="search" placeholder="搜索对话…" autocomplete="off" />
@@ -1205,9 +1203,9 @@
     </section>
 
     <!-- ═══════════════════════════════════════
-         TAB: FILES (artifact manager)
+         LEGACY FILES PANEL (hidden compatibility handle)
          ═══════════════════════════════════════ -->
-    <section id="panel-files" class="tab-panel">
+    <section id="panel-files" class="tab-panel" hidden aria-hidden="true">
       <header class="page-head">
         <div>
           <h1>Files<span class="zh">文件</span></h1>
@@ -1529,7 +1527,7 @@
               <h3 class="panel-title">Context<span class="zh">上下文</span></h3>
             </div>
             <div class="toolbar" style="gap:6px;">
-              <button id="projectAttachFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Add local files or folders to this project">Add</button>
+              <button id="projectAttachFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Add local files or folders to this project">Add files/folders</button>
               <span id="projectArtifactCount" class="pill pill-neutral">0</span>
             </div>
           </header>

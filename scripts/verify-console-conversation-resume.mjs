@@ -128,8 +128,10 @@ await it("console.js: project-scoped chat submits project_id without pseudo-hist
 });
 
 await it("console.js: chat sidebar fetch plumbs projectId without polluting resume history", () => {
-  assert.match(consoleHtml, /id="chatSidebarProjectFilter"/);
+  assert.match(consoleHtml, /id="chatSidebarScopeLabel"/);
+  assert.doesNotMatch(consoleHtml, /All conversations/);
   assert.match(consoleJs, /let\s+chatSidebarProjectId/);
+  assert.match(consoleJs, /filterConversationsByChatScope/);
   assert.match(consoleJs, /fetchConversationsList\(\{\s*limit\s*=\s*100,\s*archived\s*=\s*["']false["'],\s*projectId\s*=\s*null/);
   assert.match(consoleJs, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*limit,\s*archived,\s*projectId\s*\}/);
   assert.match(consoleJs, /refreshChatSidebar\(\{\s*force:\s*true\s*\}\)/);

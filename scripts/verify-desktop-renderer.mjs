@@ -188,13 +188,14 @@ assert.equal(consoleHtml.includes("Privacy & Security"), true);
 assert.equal(consoleHtml.includes("Audit Log"), true);
 assert.equal(consoleHtml.includes("Templates"), true);
 assert.equal(consoleHtml.includes("One-click Setup"), true);
-// Files tab (artifact manager)
-assert.equal(consoleHtml.includes("data-tab=\"files\""), true);
-assert.equal(consoleHtml.includes("panel-files"), true);
-assert.equal(consoleHtml.includes("filesList"), true);
-assert.equal(consoleHtml.includes("filesPreviewBody"), true);
+// Conversation-owned files: top-level Files rail is retired. The legacy
+// panel may remain as a hidden compatibility handle, but visible navigation
+// and generated-content preview belong to Chat/Project.
+assert.equal(consoleHtml.includes("data-tab=\"files\""), false);
+assert.equal(consoleHtml.includes("consoleChatFilesBtn"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
+assert.equal(consoleJs.includes("openInlinePreviewInChat"), true);
 assert.equal(consoleJs.includes("loadAllArtifacts"), true);
 assert.equal(consoleJs.includes("renderFilesList"), true);
 assert.equal(consoleJs.includes("selectFileArtifact"), true);

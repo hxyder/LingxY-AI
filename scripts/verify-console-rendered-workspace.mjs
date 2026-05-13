@@ -13,7 +13,8 @@ async function read(relativePath) {
 const consoleHtml = await read("src/desktop/renderer/console.html");
 assert.equal(consoleHtml.includes('id="panel-tasks"'), true);
 assert.equal(consoleHtml.includes('id="panel-schedules"'), true);
-assert.equal(consoleHtml.includes('id="panel-files"'), true);
+assert.equal(consoleHtml.includes('data-tab="files"'), false);
+assert.equal(consoleHtml.includes('id="consoleChatFilesBtn"'), true);
 assert.equal(consoleHtml.includes('id="panel-settings"'), true);
 assert.equal(consoleHtml.includes("Tasks"), true);
 assert.equal(consoleHtml.includes("Schedules"), true);
