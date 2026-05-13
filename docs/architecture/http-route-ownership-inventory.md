@@ -38,7 +38,7 @@ The current dispatcher checks route groups in this order:
 | `ai-status-routes.mjs` | GET, PATCH | 7 | 2 | provider/executor/MCP/capability inventory and lifecycle status |
 | `audio-routes.mjs` | GET, POST | 9 | 0 | Echo, TTS, transcription |
 | `browser-context-routes.mjs` | DELETE, GET, POST | 6 | 0 | browser context and overlay handoff |
-| `config-provider-routes.mjs` | DELETE, GET, PATCH, POST | 39 | 5 | config, provider, skills, MCP drafts, memory, email, memory review undo |
+| `config-provider-routes.mjs` | DELETE, GET, PATCH, POST | 40 | 5 | config, provider, skills, MCP drafts, memory, email, Runtime Labs, memory review undo |
 | `connector-routes.mjs` | DELETE, GET, PATCH, POST | 8 | 15 | connector catalog, plugins, connected accounts |
 | `mcp-install-routes.mjs` | POST | 3 | 0 | MCP install planning and execution |
 | `note-project-conversation-routes.mjs` | DELETE, GET, PATCH, POST | 8 | 10 | notes, projects, conversations |

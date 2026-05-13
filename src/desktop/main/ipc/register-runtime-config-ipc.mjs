@@ -74,6 +74,25 @@ export function registerRuntimeConfigIpc({
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.runtimeLabsConfigUpdate, async (event, payload = {}) => {
+    const base = getServiceBaseUrl();
+    const actor = desktopActorForSender(event.sender);
+    try {
+      return await postDesktopServiceJson({
+        base,
+        actor,
+        pathname: "/config/runtime-labs",
+        body: normalizeRuntimeConfigPayload(payload)
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error: "runtime_labs_config_update_failed",
+        message: error?.message ?? String(error)
+      };
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.emailSettingsUpdate, async (event, payload = {}) => {
     const base = getServiceBaseUrl();
     const actor = desktopActorForSender(event.sender);

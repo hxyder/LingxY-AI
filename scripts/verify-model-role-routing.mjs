@@ -29,7 +29,7 @@ assert.match(moduleSource, /task_routing_fallback/u, "roles must inherit existin
 assert.match(moduleSource, /isModelRoleCallSiteRoutingEnabled/u, "role routing must expose explicit call-site feature flag gate");
 assert.match(moduleSource, /buildModelRoleManagementSurface/u, "role routing must expose a user-visible management surface contract");
 assert.match(moduleSource, /featureFlag/u, "management surface must expose feature flag state");
-assert.match(moduleSource, /llm_usage/u, "management surface must expose usage/cost evidence");
+assert.match(moduleSource, /llm_usage/u, "management surface must expose token/cache usage evidence");
 assert.match(moduleSource, /live_provider_acceptance/u, "management surface must expose live provider test actions");
 assert.match(moduleSource, /LINGXY_MODEL_ROLE_TEST_OK/u, "management surface must define the safe short live-test prompt");
 assert.match(providerResolver, /resolveProviderForModelRole/u, "provider resolver must expose role-aware call-site resolver");
@@ -48,7 +48,7 @@ assert.match(consoleJs, /renderModelRoleManagementSurface/u, "Console renderer m
 assert.match(consoleJs, /state\.workspace\.modelRoles/u, "Console must consume modelRoles from the service payload");
 assert.match(consoleJs, /data-model-role-action/u, "Console management actions must be typed UI actions");
 assert.match(behavior, /model role routing exposes planner executor reviewer fast defaults/u, "behavior tests must cover default roles");
-assert.match(behavior, /model role management surface exposes health cost fallback feature flag and test actions/u,
+assert.match(behavior, /model role management surface exposes health usage fallback feature flag and test actions/u,
   "behavior tests must cover management surface details");
 assert.match(behavior, /without secrets/u, "behavior tests must cover secret-free diagnostics");
 assert.match(behavior, /stays disabled until explicit feature flag/u, "behavior tests must cover disabled default");

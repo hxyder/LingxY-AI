@@ -15,10 +15,10 @@ Status: verified against the current repository on 2026-05-09.
 
 ## Snapshot
 
-- IPC channel count: 115
-- Main-process handler registration references across `electron-main.mjs` and IPC modules: 112
-- Main-process send references across `electron-main.mjs`, desktop main IPC helpers, and IPC modules: 28
-- Renderer invoke references: 108
+- IPC channel count: 116
+- Main-process handler registration references across `electron-main.mjs` and IPC modules: 113
+- Main-process send references across `electron-main.mjs`, desktop main IPC helpers, and IPC modules: 27
+- Renderer invoke references: 109
 - Renderer listener references: 22
 - Hard-coded main IPC handler channels outside `IPC_CHANNELS`: 13
 
@@ -30,7 +30,7 @@ Status: verified against the current repository on 2026-05-09.
 | Shell-local state/context | `uca:get-settings`, `uca:capture-active-window-context`, `uca:show-dock-menu`, `uca:register-ctrl-enter` | Desktop shell |
 | Popup/preview | `uca:popup-card-show`, `uca:preview-window-show`, `uca:preview-window-delta` | Desktop shell and renderer bridge |
 | Task/runtime | `uca:task-cancel`, `uca:task-retry`, `uca:task-delete`, `uca:task-file-recovery-restore`, `uca:context-preview-requested` | Service runtime via shell bridge |
-| Config/provider/MCP | `uca:provider-save`, `uca:mcp-server-save`, `uca:routing-config-update` | Service runtime configuration via desktop shell |
+| Config/provider/MCP | `uca:provider-save`, `uca:mcp-server-save`, `uca:routing-config-update`, `uca:runtime-labs-config-update` | Service runtime configuration via desktop shell |
 | Skills/capability | `uca:skill-create`, `uca:skill-markdown-read`, `uca:skill-registry-save` | Service runtime configuration via desktop shell |
 | Notes/projects/conversations | `uca:note-upsert`, `uca:project-files-attach`, `uca:notes-save` | Service runtime storage via desktop shell |
 | Scheduler/DAG/templates | `uca:schedule-create`, `uca:dag-resume`, `uca:template-save` | Service runtime scheduler via desktop shell |
@@ -82,7 +82,7 @@ Current extracted IPC modules:
 - `src/desktop/main/ipc/register-scheduler-ipc.mjs`: schedule create/update/delete/run, template save/import/delete, and DAG resume handlers.
 - `src/desktop/main/ipc/register-provider-config-ipc.mjs`: provider save/delete, onboarding suggestion update, and Code CLI adapter save/delete handlers.
 - `src/desktop/main/ipc/register-skill-ipc.mjs`: skill registry/state, auto-skill save, skill markdown read/write, create/duplicate/delete/history/rollback/test handlers.
-- `src/desktop/main/ipc/register-runtime-config-ipc.mjs`: routing, output, feature, and email settings update handlers.
+- `src/desktop/main/ipc/register-runtime-config-ipc.mjs`: routing, output, feature, Runtime Labs, and email settings update handlers.
 - `src/desktop/main/ipc/register-email-ipc.mjs`: email account save/delete and digest check handlers.
 - `src/desktop/main/ipc/register-notes-project-ipc.mjs`: notes save/upsert/delete/restore/append-chip, project store/files pick/attach/remove-index, and preview cache clear handlers.
 - `src/desktop/main/ipc/register-connected-account-ipc.mjs`: connected account rename/default/disconnect and connector account disconnect/config save handlers.

@@ -91,6 +91,7 @@ const expectedChannels = [
   "uca:provider-save",
   "uca:renderer-error",
   "uca:routing-config-update",
+  "uca:runtime-labs-config-update",
   "uca:schedule-create",
   "uca:schedule-delete",
   "uca:schedule-run",
@@ -212,7 +213,7 @@ const channels = sortedUnique(Object.values(IPC_CHANNELS));
 assert(JSON.stringify(channels) === JSON.stringify(expectedChannels), "IPC_CHANNELS snapshot changed; update inventory intentionally.");
 
 const doc = existsSync(docPath) ? readFileSync(docPath, "utf8") : "";
-assert(doc.includes("IPC channel count: 115"), "IPC inventory missing channel count");
+assert(doc.includes("IPC channel count: 116"), "IPC inventory missing channel count");
 assert(doc.includes("src/desktop/shared/manifest.mjs"), "IPC inventory missing manifest source");
 for (const modulePath of expectedExtractedIpcModules) {
   assert(doc.includes(modulePath), `IPC inventory missing extracted IPC module ${modulePath}`);
@@ -239,9 +240,9 @@ const mainProcessSources = [mainPath, ...mainIpcHelperPaths, ...ipcModuleFiles].
 const mainProcess = mainProcessSources.join("\n");
 const preload = readFileSync(preloadPath, "utf8");
 
-assert(count(mainProcess, /ipcMain\.handle\(/g) === 112, "main-process ipcMain.handle count changed");
+assert(count(mainProcess, /ipcMain\.handle\(/g) === 113, "main-process ipcMain.handle count changed");
 assert(count(mainProcess, /\.\w*send\(/g) === 27, "main-process send reference count changed");
-assert(count(preload, /ipcRenderer\.invoke\(/g) === 108, "preload invoke count changed");
+assert(count(preload, /ipcRenderer\.invoke\(/g) === 109, "preload invoke count changed");
 assert(count(preload, /ipcRenderer\.on\(/g) === 22, "preload listener count changed");
 
 const hardcodedMainHandlers = sortedUnique([...mainProcess.matchAll(/ipcMain\.handle\(\s*["']([^"']+)["']/g)].map((match) => match[1]));

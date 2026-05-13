@@ -22,6 +22,10 @@ import {
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
 import { buildProviderSetupStatus } from "../../../shared/provider-setup-status.mjs";
 import {
+  applyRuntimeLabsPatch,
+  buildRuntimeLabsSurface
+} from "../../../shared/runtime-labs-surface.mjs";
+import {
   createEditableSkill,
   deleteEditableSkill,
   duplicateEditableSkill,
@@ -551,6 +555,31 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     return true;
   }
 
+  if (method === "POST" && url.pathname === "/config/runtime-labs") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    const config = runtime.configStore?.load?.() ?? {};
+    const result = applyRuntimeLabsPatch(config, body);
+    if (!result.ok) {
+      sendJson(response, 400, {
+        ok: false,
+        error: result.error,
+        capabilityId: result.capabilityId ?? null
+      });
+      return true;
+    }
+    runtime.configStore?.patch?.(result.patch);
+    const nextConfig = runtime.configStore?.load?.() ?? result.config;
+    const providerStatuses = await listRuntimeAiProviderStatus(runtime, nextConfig);
+    const modelRoles = buildModelRoleRoutingSummary({ config: nextConfig, providers: providerStatuses });
+    sendJson(response, 200, {
+      ok: true,
+      runtimeLabs: buildRuntimeLabsSurface({ config: nextConfig, modelRoles }),
+      modelRoles
+    });
+    return true;
+  }
+
   if (method === "GET" && url.pathname === "/config/integrations") {
     const config = runtime.configStore?.load?.() ?? {};
     const integrationPaths = integrationPathsForRuntime(runtime);
@@ -581,6 +610,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       },
       providerSetup,
       modelRoles,
+      runtimeLabs: buildRuntimeLabsSurface({ config, modelRoles }),
       userMemory: readUserMemoryProfileFromConfig(config),
       email: config.email ?? { accounts: [] }
     });

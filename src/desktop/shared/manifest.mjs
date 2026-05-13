@@ -98,6 +98,7 @@ export const IPC_CHANNELS = Object.freeze({
   routingConfigUpdate: "uca:routing-config-update",
   outputConfigUpdate: "uca:output-config-update",
   featureConfigUpdate: "uca:feature-config-update",
+  runtimeLabsConfigUpdate: "uca:runtime-labs-config-update",
   emailSettingsUpdate: "uca:email-settings-update",
   emailAccountSave: "uca:email-account-save",
   emailAccountDelete: "uca:email-account-delete",

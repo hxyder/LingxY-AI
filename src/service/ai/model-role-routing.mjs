@@ -176,13 +176,14 @@ function roleFallbackDescriptor(roleEntry = {}) {
   };
 }
 
-function roleCostDescriptor(roleEntry = {}) {
+function roleUsageDescriptor(roleEntry = {}) {
   return {
     visible: true,
     usageEvent: "llm_usage",
     measurementKey: `model_role.${roleEntry.role}`,
     tokenUsage: true,
-    pricingAvailable: Boolean(roleEntry.provider?.providerFamily),
+    cacheUsage: "provider_reported_when_available",
+    priceDisplay: "hidden",
     providerFamily: roleEntry.provider?.providerFamily ?? null
   };
 }
@@ -224,7 +225,8 @@ export function buildModelRoleManagementSurface({
     provider: roleEntry.provider,
     health: roleHealthDescriptor(roleEntry),
     fallback: roleFallbackDescriptor(roleEntry),
-    cost: roleCostDescriptor(roleEntry),
+    usage: roleUsageDescriptor(roleEntry),
+    cost: roleUsageDescriptor(roleEntry),
     actions: roleActions(roleEntry)
   }));
   return {

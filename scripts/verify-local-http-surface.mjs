@@ -213,6 +213,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "POST", "/config/runtime-labs", {
+    domain: "runtime_config",
+    effect: "config_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done_runtime_labs_gate_only"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/user-memory", {
     domain: "user_memory",
     effect: "config_mutation",

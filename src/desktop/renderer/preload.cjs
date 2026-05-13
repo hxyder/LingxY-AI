@@ -429,6 +429,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   updateFeatureConfig(payload) {
     return ipcRenderer.invoke("uca:feature-config-update", payload ?? {});
   },
+  updateRuntimeLabsConfig(payload) {
+    return ipcRenderer.invoke("uca:runtime-labs-config-update", payload ?? {});
+  },
   updateEmailSettings(payload) {
     return ipcRenderer.invoke("uca:email-settings-update", payload ?? {});
   },

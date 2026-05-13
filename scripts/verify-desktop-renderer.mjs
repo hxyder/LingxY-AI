@@ -379,6 +379,7 @@ assert.equal(mainProcess.includes("/skills/test"), true);
 assert.equal(mainProcess.includes("/config/routing"), true);
 assert.equal(mainProcess.includes("/config/output"), true);
 assert.equal(mainProcess.includes("/config/features"), true);
+assert.equal(mainProcess.includes("/config/runtime-labs"), true);
 assert.equal(mainProcess.includes("/config/email/settings"), true);
 assert.equal(mainProcess.includes("/config/email/accounts"), true);
 assert.equal(mainProcess.includes("/email/digest/check"), true);

@@ -152,7 +152,7 @@ test("model role routing reports missing or misconfigured providers without secr
   assert.doesNotMatch(JSON.stringify(summary), /apiKey|sk-test|secret-value/u);
 });
 
-test("model role management surface exposes health cost fallback feature flag and test actions", () => {
+test("model role management surface exposes health usage fallback feature flag and test actions", () => {
   const summary = buildModelRoleRoutingSummary({
     config: {
       ai: {
@@ -178,8 +178,8 @@ test("model role management surface exposes health cost fallback feature flag an
   assert.deepEqual([...byRole.keys()], ["planner", "executor", "reviewer", "fast"]);
   assert.equal(byRole.get("fast")?.health.ok, true);
   assert.equal(byRole.get("fast")?.fallback.source, "task_routing_fallback");
-  assert.equal(byRole.get("fast")?.cost.usageEvent, "llm_usage");
-  assert.equal(byRole.get("fast")?.cost.measurementKey, "model_role.fast");
+  assert.equal(byRole.get("fast")?.usage.usageEvent, "llm_usage");
+  assert.equal(byRole.get("fast")?.usage.measurementKey, "model_role.fast");
   assert.equal(surface.testActions.some((action) => action.id === "model_role.fast.test"), true);
   assert.equal(surface.testActions.some((action) => action.prompt === "Reply with exactly: LINGXY_MODEL_ROLE_TEST_OK"), true);
   assert.doesNotMatch(JSON.stringify(surface), /apiKey|sk-test|secret-value/u);

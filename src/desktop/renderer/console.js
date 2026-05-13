@@ -862,6 +862,8 @@ const state = {
     plugins: [],
     onboarding: { pendingSuggestions: [], archivedSuggestions: [] },
     providerSetup: null,
+    modelRoles: null,
+    runtimeLabs: null,
     userMemory: null,
     emailAccounts: [],
     emailDigestSettings: {},
@@ -5285,7 +5287,7 @@ function renderModelRoleManagementSurface() {
           const route = roleEntry.route ?? {};
           const provider = roleEntry.provider ?? {};
           const fallback = roleEntry.fallback ?? {};
-          const cost = roleEntry.cost ?? {};
+          const usage = roleEntry.usage ?? roleEntry.cost ?? {};
           const providerLabel = provider.providerName ?? provider.providerId ?? route.providerId ?? "fallback provider";
           const modelLabel = route.model ?? "auto";
           const sourceLabel = fallback.source ?? route.source ?? "unknown";
@@ -5299,7 +5301,7 @@ function renderModelRoleManagementSurface() {
               </div>
               <div class="muted" style="font-size:11px;margin-top:5px;overflow-wrap:anywhere;">${escapeHtml(providerLabel)} · ${escapeHtml(modelLabel)}</div>
               <div class="muted" style="font-size:11px;margin-top:3px;">route: ${escapeHtml(route.taskType ?? "auto")} · ${escapeHtml(sourceLabel)}</div>
-              <div class="muted" style="font-size:11px;margin-top:3px;">cost: ${escapeHtml(cost.usageEvent ?? "llm_usage")} · ${escapeHtml(cost.measurementKey ?? `model_role.${roleEntry.role}`)}</div>
+              <div class="muted" style="font-size:11px;margin-top:3px;">tokens: ${escapeHtml(usage.usageEvent ?? "llm_usage")} · ${escapeHtml(usage.measurementKey ?? `model_role.${roleEntry.role}`)}</div>
               <div class="toolbar" style="margin-top:8px;">
                 <button class="btn btn-sm btn-ghost" type="button" data-model-role-action="open_routing" data-model-role="${escapeHtml(roleEntry.role)}">Route</button>
                 ${testAction ? `<button class="btn btn-sm btn-ghost" type="button" data-model-role-action="test" data-model-role="${escapeHtml(roleEntry.role)}" ${testAction.available === false ? "disabled" : ""}>Test</button>` : ""}
@@ -8171,6 +8173,61 @@ const FEATURE_DEFINITIONS = [
   { id: "projects_and_history",       label: "项目与历史",         description: "多项目 + 历史会话" }
 ];
 
+function runtimeLabsChipClass(status = "") {
+  if (status === "enabled" || status === "framework_complete") return "ready";
+  if (status === "available") return "muted";
+  if (status === "deferred" || status === "evidence_gated") return "warning";
+  return "muted";
+}
+
+function renderRuntimeLabsPanel() {
+  const list = document.getElementById("runtimeLabsList");
+  const stateLabel = document.getElementById("runtimeLabsState");
+  if (!list) return;
+  const runtimeLabs = state.workspace?.runtimeLabs ?? null;
+  const capabilities = Array.isArray(runtimeLabs?.capabilities) ? runtimeLabs.capabilities : [];
+  if (!runtimeLabs || capabilities.length === 0) {
+    list.innerHTML = `<div class="muted" style="font-size:12px;">Runtime Labs status is not available yet.</div>`;
+    if (stateLabel) stateLabel.textContent = "";
+    return;
+  }
+
+  const toggleableCount = capabilities.filter((entry) => entry.userToggle === true).length;
+  const enabledCount = capabilities.filter((entry) => entry.enabled === true).length;
+  if (stateLabel) stateLabel.textContent = `${enabledCount} active · ${toggleableCount} configurable`;
+
+  list.innerHTML = capabilities.map((entry) => {
+    const status = entry.status ?? (entry.enabled ? "enabled" : "available");
+    const disabled = entry.userToggle !== true;
+    const checked = entry.enabled === true;
+    const evidence = Array.isArray(entry.evidence) && entry.evidence.length > 0
+      ? `<div class="muted" style="font-size:11px;margin-top:6px;overflow-wrap:anywhere;">evidence: ${escapeHtml(entry.evidence.slice(0, 3).join(" · "))}</div>`
+      : "";
+    const blocked = entry.blockedReason
+      ? `<div class="muted" style="font-size:11px;margin-top:6px;color:#b45309;overflow-wrap:anywhere;">${escapeHtml(entry.blockedReason)}</div>`
+      : "";
+    const nextGate = entry.nextGate
+      ? `<div class="muted" style="font-size:11px;margin-top:4px;overflow-wrap:anywhere;">next: ${escapeHtml(entry.nextGate)}</div>`
+      : "";
+    return `
+      <label class="switch-row" style="display:flex;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface-strong);cursor:${disabled ? "default" : "pointer"};">
+        <input type="checkbox" class="switch-control" data-runtime-labs-toggle="${escapeHtml(entry.id)}" ${checked ? "checked" : ""} ${disabled ? "disabled" : ""}>
+        <div style="min-width:0;flex:1;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <strong style="font-size:13px;">${escapeHtml(entry.label ?? entry.id)}</strong>
+            <span class="chip ${runtimeLabsChipClass(status)}">${escapeHtml(status)}</span>
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:4px;overflow-wrap:anywhere;">${escapeHtml(entry.summary ?? "")}</div>
+          ${entry.configPath ? `<div class="muted" style="font-size:11px;margin-top:4px;">config: ${escapeHtml(entry.configPath)}</div>` : ""}
+          ${evidence}
+          ${blocked}
+          ${nextGate}
+        </div>
+      </label>
+    `;
+  }).join("");
+}
+
 function renderFeatureToggles() {
   const list = document.getElementById("featureToggleList");
   if (!list) return;
@@ -8240,6 +8297,30 @@ document.getElementById("saveFeatureTogglesBtn")?.addEventListener("click", asyn
   }
 });
 
+document.getElementById("saveRuntimeLabsBtn")?.addEventListener("click", async () => {
+  const stateLabel = document.getElementById("runtimeLabsState");
+  const patch = {};
+  for (const input of document.querySelectorAll("[data-runtime-labs-toggle]")) {
+    if (input.disabled) continue;
+    if (input.dataset.runtimeLabsToggle === "model_role_routing") {
+      patch.modelRoleRouting = { enabled: input.checked };
+    }
+    if (input.dataset.runtimeLabsToggle === "final_answer_reviewer") {
+      patch.finalAnswerReviewer = { enabled: input.checked };
+    }
+  }
+  try {
+    const result = await updateRuntimeLabsConfigViaShell(patch);
+    state.workspace.runtimeLabs = result.runtimeLabs ?? state.workspace.runtimeLabs;
+    state.workspace.modelRoles = result.modelRoles ?? state.workspace.modelRoles;
+    renderRuntimeLabsPanel();
+    renderModelRoleManagementSurface();
+    if (stateLabel) stateLabel.textContent = "Saved.";
+  } catch (error) {
+    if (stateLabel) stateLabel.textContent = `Failed: ${error.message}`;
+  }
+});
+
 /* ═══════════════════════════════════════════════
    WORKSPACE REFRESH
    ═══════════════════════════════════════════════ */
@@ -8288,6 +8369,7 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
   if (isActive("settings")) {
     renderIfChanged("settings.providerOnboarding", state.workspace.onboarding, renderProviderOnboardingSuggestions);
     renderIfChanged("settings.modelRoles", state.workspace.modelRoles, renderModelRoleManagementSurface);
+    renderIfChanged("settings.runtimeLabs", state.workspace.runtimeLabs, renderRuntimeLabsPanel);
     renderIfChanged("settings.userMemory", state.workspace.userMemory, renderUserMemorySettings);
     renderIfChanged("settings.templates", state.workspace.templates, renderTemplates);
     renderIfChanged("settings.dag", state.workspace.dagExecutions, renderDagExecutions);
@@ -8385,6 +8467,7 @@ async function refreshWorkspace(options = {}) {
         onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
         providerSetup: integrationsP.providerSetup ?? null,
         modelRoles: integrationsP.modelRoles ?? previous.modelRoles ?? null,
+        runtimeLabs: integrationsP.runtimeLabs ?? previous.runtimeLabs ?? null,
         userMemory: integrationsP.userMemory ?? previous.userMemory ?? null,
         emailAccounts: emailP.accounts ?? [],
         emailDigestSettings: emailSettingsP.settings ?? {},
@@ -9827,6 +9910,16 @@ async function updateFeatureConfigViaShell(features) {
   return assertShellResult(
     await consoleShellClient.updateFeatureConfig(features),
     "Could not save feature config."
+  );
+}
+
+async function updateRuntimeLabsConfigViaShell(patch) {
+  if (typeof consoleShellClient?.updateRuntimeLabsConfig !== "function") {
+    throw new Error("Desktop runtime labs bridge unavailable.");
+  }
+  return assertShellResult(
+    await consoleShellClient.updateRuntimeLabsConfig(patch),
+    "Could not save runtime labs config."
   );
 }
 
