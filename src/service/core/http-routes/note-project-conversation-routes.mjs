@@ -468,6 +468,50 @@ export async function tryHandleNoteProjectConversationRoute({
     return true;
   }
 
+  const projectByIdMatch = url.pathname.match(/^\/projects\/([^/]+)$/);
+  if (method === "PATCH" && projectByIdMatch) {
+    if (!requireDesktopActor({ request, response, allowedActors: PROJECT_STORE_ACTORS })) return true;
+    if (!runtime.projectWorkspaces?.upsertProject || !runtime.store?.getProject) {
+      sendJson(response, 404, { error: "project workspace not available" });
+      return true;
+    }
+    const projectId = decodeURIComponent(projectByIdMatch[1]);
+    const current = runtime.store.getProject(projectId);
+    if (!current) {
+      sendJson(response, 404, { error: "project not found" });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const metadataPatch = body?.metadata && typeof body.metadata === "object" ? body.metadata : {};
+    const metadata = {
+      ...(current.metadata ?? {}),
+      ...metadataPatch
+    };
+    if (typeof body?.instructions === "string") {
+      metadata.instructions = body.instructions.slice(0, 12000);
+    }
+    const project = runtime.projectWorkspaces.upsertProject({
+      id: projectId,
+      name: typeof body?.name === "string" && body.name.trim() ? body.name.trim().slice(0, 160) : current.name,
+      color: typeof body?.color === "string" && body.color.trim() ? body.color.trim().slice(0, 32) : current.color,
+      metadata
+    });
+    const serviceStore = runtime.projectWorkspaces.buildProjectStore?.() ?? projectStoreForRuntime(runtime);
+    saveRuntimeConfig?.(runtime, (currentConfig) => ({
+      ...currentConfig,
+      ui: {
+        ...(currentConfig.ui ?? {}),
+        projectStore: serviceStore
+      }
+    }));
+    sendJson(response, 200, {
+      ok: true,
+      project,
+      store: serviceStore
+    });
+    return true;
+  }
+
   const projectWorkspaceMatch = url.pathname.match(/^\/projects\/([^/]+)\/workspace$/);
   if (method === "GET" && projectWorkspaceMatch) {
     if (!requireDesktopActor({ request, response, allowedActors: PROJECT_STORE_ACTORS })) return true;

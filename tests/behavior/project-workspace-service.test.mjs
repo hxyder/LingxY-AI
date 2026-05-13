@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import test from "node:test";
 
 import { createProjectWorkspaceService } from "../../src/service/core/projects/project-workspace-service.mjs";
+import { tryHandleNoteProjectConversationRoute } from "../../src/service/core/http-routes/note-project-conversation-routes.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 import { createSqliteStore } from "../../src/service/core/store/sqlite-store.mjs";
+
+const ACTOR_HEADER = "x-lingxy-desktop-actor";
 
 function sqliteFixture() {
   const dir = mkdtempSync(path.join(os.tmpdir(), "lingxy-project-workspace-"));
@@ -18,6 +22,34 @@ function sqliteFixture() {
       rmSync(dir, { recursive: true, force: true });
     }
   };
+}
+
+function rawJsonRequest(body, headers = {}) {
+  const request = Readable.from([JSON.stringify(body ?? {})]);
+  request.headers = {
+    "content-type": "application/json",
+    ...headers
+  };
+  return request;
+}
+
+function captureResponse() {
+  return {
+    statusCode: null,
+    headers: null,
+    body: "",
+    writeHead(statusCode, headers) {
+      this.statusCode = statusCode;
+      this.headers = headers;
+    },
+    end(chunk = "") {
+      this.body += chunk;
+    }
+  };
+}
+
+function parsePayload(response) {
+  return response.body ? JSON.parse(response.body) : null;
 }
 
 test("project workspace service separates projects, conversations, and files", () => {
@@ -88,4 +120,38 @@ test("project workspace store methods round-trip through sqlite", () => {
   } finally {
     fixture.cleanup();
   }
+});
+
+test("project metadata route updates project instructions without mutating conversations", async () => {
+  const store = createInMemoryStoreScaffold();
+  const projectWorkspaces = createProjectWorkspaceService({ store });
+  projectWorkspaces.syncProjectStore({
+    currentProjectId: "proj_write",
+    projects: [{ id: "proj_write", name: "Write", attachedFilePaths: [] }],
+    conversations: []
+  });
+  store.insertConversation({
+    conversation_id: "conv_write",
+    project_id: "proj_write",
+    title: "Thread"
+  });
+  const response = captureResponse();
+  const handled = await tryHandleNoteProjectConversationRoute({
+    request: rawJsonRequest({
+      instructions: "Prefer project terminology.",
+      metadata: { owner: "design" }
+    }, { [ACTOR_HEADER]: "desktop_console" }),
+    response,
+    method: "PATCH",
+    url: new URL("http://127.0.0.1/projects/proj_write"),
+    runtime: { store, projectWorkspaces },
+    saveRuntimeConfig() {}
+  });
+
+  assert.equal(handled, true);
+  assert.equal(response.statusCode, 200);
+  const payload = parsePayload(response);
+  assert.equal(payload.project.metadata.instructions, "Prefer project terminology.");
+  assert.equal(payload.project.metadata.owner, "design");
+  assert.equal(store.getConversation("conv_write").project_id, "proj_write");
 });

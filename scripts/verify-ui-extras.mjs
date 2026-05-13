@@ -504,8 +504,8 @@ assert.ok(/function\s+resolveActiveWindowFileSelection/.test(overlayJs)
     && /contextDecision\.kind === "file_paths"/.test(overlayJs)
     && /filePaths:\s*contextDecision\.filePaths/.test(overlayJs),
   "active-window files: overlay must route explicit current-file/document commands through file submission");
-assert.ok(/refreshProjectConversationSummaries/.test(consoleJs) && /fetchConversationsList\(\{\s*limit:\s*200,\s*archived:\s*["']0["'],\s*projectId\s*\}/.test(consoleJs),
-  "projects: project tab must read SQL conversation summaries by project_id");
+assert.ok(/refreshProjectWorkspace/.test(consoleJs) && /\/projects\/\$\{encodeURIComponent\(projectId\)\}\/workspace/.test(consoleJs),
+  "projects: project tab must read service-owned project workspace summaries");
 assert.ok(/legacyProjectConversations/.test(consoleJs) && /projectStore\.conversations|store\.conversations/.test(consoleJs),
   "projects: legacy projectStore conversations must remain as fallback only");
 assert.ok(/conversation\.conversation_id/.test(consoleProjectsView) && /conversation\.message_count/.test(consoleProjectsView),
@@ -514,8 +514,8 @@ assert.ok(/id="projectArtifactList"/.test(consoleHtml) && /id="projectArtifactCo
   "projects: project tab must expose a scoped files column");
 assert.ok(/projectArtifactsMatch/.test(noteProjectConversationRoutes) && /listProjectArtifacts/.test(noteProjectConversationRoutes),
   "projects: project artifact route must aggregate conversation artifacts");
-assert.ok(/function\s+refreshProjectArtifacts/.test(consoleJs) && /\/projects\/\$\{encodeURIComponent\(projectId\)\}\/artifacts/.test(consoleJs),
-  "projects: console must fetch project-scoped artifact index");
+assert.ok(/currentProjectArtifacts/.test(consoleJs) && /projectWorkspaceDetail\?\.artifacts/.test(consoleJs),
+  "projects: console must read project-scoped artifact index from ProjectWorkspace");
 assert.ok(/renderProjectArtifactListHtml/.test(consoleProjectsView) && /data-project-artifact-open/.test(consoleProjectsView),
   "projects: renderer must show artifact open/reveal actions");
 assert.ok(/artifactStatusInfo\(artifact\.status\)/.test(consoleProjectsView),

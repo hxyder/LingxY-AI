@@ -179,10 +179,10 @@ import {
   stripHtml
 } from "./console-notes-model.mjs";
 import {
-  formatProjectConversationPreview,
   renderProjectArtifactListHtml,
   renderProjectConversationListHtml,
-  renderProjectListHtml
+  renderProjectListHtml,
+  renderProjectWorkspaceSummaryHtml
 } from "./console-projects-view.mjs";
 import {
   createFileContentIndexPanel
@@ -293,6 +293,12 @@ const projectArtifactCount = document.querySelector("#projectArtifactCount");
 const projectArtifactList = document.querySelector("#projectArtifactList");
 const projectAttachFilesBtn = document.querySelector("#projectAttachFilesBtn");
 const projectConversationPreview = document.querySelector("#projectConversationPreview");
+const projectWorkspaceSummary = document.querySelector("#projectWorkspaceSummary");
+const projectStartChatBtn = document.querySelector("#projectStartChatBtn");
+const projectRefreshBtn = document.querySelector("#projectRefreshBtn");
+const projectInstructionsForm = document.querySelector("#projectInstructionsForm");
+const projectInstructionsInput = document.querySelector("#projectInstructionsInput");
+const projectInstructionsState = document.querySelector("#projectInstructionsState");
 const projectCreateForm = document.querySelector("#projectCreateForm");
 const projectNameInput = document.querySelector("#projectNameInput");
 const projectState = document.querySelector("#projectState");
@@ -7643,14 +7649,10 @@ async function syncConsoleProjectStoreFromService({ rerender = false } = {}) {
   }
 }
 
-let projectBackendConversationProjectId = null;
-let projectBackendConversationStatus = "idle";
-let projectBackendConversations = [];
-let projectBackendConversationDetailId = null;
-let projectBackendConversationDetail = null;
-let projectBackendArtifactProjectId = null;
-let projectBackendArtifactStatus = "idle";
-let projectBackendArtifacts = [];
+let projectWorkspaceProjectId = null;
+let projectWorkspaceStatus = "idle";
+let projectWorkspaceDetail = null;
+const projectWorkspaceCache = new Map();
 
 function toProjectConversationSummary(conversation = {}) {
   const id = conversation.conversation_id ?? conversation.id ?? "";
@@ -7668,20 +7670,6 @@ function toProjectConversationSummary(conversation = {}) {
   };
 }
 
-function toProjectConversationDetail(detail = {}) {
-  const conversation = detail.conversation ?? {};
-  const summary = toProjectConversationSummary(conversation);
-  const messages = Array.isArray(detail.messages) ? detail.messages : [];
-  return {
-    ...summary,
-    turns: messages.map((message) => ({
-      role: message.role,
-      content: message.content,
-      ts: message.ts
-    }))
-  };
-}
-
 function legacyProjectConversations(store, projectId) {
   return (store.conversations ?? [])
     .filter((conversation) => conversation.projectId === projectId)
@@ -7689,88 +7677,68 @@ function legacyProjectConversations(store, projectId) {
 }
 
 function currentProjectConversations(store, projectId) {
-  if (projectBackendConversationProjectId === projectId && projectBackendConversationStatus === "ready") {
-    return projectBackendConversations;
+  if (projectWorkspaceProjectId === projectId && projectWorkspaceStatus === "ready") {
+    return (projectWorkspaceDetail?.conversations ?? []).map(toProjectConversationSummary);
   }
-  if (projectBackendConversationProjectId === projectId
-      && projectBackendConversationStatus === "loading"
-      && projectBackendConversations.length > 0) {
-    return projectBackendConversations;
+  if (projectWorkspaceProjectId === projectId
+      && projectWorkspaceStatus === "loading"
+      && Array.isArray(projectWorkspaceDetail?.conversations)
+      && projectWorkspaceDetail.conversations.length > 0) {
+    return projectWorkspaceDetail.conversations.map(toProjectConversationSummary);
   }
   return legacyProjectConversations(store, projectId);
 }
 
 function currentProjectArtifacts(projectId) {
-  if (projectBackendArtifactProjectId === projectId && projectBackendArtifactStatus === "ready") {
-    return projectBackendArtifacts;
+  if (projectWorkspaceProjectId === projectId && projectWorkspaceStatus === "ready") {
+    return projectWorkspaceDetail?.artifacts ?? [];
   }
-  if (projectBackendArtifactProjectId === projectId
-      && projectBackendArtifactStatus === "loading"
-      && projectBackendArtifacts.length > 0) {
-    return projectBackendArtifacts;
+  if (projectWorkspaceProjectId === projectId
+      && projectWorkspaceStatus === "loading"
+      && Array.isArray(projectWorkspaceDetail?.artifacts)
+      && projectWorkspaceDetail.artifacts.length > 0) {
+    return projectWorkspaceDetail.artifacts;
   }
   return [];
 }
 
-async function refreshProjectConversationSummaries(projectId, { force = false } = {}) {
-  if (!projectId) return;
-  if (!force && projectBackendConversationProjectId === projectId && projectBackendConversationStatus === "ready") {
-    return;
-  }
-  const sameProject = projectBackendConversationProjectId === projectId;
-  projectBackendConversationProjectId = projectId;
-  projectBackendConversationStatus = "loading";
-  if (!sameProject) {
-    projectBackendConversations = [];
-    projectBackendConversationDetailId = null;
-    projectBackendConversationDetail = null;
-  }
-  try {
-    const items = await fetchConversationsList({ limit: 200, archived: "0", projectId });
-    if (projectBackendConversationProjectId !== projectId) return;
-    projectBackendConversations = items.map(toProjectConversationSummary);
-    projectBackendConversationStatus = "ready";
-  } catch {
-    if (projectBackendConversationProjectId !== projectId) return;
-    projectBackendConversationStatus = "error";
-  }
-  renderProjectsWorkspace({ skipFetch: true });
+function currentProjectFiles(projectId, fallbackPaths = []) {
+  const workspaceFiles = projectWorkspaceProjectId === projectId
+    ? projectWorkspaceDetail?.files
+    : projectWorkspaceCache.get(projectId)?.files;
+  if (Array.isArray(workspaceFiles) && workspaceFiles.length > 0) return workspaceFiles;
+  return Array.isArray(fallbackPaths) ? fallbackPaths : [];
 }
 
-async function refreshProjectArtifacts(projectId, { force = false } = {}) {
-  if (!projectId) return;
-  if (!force && projectBackendArtifactProjectId === projectId && projectBackendArtifactStatus === "ready") {
-    return;
-  }
-  const sameProject = projectBackendArtifactProjectId === projectId;
-  projectBackendArtifactProjectId = projectId;
-  projectBackendArtifactStatus = "loading";
-  if (!sameProject) {
-    projectBackendArtifacts = [];
-  }
-  try {
-    const payload = await fetchJson(`/projects/${encodeURIComponent(projectId)}/artifacts?limit=100`);
-    if (projectBackendArtifactProjectId !== projectId) return;
-    projectBackendArtifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : [];
-    projectBackendArtifactStatus = "ready";
-  } catch {
-    if (projectBackendArtifactProjectId !== projectId) return;
-    projectBackendArtifactStatus = "error";
-  }
-  renderProjectsWorkspace({ skipFetch: true });
+function normalizeProjectWorkspacePayload(payload = null) {
+  if (!payload || typeof payload !== "object") return null;
+  return {
+    ...payload,
+    conversations: Array.isArray(payload.conversations) ? payload.conversations : [],
+    files: Array.isArray(payload.files) ? payload.files : [],
+    artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : [],
+    stats: payload.stats && typeof payload.stats === "object" ? payload.stats : {}
+  };
 }
 
-async function loadProjectConversationDetail(conversationId) {
-  if (!conversationId || projectBackendConversationDetailId === conversationId) return;
-  projectBackendConversationDetailId = conversationId;
-  projectBackendConversationDetail = null;
+async function refreshProjectWorkspace(projectId, { force = false } = {}) {
+  if (!projectId) return;
+  if (!force && projectWorkspaceProjectId === projectId && projectWorkspaceStatus === "ready") return;
+  const cached = projectWorkspaceCache.get(projectId) ?? null;
+  projectWorkspaceProjectId = projectId;
+  projectWorkspaceStatus = "loading";
+  projectWorkspaceDetail = cached;
   try {
-    const detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
-    if (detail?.conversation) {
-      projectBackendConversationDetail = toProjectConversationDetail(detail);
-    }
+    const payload = await fetchJson(`/projects/${encodeURIComponent(projectId)}/workspace`);
+    const workspace = normalizeProjectWorkspacePayload(payload);
+    if (projectWorkspaceProjectId !== projectId) return;
+    projectWorkspaceDetail = workspace;
+    if (workspace) projectWorkspaceCache.set(projectId, workspace);
+    projectWorkspaceStatus = "ready";
   } catch {
-    projectBackendConversationDetail = null;
+    if (projectWorkspaceProjectId !== projectId) return;
+    projectWorkspaceStatus = cached ? "ready" : "error";
+    projectWorkspaceDetail = cached;
   }
   renderProjectsWorkspace({ skipFetch: true });
 }
@@ -7785,22 +7753,18 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   }
   const selectedProject = projects.find((project) => project.id === state.selectedProjectId) ?? projects[0] ?? null;
   if (selectedProject?.id && !skipFetch) {
-    void refreshProjectConversationSummaries(selectedProject.id);
-    void refreshProjectArtifacts(selectedProject.id);
+    void refreshProjectWorkspace(selectedProject.id);
   }
   const conversations = currentProjectConversations(store, selectedProject?.id);
   const projectArtifacts = currentProjectArtifacts(selectedProject?.id);
-  const attachedProjectFilePaths = Array.isArray(selectedProject?.attachedFilePaths)
-    ? selectedProject.attachedFilePaths
-    : [];
+  const attachedProjectFilePaths = currentProjectFiles(
+    selectedProject?.id,
+    Array.isArray(selectedProject?.attachedFilePaths) ? selectedProject.attachedFilePaths : []
+  );
   if (!state.selectedProjectConversationId || !conversations.some((conversation) => conversation.id === state.selectedProjectConversationId)) {
     state.selectedProjectConversationId = conversations[0]?.id ?? null;
   }
   const selectedConversation = conversations.find((conversation) => conversation.id === state.selectedProjectConversationId) ?? null;
-  const selectedPreviewConversation =
-    projectBackendConversationDetailId === selectedConversation?.id && projectBackendConversationDetail
-      ? projectBackendConversationDetail
-      : selectedConversation;
   if (projectAttachFilesBtn) {
     const canAttachFiles = Boolean(selectedProject?.id && selectedProject.id !== DEFAULT_PROJECT_ID);
     projectAttachFilesBtn.disabled = !canAttachFiles;
@@ -7808,13 +7772,42 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
       ? "Add local files or folders to this project"
       : "Create or select a non-default project before adding files";
   }
+  if (projectStartChatBtn) {
+    projectStartChatBtn.disabled = !selectedProject?.id;
+    projectStartChatBtn.title = selectedProject?.id
+      ? `Start a chat in ${selectedProject.name ?? selectedProject.id}`
+      : "Select a project before starting a chat";
+  }
+  if (projectRefreshBtn) {
+    projectRefreshBtn.disabled = !selectedProject?.id || projectWorkspaceStatus === "loading";
+  }
+  if (projectWorkspaceSummary) {
+    const workspace = selectedProject?.id === projectWorkspaceProjectId
+      ? projectWorkspaceDetail
+      : projectWorkspaceCache.get(selectedProject?.id);
+    setHtmlIfChanged(projectWorkspaceSummary, renderProjectWorkspaceSummaryHtml({
+      project: selectedProject,
+      workspace,
+      status: selectedProject?.id === projectWorkspaceProjectId ? projectWorkspaceStatus : "idle"
+    }));
+  }
+  if (projectInstructionsInput) {
+    const instructions = selectedProject?.metadata?.instructions ?? selectedProject?.metadata?.projectInstructions ?? "";
+    if (document.activeElement !== projectInstructionsInput && projectInstructionsInput.value !== instructions) {
+      projectInstructionsInput.value = instructions;
+    }
+    projectInstructionsInput.disabled = !selectedProject?.id;
+  }
+  if (projectInstructionsState && projectWorkspaceStatus === "error") {
+    projectInstructionsState.textContent = "Workspace sync failed; showing cached project data.";
+  } else if (projectInstructionsState && projectInstructionsState.textContent === "Workspace sync failed; showing cached project data.") {
+    projectInstructionsState.textContent = "";
+  }
 
   projectCount.textContent = `${projects.length}`;
   projectConversationCount.textContent = `${conversations.length}`;
   if (projectArtifactCount) projectArtifactCount.textContent = `${projectArtifacts.length + attachedProjectFilePaths.length}`;
-  projectConversationPreview.textContent = projectBackendConversationStatus === "loading" && conversations.length === 0
-    ? "Loading project conversations..."
-    : formatProjectConversationPreview(selectedPreviewConversation);
+  if (projectConversationPreview) projectConversationPreview.textContent = "";
   const projectListConversationCounts = [
     ...(store.conversations ?? []).filter((conversation) => conversation.projectId !== selectedProject?.id),
     ...conversations.map((conversation) => ({
@@ -7827,7 +7820,8 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
     projects,
     conversations: projectListConversationCounts,
     selectedProjectId: selectedProject?.id,
-    defaultColor: PROJECT_COLORS[0]
+    defaultColor: PROJECT_COLORS[0],
+    workspaceByProjectId: Object.fromEntries(projectWorkspaceCache.entries())
   });
 
   projectConversationList.innerHTML = renderProjectConversationListHtml({
@@ -7835,7 +7829,8 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
     selectedConversationId: selectedConversation?.id
   });
   if (projectArtifactList) {
-    const artifactHtml = projectBackendArtifactStatus === "loading" && projectArtifacts.length === 0
+    const artifactLoading = projectWorkspaceStatus === "loading" && selectedProject?.id === projectWorkspaceProjectId && projectArtifacts.length === 0 && attachedProjectFilePaths.length === 0;
+    const artifactHtml = artifactLoading
       ? `<p class="muted" style="font-size:12px;">Loading files...</p>`
       : renderProjectArtifactListHtml({
         artifacts: projectArtifacts,
@@ -7850,11 +7845,9 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
     btn.addEventListener("click", () => {
       state.selectedProjectId = btn.dataset.projectId;
       state.selectedProjectConversationId = null;
-      projectBackendConversationDetailId = null;
-      projectBackendConversationDetail = null;
-      projectBackendArtifactProjectId = null;
-      projectBackendArtifactStatus = "idle";
-      projectBackendArtifacts = [];
+      projectWorkspaceProjectId = null;
+      projectWorkspaceStatus = "idle";
+      projectWorkspaceDetail = null;
       store.currentProjectId = state.selectedProjectId;
       store.currentConversationId = null;
       saveConsoleProjectStore(store);
@@ -7865,8 +7858,6 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   for (const btn of projectConversationList.querySelectorAll("[data-project-conversation-id]")) {
     btn.addEventListener("click", () => {
       state.selectedProjectConversationId = btn.dataset.projectConversationId;
-      projectBackendConversationDetailId = null;
-      projectBackendConversationDetail = null;
       store.currentConversationId = state.selectedProjectConversationId;
       store.currentProjectId = state.selectedProjectId || store.currentProjectId;
       saveConsoleProjectStore(store);
@@ -7881,9 +7872,6 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
       void loadConsoleConversationFromBackend(convId);
       showConsoleToast("已加载对话，可继续输入", { kind: "ok" });
     });
-  }
-  if (selectedConversation?.conversation_id) {
-    void loadProjectConversationDetail(selectedConversation.conversation_id);
   }
 }
 
@@ -8975,6 +8963,8 @@ projectAttachFilesBtn?.addEventListener("click", async () => {
     state.projectStore = nextStore;
     localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(nextStore));
     state.projectStoreRemoteReady = true;
+    projectWorkspaceCache.delete(projectId);
+    void refreshProjectWorkspace(projectId, { force: true });
     renderProjectsWorkspace({ skipFetch: true });
     renderConsoleChatArtifacts([]);
     const indexed = Number(result.indexed_count ?? 0);
@@ -9010,6 +9000,8 @@ projectArtifactList?.addEventListener("click", (event) => {
       state.projectStore = store;
       localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
       state.projectStoreRemoteReady = true;
+      projectWorkspaceCache.delete(projectId);
+      void refreshProjectWorkspace(projectId, { force: true });
       renderProjectsWorkspace({ skipFetch: true });
       renderConsoleChatArtifacts([]);
       showConsoleToast(`Reindexed ${Number(result.indexed_count ?? 0)} chunk(s).`, { kind: "success" });
@@ -9030,6 +9022,8 @@ projectArtifactList?.addEventListener("click", (event) => {
     clearIndexBtn.setAttribute("disabled", "true");
     showConsoleToast("Clearing project search index...", { kind: "info" });
     void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: false }).then((result) => {
+      projectWorkspaceCache.delete(projectId);
+      void refreshProjectWorkspace(projectId, { force: true });
       renderProjectsWorkspace({ skipFetch: true });
       renderConsoleChatArtifacts([]);
       showConsoleToast(`Cleared ${Number(result.removed_count ?? 0)} indexed chunk(s).`, { kind: "success" });
@@ -9054,6 +9048,8 @@ projectArtifactList?.addEventListener("click", (event) => {
       state.projectStore = store;
       localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
       state.projectStoreRemoteReady = true;
+      projectWorkspaceCache.delete(projectId);
+      void refreshProjectWorkspace(projectId, { force: true });
       renderProjectsWorkspace({ skipFetch: true });
       renderConsoleChatArtifacts([]);
       showConsoleToast("已从项目文件范围移出，并清理该项目索引", { kind: "ok" });
@@ -9283,6 +9279,65 @@ document.querySelector("#projectNewBtn")?.addEventListener("click", () => {
   projectNameInput?.select?.();
 });
 
+projectRefreshBtn?.addEventListener("click", () => {
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  const projectId = state.selectedProjectId || store.currentProjectId || "";
+  if (!projectId) return;
+  void syncConsoleProjectStoreFromService({ rerender: true });
+  void refreshProjectWorkspace(projectId, { force: true });
+});
+
+projectStartChatBtn?.addEventListener("click", () => {
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  const projectId = state.selectedProjectId || store.currentProjectId || DEFAULT_PROJECT_ID;
+  chatSidebarProjectId = projectId;
+  try { localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, projectId); } catch { /* sandbox */ }
+  store.currentProjectId = projectId;
+  store.currentConversationId = null;
+  saveConsoleProjectStore(store);
+  startNewConsoleChat();
+  switchTab("chat");
+  renderChatSidebarProjectFilter();
+  showConsoleToast("新会话会创建在当前项目下", { kind: "info" });
+});
+
+projectInstructionsForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  const projectId = state.selectedProjectId || store.currentProjectId || "";
+  if (!projectId) return;
+  const instructions = (projectInstructionsInput?.value ?? "").trim();
+  const next = normalizeProjectStore({
+    ...store,
+    projects: (store.projects ?? []).map((project) => {
+      if (project.id !== projectId) return project;
+      return {
+        ...project,
+        metadata: {
+          ...(project.metadata ?? {}),
+          instructions
+        }
+      };
+    })
+  });
+  state.projectStore = next;
+  localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(next));
+  if (projectInstructionsState) projectInstructionsState.textContent = "Saving...";
+  void saveProjectMetadataViaService(projectId, { instructions }).then((payload) => {
+    const savedStore = normalizeProjectStore(payload.store ?? next);
+    state.projectStore = savedStore;
+    localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(savedStore));
+    projectWorkspaceCache.delete(projectId);
+    if (projectInstructionsState) projectInstructionsState.textContent = "Saved.";
+    renderProjectsWorkspace({ skipFetch: true });
+    return refreshProjectWorkspace(projectId, { force: true });
+  }).catch((error) => {
+    if (projectInstructionsState) projectInstructionsState.textContent = "Save failed.";
+    showConsoleToast(error?.message ?? "Could not save project instructions.", { kind: "error" });
+  });
+  renderProjectsWorkspace({ skipFetch: true });
+});
+
 // "+ New chat" — clear the current thread and the active conversation
 // reference so the next submit creates a fresh conversation_id rather
 // than continuing to thread into the previously-resumed one.
@@ -9388,6 +9443,9 @@ projectCreateForm?.addEventListener("submit", (event) => {
   state.selectedProjectConversationId = null;
   projectNameInput.value = "";
   projectState.textContent = "Project created.";
+  projectWorkspaceProjectId = null;
+  projectWorkspaceStatus = "idle";
+  projectWorkspaceDetail = null;
   renderProjectsWorkspace();
   renderChatSidebarProjectFilter();
 });
@@ -10079,6 +10137,14 @@ async function removeProjectFileIndexViaShell(payload) {
   return assertShellResult(
     await consoleShellClient.removeProjectFileIndex(payload ?? {}),
     "Could not remove project file index."
+  );
+}
+
+async function saveProjectMetadataViaService(projectId, body = {}) {
+  if (!projectId) throw new Error("project_id required");
+  return fetchJson(
+    `/projects/${encodeURIComponent(projectId)}`,
+    runtimeJsonOptions("PATCH", body, { actor: "desktop_console" })
   );
 }
 

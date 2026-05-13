@@ -28,22 +28,65 @@ export function renderProjectListHtml({
   projects = [],
   conversations = [],
   selectedProjectId = null,
-  defaultColor = "#6366f1"
+  defaultColor = "#6366f1",
+  workspaceByProjectId = {}
 } = {}) {
   return (Array.isArray(projects) ? projects : []).map((project) => {
     const selected = project.id === selectedProjectId;
-    const count = (Array.isArray(conversations) ? conversations : [])
+    const workspace = workspaceByProjectId?.[project.id] ?? null;
+    const count = Number.isFinite(Number(workspace?.stats?.conversation_count))
+      ? Number(workspace.stats.conversation_count)
+      : (Array.isArray(conversations) ? conversations : [])
       .filter((conversation) => conversation.projectId === project.id).length;
+    const fileCount = Number.isFinite(Number(workspace?.stats?.file_count))
+      ? Number(workspace.stats.file_count)
+      : (Array.isArray(project.attachedFilePaths) ? project.attachedFilePaths.length : 0);
     return `
-      <button class="history-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;border-left:4px solid ${escapeHtml(project.color ?? defaultColor)};">
+      <button class="history-item project-workspace-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;border-left:4px solid ${escapeHtml(project.color ?? defaultColor)};">
         <div class="row">
           <strong style="font-size:13px;">${escapeHtml(project.name ?? project.id)}</strong>
-          <span class="muted" style="font-size:11px;">${escapeHtml(count)}</span>
+          <span class="project-count-badge">${escapeHtml(count)}</span>
         </div>
-        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(project.id)}</p>
+        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(fileCount)} files · ${escapeHtml(project.id)}</p>
       </button>
     `;
   }).join("");
+}
+
+export function renderProjectWorkspaceSummaryHtml({
+  project = null,
+  workspace = null,
+  status = "idle"
+} = {}) {
+  if (!project) {
+    return `<p class="muted" style="font-size:12px;">Create or select a project.</p>`;
+  }
+  const stats = workspace?.stats ?? {};
+  const rows = [
+    ["Chats", Number(stats.conversation_count ?? 0)],
+    ["Files", Number(stats.file_count ?? 0)],
+    ["Generated", Number(stats.artifact_count ?? 0)]
+  ];
+  const updated = stats.updated_at ? `Updated ${formatDateTime(stats.updated_at)}` : "Service workspace";
+  return `
+    <div class="project-workspace-hero" style="border-left-color:${escapeHtml(project.color ?? "#6366f1")}">
+      <div class="project-workspace-title-row">
+        <div>
+          <h2>${escapeHtml(project.name ?? project.id)}</h2>
+          <p>${escapeHtml(updated)} · ${escapeHtml(project.id)}</p>
+        </div>
+        <span class="project-workspace-status">${escapeHtml(status === "loading" ? "Syncing" : "Workspace")}</span>
+      </div>
+      <div class="project-workspace-stats">
+        ${rows.map(([label, value]) => `
+          <div class="project-workspace-stat">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
 }
 
 export function renderProjectConversationListHtml({
@@ -88,14 +131,20 @@ export function renderProjectArtifactListHtml({
 } = {}) {
   const rows = Array.isArray(artifacts) ? artifacts.filter((artifact) => artifact?.path) : [];
   const attachedRows = Array.isArray(attachedFilePaths)
-    ? [...new Set(attachedFilePaths.filter((path) => typeof path === "string" && path.trim()).map((path) => path.trim()))]
+    ? attachedFilePaths
+      .map((entry) => typeof entry === "string" ? { path: entry, legacyScopeLabel: true } : entry)
+      .filter((entry) => typeof entry?.path === "string" && entry.path.trim())
+      .map((entry) => ({ ...entry, path: entry.path.trim() }))
+      .filter((entry, index, all) => all.findIndex((item) => item.path === entry.path) === index)
     : [];
   if (rows.length === 0 && attachedRows.length === 0) {
     return `<p class="muted" style="font-size:12px;">No files in this project.</p>`;
   }
-  const attachedHtml = attachedRows.map((filePath) => {
+  const attachedHtml = attachedRows.map((entry) => {
+    const filePath = entry.path;
     const ext = artifactExtension(filePath);
     const label = labelForPath(filePath);
+    const status = entry.legacyScopeLabel ? "Project scope" : entry.status || (entry.indexed_at ? "indexed" : "attached");
     return `
       <div class="project-artifact-row project-artifact-row--attached">
         <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
@@ -103,7 +152,7 @@ export function renderProjectArtifactListHtml({
           <span class="project-artifact-name">${escapeHtml(label)}</span>
           <span class="project-artifact-meta">
             <span>Attached project file</span>
-            <span class="artifact-status artifact-status--project">Project scope</span>
+            <span class="artifact-status artifact-status--project">${escapeHtml(status)}</span>
           </span>
         </button>
         <div class="project-artifact-actions">

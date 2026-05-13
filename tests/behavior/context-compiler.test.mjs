@@ -201,6 +201,9 @@ test("context compiler includes service-owned project scope without reading proj
     projects: [{
       id: "proj_scope",
       name: "Scope project",
+      metadata: {
+        instructions: "Use the project terminology and keep replies concise."
+      },
       attachedFilePaths: ["E:\\scope\\brief.md"]
     }],
     conversations: []
@@ -229,6 +232,7 @@ test("context compiler includes service-owned project scope without reading proj
   assert.equal(compiled.project_id, "proj_scope");
   assert.ok(projectScope);
   assert.equal(projectScope.source, "project_workspace");
+  assert.equal(projectScope.value.instructions, "Use the project terminology and keep replies concise.");
   assert.deepEqual(projectScope.value.file_paths, ["E:\\scope\\brief.md"]);
   assert.deepEqual(projectScope.value.conversation_ids, ["conv_scope"]);
 });

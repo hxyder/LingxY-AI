@@ -35,6 +35,9 @@ assert.equal(consoleHtml.includes("Open"), true);
 assert.equal(consoleHtml.includes("One-click Setup"), true);
 assert.equal(consoleHtml.includes("Office Add-ins"), true);
 assert.equal(consoleHtml.includes("Email Accounts"), true);
+assert.equal(consoleHtml.includes("projectWorkspaceSummary"), true);
+assert.equal(consoleHtml.includes("projectInstructionsInput"), true);
+assert.equal(consoleHtml.includes("projectStartChatBtn"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
 const runtimePreflightClient = await read("src/desktop/renderer/shared/runtime-preflight-client.mjs");
@@ -76,6 +79,8 @@ assertConsoleFetches("/security/state");
 assertConsoleFetches("/audit-log");
 assertConsoleFetches("/config/email/settings");
 assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
+assert.equal(consoleJs.includes("refreshProjectWorkspace"), true);
+assert.equal(consoleJs.includes("saveProjectMetadataViaService"), true);
 assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
 assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);
 assert.equal(consoleJs.includes('consoleShellClient.showWindow("overlay")'), true);

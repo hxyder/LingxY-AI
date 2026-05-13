@@ -25,8 +25,8 @@ Last updated: 2026-05-12.
   is now an aggregator/re-export surface only; built-in tool implementations
   live under `src/service/capabilities/tools/` or external capability
   aggregators.
-- Current green gate: `npm run check:fast` passed 141/141 after PMAT-007
-  project workspace separation was added, including 1124/1124 behavior
+- Current green gate: `npm run check:fast` passed 141/141 after PMAT-008
+  project workbench IA was added, including 1127/1127 behavior
   tests. `npm run verify:desktop-gui-smoke` passed 49/49. The previous
   `real-llm:followup-artifact --live` pass covered strict
   generated `.mjs`, Markdown, JSON, and CSV content consistency, actual file
@@ -62,6 +62,7 @@ gaps.
 | PMAT-005 Local file/folder reality checks | active | Local filesystem answers must be grounded in fresh tool evidence. Directory listings must include folders as folders, and final answers must not infer folder absence from file-only listings or stale memory. | `list_files` exposes files, directories, and typed entries; evidence summaries preserve listed folders as shallow locator evidence. Add regressions when new file/folder workflows are found. |
 | PMAT-006 Tool-surface heuristic governance | active | Tool, skill, and MCP exposure must be driven by typed TaskSpec/SemanticRouter/capability contracts. Regex may remain for structured parsing, sanitization, URLs, paths, time phrases, security filters, and narrow explicit-action gates, but not as a veto over typed runtime facts. | `tool_using` and `agentic` tool surfaces must not infer artifact writer exposure from raw user text. `node scripts/verify-tool-surface-heuristic-governance.mjs` locks this invariant. |
 | PMAT-007 Project workspace separation | complete | Make project a first-class service-owned workspace instead of only a renderer/config project store. A project contains many conversations, many attached/indexed files, and project-scoped artifacts/context. Sessions remain conversation-scoped runtime work threads under a project. | `ProjectWorkspaceService`, service store `projects`/`project_files`, compatible `/projects/store`, guarded `/projects/:id/workspace`, ContextCompiler `project_scope`, `project-workspace-boundary.md`, `verify-project-workspace-service.mjs`, and behavior tests lock the contract. Renderer remains UI-only; no prompt-only project binding. |
+| PMAT-008 Project workbench IA | complete | Bring the Project UI closer to Claude/ChatGPT-style workspaces: project list, project-scoped chats, project files/knowledge, and project instructions are distinct surfaces. Conversations remain independent threads under a project; project membership and files come from service-owned ProjectWorkspace, not renderer-local history. | Project page reads guarded `/projects/:id/workspace`, shows project stats/instructions/files/conversations, offers project-scoped new chat, persists project instructions through guarded `PATCH /projects/:id`, and keeps `/projects/store` as compatibility only. `verify-project-workspace-service.mjs`, renderer verifiers, behavior tests, `check:fast`, and GUI smoke cover the contract. |
 
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no

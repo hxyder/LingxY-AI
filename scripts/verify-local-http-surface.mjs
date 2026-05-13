@@ -546,6 +546,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("note-project-conversation-routes.mjs", "PATCH", "/^\\/projects\\/([^/]+)$/", {
+    domain: "projects",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("note-project-conversation-routes.mjs", "GET", "/^\\/projects\\/([^/]+)\\/workspace$/", {
     domain: "projects",
     effect: "privacy_sensitive_read",

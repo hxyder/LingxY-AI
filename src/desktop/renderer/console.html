@@ -1470,9 +1470,17 @@
       <header class="page-head">
         <div>
           <h1>Projects<span class="zh">项目</span></h1>
-          <div class="sub">Workspaces that bundle memory, schedules, and default routing.<span class="zh">把记忆、定时与路由捆在一起的工作区。</span></div>
+          <div class="sub">Workspaces with their own chats, files, instructions, and project context.<span class="zh">项目拥有独立会话、文件、说明和上下文。</span></div>
         </div>
         <div class="page-head-actions">
+          <button id="projectStartChatBtn" class="btn btn-sm" type="button" title="Start a chat in the selected project">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+            New chat
+          </button>
+          <button id="projectRefreshBtn" class="btn btn-sm btn-ghost" type="button" title="Refresh project workspace">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            Refresh
+          </button>
           <!-- UCA-125 Phase 3-4: "+ New project" lifted from the first
                column into the page-head per v3. The inline create form
                is retained below for rename/quick-create flows. -->
@@ -1482,12 +1490,12 @@
           </button>
         </div>
       </header>
-      <div class="projects-layout">
+      <div class="projects-layout project-workbench-layout">
         <section class="projects-col panel">
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
               <h3 class="panel-title">Projects<span class="zh">项目</span></h3>
-              <span class="panel-sub">按项目分组会话</span>
+              <span class="panel-sub">独立工作区</span>
             </div>
             <span id="projectCount" class="tag">0</span>
           </header>
@@ -1500,23 +1508,28 @@
             <div id="projectList" class="item-list"></div>
           </div>
         </section>
-        <section class="projects-col panel">
+        <section class="projects-col panel project-workbench-main">
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
-              <h3 class="panel-title">Conversations<span class="zh">会话</span></h3>
-              <span class="panel-sub">来自当前项目</span>
+              <h3 class="panel-title">Workspace<span class="zh">工作台</span></h3>
+              <span class="panel-sub">项目概览与会话</span>
             </div>
             <span id="projectConversationCount" class="pill pill-neutral">0</span>
           </header>
           <div class="projects-col-body">
+            <div id="projectWorkspaceSummary" class="project-workspace-summary"></div>
+            <div class="project-section-bar">
+              <strong>Chats</strong>
+              <span class="muted">Conversation threads inside this project</span>
+            </div>
             <div id="projectConversationList" class="item-list"></div>
           </div>
         </section>
         <section class="projects-col panel">
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
-              <h3 class="panel-title">Files<span class="zh">文件</span></h3>
-              <span class="panel-sub">当前项目的会话产物和索引文件</span>
+              <h3 class="panel-title">Files & Instructions<span class="zh">文件与说明</span></h3>
+              <span class="panel-sub">项目知识和默认说明</span>
             </div>
             <div class="toolbar" style="gap:6px;">
               <button id="projectAttachFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Add local files or folders to this project">Add</button>
@@ -1524,6 +1537,18 @@
             </div>
           </header>
           <div class="projects-col-body">
+            <form id="projectInstructionsForm" class="project-instructions-form">
+              <label for="projectInstructionsInput">Project instructions</label>
+              <textarea id="projectInstructionsInput" rows="4" placeholder="How should LingxY handle work inside this project?"></textarea>
+              <div class="toolbar" style="margin-top:8px;justify-content:space-between;">
+                <span id="projectInstructionsState" class="muted" style="font-size:12px;"></span>
+                <button class="btn btn-sm" type="submit">Save instructions</button>
+              </div>
+            </form>
+            <div class="project-section-bar">
+              <strong>Knowledge files</strong>
+              <span class="muted">Indexed for this project only</span>
+            </div>
             <div id="projectArtifactList" class="item-list"></div>
           </div>
         </section>

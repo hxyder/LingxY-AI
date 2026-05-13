@@ -701,6 +701,14 @@ label, .field-label {
     height: auto;
   }
 }
+.project-workbench-layout {
+  grid-template-columns: 276px minmax(360px, 1.1fr) minmax(320px, 0.95fr);
+}
+.project-workbench-main .projects-col-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .projects-col {
   display: flex;
   flex-direction: column;
@@ -723,6 +731,107 @@ label, .field-label {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.project-workspace-item {
+  min-height: 74px;
+}
+.project-count-badge {
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+}
+.project-workspace-summary {
+  min-height: 112px;
+}
+.project-workspace-hero {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  background: var(--panel);
+  padding: 14px;
+}
+.project-workspace-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.project-workspace-title-row h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.project-workspace-title-row p {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.project-workspace-status {
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
+.project-workspace-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.project-workspace-stat {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  padding: 8px 10px;
+}
+.project-workspace-stat span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+}
+.project-workspace-stat strong {
+  display: block;
+  margin-top: 2px;
+  color: var(--ink);
+  font-size: 18px;
+}
+.project-section-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 2px;
+}
+.project-section-bar strong {
+  font-size: 12px;
+}
+.project-section-bar span {
+  font-size: 11px;
+}
+.project-instructions-form {
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.project-instructions-form textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 96px;
+  max-height: 220px;
+  line-height: 1.45;
 }
 .projects-col-body .history-preview {
   margin: 0;

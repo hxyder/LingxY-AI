@@ -280,6 +280,9 @@ function collectProjectScopeCandidate(candidates, { task = {}, runtime = null } 
     value: {
       project_id: workspace.project_id,
       name: workspace.project.name ?? null,
+      instructions: typeof workspace.project.metadata?.instructions === "string"
+        ? workspace.project.metadata.instructions.slice(0, 4000)
+        : "",
       file_paths: workspace.files.map((file) => file.path).slice(0, 20),
       conversation_ids: workspace.conversations.map((conversation) => conversation.conversation_id).slice(0, 20),
       artifact_ids: workspace.artifacts.map((artifact) => artifact.artifact_id).filter(Boolean).slice(0, 20),
