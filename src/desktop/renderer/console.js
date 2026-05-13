@@ -294,11 +294,9 @@ const projectArtifactList = document.querySelector("#projectArtifactList");
 const projectAttachFilesBtn = document.querySelector("#projectAttachFilesBtn");
 const projectConversationPreview = document.querySelector("#projectConversationPreview");
 const projectWorkspaceSummary = document.querySelector("#projectWorkspaceSummary");
+const projectOpenChatBtn = document.querySelector("#projectOpenChatBtn");
 const projectStartChatBtn = document.querySelector("#projectStartChatBtn");
 const projectRefreshBtn = document.querySelector("#projectRefreshBtn");
-const projectQuickChatForm = document.querySelector("#projectQuickChatForm");
-const projectQuickChatInput = document.querySelector("#projectQuickChatInput");
-const projectQuickChatState = document.querySelector("#projectQuickChatState");
 const projectInstructionsForm = document.querySelector("#projectInstructionsForm");
 const projectInstructionsInput = document.querySelector("#projectInstructionsInput");
 const projectInstructionsState = document.querySelector("#projectInstructionsState");
@@ -7778,14 +7776,14 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   if (projectStartChatBtn) {
     projectStartChatBtn.disabled = !selectedProject?.id;
     projectStartChatBtn.title = selectedProject?.id
-      ? `Send this prompt in ${selectedProject.name ?? selectedProject.id}`
+      ? `Start a new chat in ${selectedProject.name ?? selectedProject.id}`
       : "Select a project before starting a chat";
   }
-  if (projectQuickChatInput) {
-    projectQuickChatInput.disabled = !selectedProject?.id;
-    projectQuickChatInput.placeholder = selectedProject?.id
-      ? `Ask inside ${selectedProject.name ?? "this project"}...`
-      : "Select or create a project first...";
+  if (projectOpenChatBtn) {
+    projectOpenChatBtn.disabled = !selectedProject?.id;
+    projectOpenChatBtn.title = selectedProject?.id
+      ? `Open ${selectedProject.name ?? selectedProject.id} in Chat`
+      : "Select a project before opening Chat";
   }
   if (projectRefreshBtn) {
     projectRefreshBtn.disabled = !selectedProject?.id || projectWorkspaceStatus === "loading";
@@ -9296,7 +9294,7 @@ projectRefreshBtn?.addEventListener("click", () => {
   void refreshProjectWorkspace(projectId, { force: true });
 });
 
-function openSelectedProjectChat({ text = "", submit = false } = {}) {
+function setSelectedProjectChatScope() {
   const store = state.projectStore ?? loadConsoleProjectStore();
   const projectId = state.selectedProjectId || store.currentProjectId || DEFAULT_PROJECT_ID;
   chatSidebarProjectId = projectId;
@@ -9304,34 +9302,30 @@ function openSelectedProjectChat({ text = "", submit = false } = {}) {
   store.currentProjectId = projectId;
   store.currentConversationId = null;
   saveConsoleProjectStore(store);
-  startNewConsoleChat();
-  switchTab("chat");
   renderChatSidebarProjectFilter();
-  const prompt = `${text ?? ""}`.trim();
-  if (prompt && consoleChatInput) {
-    consoleChatInput.value = prompt;
-    consoleChatInput.focus();
-    if (submit) void submitConsoleChat();
-  }
-  showConsoleToast("项目会话已就绪", { kind: "info" });
+  return projectId;
 }
 
-projectQuickChatForm?.addEventListener("submit", (event) => {
-  event.preventDefault();
-  const text = (projectQuickChatInput?.value ?? "").trim();
-  if (projectQuickChatState) projectQuickChatState.textContent = text ? "Opening project chat..." : "Opening blank project chat...";
-  openSelectedProjectChat({ text, submit: Boolean(text) });
-  if (projectQuickChatInput) projectQuickChatInput.value = "";
-  setTimeout(() => {
-    if (projectQuickChatState) projectQuickChatState.textContent = "";
-  }, 1000);
+function openSelectedProjectChat({ startNew = false } = {}) {
+  const projectId = setSelectedProjectChatScope();
+  if (startNew) {
+    startNewConsoleChat();
+  } else if (consoleActiveConversation?.project_id && consoleActiveConversation.project_id !== projectId) {
+    startNewConsoleChat();
+  }
+  switchTab("chat");
+  showConsoleToast("项目已在 Chat 中打开", { kind: "info" });
+}
+
+projectOpenChatBtn?.addEventListener("click", () => {
+  openSelectedProjectChat();
 });
 
-projectQuickChatInput?.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    projectQuickChatForm?.requestSubmit?.();
-  }
+projectStartChatBtn?.addEventListener("click", () => {
+  setSelectedProjectChatScope();
+  startNewConsoleChat();
+  switchTab("chat");
+  showConsoleToast("新项目会话已打开", { kind: "info" });
 });
 
 projectInstructionsForm?.addEventListener("submit", (event) => {

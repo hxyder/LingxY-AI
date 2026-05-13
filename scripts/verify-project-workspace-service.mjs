@@ -38,21 +38,25 @@ assert.match(contextCompiler, /instructions/u, "ContextCompiler must preserve pr
 assert.match(consoleHtml, /projectWorkspaceSummary/u, "Projects UI must include a project workspace summary");
 assert.match(consoleHtml, /projectInstructionsInput/u, "Projects UI must expose project instructions");
 assert.match(consoleHtml, /projectStartChatBtn/u, "Projects UI must expose project-scoped new chat");
+assert.match(consoleHtml, /projectOpenChatBtn/u, "Projects UI must expose open-in-chat action");
 assert.match(consoleHtml, /project-clean-layout/u, "Projects UI must use the clean chat-like project layout");
-assert.match(consoleHtml, /projectQuickChatForm/u, "Projects UI must expose a project-scoped composer");
+assert.doesNotMatch(consoleHtml, /projectQuickChatForm/u, "Projects UI must not own a duplicate chat composer");
 assert.match(consoleJs, /\/projects\/\$\{encodeURIComponent\(projectId\)\}\/workspace/u,
   "Projects UI must read the service-owned workspace route");
 assert.match(consoleJs, /saveProjectMetadataViaService/u, "Projects UI must persist metadata through service route");
-assert.match(consoleJs, /openSelectedProjectChat/u, "Projects UI must route project composer submissions into Chat");
-assert.match(consoleJs, /project_id: chatSidebarProjectId/u, "Project composer must preserve chat submission project scope");
+assert.match(consoleJs, /setSelectedProjectChatScope/u, "Projects UI must set Chat project scope through shared Chat routing");
+assert.match(consoleJs, /openSelectedProjectChat/u, "Projects UI must route project actions into Chat");
+assert.match(consoleJs, /project_id: chatSidebarProjectId/u, "Chat submissions must preserve selected project scope");
 assert.match(projectsView, /renderProjectWorkspaceSummaryHtml/u, "Projects UI view model must render workspace stats");
 assert.match(docs, /Project is a product workspace/u, "boundary doc must define project semantics");
 assert.match(docs, /chat-first/u, "boundary doc must define project chat IA");
 assert.match(docs, /visually close to the Chat surface/u, "boundary doc must keep the Project UI clean");
+assert.match(docs, /Chat remains the only full conversation surface/u, "boundary doc must prevent duplicate project chat surfaces");
 assert.match(roadmap, /PMAT-007 Project workspace separation/u, "roadmap must track PMAT-007");
 assert.match(roadmap, /PMAT-008 Project workbench IA/u, "roadmap must track PMAT-008");
 assert.match(roadmap, /PMAT-009 Project chat IA/u, "roadmap must track PMAT-009");
 assert.match(roadmap, /PMAT-010 Project UI cleanup/u, "roadmap must track PMAT-010");
+assert.match(roadmap, /PMAT-011 Project as Chat scope/u, "roadmap must track PMAT-011");
 assert.match(behavior, /separates projects, conversations, and files/u, "behavior tests must cover project split");
 
 const store = createInMemoryStoreScaffold();

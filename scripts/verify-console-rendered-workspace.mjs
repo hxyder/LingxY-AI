@@ -37,8 +37,9 @@ assert.equal(consoleHtml.includes("Office Add-ins"), true);
 assert.equal(consoleHtml.includes("Email Accounts"), true);
 assert.equal(consoleHtml.includes("projectWorkspaceSummary"), true);
 assert.equal(consoleHtml.includes("projectInstructionsInput"), true);
+assert.equal(consoleHtml.includes("projectOpenChatBtn"), true);
 assert.equal(consoleHtml.includes("projectStartChatBtn"), true);
-assert.equal(consoleHtml.includes("projectQuickChatForm"), true);
+assert.equal(consoleHtml.includes("projectQuickChatForm"), false);
 assert.equal(consoleHtml.includes("project-clean-layout"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
@@ -83,6 +84,7 @@ assertConsoleFetches("/config/email/settings");
 assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
 assert.equal(consoleJs.includes("refreshProjectWorkspace"), true);
 assert.equal(consoleJs.includes("saveProjectMetadataViaService"), true);
+assert.equal(consoleJs.includes("setSelectedProjectChatScope"), true);
 assert.equal(consoleJs.includes("openSelectedProjectChat"), true);
 assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
 assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);

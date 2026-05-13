@@ -1512,16 +1512,15 @@
           </header>
           <div class="projects-col-body project-chat-body">
             <div id="projectWorkspaceSummary" class="project-workspace-summary"></div>
+            <div class="project-home-actions">
+              <button id="projectOpenChatBtn" class="btn btn-sm" type="button" title="Open this project in Chat">
+                Open in Chat
+              </button>
+              <button id="projectStartChatBtn" class="btn btn-sm btn-primary" type="button" title="Start a new chat in this project">
+                New chat
+              </button>
+            </div>
             <div id="projectConversationList" class="item-list project-thread-list"></div>
-            <form id="projectQuickChatForm" class="project-chat-composer">
-              <textarea id="projectQuickChatInput" rows="2" placeholder="Ask inside this project..."></textarea>
-              <div class="console-chat-toolbar">
-                <span id="projectQuickChatState" class="muted" style="font-size:12px;flex:1;"></span>
-                <button id="projectStartChatBtn" class="btn" type="submit" title="Start a chat in the selected project">
-                  Send
-                </button>
-              </div>
-            </form>
           </div>
         </section>
         <section class="projects-col panel project-chat-context">

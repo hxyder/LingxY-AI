@@ -1,6 +1,6 @@
 # Project Workspace Boundary
 
-Status: PMAT-007 through PMAT-010 complete.
+Status: PMAT-007 through PMAT-011 complete.
 
 Project is a product workspace, not a conversation alias.
 
@@ -22,8 +22,12 @@ Layer contract:
   conversation surface, with project files and instructions as adjacent context
   instead of a separate project-admin page.
 - Project UI must stay visually close to the Chat surface: compact left rail,
-  central thread list plus composer, and a restrained right context rail. Avoid
-  nested cards, oversized stats, repeated headings, or admin-dashboard density.
+  central thread list, and a restrained right context rail. Avoid nested cards,
+  oversized stats, repeated headings, duplicate chat composers, or
+  admin-dashboard density.
+- Chat remains the only full conversation surface. Project pages set the Chat
+  project scope, start or resume project conversations, and manage project
+  context; they must not introduce a second parallel chat composer.
 - Project instructions are project metadata. They may be edited from the
   renderer, but persistence and future context use stay service-owned.
 - Project files are explicit project attachments and optional file-content index
