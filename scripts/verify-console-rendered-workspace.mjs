@@ -39,7 +39,7 @@ assert.equal(consoleHtml.includes("projectWorkspaceSummary"), true);
 assert.equal(consoleHtml.includes("projectInstructionsInput"), true);
 assert.equal(consoleHtml.includes("projectStartChatBtn"), true);
 assert.equal(consoleHtml.includes("projectQuickChatForm"), true);
-assert.equal(consoleHtml.includes("Project Chat"), true);
+assert.equal(consoleHtml.includes("project-clean-layout"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
 const runtimePreflightClient = await read("src/desktop/renderer/shared/runtime-preflight-client.mjs");

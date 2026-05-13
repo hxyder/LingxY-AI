@@ -1,6 +1,6 @@
 # Project Workspace Boundary
 
-Status: PMAT-007, PMAT-008, and PMAT-009 complete.
+Status: PMAT-007 through PMAT-010 complete.
 
 Project is a product workspace, not a conversation alias.
 
@@ -21,6 +21,9 @@ Layer contract:
 - Project UI is chat-first: selecting a project opens a project-scoped
   conversation surface, with project files and instructions as adjacent context
   instead of a separate project-admin page.
+- Project UI must stay visually close to the Chat surface: compact left rail,
+  central thread list plus composer, and a restrained right context rail. Avoid
+  nested cards, oversized stats, repeated headings, or admin-dashboard density.
 - Project instructions are project metadata. They may be edited from the
   renderer, but persistence and future context use stay service-owned.
 - Project files are explicit project attachments and optional file-content index

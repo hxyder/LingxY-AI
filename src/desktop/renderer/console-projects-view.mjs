@@ -42,12 +42,12 @@ export function renderProjectListHtml({
       ? Number(workspace.stats.file_count)
       : (Array.isArray(project.attachedFilePaths) ? project.attachedFilePaths.length : 0);
     return `
-      <button class="history-item project-workspace-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;border-left:4px solid ${escapeHtml(project.color ?? defaultColor)};">
-        <div class="row">
-          <strong style="font-size:13px;">${escapeHtml(project.name ?? project.id)}</strong>
-          <span class="project-count-badge">${escapeHtml(count)}</span>
-        </div>
-        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(fileCount)} files · ${escapeHtml(project.id)}</p>
+      <button class="history-item project-workspace-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;--project-color:${escapeHtml(project.color ?? defaultColor)};">
+        <span class="project-color-dot" aria-hidden="true"></span>
+        <span class="project-list-copy">
+          <strong>${escapeHtml(project.name ?? project.id)}</strong>
+          <span>${escapeHtml(count)} chats · ${escapeHtml(fileCount)} files</span>
+        </span>
       </button>
     `;
   }).join("");
@@ -63,30 +63,20 @@ export function renderProjectWorkspaceSummaryHtml({
   }
   const stats = workspace?.stats ?? {};
   const instructions = project?.metadata?.instructions ?? project?.metadata?.projectInstructions ?? "";
-  const rows = [
-    ["Chats", Number(stats.conversation_count ?? 0)],
-    ["Files", Number(stats.file_count ?? 0)],
-    ["Generated", Number(stats.artifact_count ?? 0)]
-  ];
+  const chatCount = Number(stats.conversation_count ?? 0);
+  const fileCount = Number(stats.file_count ?? 0);
+  const generatedCount = Number(stats.artifact_count ?? 0);
   const updated = stats.updated_at ? `Updated ${formatDateTime(stats.updated_at)}` : "Service workspace";
   return `
     <div class="project-workspace-hero" style="border-left-color:${escapeHtml(project.color ?? "#6366f1")}">
       <div class="project-workspace-title-row">
         <div>
           <h2>${escapeHtml(project.name ?? project.id)}</h2>
-          <p>${escapeHtml(updated)}</p>
+          <p>${escapeHtml(chatCount)} chats · ${escapeHtml(fileCount)} files · ${escapeHtml(generatedCount)} generated</p>
         </div>
-        <span class="project-workspace-status">${escapeHtml(status === "loading" ? "Syncing" : "Project chat")}</span>
+        <span class="project-workspace-status">${escapeHtml(status === "loading" ? "Syncing" : updated)}</span>
       </div>
-      <p class="project-workspace-instructions">${escapeHtml(instructions || "No project instructions yet. Add them in Project context.")}</p>
-      <div class="project-workspace-stats">
-        ${rows.map(([label, value]) => `
-          <div class="project-workspace-stat">
-            <span>${escapeHtml(label)}</span>
-            <strong>${escapeHtml(value)}</strong>
-          </div>
-        `).join("")}
-      </div>
+      ${instructions ? `<p class="project-workspace-instructions">${escapeHtml(instructions)}</p>` : ""}
     </div>
   `;
 }
@@ -97,14 +87,14 @@ export function renderProjectConversationListHtml({
 } = {}) {
   const rows = Array.isArray(conversations) ? conversations : [];
   if (rows.length === 0) {
-    return `<p class="muted" style="font-size:12px;">No conversations in this project.</p>`;
+    return `<div class="project-empty-thread"><strong>No chats yet</strong><span>Start this project with the box below.</span></div>`;
   }
   return rows.map((conversation) => {
     const conversationId = conversation.id ?? conversation.conversation_id ?? "";
     const turnCount = conversation.messageCount ?? conversation.message_count ?? (conversation.turns ?? []).length;
     const updatedAt = conversation.updatedAt ?? conversation.updated_at ?? conversation.startedAt ?? conversation.created_at;
     return `
-      <div class="history-item-row ${conversationId === selectedConversationId ? "active" : ""}">
+      <div class="history-item-row project-thread-row ${conversationId === selectedConversationId ? "active" : ""}">
         <button class="history-item history-item--main" data-project-conversation-id="${escapeHtml(conversationId)}" style="text-align:left;">
           <div class="row">
             <strong style="font-size:13px;">${escapeHtml(conversation.title || conversation.seedCommand || "新会话")}</strong>

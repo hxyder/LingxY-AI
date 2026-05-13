@@ -65,14 +65,8 @@ test("project workspace summary renders project-owned chats files and generated 
   });
 
   assert.match(html, /Docs/);
-  assert.match(html, /Project chat/);
   assert.match(html, /Use the project brief before drafting\./);
-  assert.match(html, /Chats/);
-  assert.match(html, />3</);
-  assert.match(html, /Files/);
-  assert.match(html, />2</);
-  assert.match(html, /Generated/);
-  assert.match(html, />1</);
+  assert.match(html, /3 chats · 2 files · 1 generated/);
 });
 
 test("project files view can render service-owned project file records", () => {

@@ -38,7 +38,7 @@ assert.match(contextCompiler, /instructions/u, "ContextCompiler must preserve pr
 assert.match(consoleHtml, /projectWorkspaceSummary/u, "Projects UI must include a project workspace summary");
 assert.match(consoleHtml, /projectInstructionsInput/u, "Projects UI must expose project instructions");
 assert.match(consoleHtml, /projectStartChatBtn/u, "Projects UI must expose project-scoped new chat");
-assert.match(consoleHtml, /Project Chat/u, "Projects UI must be chat-first, not a project-admin page");
+assert.match(consoleHtml, /project-clean-layout/u, "Projects UI must use the clean chat-like project layout");
 assert.match(consoleHtml, /projectQuickChatForm/u, "Projects UI must expose a project-scoped composer");
 assert.match(consoleJs, /\/projects\/\$\{encodeURIComponent\(projectId\)\}\/workspace/u,
   "Projects UI must read the service-owned workspace route");
@@ -48,9 +48,11 @@ assert.match(consoleJs, /project_id: chatSidebarProjectId/u, "Project composer m
 assert.match(projectsView, /renderProjectWorkspaceSummaryHtml/u, "Projects UI view model must render workspace stats");
 assert.match(docs, /Project is a product workspace/u, "boundary doc must define project semantics");
 assert.match(docs, /chat-first/u, "boundary doc must define project chat IA");
+assert.match(docs, /visually close to the Chat surface/u, "boundary doc must keep the Project UI clean");
 assert.match(roadmap, /PMAT-007 Project workspace separation/u, "roadmap must track PMAT-007");
 assert.match(roadmap, /PMAT-008 Project workbench IA/u, "roadmap must track PMAT-008");
 assert.match(roadmap, /PMAT-009 Project chat IA/u, "roadmap must track PMAT-009");
+assert.match(roadmap, /PMAT-010 Project UI cleanup/u, "roadmap must track PMAT-010");
 assert.match(behavior, /separates projects, conversations, and files/u, "behavior tests must cover project split");
 
 const store = createInMemoryStoreScaffold();
