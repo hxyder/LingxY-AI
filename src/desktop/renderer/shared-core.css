@@ -704,10 +704,23 @@ label, .field-label {
 .project-workbench-layout {
   grid-template-columns: 276px minmax(360px, 1.1fr) minmax(320px, 0.95fr);
 }
+.project-chat-layout {
+  grid-template-columns: 272px minmax(420px, 1fr) minmax(320px, 0.78fr);
+  max-width: 1360px;
+}
 .project-workbench-main .projects-col-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.project-chat-main .projects-col-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.project-chat-sidebar .projects-col-body,
+.project-chat-context .projects-col-body {
+  background: var(--panel);
 }
 .projects-col {
   display: flex;
@@ -749,7 +762,7 @@ label, .field-label {
   font-weight: var(--fw-semibold);
 }
 .project-workspace-summary {
-  min-height: 112px;
+  min-height: 118px;
 }
 .project-workspace-hero {
   border: 1px solid var(--line);
@@ -757,6 +770,9 @@ label, .field-label {
   border-radius: var(--radius);
   background: var(--panel);
   padding: 14px;
+}
+.project-chat-main .project-workspace-hero {
+  background: linear-gradient(180deg, var(--panel) 0%, var(--panel-2) 100%);
 }
 .project-workspace-title-row {
   display: flex;
@@ -784,6 +800,14 @@ label, .field-label {
   font-size: 10px;
   font-weight: var(--fw-semibold);
   text-transform: uppercase;
+}
+.project-workspace-instructions {
+  margin: 10px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .project-workspace-stats {
   display: grid;
@@ -820,6 +844,33 @@ label, .field-label {
 }
 .project-section-bar span {
   font-size: 11px;
+}
+.project-section-bar--threads {
+  margin-top: 2px;
+}
+.project-chat-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-strong);
+}
+.project-chat-composer textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  box-shadow: none;
+  line-height: 1.5;
+}
+.project-chat-composer textarea:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
 }
 .project-instructions-form {
   margin-bottom: 12px;

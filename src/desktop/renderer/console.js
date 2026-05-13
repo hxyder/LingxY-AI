@@ -296,6 +296,9 @@ const projectConversationPreview = document.querySelector("#projectConversationP
 const projectWorkspaceSummary = document.querySelector("#projectWorkspaceSummary");
 const projectStartChatBtn = document.querySelector("#projectStartChatBtn");
 const projectRefreshBtn = document.querySelector("#projectRefreshBtn");
+const projectQuickChatForm = document.querySelector("#projectQuickChatForm");
+const projectQuickChatInput = document.querySelector("#projectQuickChatInput");
+const projectQuickChatState = document.querySelector("#projectQuickChatState");
 const projectInstructionsForm = document.querySelector("#projectInstructionsForm");
 const projectInstructionsInput = document.querySelector("#projectInstructionsInput");
 const projectInstructionsState = document.querySelector("#projectInstructionsState");
@@ -7775,8 +7778,14 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   if (projectStartChatBtn) {
     projectStartChatBtn.disabled = !selectedProject?.id;
     projectStartChatBtn.title = selectedProject?.id
-      ? `Start a chat in ${selectedProject.name ?? selectedProject.id}`
+      ? `Send this prompt in ${selectedProject.name ?? selectedProject.id}`
       : "Select a project before starting a chat";
+  }
+  if (projectQuickChatInput) {
+    projectQuickChatInput.disabled = !selectedProject?.id;
+    projectQuickChatInput.placeholder = selectedProject?.id
+      ? `Ask inside ${selectedProject.name ?? "this project"}...`
+      : "Select or create a project first...";
   }
   if (projectRefreshBtn) {
     projectRefreshBtn.disabled = !selectedProject?.id || projectWorkspaceStatus === "loading";
@@ -9287,7 +9296,7 @@ projectRefreshBtn?.addEventListener("click", () => {
   void refreshProjectWorkspace(projectId, { force: true });
 });
 
-projectStartChatBtn?.addEventListener("click", () => {
+function openSelectedProjectChat({ text = "", submit = false } = {}) {
   const store = state.projectStore ?? loadConsoleProjectStore();
   const projectId = state.selectedProjectId || store.currentProjectId || DEFAULT_PROJECT_ID;
   chatSidebarProjectId = projectId;
@@ -9298,7 +9307,31 @@ projectStartChatBtn?.addEventListener("click", () => {
   startNewConsoleChat();
   switchTab("chat");
   renderChatSidebarProjectFilter();
-  showConsoleToast("新会话会创建在当前项目下", { kind: "info" });
+  const prompt = `${text ?? ""}`.trim();
+  if (prompt && consoleChatInput) {
+    consoleChatInput.value = prompt;
+    consoleChatInput.focus();
+    if (submit) void submitConsoleChat();
+  }
+  showConsoleToast("项目会话已就绪", { kind: "info" });
+}
+
+projectQuickChatForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = (projectQuickChatInput?.value ?? "").trim();
+  if (projectQuickChatState) projectQuickChatState.textContent = text ? "Opening project chat..." : "Opening blank project chat...";
+  openSelectedProjectChat({ text, submit: Boolean(text) });
+  if (projectQuickChatInput) projectQuickChatInput.value = "";
+  setTimeout(() => {
+    if (projectQuickChatState) projectQuickChatState.textContent = "";
+  }, 1000);
+});
+
+projectQuickChatInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    projectQuickChatForm?.requestSubmit?.();
+  }
 });
 
 projectInstructionsForm?.addEventListener("submit", (event) => {

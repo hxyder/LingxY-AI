@@ -62,6 +62,7 @@ export function renderProjectWorkspaceSummaryHtml({
     return `<p class="muted" style="font-size:12px;">Create or select a project.</p>`;
   }
   const stats = workspace?.stats ?? {};
+  const instructions = project?.metadata?.instructions ?? project?.metadata?.projectInstructions ?? "";
   const rows = [
     ["Chats", Number(stats.conversation_count ?? 0)],
     ["Files", Number(stats.file_count ?? 0)],
@@ -73,10 +74,11 @@ export function renderProjectWorkspaceSummaryHtml({
       <div class="project-workspace-title-row">
         <div>
           <h2>${escapeHtml(project.name ?? project.id)}</h2>
-          <p>${escapeHtml(updated)} · ${escapeHtml(project.id)}</p>
+          <p>${escapeHtml(updated)}</p>
         </div>
-        <span class="project-workspace-status">${escapeHtml(status === "loading" ? "Syncing" : "Workspace")}</span>
+        <span class="project-workspace-status">${escapeHtml(status === "loading" ? "Syncing" : "Project chat")}</span>
       </div>
+      <p class="project-workspace-instructions">${escapeHtml(instructions || "No project instructions yet. Add them in Project context.")}</p>
       <div class="project-workspace-stats">
         ${rows.map(([label, value]) => `
           <div class="project-workspace-stat">

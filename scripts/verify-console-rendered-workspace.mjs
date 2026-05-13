@@ -38,6 +38,8 @@ assert.equal(consoleHtml.includes("Email Accounts"), true);
 assert.equal(consoleHtml.includes("projectWorkspaceSummary"), true);
 assert.equal(consoleHtml.includes("projectInstructionsInput"), true);
 assert.equal(consoleHtml.includes("projectStartChatBtn"), true);
+assert.equal(consoleHtml.includes("projectQuickChatForm"), true);
+assert.equal(consoleHtml.includes("Project Chat"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
 const runtimePreflightClient = await read("src/desktop/renderer/shared/runtime-preflight-client.mjs");
@@ -81,6 +83,7 @@ assertConsoleFetches("/config/email/settings");
 assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
 assert.equal(consoleJs.includes("refreshProjectWorkspace"), true);
 assert.equal(consoleJs.includes("saveProjectMetadataViaService"), true);
+assert.equal(consoleJs.includes("openSelectedProjectChat"), true);
 assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
 assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);
 assert.equal(consoleJs.includes('consoleShellClient.showWindow("overlay")'), true);

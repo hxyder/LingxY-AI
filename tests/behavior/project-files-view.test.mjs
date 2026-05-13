@@ -47,7 +47,12 @@ test("project files view treats attached paths as openable local files", () => {
 
 test("project workspace summary renders project-owned chats files and generated counts", () => {
   const html = renderProjectWorkspaceSummaryHtml({
-    project: { id: "project_docs", name: "Docs", color: "#1f766e" },
+    project: {
+      id: "project_docs",
+      name: "Docs",
+      color: "#1f766e",
+      metadata: { instructions: "Use the project brief before drafting." }
+    },
     workspace: {
       stats: {
         conversation_count: 3,
@@ -60,6 +65,8 @@ test("project workspace summary renders project-owned chats files and generated 
   });
 
   assert.match(html, /Docs/);
+  assert.match(html, /Project chat/);
+  assert.match(html, /Use the project brief before drafting\./);
   assert.match(html, /Chats/);
   assert.match(html, />3</);
   assert.match(html, /Files/);

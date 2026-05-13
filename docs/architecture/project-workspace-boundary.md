@@ -1,6 +1,6 @@
 # Project Workspace Boundary
 
-Status: PMAT-007 and PMAT-008 complete.
+Status: PMAT-007, PMAT-008, and PMAT-009 complete.
 
 Project is a product workspace, not a conversation alias.
 
@@ -18,6 +18,9 @@ Layer contract:
 - Project workbench UI reads `/projects/:id/workspace` for conversations,
   files, generated artifacts, and project stats. Renderer-local project store
   data is a compatibility/cache shape, not the workbench fact source.
+- Project UI is chat-first: selecting a project opens a project-scoped
+  conversation surface, with project files and instructions as adjacent context
+  instead of a separate project-admin page.
 - Project instructions are project metadata. They may be edited from the
   renderer, but persistence and future context use stay service-owned.
 - Project files are explicit project attachments and optional file-content index

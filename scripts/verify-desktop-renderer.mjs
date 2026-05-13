@@ -180,6 +180,8 @@ assert.equal(consoleHtml.includes("projectConversationList"), true);
 assert.equal(consoleHtml.includes("projectWorkspaceSummary"), true);
 assert.equal(consoleHtml.includes("projectInstructionsInput"), true);
 assert.equal(consoleHtml.includes("projectStartChatBtn"), true);
+assert.equal(consoleHtml.includes("projectQuickChatForm"), true);
+assert.equal(consoleHtml.includes("Project Chat"), true);
 assert.equal(consoleHtml.includes("DAG Workflow"), true);
 assert.equal(consoleHtml.includes("Privacy & Security"), true);
 assert.equal(consoleHtml.includes("Audit Log"), true);

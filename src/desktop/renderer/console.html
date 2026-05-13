@@ -1469,14 +1469,10 @@
     <section id="panel-projects" class="tab-panel">
       <header class="page-head">
         <div>
-          <h1>Projects<span class="zh">项目</span></h1>
-          <div class="sub">Workspaces with their own chats, files, instructions, and project context.<span class="zh">项目拥有独立会话、文件、说明和上下文。</span></div>
+          <h1>Project Chat<span class="zh">项目对话</span></h1>
+          <div class="sub">A chat-style workspace with project conversations, files, and instructions.<span class="zh">像对话一样使用项目，同时管理项目文件与上下文。</span></div>
         </div>
         <div class="page-head-actions">
-          <button id="projectStartChatBtn" class="btn btn-sm" type="button" title="Start a chat in the selected project">
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
-            New chat
-          </button>
           <button id="projectRefreshBtn" class="btn btn-sm btn-ghost" type="button" title="Refresh project workspace">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
             Refresh
@@ -1490,12 +1486,12 @@
           </button>
         </div>
       </header>
-      <div class="projects-layout project-workbench-layout">
-        <section class="projects-col panel">
+      <div class="projects-layout project-chat-layout">
+        <section class="projects-col panel project-chat-sidebar">
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
               <h3 class="panel-title">Projects<span class="zh">项目</span></h3>
-              <span class="panel-sub">独立工作区</span>
+              <span class="panel-sub">Choose a workspace</span>
             </div>
             <span id="projectCount" class="tag">0</span>
           </header>
@@ -1508,28 +1504,38 @@
             <div id="projectList" class="item-list"></div>
           </div>
         </section>
-        <section class="projects-col panel project-workbench-main">
+        <section class="projects-col panel project-chat-main">
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
-              <h3 class="panel-title">Workspace<span class="zh">工作台</span></h3>
-              <span class="panel-sub">项目概览与会话</span>
+              <h3 class="panel-title">Project conversation<span class="zh">项目对话</span></h3>
+              <span class="panel-sub">Chat threads inside this project</span>
             </div>
             <span id="projectConversationCount" class="pill pill-neutral">0</span>
           </header>
           <div class="projects-col-body">
             <div id="projectWorkspaceSummary" class="project-workspace-summary"></div>
-            <div class="project-section-bar">
-              <strong>Chats</strong>
-              <span class="muted">Conversation threads inside this project</span>
+            <form id="projectQuickChatForm" class="project-chat-composer">
+              <textarea id="projectQuickChatInput" rows="3" placeholder="Ask inside this project..."></textarea>
+              <div class="console-chat-toolbar">
+                <span id="projectQuickChatState" class="muted" style="font-size:12px;flex:1;"></span>
+                <button id="projectStartChatBtn" class="btn" type="submit" title="Start a chat in the selected project">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>
+                  Send in project
+                </button>
+              </div>
+            </form>
+            <div class="project-section-bar project-section-bar--threads">
+              <strong>Recent chats</strong>
+              <span class="muted">Open a thread to continue in Chat</span>
             </div>
             <div id="projectConversationList" class="item-list"></div>
           </div>
         </section>
-        <section class="projects-col panel">
+        <section class="projects-col panel project-chat-context">
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
-              <h3 class="panel-title">Files & Instructions<span class="zh">文件与说明</span></h3>
-              <span class="panel-sub">项目知识和默认说明</span>
+              <h3 class="panel-title">Project context<span class="zh">项目上下文</span></h3>
+              <span class="panel-sub">Files, knowledge, and instructions</span>
             </div>
             <div class="toolbar" style="gap:6px;">
               <button id="projectAttachFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Add local files or folders to this project">Add</button>
