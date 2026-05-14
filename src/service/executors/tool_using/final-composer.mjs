@@ -14,8 +14,16 @@ import {
   localFallbackFinal
 } from "./finalization.mjs";
 import { reviewFinalAnswer } from "./final-reviewer.mjs";
+import { detectNetworkFailureInTranscript } from "./failure-classifier.mjs";
 
 const EVIDENCE_LIST_LIMIT = 6;
+const NETWORK_UNAVAILABLE_CLAIM_PATTERNS = [
+  /\b(?:web|network|search|browser|browsing)\s+(?:tool|tools|access|search|fetch)\s+(?:is|are|was|were)?\s*(?:temporarily\s+)?(?:unavailable|not available|disabled|blocked|failed)/i,
+  /\b(?:cannot|can't|unable to)\s+(?:browse|search|fetch|access)\s+(?:the\s+)?(?:web|internet|network|site|page)/i,
+  /(?:网络|联网|搜索|网页|浏览|抓取).{0,12}(?:工具|访问|功能)?.{0,10}(?:暂时不可用|不可用|无法使用|访问受限|失败)/u,
+  /(?:无法|不能|没能).{0,12}(?:实时)?(?:搜索|联网|抓取|访问)/u
+];
+const NETWORK_EVIDENCE_TOOLS = new Set(["web_search", "web_search_fetch", "fetch_url_content"]);
 
 function topList(values = [], limit = EVIDENCE_LIST_LIMIT) {
   if (!Array.isArray(values)) return [];
@@ -23,6 +31,32 @@ function topList(values = [], limit = EVIDENCE_LIST_LIMIT) {
     .map((value) => String(value ?? "").trim())
     .filter(Boolean)
     .slice(0, limit);
+}
+
+function claimsNetworkUnavailable(text = "") {
+  const raw = String(text ?? "");
+  if (!raw.trim()) return false;
+  return NETWORK_UNAVAILABLE_CLAIM_PATTERNS.some((pattern) => pattern.test(raw));
+}
+
+function hasNetworkTranscript(transcript = []) {
+  return (transcript ?? []).some((entry) =>
+    entry?.type === "tool_result"
+    && NETWORK_EVIDENCE_TOOLS.has(entry.tool)
+  );
+}
+
+export function guardFinalNetworkFailureClaim({ task, transcript = [], candidateText = "" } = {}) {
+  const text = String(candidateText ?? "").trim();
+  if (!text || !claimsNetworkUnavailable(text)) return text;
+  const failure = detectNetworkFailureInTranscript(transcript);
+  if (!failure && !hasNetworkTranscript(transcript)) return text;
+  const fallback = localFallbackFinal({
+    task,
+    transcript,
+    reason: failure ? `network_failure:${failure.kind}` : "network_claim_not_supported_by_transcript"
+  });
+  return String(fallback ?? "").trim() || text;
 }
 
 export function formatEvidenceSummaryForComposer(evidence = null) {
@@ -77,11 +111,19 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
     const evidenceSummary = extractEvidence(transcript);
     const evidenceBlock = formatEvidenceSummaryForComposer(evidenceSummary);
     const finalizeCandidate = async (candidateText) => {
+      const guardedText = guardFinalNetworkFailureClaim({ task, transcript, candidateText });
+      if (guardedText !== String(candidateText ?? "").trim()) {
+        runtime?.emitTaskEvent?.("final_composer_guarded_claim", {
+          reason: "network_failure_claim_from_transcript",
+          original_chars: String(candidateText ?? "").length,
+          guarded_chars: guardedText.length
+        });
+      }
       const reviewed = await reviewFinalAnswer({
         task,
         transcript,
         runtime,
-        candidateText,
+        candidateText: guardedText,
         reason,
         signal,
         evidenceSummary

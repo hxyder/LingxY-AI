@@ -660,10 +660,18 @@ assert.ok(/collapseCompletedConsoleToolCards/.test(consoleJs) && /\.chat-tool-ca
   "chat tools: completed tool cards must collapse after the final answer");
 assert.ok(/function setConsoleToolCardCollapsed/.test(consoleJs)
     && /bindConsoleToolCardToggle/.test(consoleJs)
-    && /setConsoleToolCardCollapsed\(card,\s*inferredState === "ok"\)/.test(consoleJs),
-  "chat tools: completed fallback tool cards must collapse and stay expandable");
+    && /setConsoleToolCardCollapsed\(card,\s*inferredState !== "err"\)/.test(consoleJs),
+  "chat tools: non-error tool cards must stay compact and expandable");
 assert.ok(/\.chat-tool-card:focus-visible/.test(sharedCss),
   "chat tools: collapsed tool cards must remain keyboard-expandable");
+assert.ok(/function activateConsoleConversationShell/.test(consoleJs)
+    && /activateConsoleConversationShell\(conversationId,\s*summary\)/.test(consoleJs)
+    && /pendingNodes/.test(consoleJs),
+  "chat history: selecting a conversation must activate the shell immediately and preserve optimistic messages during background detail load");
+assert.ok(/function settleConsoleChatThinkingCard/.test(consoleJs)
+    && /frame\.event === "text_delta"[\s\S]{0,120}settleConsoleChatThinkingCard\(\)/.test(consoleJs)
+    && /frame\.event === "final_composer_started"[\s\S]{0,160}settleConsoleChatThinkingCard\(\)/.test(consoleJs),
+  "chat reasoning: thinking cards must collapse as soon as answer composition/text streaming starts");
 assert.ok(/isInternalToolInvocationText/.test(taskEventStream)
     && /looksLikeInternalToolInvocationText/.test(taskEventStream)
     && /TOOL_DISPLAY_LABELS/.test(taskEventStream),

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   composeFinalAnswer,
-  formatEvidenceSummaryForComposer
+  formatEvidenceSummaryForComposer,
+  guardFinalNetworkFailureClaim
 } from "../../src/service/executors/tool_using/final-composer.mjs";
 
 test("agent final composer uses injected composer and emits timing events", async () => {
@@ -64,6 +65,72 @@ test("agent final composer falls back to collected tool observations when compos
   assert.match(text, /The collected answer is 42/);
   assert.doesNotMatch(text, /composer unavailable/);
   assert.ok(events.some((entry) => entry.event_type === "phase_timing"));
+});
+
+test("agent final composer guards unsupported network-unavailable apologies", async () => {
+  const events = [];
+  const text = await composeFinalAnswer({
+    task: {
+      user_command: "Find the HNTB Project Analyst I Raleigh application link.",
+      task_spec: {
+        goal: "answer",
+        success_contract: { required_policy_groups: ["external_web_read"] }
+      }
+    },
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "web_search_fetch",
+        success: false,
+        error: "fetch failed",
+        observation: "fetch failed"
+      }
+    ],
+    runtime: {
+      emitTaskEvent: (event_type, payload) => events.push({ event_type, payload }),
+      finalAnswerComposer: async () => "非常抱歉，由于当前网络搜索工具暂时不可用，我无法为你实时抓取该职位链接。你可以手动访问 HNTB 官网。"
+    },
+    reason: "tool_failure"
+  });
+
+  assert.doesNotMatch(text, /网络搜索工具暂时不可用/);
+  assert.match(text, /需要联网|network/i);
+  assert.ok(events.some((event) => event.event_type === "final_composer_guarded_claim"));
+});
+
+test("network-unavailable final guard keeps normal answers unchanged", () => {
+  const text = guardFinalNetworkFailureClaim({
+    task: { user_command: "Summarize result." },
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "web_search_fetch",
+        success: true,
+        observation: "Result with a concrete link: https://example.com/job"
+      }
+    ],
+    candidateText: "The posting is available at https://example.com/job"
+  });
+
+  assert.equal(text, "The posting is available at https://example.com/job");
+});
+
+test("network-unavailable final guard uses successful transcript instead of false apology", () => {
+  const text = guardFinalNetworkFailureClaim({
+    task: { user_command: "Find the link." },
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "web_search_fetch",
+        success: true,
+        observation: "Found official link: https://example.com/job"
+      }
+    ],
+    candidateText: "I cannot access the web right now, please search manually."
+  });
+
+  assert.match(text, /https:\/\/example\.com\/job/);
+  assert.doesNotMatch(text, /search manually/);
 });
 
 test("agent final composer passes structured local and web evidence to injected composer", async () => {

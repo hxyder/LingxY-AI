@@ -2474,7 +2474,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
     ${capabilityViewHtml}
   `;
   bindConsoleToolCardToggle(card);
-  setConsoleToolCardCollapsed(card, inferredState === "ok");
+  setConsoleToolCardCollapsed(card, inferredState !== "err");
   appendConsoleChatTimelineNode(card, { taskId: options.taskId ?? null });
   consoleChatPin.maybeScrollToBottom();
   return card;
@@ -2551,6 +2551,41 @@ function placeConsoleChatThinkingCardAtBottom() {
   }
 }
 
+function findConsoleConversationSummary(conversationId) {
+  if (!conversationId) return null;
+  return chatSidebarItems.find((item) => item?.conversation_id === conversationId)
+    ?? conversationsState.items.find((item) => item?.conversation_id === conversationId)
+    ?? null;
+}
+
+function activateConsoleConversationShell(conversationId, summary = null) {
+  if (!conversationId) return null;
+  const previous = consoleActiveConversation?.conversation_id === conversationId
+    ? consoleActiveConversation
+    : null;
+  const projectId = summary?.project_id
+    ?? summary?.projectId
+    ?? previous?.project_id
+    ?? (chatSidebarMode === "projects" ? chatSidebarProjectId : null);
+  const next = cacheEnsureBackendFields({
+    conversation_id: conversationId,
+    title: summary?.title ?? previous?.title ?? conversationId.slice(0, 12),
+    project_id: projectId ?? null,
+    metadata: summary?.metadata ?? previous?.metadata ?? {}
+  });
+  if (previous?.pendingByClientId instanceof Map) {
+    next.pendingByClientId = previous.pendingByClientId;
+  }
+  if (typeof previous?.lastKnownSeq === "number") {
+    next.lastKnownSeq = previous.lastKnownSeq;
+  }
+  consoleActiveConversation = next;
+  setChatSidebarProjectScope(projectId ?? null);
+  renderConsoleChatHeader();
+  syncConsoleChatActiveTaskForConversation(conversationId);
+  return next;
+}
+
 function appendConsoleChatProgress(frame, textOverride = "") {
   if (!consoleChatMessages) return;
   if (frame?.id && consoleChatProgressEventIds.has(frame.id)) return;
@@ -2576,6 +2611,14 @@ function closeConsoleChatThinkingCard() {
   consoleChatThinkingText = "";
 }
 
+function settleConsoleChatThinkingCard() {
+  flushConsoleChatThinkingDelta();
+  if (!consoleChatThinkingCard) return;
+  consoleChatThinkingCard.open = false;
+  const status = consoleChatThinkingCard.querySelector(".cth-status");
+  if (status) status.textContent = `${consoleChatThinkingText.length} chars`;
+}
+
 function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) {
   const card = consoleChatToolCards.get(id);
   if (!card) {
@@ -2587,7 +2630,7 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
       : "running");
   card.classList.remove("is-running", "is-ok", "is-err");
   card.classList.add(`is-${inferredState}`);
-  setConsoleToolCardCollapsed(card, inferredState === "ok");
+  setConsoleToolCardCollapsed(card, inferredState !== "err");
   bindConsoleToolCardToggle(card);
 
   const stateLabel = inferredState === "running" ? "RUNNING"
@@ -2739,6 +2782,7 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
         appendConsoleChatProgress(frame);
         void refreshWorkspace();
       } else if (frame.event === "text_delta") {
+        settleConsoleChatThinkingCard();
         queueConsoleChatTextDelta(taskId, payload.delta ?? payload.text ?? "");
         consoleChatState.textContent = "Answering...";
       } else if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
@@ -2800,6 +2844,7 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
         }
       } else if (frame.event === "final_composer_started") {
         appendConsoleChatProgress(frame);
+        settleConsoleChatThinkingCard();
         ensureConsoleChatAnswerPlaceholder(taskId);
         consoleChatState.textContent = "Answering...";
       } else if ([
@@ -3546,8 +3591,11 @@ const consoleChatMessageAdapter = {
 async function loadConsoleConversationFromBackend(conversationId) {
   if (!conversationId) return;
   const loadSeq = ++consoleConversationLoadSeq;
+  const summary = findConsoleConversationSummary(conversationId);
+  activateConsoleConversationShell(conversationId, summary);
   chatSidebarLoadingConversationId = conversationId;
   renderChatSidebar();
+  switchTab("chat");
   let detail;
   try {
     detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
@@ -3565,12 +3613,32 @@ async function loadConsoleConversationFromBackend(conversationId) {
     renderChatSidebar();
     return;
   }
+  const pendingNodes = consoleChatMessages
+    ? [...consoleChatMessages.querySelectorAll("[data-client-message-id]")]
+      .map((node) => ({
+        clientId: node.getAttribute("data-client-message-id"),
+        node
+      }))
+      .filter((entry) => entry.clientId)
+    : [];
+  const previousActive = consoleActiveConversation?.conversation_id === detail.conversation.conversation_id
+    ? consoleActiveConversation
+    : null;
   consoleActiveConversation = cacheEnsureBackendFields({
     conversation_id: detail.conversation.conversation_id,
     title: detail.conversation.title,
     project_id: detail.conversation.project_id,
     metadata: detail.conversation.metadata ?? {}
   });
+  if (previousActive?.pendingByClientId instanceof Map) {
+    consoleActiveConversation.pendingByClientId = previousActive.pendingByClientId;
+  }
+  if (typeof previousActive?.lastKnownSeq === "number") {
+    consoleActiveConversation.lastKnownSeq = Math.max(
+      consoleActiveConversation.lastKnownSeq ?? -1,
+      previousActive.lastKnownSeq
+    );
+  }
   consoleConversationUsageById.set(
     detail.conversation.conversation_id,
     aggregateMessageTaskLinkTokenUsage(detail.message_task_links ?? [])
@@ -3589,6 +3657,13 @@ async function loadConsoleConversationFromBackend(conversationId) {
     consoleChatMessages.scrollTop = 0;
   }
   cacheApplyBatch(consoleActiveConversation, detail, consoleChatMessageAdapter);
+  if (consoleChatMessages && pendingNodes.length > 0) {
+    for (const { clientId, node } of pendingNodes) {
+      if (!consoleActiveConversation.pendingByClientId.has(clientId)) continue;
+      consoleChatMessages.appendChild(node);
+    }
+    consoleChatPin.maybeScrollToBottom();
+  }
   renderConsoleChatHeader();
   switchTab("chat");
   syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);

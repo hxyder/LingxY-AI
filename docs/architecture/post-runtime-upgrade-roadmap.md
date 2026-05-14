@@ -124,6 +124,18 @@ chat surface instead of being stranded above the assistant answer. Final-answer
 reviewer findings must be user-facing `Accuracy check:` warnings; raw reviewer
 labels are treated as internal leakage.
 
+PMAT-013 responsiveness/tool-flow follow-up, 2026-05-14: selecting an existing
+conversation must activate the conversation shell immediately so the user can
+send a follow-up while message history loads in the background. If a detail
+response arrives after an optimistic user message, pending message nodes are
+preserved instead of being wiped by the slower history render. Reasoning cards
+collapse as soon as answer composition starts or text begins streaming, and tool
+cards default to a compact one-line state unless an error needs attention.
+Final composer output is guarded against model-written "search/network tool
+unavailable" apologies: such claims must be reconciled against structured tool
+transcript failures and available evidence, with a `final_composer_guarded_claim`
+event when the deterministic transcript-based wording replaces the model text.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

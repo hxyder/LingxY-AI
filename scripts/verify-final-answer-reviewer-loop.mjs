@@ -20,10 +20,13 @@ assert.match(reviewer, /FINAL_REVIEW_TIMEOUT/u, "reviewer loop must enforce time
 assert.match(reviewer, /Accuracy check:/u, "reviewer loop must surface user-facing accuracy checks instead of raw reviewer notes");
 assert.doesNotMatch(reviewer, /Reviewer note:/u, "reviewer loop must not leak raw reviewer-note labels into final answers");
 assert.match(composer, /reviewFinalAnswer/u, "final composer must route candidate answers through the reviewer seam");
+assert.match(composer, /guardFinalNetworkFailureClaim/u, "final composer must guard model-written network/tool unavailable claims against the transcript");
+assert.match(composer, /final_composer_guarded_claim/u, "final composer must emit an event when it replaces an unsupported network failure claim");
 
 assert.match(tests, /stays disabled by default/u, "behavior tests must prove default reviewer loop is disabled");
 assert.match(tests, /user-facing accuracy check instead of leaking reviewer internals/u, "behavior tests must prove no raw reviewer-note leak");
 assert.match(tests, /degrades gracefully on reviewer failure/u, "behavior tests must prove reviewer failure degradation");
+assert.match(tests, /guards unsupported network-unavailable apologies/u, "behavior tests must prove search/tool-unavailable apologies are transcript-guarded");
 
 assert.match(manifest, /node scripts\/verify-final-answer-reviewer-loop\.mjs/u, "fast/full check manifest must include reviewer-loop verifier");
 assert.match(roadmap, /MM-002: Reviewer And Voting Loops/u, "roadmap must keep MM-002 section");
