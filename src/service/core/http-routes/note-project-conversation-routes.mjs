@@ -9,6 +9,9 @@ import {
   hasConversationContextSummary
 } from "../../../shared/conversation-message-context.mjs";
 import {
+  collectMessageFileEntries
+} from "../conversation-message-files.mjs";
+import {
   applyConversationModelOverride,
   normalizeConversationModelOverride
 } from "../../../shared/conversation-model-override.mjs";
@@ -752,9 +755,31 @@ export async function tryHandleNoteProjectConversationRoute({
     const limitParam = parseInt(url.searchParams.get("limit") ?? "50", 10);
     const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(limitParam, 500)) : 50;
     const artifacts = runtime.store.getArtifactsForConversation(conversationId, { limit });
+    const messages = typeof runtime.store.getConversationMessages === "function"
+      ? runtime.store.getConversationMessages(conversationId, { sinceSeq: 0, limit: 500 })
+      : [];
+    const messageIds = messages.map((message) => message.message_id);
+    const links = [];
+    if (typeof runtime.store.getMessageTasks === "function") {
+      for (const id of messageIds) {
+        for (const link of runtime.store.getMessageTasks(id) ?? []) links.push(link);
+      }
+    }
+    const enrichedLinks = enrichConversationMessageTaskLinks(links, runtime.store);
+    const enrichedMessages = backfillConversationMessageContextSummaries(messages, enrichedLinks, runtime.store);
+    const user_files = collectMessageFileEntries(enrichedMessages, {
+      conversationsById: new Map([[conversationId, conv]]),
+      projectId: conv.project_id ?? null,
+      limit
+    });
     sendJson(response, 200, {
       conversation_id: conversationId,
-      artifacts
+      artifacts,
+      user_files,
+      files: [...user_files, ...artifacts.map((artifact) => ({
+        ...artifact,
+        source: artifact.source ?? "generated_artifact"
+      }))]
     });
     return true;
   }

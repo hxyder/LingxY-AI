@@ -141,7 +141,7 @@ for (const required of [
   "reviewer_loop.enabled: true",
   "resolveProviderForModelRole(\"reviewer\"",
   "tool_using.final_reviewer",
-  "Reviewer note:",
+  "Accuracy check:",
   "node scripts/verify-final-answer-reviewer-loop.mjs",
   "node --test tests/behavior/agent-loop-final-composer.test.mjs",
   "PM-001 Marketplace trust model",

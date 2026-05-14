@@ -152,7 +152,11 @@ export function applyFinalAnswerReview(candidateText = "", review = {}, { visibl
   if (!["revise", "reject"].includes(review?.verdict)) return text;
   const note = noteFromReview(review);
   if (!note) return text;
-  return `${text}\n\nReviewer note: ${note}`;
+  return [
+    text,
+    "",
+    `Accuracy check: this answer may need correction before you rely on it. ${note}`
+  ].join("\n");
 }
 
 function withTimeout(promise, timeoutMs, onTimeout) {

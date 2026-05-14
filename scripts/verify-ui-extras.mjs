@@ -183,14 +183,18 @@ assert.ok(/openFile/.test(mainProcessIpc) && /openDirectory/.test(mainProcessIpc
   "project files: desktop picker must allow both local files and folders");
 assert.ok(/<span>Files<\/span>/.test(consoleJs)
     && /Current chat/.test(consoleJs)
+    && /User uploads/.test(consoleJs)
+    && /Project uploads/.test(consoleJs)
     && /Project generated/.test(consoleJs)
     && /Project attachments/.test(consoleJs)
     && /currentProjectArtifacts\(project\.id\)/.test(consoleJs)
+    && /currentProjectMessageFiles\(project\.id\)/.test(consoleJs)
     && /conversation-artifact--current-conversation/.test(consoleJs),
   "project files: chat Files drawer must distinguish current-chat files from all selected-project files");
 assert.ok(/data-chat-project-files-add/.test(consoleJs) && /data-conversation-artifact-open/.test(consoleJs),
   "project files: chat Files drawer must add project files/folders and preview project files inline");
 assert.ok(/conversation-artifact--project-file/.test(sharedCss)
+    && /conversation-artifact--user-file/.test(sharedCss)
     && /conversation-artifact--current-conversation/.test(sharedCss)
     && /conversation-artifacts-manage/.test(sharedCss),
   "project files: chat context file strip must have dedicated styling");
@@ -510,8 +514,11 @@ assert.ok(/consoleChatArtifactsExpanded/.test(consoleJs) && /data-chat-project-f
   "chat artifacts: Files button must expand a conversation/project context panel and allow project file/folder attach");
 assert.ok(/currentProjectFiles\(project\.id/.test(consoleJs) && !/projectFiles\.slice\(0,\s*5\)/.test(consoleJs) && !/files\.slice\(0,\s*8\)/.test(consoleJs),
   "chat artifacts: Files drawer must render all selected project files and all fetched current-chat files without per-section UI truncation");
-assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes) && /getArtifactsForConversation/.test(noteProjectConversationRoutes),
-  "chat artifacts: conversation route must expose getArtifactsForConversation");
+assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes)
+    && /getArtifactsForConversation/.test(noteProjectConversationRoutes)
+    && /collectMessageFileEntries/.test(noteProjectConversationRoutes)
+    && /user_files/.test(noteProjectConversationRoutes),
+  "chat artifacts: conversation route must expose generated artifacts and user-sent files");
 assert.ok(/function\s+refreshConsoleChatArtifacts/.test(consoleJs) && /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/artifacts/.test(consoleJs),
   "chat artifacts: console must fetch the current conversation artifact index");
 assert.ok(/refreshProjectWorkspace\(projectId,\s*\{\s*force:\s*true\s*\}/.test(consoleJs)
@@ -577,8 +584,10 @@ assert.ok(/data-project-file-clear-index/.test(consoleProjectsView) && /removePr
   "projects: attached project file indexes must be clearable without detaching the file");
 assert.ok(/data-project-file-reindex/.test(consoleProjectsView) && /attachProjectFilesViaShell/.test(consoleJs),
   "projects: attached project files must be reindexable through the desktop shell bridge");
-assert.ok(/attachedProjectFilePaths/.test(consoleJs) && /projectArtifacts\.length\s*\+\s*attachedProjectFilePaths\.length/.test(consoleJs),
-  "projects: Files count must include durable attached project files");
+assert.ok(/attachedProjectFilePaths/.test(consoleJs)
+    && /projectMessageFiles/.test(consoleJs)
+    && /projectArtifacts\.length\s*\+\s*projectMessageFiles\.length\s*\+\s*attachedProjectFilePaths\.length/.test(consoleJs),
+  "projects: Files count must include generated files, user uploads, and durable attached project files");
 assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),
   "projects: project artifact list must avoid unnecessary innerHTML churn");
 assert.ok(/updateSecurityState/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateSecurityState/.test(consoleJs),
@@ -1193,7 +1202,9 @@ assert.ok(/preview\/shell-preview-client\.js/.test(consoleHtml)
     && /listDirectory/.test(previewShellClient),
   "console inline preview must load preview clients and expose directory stat/list through the shell bridge");
 assert.ok(/id="consolePreviewBackBtn"/.test(consoleHtml)
+    && /id="consolePreviewParentBtn"/.test(consoleHtml)
     && /inlinePreviewBackStack/.test(consoleJs)
+    && /currentInlinePreviewParentPath/.test(consoleJs)
     && /data-directory-entry-open/.test(consoleJs)
     && /data-directory-entry-reveal/.test(consoleJs)
     && /\.directory-preview-row/.test(sharedCss),

@@ -1108,7 +1108,7 @@ let consoleChatSuppressedTextByTaskId = new Map();
 // conversation hangs together server-side. New chat clears it.
 let consoleActiveConversation = null;
 let consoleChatArtifactsConversationId = null;
-let consoleChatArtifactItems = [];
+let consoleChatArtifactItems = { artifacts: [], user_files: [] };
 const consoleConversationUsageById = new Map();
 let consoleConversationLoadSeq = 0;
 let chatSidebarLoadingConversationId = null;
@@ -1822,7 +1822,6 @@ function appendConsoleChatTextDelta(taskId, delta) {
   if (!taskId || !delta || !consoleChatMessages) return;
   const owner = consoleTaskOwnerConversationId(taskId);
   if (owner && owner !== currentConsoleConversationId()) return;
-  closeConsoleChatThinkingCard();
   const baseText = consoleChatSuppressedTextByTaskId.get(taskId) ?? consoleChatStreamingAnswer?.text ?? "";
   const rawNextText = `${baseText}${String(delta)}`;
   const visibleNextText = sanitizeAssistantVisibleText(rawNextText);
@@ -1861,6 +1860,7 @@ function appendConsoleChatTextDelta(taskId, delta) {
     consoleChatStreamingAnswer.bubble.classList.remove("answer-placeholder");
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, consoleChatStreamingAnswer.text);
   }
+  placeConsoleChatThinkingCardAtBottom();
   consoleChatPin.maybeScrollToBottom();
 }
 
@@ -2146,7 +2146,6 @@ window.__lingxyConsoleSmoke = {
 function ensureConsoleChatAnswerPlaceholder(taskId, label = "正在整理答案…") {
   if (!taskId || !consoleChatMessages) return;
   if (consoleChatStreamingAnswer?.taskId === taskId) return;
-  closeConsoleChatThinkingCard();
   const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true, taskId });
   const bubble = wrapper?.querySelector(".chat-msg-bubble") ?? null;
   if (!wrapper || !bubble) return;
@@ -2158,6 +2157,7 @@ function ensureConsoleChatAnswerPlaceholder(taskId, label = "正在整理答案�
     wrapper,
     bubble
   };
+  placeConsoleChatThinkingCardAtBottom();
   consoleChatPin.maybeScrollToBottom();
 }
 
@@ -2540,7 +2540,15 @@ function appendConsoleChatThinkingDelta(delta) {
   consoleChatThinkingText += String(delta);
   const body = consoleChatThinkingCard.querySelector(".cth-body");
   if (body) body.textContent = consoleChatThinkingText;
+  placeConsoleChatThinkingCardAtBottom();
   consoleChatPin.maybeScrollToBottom();
+}
+
+function placeConsoleChatThinkingCardAtBottom() {
+  if (!consoleChatMessages || !consoleChatThinkingCard) return;
+  if (consoleChatThinkingCard.parentElement === consoleChatMessages) {
+    consoleChatMessages.appendChild(consoleChatThinkingCard);
+  }
 }
 
 function appendConsoleChatProgress(frame, textOverride = "") {
@@ -2560,6 +2568,7 @@ function appendConsoleChatProgress(frame, textOverride = "") {
 function closeConsoleChatThinkingCard() {
   flushConsoleChatThinkingDelta();
   if (!consoleChatThinkingCard) return;
+  placeConsoleChatThinkingCardAtBottom();
   consoleChatThinkingCard.open = false;
   const status = consoleChatThinkingCard.querySelector(".cth-status");
   if (status) status.textContent = `${consoleChatThinkingText.length} chars`;
@@ -3140,12 +3149,23 @@ function dedupeFileEntriesByPath(entries = []) {
   return deduped;
 }
 
-function renderConsoleChatArtifacts(artifacts = []) {
+function normalizeConsoleChatFilePayload(payload = []) {
+  if (Array.isArray(payload)) return { artifacts: payload, userFiles: [] };
+  if (!payload || typeof payload !== "object") return { artifacts: [], userFiles: [] };
+  return {
+    artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : [],
+    userFiles: Array.isArray(payload.user_files)
+      ? payload.user_files
+      : Array.isArray(payload.userFiles) ? payload.userFiles : []
+  };
+}
+
+function renderConsoleChatArtifacts(payload = []) {
   if (!consoleChatArtifacts) return;
-  if (Array.isArray(artifacts)) consoleChatArtifactItems = artifacts;
-  const files = Array.isArray(artifacts)
-    ? artifacts.filter((artifact) => `${artifact?.path ?? ""}`.trim())
-    : [];
+  const normalizedPayload = normalizeConsoleChatFilePayload(payload);
+  consoleChatArtifactItems = normalizedPayload;
+  const files = normalizedPayload.artifacts.filter((artifact) => `${artifact?.path ?? ""}`.trim());
+  const userFiles = normalizedPayload.userFiles.filter((entry) => `${entry?.path ?? ""}`.trim());
   const projectId = getConsoleChatSubmitProjectId();
   const project = projectId && projectId !== DEFAULT_PROJECT_ID
     ? getChatSidebarProject(projectId)
@@ -3158,14 +3178,21 @@ function renderConsoleChatArtifacts(artifacts = []) {
     : [];
   const activeConversationId = consoleActiveConversation?.conversation_id ?? null;
   const currentConversationFileKeys = new Set(files.map((artifact) => artifactPathKey(artifact.path)));
+  const currentUserFileKeys = new Set(userFiles.map((entry) => artifactPathKey(entry.path)));
   const projectGeneratedEntries = project
     ? dedupeFileEntriesByPath([
       ...currentProjectArtifacts(project.id),
       ...files
     ])
     : dedupeFileEntriesByPath(files);
+  const projectUserFileEntries = project
+    ? dedupeFileEntriesByPath([
+      ...currentProjectMessageFiles(project.id),
+      ...userFiles
+    ])
+    : dedupeFileEntriesByPath(userFiles);
   const projectAttachedEntries = dedupeFileEntriesByPath(projectFileEntries);
-  if (projectGeneratedEntries.length === 0 && projectAttachedEntries.length === 0) {
+  if (projectGeneratedEntries.length === 0 && projectUserFileEntries.length === 0 && projectAttachedEntries.length === 0) {
     consoleChatArtifacts.hidden = true;
     setConsoleChatFilesDrawerOpen(false);
     setHtmlIfChanged(consoleChatArtifacts, "");
@@ -3192,6 +3219,33 @@ function renderConsoleChatArtifacts(artifacts = []) {
           <span class="conversation-artifact-meta">
             <span>${kind === "folder" ? "Project folder" : "Project file"}</span>
             <span>${escapeHtml(status)}</span>
+          </span>
+        </button>
+        <button type="button" class="conversation-artifact-action" data-conversation-artifact-reveal="${escapeHtml(filePath)}" aria-label="Reveal ${escapeHtml(label)}" title="Reveal in folder">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
+        </button>
+      </div>
+    `;
+  }).join("");
+  const userFileRows = projectUserFileEntries.map((entry) => {
+    const filePath = `${entry.path ?? ""}`;
+    const label = formatArtifactLabel(filePath);
+    const ext = artifactExtension(filePath);
+    const isCurrentConversation = (activeConversationId && entry.conversation_id === activeConversationId)
+      || currentUserFileKeys.has(artifactPathKey(filePath));
+    const scopeLabel = isCurrentConversation
+      ? "Current chat upload"
+      : (entry.conversation_title ? `Chat upload: ${entry.conversation_title}` : "Project chat upload");
+    const kindLabel = entry.kind === "user_image" ? "Image" : "File";
+    return `
+      <div class="conversation-artifact conversation-artifact--user-file ${isCurrentConversation ? "conversation-artifact--current-conversation" : ""}" title="${escapeHtml(filePath)}">
+        <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
+        <button type="button" class="conversation-artifact-main" data-conversation-artifact-open="${escapeHtml(filePath)}">
+          <span class="conversation-artifact-name">${escapeHtml(label)}</span>
+          <span class="conversation-artifact-meta">
+            <span>${escapeHtml(scopeLabel)}</span>
+            <span>${escapeHtml(kindLabel)}</span>
+            ${entry.created_at ? `<span>${escapeHtml(formatDateTime(entry.created_at))}</span>` : ""}
           </span>
         </button>
         <button type="button" class="conversation-artifact-action" data-conversation-artifact-reveal="${escapeHtml(filePath)}" aria-label="Reveal ${escapeHtml(label)}" title="Reveal in folder">
@@ -3229,10 +3283,11 @@ function renderConsoleChatArtifacts(artifacts = []) {
     `;
   }).join("");
   const rows = [
-    generatedRows ? `<span class="conversation-artifacts-section">${project ? "Project generated" : "Current chat"}</span>${generatedRows}` : "",
+    userFileRows ? `<span class="conversation-artifacts-section">${project ? "Project uploads" : "User uploads"}</span>${userFileRows}` : "",
+    generatedRows ? `<span class="conversation-artifacts-section">${project ? "Project generated" : "Generated files"}</span>${generatedRows}` : "",
     projectRows ? `<span class="conversation-artifacts-section">Project attachments</span>${projectRows}` : ""
   ].filter(Boolean).join("");
-  const total = projectGeneratedEntries.length + projectAttachedEntries.length;
+  const total = projectGeneratedEntries.length + projectUserFileEntries.length + projectAttachedEntries.length;
   setHtmlIfChanged(consoleChatArtifacts, `
     <div class="conversation-artifacts-head">
       <span>Files</span>
@@ -3251,24 +3306,27 @@ function renderConsoleChatArtifacts(artifacts = []) {
 }
 
 async function fetchConsoleConversationArtifacts(conversationId, { limit = 8 } = {}) {
-  if (!conversationId) return [];
+  if (!conversationId) return { artifacts: [], user_files: [] };
   const safeLimit = Math.max(1, Math.min(Number(limit) || 8, 100));
   const data = await fetchJson(`/conversation/${encodeURIComponent(conversationId)}/artifacts?limit=${safeLimit}`);
-  return Array.isArray(data?.artifacts) ? data.artifacts : [];
+  return {
+    artifacts: Array.isArray(data?.artifacts) ? data.artifacts : [],
+    user_files: Array.isArray(data?.user_files) ? data.user_files : []
+  };
 }
 
 async function refreshConsoleChatArtifacts({ force = false } = {}) {
   const conversationId = consoleActiveConversation?.conversation_id ?? null;
   if (!conversationId) {
     consoleChatArtifactsConversationId = null;
-    consoleChatArtifactItems = [];
-    renderConsoleChatArtifacts([]);
+    consoleChatArtifactItems = { artifacts: [], user_files: [] };
+    renderConsoleChatArtifacts(consoleChatArtifactItems);
     return;
   }
   const previousId = consoleChatArtifactsConversationId;
   if (!force && previousId === conversationId) return;
   consoleChatArtifactsConversationId = conversationId;
-  if (previousId !== conversationId) renderConsoleChatArtifacts([]);
+  if (previousId !== conversationId) renderConsoleChatArtifacts({ artifacts: [], user_files: [] });
   try {
     const artifacts = await fetchConsoleConversationArtifacts(conversationId, { limit: 100 });
     if (consoleActiveConversation?.conversation_id !== conversationId) return;
@@ -3276,8 +3334,8 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
     renderConsoleChatArtifacts(artifacts);
   } catch {
     if (consoleActiveConversation?.conversation_id === conversationId) {
-      consoleChatArtifactItems = [];
-      renderConsoleChatArtifacts([]);
+      consoleChatArtifactItems = { artifacts: [], user_files: [] };
+      renderConsoleChatArtifacts(consoleChatArtifactItems);
     }
   }
 }
@@ -3372,7 +3430,7 @@ async function submitConsoleChat() {
     // so the new conversation_id (with auto-derived title from
     // first user command) appears.
     void refreshChatSidebar({ force: true });
-    await refreshWorkspace();
+    void refreshWorkspace({ mode: "background" });
     updateChatModelChip?.();
     consoleChatAttachmentsController.clear();
   } catch (error) {
@@ -3535,7 +3593,7 @@ async function loadConsoleConversationFromBackend(conversationId) {
   switchTab("chat");
   syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);
   if (detail.conversation.project_id) {
-    await refreshProjectWorkspace(detail.conversation.project_id, { force: true });
+    void refreshProjectWorkspace(detail.conversation.project_id, { force: true });
   }
   void refreshConsoleChatArtifacts({ force: true });
   void refreshWorkspace({ mode: "background" }).then(() => {
@@ -3651,7 +3709,7 @@ function setChatSidebarProjectScope(projectId = null) {
   syncChatSidebarProjectScopeStorage();
   renderConsoleChatHeader();
   renderChatSidebarProjectFilter();
-  if (nextId) void refreshProjectWorkspace(nextId);
+  if (nextId) void refreshProjectWorkspace(nextId, { force: true });
   return true;
 }
 
@@ -3669,7 +3727,7 @@ function setChatSidebarMode(mode = "chats") {
   syncChatSidebarProjectScopeStorage();
   renderConsoleChatHeader();
   renderChatSidebarProjectFilter();
-  if (nextProjectId) void refreshProjectWorkspace(nextProjectId);
+  if (nextProjectId) void refreshProjectWorkspace(nextProjectId, { force: true });
   return changed;
 }
 
@@ -8119,6 +8177,19 @@ function currentProjectArtifacts(projectId) {
   return [];
 }
 
+function currentProjectMessageFiles(projectId) {
+  if (projectWorkspaceProjectId === projectId && projectWorkspaceStatus === "ready") {
+    return projectWorkspaceDetail?.message_files ?? [];
+  }
+  if (projectWorkspaceProjectId === projectId
+      && projectWorkspaceStatus === "loading"
+      && Array.isArray(projectWorkspaceDetail?.message_files)
+      && projectWorkspaceDetail.message_files.length > 0) {
+    return projectWorkspaceDetail.message_files;
+  }
+  return projectWorkspaceCache.get(projectId)?.message_files ?? [];
+}
+
 function currentProjectFiles(projectId, fallbackPaths = []) {
   const workspaceFiles = projectWorkspaceProjectId === projectId
     ? projectWorkspaceDetail?.files
@@ -8133,6 +8204,7 @@ function normalizeProjectWorkspacePayload(payload = null) {
     ...payload,
     conversations: Array.isArray(payload.conversations) ? payload.conversations : [],
     files: Array.isArray(payload.files) ? payload.files : [],
+    message_files: Array.isArray(payload.message_files) ? payload.message_files : [],
     artifacts: Array.isArray(payload.artifacts) ? payload.artifacts : [],
     stats: payload.stats && typeof payload.stats === "object" ? payload.stats : {}
   };
@@ -8177,6 +8249,7 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   }
   const conversations = currentProjectConversations(store, selectedProject?.id);
   const projectArtifacts = currentProjectArtifacts(selectedProject?.id);
+  const projectMessageFiles = currentProjectMessageFiles(selectedProject?.id);
   const attachedProjectFilePaths = currentProjectFiles(
     selectedProject?.id,
     Array.isArray(selectedProject?.attachedFilePaths) ? selectedProject.attachedFilePaths : []
@@ -8232,7 +8305,9 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
 
   projectCount.textContent = `${projects.length}`;
   projectConversationCount.textContent = `${conversations.length}`;
-  if (projectArtifactCount) projectArtifactCount.textContent = `${projectArtifacts.length + attachedProjectFilePaths.length}`;
+  if (projectArtifactCount) {
+    projectArtifactCount.textContent = `${projectArtifacts.length + projectMessageFiles.length + attachedProjectFilePaths.length}`;
+  }
   if (projectConversationPreview) projectConversationPreview.textContent = "";
   const projectListConversationCounts = [
     ...(store.conversations ?? []).filter((conversation) => conversation.projectId !== selectedProject?.id),
@@ -8255,12 +8330,17 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
     selectedConversationId: selectedConversation?.id
   });
   if (projectArtifactList) {
-    const artifactLoading = projectWorkspaceStatus === "loading" && selectedProject?.id === projectWorkspaceProjectId && projectArtifacts.length === 0 && attachedProjectFilePaths.length === 0;
+    const artifactLoading = projectWorkspaceStatus === "loading"
+      && selectedProject?.id === projectWorkspaceProjectId
+      && projectArtifacts.length === 0
+      && projectMessageFiles.length === 0
+      && attachedProjectFilePaths.length === 0;
     const artifactHtml = artifactLoading
       ? `<p class="muted" style="font-size:12px;">Loading files...</p>`
       : renderProjectArtifactListHtml({
         artifacts: projectArtifacts,
         attachedFilePaths: attachedProjectFilePaths,
+        messageFiles: projectMessageFiles,
         projectId: selectedProject?.id ?? null,
         labelForPath: formatArtifactLabel
       });
@@ -11422,11 +11502,13 @@ const consolePreviewBody = document.querySelector("#consolePreviewBody");
 const consolePreviewTitle = document.querySelector("#consolePreviewTitle");
 const consolePreviewMeta = document.querySelector("#consolePreviewMeta");
 const consolePreviewBackBtn = document.querySelector("#consolePreviewBackBtn");
+const consolePreviewParentBtn = document.querySelector("#consolePreviewParentBtn");
 const consolePreviewCloseBtn = document.querySelector("#consolePreviewCloseBtn");
 const consolePreviewOpenExternalBtn = document.querySelector("#consolePreviewOpenExternalBtn");
 
 let currentInlinePreviewPath = null;
 let inlinePreviewBackStack = [];
+let currentInlinePreviewParentPath = null;
 
 function fileNameFromPath(filePath) {
   if (!filePath) return "Preview";
@@ -11439,14 +11521,23 @@ function closeInlinePreview() {
   if (consolePreviewPane) consolePreviewPane.hidden = true;
   if (consolePreviewBody) consolePreviewBody.innerHTML = "";
   currentInlinePreviewPath = null;
+  currentInlinePreviewParentPath = null;
   inlinePreviewBackStack = [];
   updateInlinePreviewBackButton();
+  updateInlinePreviewParentButton();
 }
 
 function updateInlinePreviewBackButton() {
   if (!consolePreviewBackBtn) return;
   consolePreviewBackBtn.hidden = inlinePreviewBackStack.length === 0;
   consolePreviewBackBtn.disabled = inlinePreviewBackStack.length === 0;
+}
+
+function updateInlinePreviewParentButton() {
+  if (!consolePreviewParentBtn) return;
+  const hasParent = Boolean(currentInlinePreviewParentPath && currentInlinePreviewParentPath !== currentInlinePreviewPath);
+  consolePreviewParentBtn.hidden = !hasParent;
+  consolePreviewParentBtn.disabled = !hasParent;
 }
 
 function formatFileSize(bytes) {
@@ -11526,7 +11617,9 @@ async function openInlinePreviewInChat({ filePath, mime, fromHistory = false } =
   consolePreviewPane.hidden = false;
   consolePreviewLayout.classList.add("preview-open");
   currentInlinePreviewPath = filePath;
+  currentInlinePreviewParentPath = null;
   updateInlinePreviewBackButton();
+  updateInlinePreviewParentButton();
 
   // Loading placeholder while the registered handler renders.
   consolePreviewBody.innerHTML = `<div class="muted" style="padding:24px;text-align:center;font-size:12px;">Loading preview…  正在加载预览</div>`;
@@ -11535,6 +11628,8 @@ async function openInlinePreviewInChat({ filePath, mime, fromHistory = false } =
     const stat = typeof consoleShellClient?.statPath === "function"
       ? await consoleShellClient.statPath(filePath)
       : null;
+    currentInlinePreviewParentPath = stat?.parentPath && stat.parentPath !== filePath ? stat.parentPath : null;
+    updateInlinePreviewParentButton();
     if (stat?.isDirectory) {
       if (consolePreviewTitle) consolePreviewTitle.textContent = fileNameFromPath(filePath) || "Folder";
       if (consolePreviewMeta) consolePreviewMeta.textContent = filePath;
@@ -11566,6 +11661,11 @@ consolePreviewBackBtn?.addEventListener("click", () => {
   const previous = inlinePreviewBackStack.pop();
   updateInlinePreviewBackButton();
   if (previous) void openInlinePreviewInChat({ filePath: previous, fromHistory: true });
+});
+consolePreviewParentBtn?.addEventListener("click", () => {
+  if (currentInlinePreviewParentPath) {
+    void openInlinePreviewInChat({ filePath: currentInlinePreviewParentPath });
+  }
 });
 
 consolePreviewCloseBtn?.addEventListener("click", () => closeInlinePreview());

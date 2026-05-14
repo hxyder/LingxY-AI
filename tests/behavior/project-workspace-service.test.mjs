@@ -102,6 +102,48 @@ test("project workspace service separates projects, conversations, and files", (
   assert.equal(workspace.stats.file_count, 2);
 });
 
+test("project workspace includes user-sent files separately from generated artifacts", () => {
+  const store = createInMemoryStoreScaffold();
+  const projects = createProjectWorkspaceService({ store });
+  projects.syncProjectStore({
+    currentProjectId: "proj_uploads",
+    projects: [{
+      id: "proj_uploads",
+      name: "Uploads",
+      attachedFilePaths: ["E:\\project\\reference"]
+    }],
+    conversations: []
+  });
+  store.insertConversation({
+    conversation_id: "conv_uploads",
+    project_id: "proj_uploads",
+    title: "Uploaded context"
+  });
+  store.appendMessage({
+    conversation_id: "conv_uploads",
+    role: "user",
+    content: "Use these files",
+    metadata: {
+      context_summary: {
+        source_type: "file_group",
+        file_paths: ["E:\\user\\resume.docx"],
+        image_paths: ["E:\\user\\photo.png"],
+        file_count: 1,
+        image_count: 1
+      }
+    }
+  });
+
+  const workspace = projects.getProjectWorkspace("proj_uploads");
+  assert.deepEqual(workspace.files.map((file) => file.path), ["E:\\project\\reference"]);
+  assert.deepEqual(workspace.message_files.map((file) => file.path).sort(), [
+    "E:\\user\\photo.png",
+    "E:\\user\\resume.docx"
+  ]);
+  assert.equal(workspace.message_files[0].source, "user_attachment");
+  assert.equal(workspace.stats.message_file_count, 2);
+});
+
 test("project workspace store methods round-trip through sqlite", () => {
   const fixture = sqliteFixture();
   try {

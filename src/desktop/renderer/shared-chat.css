@@ -342,6 +342,9 @@
 .conversation-artifact--project-file {
   background: color-mix(in srgb, var(--accent-soft) 35%, var(--panel));
 }
+.conversation-artifact--user-file {
+  background: color-mix(in srgb, var(--info-soft, var(--accent-soft)) 28%, var(--panel));
+}
 .conversation-artifact--current-conversation {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
   background: color-mix(in srgb, var(--accent-soft) 48%, var(--panel));

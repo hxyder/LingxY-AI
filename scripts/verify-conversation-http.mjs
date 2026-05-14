@@ -224,6 +224,20 @@ await it("GET /conversation/{id}/artifacts: returns scoped generated files newes
     path: "E:\\out\\other.pdf",
     created_at: "2026-05-01T10:05:00.000Z"
   });
+  runtime.store.appendMessage({
+    conversation_id: "c_art",
+    role: "user",
+    content: "attached source",
+    metadata: {
+      context_summary: {
+        source_type: "file_group",
+        file_paths: ["E:\\in\\source.xlsx"],
+        image_paths: [],
+        file_count: 1,
+        image_count: 0
+      }
+    }
+  });
   const srv = await startServer(runtime);
   try {
     const r = await fetchJson(`${srv.url}/conversation/c_art/artifacts?limit=10`);
@@ -234,6 +248,8 @@ await it("GET /conversation/{id}/artifacts: returns scoped generated files newes
       "E:\\out\\old.docx"
     ]);
     assert.ok(r.body.artifacts.every((artifact) => artifact.conversation_id === "c_art"));
+    assert.deepEqual(r.body.user_files.map((file) => file.path), ["E:\\in\\source.xlsx"]);
+    assert.equal(r.body.user_files[0].source, "user_attachment");
   } finally { await srv.close(); }
 });
 

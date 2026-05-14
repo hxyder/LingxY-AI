@@ -91,6 +91,7 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const stat = await fs.stat(targetPath);
     return {
       path: targetPath,
+      parentPath: path.dirname(targetPath),
       isDirectory: stat.isDirectory(),
       isFile: stat.isFile(),
       size: stat.size,

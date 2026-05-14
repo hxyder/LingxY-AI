@@ -113,6 +113,17 @@ default, and automatic approval is allowed only after a separate user opt-in.
 Approved memory is scoped by global/project/conversation identifiers and injected
 as typed background context only for matching project or conversation tasks.
 
+PMAT-013 attachment/reviewer follow-up, 2026-05-14: the Files drawer and Project
+files column must distinguish user-sent attachments, generated artifacts, and
+durable project attachments. Project workspaces expose `message_files` collected
+from message `context_summary` records so uploaded files are visible even when a
+conversation has no generated artifact. Opening a file from a folder must keep a
+containing-folder button in the preview header, while the back stack handles
+recent preview navigation. Streaming reasoning cards stay at the bottom of the
+chat surface instead of being stranded above the assistant answer. Final-answer
+reviewer findings must be user-facing `Accuracy check:` warnings; raw reviewer
+labels are treated as internal leakage.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed
@@ -813,7 +824,8 @@ Acceptance:
 - Reviewer cannot silently rewrite outcomes without trace evidence.
 - Reviewer failures degrade gracefully.
 - Reviewer `revise` or `reject` verdicts keep the candidate answer and append a
-  visible `Reviewer note:` instead of replacing user-visible content.
+  user-facing `Accuracy check:` warning instead of leaking raw reviewer notes or
+  silently replacing user-visible content.
 - Reviewer start/completion/skip events expose risk reasons, duration, verdict,
   and whether a visible note was applied.
 

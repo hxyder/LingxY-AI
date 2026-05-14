@@ -39,7 +39,7 @@ export function renderProjectListHtml({
       : (Array.isArray(conversations) ? conversations : [])
       .filter((conversation) => conversation.projectId === project.id).length;
     const fileCount = Number.isFinite(Number(workspace?.stats?.file_count))
-      ? Number(workspace.stats.file_count)
+      ? Number(workspace.stats.file_count) + Number(workspace?.stats?.message_file_count ?? 0)
       : (Array.isArray(project.attachedFilePaths) ? project.attachedFilePaths.length : 0);
     return `
       <button class="history-item project-workspace-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;--project-color:${escapeHtml(project.color ?? defaultColor)};">
@@ -64,7 +64,7 @@ export function renderProjectWorkspaceSummaryHtml({
   const stats = workspace?.stats ?? {};
   const instructions = project?.metadata?.instructions ?? project?.metadata?.projectInstructions ?? "";
   const chatCount = Number(stats.conversation_count ?? 0);
-  const fileCount = Number(stats.file_count ?? 0);
+  const fileCount = Number(stats.file_count ?? 0) + Number(stats.message_file_count ?? 0);
   const generatedCount = Number(stats.artifact_count ?? 0);
   const updated = stats.updated_at ? `Updated ${formatDateTime(stats.updated_at)}` : "Service workspace";
   return `
@@ -118,10 +118,16 @@ export function renderProjectConversationListHtml({
 export function renderProjectArtifactListHtml({
   artifacts = [],
   attachedFilePaths = [],
+  messageFiles = [],
   projectId = null,
   labelForPath = (value) => value
 } = {}) {
   const rows = Array.isArray(artifacts) ? artifacts.filter((artifact) => artifact?.path) : [];
+  const userRows = Array.isArray(messageFiles)
+    ? messageFiles
+      .filter((entry) => typeof entry?.path === "string" && entry.path.trim())
+      .filter((entry, index, all) => all.findIndex((item) => item.path === entry.path) === index)
+    : [];
   const attachedRows = Array.isArray(attachedFilePaths)
     ? attachedFilePaths
       .map((entry) => typeof entry === "string" ? { path: entry, legacyScopeLabel: true } : entry)
@@ -129,7 +135,7 @@ export function renderProjectArtifactListHtml({
       .map((entry) => ({ ...entry, path: entry.path.trim() }))
       .filter((entry, index, all) => all.findIndex((item) => item.path === entry.path) === index)
     : [];
-  if (rows.length === 0 && attachedRows.length === 0) {
+  if (rows.length === 0 && userRows.length === 0 && attachedRows.length === 0) {
     return `<p class="muted" style="font-size:12px;">No files in this project.</p>`;
   }
   const attachedHtml = attachedRows.map((entry) => {
@@ -166,6 +172,30 @@ export function renderProjectArtifactListHtml({
       </div>
     `;
   }).join("");
+  const userHtml = userRows.map((entry) => {
+    const filePath = entry.path;
+    const ext = artifactExtension(filePath);
+    const label = labelForPath(filePath);
+    const conversationTitle = entry.conversation_title || entry.conversation_id || "";
+    const kindLabel = entry.kind === "user_image" ? "Uploaded image" : "Uploaded file";
+    return `
+      <div class="project-artifact-row project-artifact-row--user-file">
+        <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
+        <button class="project-artifact-main" type="button" data-project-artifact-open="${escapeHtml(filePath)}" title="${escapeHtml(filePath)}">
+          <span class="project-artifact-name">${escapeHtml(label)}</span>
+          <span class="project-artifact-meta">
+            <span>${escapeHtml(kindLabel)}${conversationTitle ? ` · ${escapeHtml(conversationTitle)}` : ""}</span>
+            ${entry.created_at ? `<span>${escapeHtml(formatDateTime(entry.created_at))}</span>` : ""}
+          </span>
+        </button>
+        <div class="project-artifact-actions">
+          <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
   const artifactHtml = rows.map((artifact) => {
     const filePath = `${artifact.path ?? ""}`;
     const ext = artifactExtension(filePath);
@@ -192,6 +222,7 @@ export function renderProjectArtifactListHtml({
   }).join("");
   return [
     attachedHtml ? `<div class="project-file-section-label">Project files</div>${attachedHtml}` : "",
+    userHtml ? `<div class="project-file-section-label">User uploads</div>${userHtml}` : "",
     artifactHtml ? `<div class="project-file-section-label">Generated files</div>${artifactHtml}` : ""
   ].join("");
 }

@@ -5,6 +5,9 @@ import {
   buildDefaultProjectStore,
   normalizeProjectStore
 } from "../../../shared/project-store.mjs";
+import {
+  collectMessageFileEntries
+} from "../conversation-message-files.mjs";
 
 export const PROJECT_WORKSPACE_SCHEMA_VERSION = "1.0";
 
@@ -194,7 +197,12 @@ export function createProjectWorkspaceService({ store, configStore = null } = {}
     }, { withUpdatedAt: false });
   }
 
-  function getProjectWorkspace(projectId, { conversationLimit = 100, fileLimit = 500, artifactLimit = 100 } = {}) {
+  function getProjectWorkspace(projectId, {
+    conversationLimit = 100,
+    fileLimit = 500,
+    artifactLimit = 100,
+    messageFileLimit = 500
+  } = {}) {
     if (!hasStoreMethods()) return null;
     ensureDefaultProject();
     const id = normalizeProjectId(projectId || DEFAULT_PROJECT_ID);
@@ -208,16 +216,35 @@ export function createProjectWorkspaceService({ store, configStore = null } = {}
     const artifacts = typeof store?.listProjectArtifacts === "function"
       ? store.listProjectArtifacts({ projectId: id, limit: artifactLimit })
       : [];
+    const conversationsById = new Map(conversations.map((conversation) => [conversation.conversation_id, conversation]));
+    const messageFiles = [];
+    if (typeof store?.getConversationMessages === "function") {
+      for (const conversation of conversations) {
+        const remaining = Math.max(0, messageFileLimit - messageFiles.length);
+        if (remaining <= 0) break;
+        const messages = store.getConversationMessages(conversation.conversation_id, {
+          sinceSeq: 0,
+          limit: 500
+        });
+        messageFiles.push(...collectMessageFileEntries(messages, {
+          conversationsById,
+          projectId: id,
+          limit: remaining
+        }));
+      }
+    }
     return {
       schema_version: PROJECT_WORKSPACE_SCHEMA_VERSION,
       project,
       project_id: id,
       conversations,
       files,
+      message_files: messageFiles,
       artifacts,
       stats: {
         conversation_count: conversations.length,
         file_count: files.length,
+        message_file_count: messageFiles.length,
         artifact_count: artifacts.length,
         updated_at: nowIso()
       }

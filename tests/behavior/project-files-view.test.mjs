@@ -45,6 +45,29 @@ test("project files view treats attached paths as openable local files", () => {
   assert.doesNotMatch(html, /Generated files/);
 });
 
+test("project files view renders user uploads separately from generated artifacts", () => {
+  const html = renderProjectArtifactListHtml({
+    messageFiles: [{
+      path: "E:\\uploads\\resume.docx",
+      kind: "user_file",
+      conversation_title: "Resume review",
+      created_at: "2026-05-14T12:00:00.000Z"
+    }],
+    artifacts: [{
+      path: "E:\\outputs\\resume-analysis.xlsx",
+      status: "success",
+      conversation_title: "Resume review"
+    }],
+    labelForPath: (path) => path.split("\\").pop()
+  });
+
+  assert.match(html, /User uploads/);
+  assert.match(html, /Uploaded file/);
+  assert.match(html, /resume\.docx/);
+  assert.match(html, /Generated files/);
+  assert.match(html, /resume-analysis\.xlsx/);
+});
+
 test("project workspace summary renders project-owned chats files and generated counts", () => {
   const html = renderProjectWorkspaceSummaryHtml({
     project: {

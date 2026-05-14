@@ -21,6 +21,7 @@ const behavior = readFileSync("tests/behavior/project-workspace-service.test.mjs
 
 assert.match(service, /createProjectWorkspaceService/u, "service owner must exist");
 assert.match(service, /getProjectWorkspace/u, "service must expose project workspace summaries");
+assert.match(service, /collectMessageFileEntries/u, "service must include user-sent message files in project workspace summaries");
 assert.match(service, /syncProjectStore/u, "service must migrate compatible project store inputs");
 assert.match(schema, /CREATE TABLE IF NOT EXISTS projects/u, "sqlite schema must own projects");
 assert.match(schema, /CREATE TABLE IF NOT EXISTS project_files/u, "sqlite schema must own project files");
@@ -71,6 +72,7 @@ const workspace = projects.getProjectWorkspace("proj_verify");
 assert.equal(workspace.project_id, "proj_verify");
 assert.equal(workspace.files.length, 1);
 assert.equal(workspace.conversations.length, 1);
+assert.ok(Array.isArray(workspace.message_files), "workspace must expose message_files");
 
 const command = "node scripts/verify-project-workspace-service.mjs";
 assert.ok(CHECK_COMMANDS.includes(command), "check manifest must include project workspace verifier");

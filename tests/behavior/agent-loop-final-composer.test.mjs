@@ -182,7 +182,7 @@ test("agent final reviewer stays disabled by default even for high-risk answers"
   assert.equal(events.some((event) => event.event_type === "final_reviewer_started"), false);
 });
 
-test("agent final reviewer appends visible trace note instead of silently rewriting", async () => {
+test("agent final reviewer appends user-facing accuracy check instead of leaking reviewer internals", async () => {
   const events = [];
   const text = await composeFinalAnswer({
     task: {
@@ -215,7 +215,8 @@ test("agent final reviewer appends visible trace note instead of silently rewrit
   });
 
   assert.match(text, /^The launch is delayed\./);
-  assert.match(text, /Reviewer note:/);
+  assert.doesNotMatch(text, /Reviewer note:/);
+  assert.match(text, /Accuracy check:/);
   assert.match(text, /source date/);
   const completed = events.find((event) => event.event_type === "final_reviewer_completed");
   assert.equal(completed?.payload?.status, "completed");
