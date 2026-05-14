@@ -468,11 +468,13 @@ assert.ok(/revealEvidenceSource/.test(overlayJs) && /\.cite-chip\[data-source-id
   "citations: overlay must reveal evidence rows when citation chips are clicked");
 assert.ok(/cite-source-row--flash/.test(sharedCss) && /cursor:\s*pointer/.test(sharedCss),
   "citations: citation chips and revealed source rows must have interactive styling");
-assert.ok(/id="chatSidebarScopeSelect"/.test(consoleHtml) && /独立会话/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
-  "chat projects: sidebar must expose the active ordinary/project conversation domain as a compact selector");
+assert.ok(/id="chatSidebarChatsTabBtn"/.test(consoleHtml) && /id="chatSidebarProjectsTabBtn"/.test(consoleHtml)
+    && /id="chatSidebarScopeSelect"/.test(consoleHtml) && /选择项目/.test(consoleHtml)
+    && /chat-sidebar-mode/.test(sharedCss) && /chat-sidebar-scope/.test(sharedCss),
+  "chat projects: sidebar must expose ordinary conversations and projects as distinct tabs with a project selector");
 assert.ok(!/All conversations/.test(consoleHtml) && !/Personal chats/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml) && !/data-tab="projects"/.test(consoleHtml),
   "chat projects: UI must not expose a mixed conversation scope, top-level Files rail entry, or top-level Projects rail entry");
-assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
+assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /CHAT_SIDEBAR_MODE_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
   "chat projects: console must persist chat sidebar project scope");
 assert.ok(/function\s+filterConversationsByChatScope/.test(consoleJs) && /id\s*===\s*DEFAULT_PROJECT_ID/.test(consoleJs),
   "chat projects: ordinary Chat sidebar must include legacy default-project conversations while filtering out real projects");

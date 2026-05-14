@@ -129,10 +129,13 @@ await it("console.js: project-scoped chat submits project_id without pseudo-hist
 
 await it("console.js: chat sidebar fetch plumbs projectId without polluting resume history", () => {
   assert.match(consoleHtml, /id="chatSidebarScopeSelect"/);
-  assert.match(consoleHtml, /独立会话/);
+  assert.match(consoleHtml, /id="chatSidebarChatsTabBtn"/);
+  assert.match(consoleHtml, /id="chatSidebarProjectsTabBtn"/);
+  assert.match(consoleHtml, /选择项目/);
   assert.doesNotMatch(consoleHtml, /All conversations/);
   assert.doesNotMatch(consoleHtml, /Personal chats/);
   assert.match(consoleJs, /let\s+chatSidebarProjectId/);
+  assert.match(consoleJs, /let\s+chatSidebarMode/);
   assert.match(consoleJs, /filterConversationsByChatScope/);
   assert.match(consoleJs, /id\s*===\s*DEFAULT_PROJECT_ID/);
   assert.match(consoleJs, /fetchConversationsList\(\{\s*limit\s*=\s*100,\s*archived\s*=\s*["']false["'],\s*projectId\s*=\s*null/);

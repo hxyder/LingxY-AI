@@ -69,6 +69,17 @@ gaps.
 | PMAT-012 Conversation files and split conversation IA | complete | Retire Files as a top-level workspace and make files/artifacts assets of the active conversation or selected project. Ordinary conversations and project conversations must be separate browsing domains, not one mixed "All conversations" list. Generated artifacts clicked in Console open the inline preview pane first, with external open/reveal as explicit secondary actions. Projects accept both individual files and folders, preserve attachment kind metadata, recursively index folders under a bounded budget, and make those indexed files available to project chats. | Follow Open WebUI-style scoped project/folder workspace and knowledge attachment patterns: project selection makes a workspace active, project files become reusable context, and normal chats stay separate. Verifiers now assert no visible `data-tab="files"` rail entry returns, Chat has a context-files entry, independent Chat filters out real project conversations while preserving legacy default-project conversations, the project picker allows files/folders, folder attachments render as folders, and artifact open handlers call the inline preview path. |
 | PMAT-013 Console visual IA polish | active | Apply a LingxY-owned, Apple-inspired workbench layout instead of copying any one chat product: left global rail, compact conversation/workspace selector, main chat/work surface, and collapsible context files/details. Project is a Chat scope, not a separate duplicate chat UI; files are opened from the active conversation/project context. | First pass changes the Chat sidebar scope from the old personal/project text label to a neutral independent/project selector, removes the visible Projects rail entry, makes Files a collapsible context panel with project file/folder attach, distinguishes current-chat files from all selected-project files, and retunes the default palette to a quiet white/gray/system-blue treatment with lighter borders and less visual noise. Continue tab-by-tab polish for Tasks, Schedules, Inbox, Notes, Connectors, Settings, and Labs using the same pattern: fewer dashboard cards, clearer empty/error/loading states, keyboard/a11y smoke, and targeted verifiers before broad UI wiring. |
 
+PMAT-013 update, 2026-05-13: Console Chat now uses separate in-sidebar
+`会话` and `项目` tabs instead of a single ambiguous personal/project dropdown.
+The Project selector appears only inside the Project tab, and Chat's Files drawer
+remains the place to preview current-chat generated files and selected-project
+files/folders. Settings polish continues the token-only cost policy: the visible
+Budget panel is now Token Usage, the summary strip opens it directly, and the UI
+does not show monthly/per-task dollar amounts. Skills GitHub install is placed at
+the top of Skills Registries so adding user skills is the primary path, while
+User Memory shows an explicit enabled/disabled state instead of relying on a bare
+checkbox.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

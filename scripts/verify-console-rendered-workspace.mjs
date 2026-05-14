@@ -23,8 +23,9 @@ assert.equal(consoleHtml.includes('id="approvalList"'), true);
 assert.equal(consoleHtml.includes('id="templateList"'), true);
 assert.equal(consoleHtml.includes('id="templateImportInput"'), true);
 assert.equal(consoleHtml.includes("Import JSON"), true);
-assert.equal(consoleHtml.includes('id="monthlyBudgetInput"'), true);
-assert.equal(consoleHtml.includes("Budget"), true);
+assert.equal(consoleHtml.includes('id="budgetSummary"'), true);
+assert.equal(consoleHtml.includes("Token Usage"), true);
+assert.equal(consoleHtml.includes('id="monthlyBudgetInput"'), false);
 assert.equal(consoleHtml.includes('id="auditList"'), true);
 // UCA-121: "History" tab retired. "History" may still appear in
 // cheatsheet label for task timeline; verify is intentionally removed.

@@ -585,6 +585,35 @@
   flex-direction: column;
   gap: 8px;
 }
+.chat-sidebar-mode {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.chat-sidebar-mode button {
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.chat-sidebar-mode button:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--panel) 72%, transparent);
+}
+.chat-sidebar-mode button.active {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 1px 2px color-mix(in srgb, #000 8%, transparent);
+}
 .chat-sidebar-scope {
   display: grid;
   grid-template-columns: 1fr;

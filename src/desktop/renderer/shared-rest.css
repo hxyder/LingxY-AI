@@ -1749,6 +1749,79 @@
   letter-spacing: 0;
   color: var(--ink);
 }
+.budget-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+.usage-summary-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 92px;
+}
+.model-role-surface {
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.model-role-surface-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.model-role-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.model-role-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.2fr) minmax(220px, 1.5fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.model-role-row-main,
+.model-role-row-meta {
+  min-width: 0;
+}
+.model-role-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  font-size: 11px;
+}
+.model-role-row-actions {
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+.stat-card[data-open-token-usage],
+.stat-idle-metric--button {
+  cursor: pointer;
+}
+.stat-idle-metric--button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+}
+@media (max-width: 900px) {
+  .model-role-row {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+  .model-role-row-actions {
+    justify-content: flex-start;
+  }
+}
 
 /* row / stack helpers */
 .stack { display: flex; flex-direction: column; gap: 12px; }

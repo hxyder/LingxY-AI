@@ -211,11 +211,15 @@ function check(label, condition) {
     !/formatMoney\(spend\)\}\}\s*this month/.test(consoleJsSource));
   check("idle line: 'tokens this month' phrasing present",
     /tokens this month/.test(consoleJsSource));
-  // renderBudget no longer has a "This Month" tile.
+  // renderBudget no longer has a "This Month" tile or visible USD cap tiles.
   check("budget panel: 'This Month' tile dropped",
     !/\["This Month",\s*formatMoney\(b\.spent\?\.this_month_usd/.test(consoleJsSource));
-  check("budget panel: 'Tokens (this month)' tile present",
-    /\["Tokens \(this month\)"/.test(consoleJsSource));
+  check("budget panel: 'Tokens this month' tile present",
+    /label:\s*"Tokens this month"/.test(consoleJsSource));
+  check("budget panel: visible money limit tiles dropped",
+    !/label:\s*"Monthly Limit"/.test(consoleJsSource) && !/label:\s*"Per Task Limit"/.test(consoleJsSource));
+  check("budget panel: token usage opens from stat strip",
+    /data-open-token-usage/.test(consoleJsSource));
 }
 
 console.log(`\n${passed} pass / ${failed} fail`);

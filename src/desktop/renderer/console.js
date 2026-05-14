@@ -225,6 +225,8 @@ const userMemoryProjectFilter = document.querySelector("#userMemoryProjectFilter
 const userMemoryConversationFilter = document.querySelector("#userMemoryConversationFilter");
 const userMemorySaveBtn = document.querySelector("#userMemorySaveBtn");
 const userMemoryState = document.querySelector("#userMemoryState");
+const userMemoryEnabledPill = document.querySelector("#userMemoryEnabledPill");
+const userMemorySwitchHint = document.querySelector("#userMemorySwitchHint");
 const userMemoryApprovedState = document.querySelector("#userMemoryApprovedState");
 const userMemoryApprovedList = document.querySelector("#userMemoryApprovedList");
 const userMemoryProposalState = document.querySelector("#userMemoryProposalState");
@@ -3476,12 +3478,21 @@ function clearConsoleActiveConversation() {
 let chatSidebarSearchTerm = "";
 let chatSidebarSearchDebounce = null;
 const CHAT_SIDEBAR_PROJECT_KEY = "lingxy.chatSidebar.projectId";
+const CHAT_SIDEBAR_MODE_KEY = "lingxy.chatSidebar.mode";
 let chatSidebarProjectId = (() => {
   try {
     const saved = localStorage.getItem(CHAT_SIDEBAR_PROJECT_KEY);
     return saved ? saved : null;
   } catch {
     return null;
+  }
+})();
+let chatSidebarMode = (() => {
+  try {
+    const saved = localStorage.getItem(CHAT_SIDEBAR_MODE_KEY);
+    return saved === "projects" || chatSidebarProjectId ? "projects" : "chats";
+  } catch {
+    return chatSidebarProjectId ? "projects" : "chats";
   }
 })();
 let chatSidebarItems = [];
@@ -3494,13 +3505,30 @@ function syncChatSidebarProjectScopeStorage() {
   try {
     if (chatSidebarProjectId) localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, chatSidebarProjectId);
     else localStorage.removeItem(CHAT_SIDEBAR_PROJECT_KEY);
+    localStorage.setItem(CHAT_SIDEBAR_MODE_KEY, chatSidebarMode);
   } catch { /* sandbox */ }
+}
+
+function getChatSidebarProjects() {
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  return (Array.isArray(store.projects) ? store.projects : [])
+    .filter((project) => project?.id && project.id !== DEFAULT_PROJECT_ID);
+}
+
+function firstChatSidebarProjectId() {
+  return getChatSidebarProjects()[0]?.id ?? null;
+}
+
+function getChatSidebarConversationProjectId() {
+  return chatSidebarMode === "projects" ? chatSidebarProjectId : null;
 }
 
 function setChatSidebarProjectScope(projectId = null) {
   const rawId = typeof projectId === "string" && projectId.trim() ? projectId.trim() : null;
   const nextId = rawId === DEFAULT_PROJECT_ID ? null : rawId;
-  if (chatSidebarProjectId === nextId) return false;
+  const previousMode = chatSidebarMode;
+  chatSidebarMode = nextId ? "projects" : "chats";
+  if (chatSidebarProjectId === nextId && previousMode === chatSidebarMode) return false;
   chatSidebarProjectId = nextId;
   chatSidebarCacheLoaded = false;
   chatSidebarCacheKey = "";
@@ -3509,6 +3537,24 @@ function setChatSidebarProjectScope(projectId = null) {
   renderChatSidebarProjectFilter();
   if (nextId) void refreshProjectWorkspace(nextId);
   return true;
+}
+
+function setChatSidebarMode(mode = "chats") {
+  const nextMode = mode === "projects" ? "projects" : "chats";
+  if (nextMode === "chats") {
+    return setChatSidebarProjectScope(null);
+  }
+  const nextProjectId = chatSidebarProjectId ?? firstChatSidebarProjectId();
+  const changed = chatSidebarMode !== "projects" || chatSidebarProjectId !== nextProjectId;
+  chatSidebarMode = "projects";
+  chatSidebarProjectId = nextProjectId;
+  chatSidebarCacheLoaded = false;
+  chatSidebarCacheKey = "";
+  syncChatSidebarProjectScopeStorage();
+  renderConsoleChatHeader();
+  renderChatSidebarProjectFilter();
+  if (nextProjectId) void refreshProjectWorkspace(nextProjectId);
+  return changed;
 }
 
 function conversationProjectId(conversation = {}) {
@@ -3550,22 +3596,36 @@ async function searchConversationsList({
 
 function renderChatSidebarProjectFilter() {
   const select = document.querySelector("#chatSidebarScopeSelect");
-  if (!select) return;
-  const store = state.projectStore ?? loadConsoleProjectStore();
-  const projects = (Array.isArray(store.projects) ? store.projects : [])
-    .filter((project) => project?.id && project.id !== DEFAULT_PROJECT_ID);
+  const scopeWrap = document.querySelector("#chatSidebarProjectSelectWrap");
+  const chatsTab = document.querySelector("#chatSidebarChatsTabBtn");
+  const projectsTab = document.querySelector("#chatSidebarProjectsTabBtn");
+  const projects = getChatSidebarProjects();
   if (chatSidebarProjectId && !projects.some((project) => project.id === chatSidebarProjectId)) {
-    chatSidebarProjectId = null;
+    chatSidebarProjectId = chatSidebarMode === "projects" ? projects[0]?.id ?? null : null;
     chatSidebarCacheLoaded = false;
     chatSidebarCacheKey = "";
     syncChatSidebarProjectScopeStorage();
   }
+  if (chatSidebarMode === "projects" && !chatSidebarProjectId && projects.length > 0) {
+    chatSidebarProjectId = projects[0].id;
+    chatSidebarCacheLoaded = false;
+    chatSidebarCacheKey = "";
+    syncChatSidebarProjectScopeStorage();
+  }
+  const isProjectsMode = chatSidebarMode === "projects";
+  for (const [btn, active] of [[chatsTab, !isProjectsMode], [projectsTab, isProjectsMode]]) {
+    if (!btn) continue;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  }
+  if (scopeWrap) scopeWrap.hidden = !isProjectsMode;
+  if (!select) return;
   const options = [
-    `<option value="">独立会话</option>`,
+    projects.length === 0 ? `<option value="">暂无项目</option>` : `<option value="">选择项目</option>`,
     ...projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name ?? project.id)}</option>`)
   ].join("");
   if (select.innerHTML !== options) select.innerHTML = options;
-  const nextValue = chatSidebarProjectId ?? "";
+  const nextValue = isProjectsMode ? chatSidebarProjectId ?? "" : "";
   if (select.value !== nextValue) select.value = nextValue;
 }
 
@@ -3573,10 +3633,17 @@ async function ensureConversationsCache({
   force = false,
   limit = 100,
   archived = "false",
-  projectId = chatSidebarProjectId,
+  projectId = getChatSidebarConversationProjectId(),
   query = ""
 } = {}) {
   const searchQuery = String(query ?? "").trim();
+  if (chatSidebarMode === "projects" && !projectId) {
+    chatSidebarItems = [];
+    chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId: "__none__" });
+    chatSidebarCacheLoaded = true;
+    chatSidebarShowingServerSearch = false;
+    return chatSidebarItems;
+  }
   if (searchQuery) {
     try {
       const items = await searchConversationsList({
@@ -3623,11 +3690,12 @@ function renderChatSidebar() {
   renderChatSidebarProjectFilter();
   const items = chatSidebarItems;
   const activeId = consoleActiveConversation?.conversation_id ?? null;
+  const projectId = getChatSidebarConversationProjectId();
   listEl.innerHTML = renderChatSidebarListHtml({
     items,
     searchTerm: chatSidebarSearchTerm,
     activeConversationId: activeId,
-    projectId: chatSidebarProjectId,
+    projectId: chatSidebarMode === "projects" ? (projectId ?? "__projects__") : null,
     searchAlreadyApplied: chatSidebarShowingServerSearch
   });
   for (const btn of listEl.querySelectorAll("[data-chat-sidebar-id]")) {
@@ -3641,13 +3709,15 @@ function renderChatSidebar() {
 
 async function refreshChatSidebar({ force = false } = {}) {
   renderChatSidebarProjectFilter();
-  const items = await ensureConversationsCache({ force, query: chatSidebarSearchTerm });
+  const projectId = getChatSidebarConversationProjectId();
+  const items = await ensureConversationsCache({ force, query: chatSidebarSearchTerm, projectId });
   const activeId = consoleActiveConversation?.conversation_id ?? null;
   if (shouldRenderWorkspaceSlice("chat.sidebar", {
     items,
     searchTerm: chatSidebarSearchTerm,
     activeConversationId: activeId,
-    projectId: chatSidebarProjectId
+    projectId,
+    mode: chatSidebarMode
   })) {
     renderChatSidebar();
   }
@@ -3856,6 +3926,18 @@ function formatTokensCompact(n) {
   return `${(v / 1_000_000).toFixed(v < 10_000_000 ? 1 : 0)}M`;
 }
 
+function bindTokenUsageShortcut() {
+  for (const el of summaryGrid?.querySelectorAll?.("[data-open-token-usage]") ?? []) {
+    el.addEventListener("click", () => navigateToSettingsPanel("settings-budget"));
+    el.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        navigateToSettingsPanel("settings-budget");
+      }
+    });
+  }
+}
+
 function renderSummary() {
   const tasks = state.workspace.tasks ?? [];
   const s = computeSummary(tasks, state.workspace.budget);
@@ -3893,9 +3975,10 @@ function renderSummary() {
         <span class="stat-idle-sep" aria-hidden="true"></span>
         <span class="stat-idle-metric"><strong>${escapeHtml(String(s.todaySuccess))}</strong> succeeded today</span>
         <span class="stat-idle-sep" aria-hidden="true"></span>
-        <span class="stat-idle-metric stat-idle-metric--muted">${escapeHtml(formatTokensCompact(monthlyTokens))} tokens this month</span>
+        <button class="stat-idle-metric stat-idle-metric--button stat-idle-metric--muted" type="button" data-open-token-usage>${escapeHtml(formatTokensCompact(monthlyTokens))} tokens this month</button>
       </div>
     `;
+    bindTokenUsageShortcut();
     return;
   }
   summaryGrid.classList.remove("stat-strip--idle");
@@ -3903,16 +3986,17 @@ function renderSummary() {
     { label: "Running", value: running, sub: "Active right now" },
     { label: "Queued", value: queued, sub: "Waiting for a worker" },
     { label: "Today", value: s.todaySuccess, sub: "Succeeded today", spark: buildTodaySparkline(tasks) },
-    { label: "Tokens", value: formatTokensCompact(monthlyTokens), sub: "This month" }
+    { label: "Tokens", value: formatTokensCompact(monthlyTokens), sub: "This month", action: "token_usage" }
   ];
   summaryGrid.innerHTML = cards.map((c) => `
-    <div class="stat-card">
+    <div class="stat-card" ${c.action === "token_usage" ? "role=\"button\" tabindex=\"0\" data-open-token-usage title=\"Open token usage\"" : ""}>
       <div class="stat-card-label">${escapeHtml(c.label)}</div>
       <div class="stat-card-value">${escapeHtml(String(c.value))}</div>
       <div class="stat-card-sub">${escapeHtml(c.sub)}</div>
       ${c.spark ?? ""}
     </div>
   `).join("");
+  bindTokenUsageShortcut();
 }
 
 function renderOnboarding() {
@@ -4236,13 +4320,26 @@ function renderGovernedMemoryList(profile = {}) {
 
 function renderUserMemorySettings() {
   const profile = state.workspace.userMemory ?? {};
-  if (userMemoryEnabled) userMemoryEnabled.checked = profile.enabled !== false;
+  const enabled = profile.enabled !== false;
+  if (userMemoryEnabled) userMemoryEnabled.checked = enabled;
   if (userMemoryPreferences) userMemoryPreferences.value = memoryItemsToLines(profile.preferences);
   if (userMemoryProjectNotes) userMemoryProjectNotes.value = projectMemoryItemsToLines(profile.projectMemories);
+  if (userMemoryEnabledPill) {
+    userMemoryEnabledPill.textContent = enabled ? "enabled" : "disabled";
+    userMemoryEnabledPill.className = `chip ${enabled ? "ready" : "muted"}`;
+    userMemoryEnabledPill.title = enabled
+      ? "Typed memory is available to the ContextCompiler when saved entries exist."
+      : "Typed memory injection is disabled.";
+  }
+  if (userMemorySwitchHint) {
+    userMemorySwitchHint.textContent = enabled
+      ? "Enabled. Saved preferences and approved governed memories can be injected as typed background context."
+      : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
+  }
   if (userMemoryState) {
     const prefCount = Array.isArray(profile.preferences) ? profile.preferences.length : 0;
     const projectCount = Array.isArray(profile.projectMemories) ? profile.projectMemories.length : 0;
-    userMemoryState.textContent = `${prefCount} preference${prefCount === 1 ? "" : "s"} · ${projectCount} project note${projectCount === 1 ? "" : "s"}`;
+    userMemoryState.textContent = `${prefCount} preferences · ${projectCount} project notes`;
   }
   renderGovernedMemoryList(profile);
 }
@@ -5346,15 +5443,17 @@ function renderModelRoleManagementSurface() {
   const counts = surface?.counts ?? modelRoles.counts ?? {};
 
   el.innerHTML = `
-    <div style="padding:12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;">
+    <div class="model-role-surface">
+      <div class="model-role-surface-head">
         <div>
           <strong style="font-size:13px;">Model Roles</strong>
-          <div class="muted" style="font-size:11px;margin-top:2px;">Planner, executor, reviewer, and fast model lanes with health, fallback, and usage evidence.</div>
+          <div class="muted" style="font-size:11px;margin-top:2px;">${featureFlag.enabled
+            ? "Automatic role routing is on. Each task lane resolves the provider/model below before model calls."
+            : "Automatic role routing is off. The default chat provider handles calls until this gate is enabled."}</div>
         </div>
         <span class="chip ${featureFlag.enabled ? "ready" : "muted"}" title="${escapeHtml(flagDetail)}">${escapeHtml(flagLabel)}</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;">
+      <div class="model-role-list" role="list">
         ${roles.map((roleEntry) => {
           const route = roleEntry.route ?? {};
           const provider = roleEntry.provider ?? {};
@@ -5366,15 +5465,17 @@ function renderModelRoleManagementSurface() {
           const status = roleEntry.status ?? "unknown";
           const testAction = (roleEntry.actions ?? []).find((action) => action.type === "live_provider_acceptance");
           return `
-            <div style="padding:10px;border-radius:10px;background:var(--surface-strong);border:1px solid var(--line);min-width:0;">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+            <div class="model-role-row" role="listitem">
+              <div class="model-role-row-main">
                 <strong style="font-size:13px;">${escapeHtml(roleEntry.label ?? roleEntry.role)}</strong>
-                <span class="chip ${modelRoleChipClass(status)}">${escapeHtml(status)}</span>
+                <div class="muted" style="font-size:11px;margin-top:3px;overflow-wrap:anywhere;">${escapeHtml(providerLabel)} · ${escapeHtml(modelLabel)}</div>
               </div>
-              <div class="muted" style="font-size:11px;margin-top:5px;overflow-wrap:anywhere;">${escapeHtml(providerLabel)} · ${escapeHtml(modelLabel)}</div>
-              <div class="muted" style="font-size:11px;margin-top:3px;">route: ${escapeHtml(route.taskType ?? "auto")} · ${escapeHtml(sourceLabel)}</div>
-              <div class="muted" style="font-size:11px;margin-top:3px;">tokens: ${escapeHtml(usage.usageEvent ?? "llm_usage")} · ${escapeHtml(usage.measurementKey ?? `model_role.${roleEntry.role}`)}</div>
-              <div class="toolbar" style="margin-top:8px;">
+              <div class="model-role-row-meta">
+                <span class="chip ${modelRoleChipClass(status)}">${escapeHtml(status)}</span>
+                <span class="muted">route: ${escapeHtml(route.taskType ?? "auto")} · ${escapeHtml(sourceLabel)}</span>
+                <span class="muted">tokens: ${escapeHtml(usage.usageEvent ?? "llm_usage")}</span>
+              </div>
+              <div class="toolbar model-role-row-actions">
                 <button class="btn btn-sm btn-ghost" type="button" data-model-role-action="open_routing" data-model-role="${escapeHtml(roleEntry.role)}">Route</button>
                 ${testAction ? `<button class="btn btn-sm btn-ghost" type="button" data-model-role-action="test" data-model-role="${escapeHtml(roleEntry.role)}" ${testAction.available === false ? "disabled" : ""}>Test</button>` : ""}
               </div>
@@ -7631,25 +7732,38 @@ function renderDagExecutions() {
 
 function renderBudget() {
   const b = state.workspace.budget ?? { limits: {}, spent: {} };
-  // C17: tokens are the primary usage signal (R: "cost 不准 → 改 token").
-  // Tokens used this month sit at the top of the panel; USD limits
-  // remain because the user explicitly sets them as a cap, but
-  // monetary `this_month_usd` is dropped — it's the inaccurate
-  // figure the user complained about.
+  if (!budgetSummary) return;
+  // C17/PMAT: tokens are the primary usage signal. The runtime may still
+  // keep legacy monetary caps internally, but the user-facing Console shows
+  // token movement only unless provider-owned cache-hit fields exist.
   const tokensIn = Number(b.spent?.this_month_tokens_in ?? 0);
   const tokensOut = Number(b.spent?.this_month_tokens_out ?? 0);
-  const tokensTotal = tokensIn + tokensOut;
-  const formatTokens = (n) => Number(n).toLocaleString("en-US");
+  const cacheHit = Number(b.spent?.cache_hit_tokens ?? b.spent?.prompt_cache_hit_tokens ?? 0);
+  const cacheMiss = Number(b.spent?.cache_miss_tokens ?? b.spent?.prompt_cache_miss_tokens ?? 0);
+  const safeToken = (value) => Number.isFinite(value) && value > 0 ? value : 0;
+  const totalIn = safeToken(tokensIn);
+  const totalOut = safeToken(tokensOut);
+  const total = totalIn + totalOut;
+  const hit = safeToken(cacheHit);
+  const miss = safeToken(cacheMiss);
+  const formatTokens = (n) => safeToken(Number(n)).toLocaleString("en-US");
   const entries = [
-    ["Tokens (this month)", formatTokens(tokensTotal)],
-    ["↳ in / out", `${formatTokens(tokensIn)} / ${formatTokens(tokensOut)}`],
-    ["Monthly Limit", formatMoney(b.limits?.monthly_usd_limit ?? 0)],
-    ["Per Task Limit", formatMoney(b.limits?.per_task_usd_limit ?? 0)]
+    { label: "Tokens this month", value: formatTokens(total), detail: "input + output" },
+    { label: "Input tokens", value: formatTokens(totalIn), detail: `${total > 0 ? Math.round((totalIn / total) * 100) : 0}% of total` },
+    { label: "Output tokens", value: formatTokens(totalOut), detail: `${total > 0 ? Math.round((totalOut / total) * 100) : 0}% of total` },
+    { label: "Cache tokens", value: hit || miss ? `${formatTokens(hit)} hit / ${formatTokens(miss)} miss` : "Not reported", detail: hit || miss ? "provider cache trace" : "open a task detail when cache events are present" }
   ];
-  budgetSummary.innerHTML = entries.map(([l, v]) => `
-    <div class="summary-tile"><span class="muted" style="font-size:11px;">${escapeHtml(l)}</span><strong>${escapeHtml(v)}</strong></div>
+  budgetSummary.innerHTML = entries.map((entry) => `
+    <div class="summary-tile usage-summary-tile">
+      <span class="muted" style="font-size:11px;">${escapeHtml(entry.label)}</span>
+      <strong>${escapeHtml(entry.value)}</strong>
+      <span class="muted" style="font-size:11px;">${escapeHtml(entry.detail)}</span>
+    </div>
   `).join("");
-  monthlyBudgetInput.value = `${b.limits?.monthly_usd_limit ?? ""}`;
+  if (budgetState) {
+    budgetState.textContent = "Token usage is aggregated from runtime usage records. Price display is hidden.";
+  }
+  if (monthlyBudgetInput) monthlyBudgetInput.value = `${b.limits?.monthly_usd_limit ?? ""}`;
 }
 
 // UCA-121: renderHistory retired. The "search past tasks" UX now
@@ -9287,7 +9401,7 @@ deleteTemplateButton.addEventListener("click", async () => {
   }
 });
 
-budgetForm.addEventListener("submit", async (event) => {
+budgetForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   budgetState.textContent = "Updating...";
   try {
@@ -9295,7 +9409,7 @@ budgetForm.addEventListener("submit", async (event) => {
       throw new Error("Desktop budget bridge unavailable.");
     }
     await assertShellResult(
-      await consoleShellClient.updateBudget({ limits: { monthly_usd_limit: Number(monthlyBudgetInput.value || 0) } }),
+      await consoleShellClient.updateBudget({ limits: { monthly_usd_limit: Number(monthlyBudgetInput?.value || 0) } }),
       "Could not update budget."
     );
     budgetState.textContent = "Updated";
@@ -9519,6 +9633,29 @@ document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) 
     chatSidebarSearchDebounce = null;
     void refreshChatSidebar({ force: true });
   }, 120);
+});
+
+function applyChatSidebarModeSelection(mode) {
+  const previousProjectId = consoleActiveConversation?.project_id ?? null;
+  const changed = setChatSidebarMode(mode);
+  const nextProjectId = getChatSidebarConversationProjectId();
+  const normalizedActive = previousProjectId === DEFAULT_PROJECT_ID ? null : previousProjectId;
+  const enteringEmptyProjectMode = mode === "projects" && !nextProjectId;
+  if (changed && consoleActiveConversation?.conversation_id && (enteringEmptyProjectMode || normalizedActive !== nextProjectId)) {
+    clearConsoleActiveConversation();
+    renderConsoleChatEmptyState();
+    renderConsoleChatArtifacts([]);
+  }
+  renderChatSidebar();
+  void refreshChatSidebar({ force: true });
+}
+
+document.querySelector("#chatSidebarChatsTabBtn")?.addEventListener("click", () => {
+  applyChatSidebarModeSelection("chats");
+});
+
+document.querySelector("#chatSidebarProjectsTabBtn")?.addEventListener("click", () => {
+  applyChatSidebarModeSelection("projects");
 });
 
 document.querySelector("#chatSidebarScopeSelect")?.addEventListener("change", (event) => {
@@ -10872,6 +11009,22 @@ emailDigestSaveBtn?.addEventListener("click", async () => {
 });
 
 userMemorySaveBtn?.addEventListener("click", () => void saveUserMemorySettings());
+userMemoryEnabled?.addEventListener("change", () => {
+  state.workspace.userMemory = {
+    ...(state.workspace.userMemory ?? {}),
+    enabled: userMemoryEnabled.checked
+  };
+  const enabled = userMemoryEnabled.checked;
+  if (userMemoryEnabledPill) {
+    userMemoryEnabledPill.textContent = enabled ? "enabled" : "disabled";
+    userMemoryEnabledPill.className = `chip ${enabled ? "ready" : "muted"}`;
+  }
+  if (userMemorySwitchHint) {
+    userMemorySwitchHint.textContent = enabled
+      ? "Enabled. Saved preferences and approved governed memories can be injected as typed background context."
+      : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
+  }
+});
 for (const control of [userMemoryScopeFilter, userMemoryProjectFilter, userMemoryConversationFilter]) {
   control?.addEventListener("input", () => renderGovernedMemoryList(state.workspace.userMemory ?? {}));
   control?.addEventListener("change", () => renderGovernedMemoryList(state.workspace.userMemory ?? {}));
