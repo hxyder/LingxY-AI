@@ -150,6 +150,19 @@ await it("GET /conversation/{id}: returns conversation + messages + task links",
   runtime.store.insertConversation({ conversation_id: "c_full" });
   const userMsg = runtime.store.appendMessage({ conversation_id: "c_full", role: "user", content: "hi" });
   const asstMsg = runtime.store.appendMessage({ conversation_id: "c_full", role: "assistant", content: "hello" });
+  runtime.store.insertTask({
+    task_id: "task_x",
+    conversation_id: "c_full",
+    created_at: "2026-05-14T12:00:00.000Z",
+    updated_at: "2026-05-14T12:00:02.000Z",
+    status: "success",
+    user_command: "hi",
+    usage_summary: {
+      input_tokens: 120,
+      output_tokens: 30,
+      total_tokens: 150
+    }
+  });
   runtime.store.linkMessageToTask(userMsg.message_id, "task_x", "triggered");
   runtime.store.linkMessageToTask(asstMsg.message_id, "task_x", "answered_by");
   const srv = await startServer(runtime);
@@ -161,6 +174,7 @@ await it("GET /conversation/{id}: returns conversation + messages + task links",
     assert.deepEqual(r.body.messages.map((m) => m.role), ["user", "assistant"]);
     const relations = r.body.message_task_links.map((l) => l.relation).sort();
     assert.deepEqual(relations, ["answered_by", "triggered"]);
+    assert.equal(r.body.message_task_links.every((l) => l.usage_summary?.total_tokens === 150), true);
   } finally { await srv.close(); }
 });
 

@@ -57,13 +57,35 @@ export function describeTaskMode(task = {}) {
 // case and would render negative numbers from corrupted data.
 export function describeTaskTokens(task = {}) {
   const isNonNegFinite = (v) => Number.isFinite(v) && Number(v) >= 0;
-  const tokensIn = task?.usage_summary?.tokens_in ?? task?.usage?.input_tokens ?? null;
-  const tokensOut = task?.usage_summary?.tokens_out ?? task?.usage?.output_tokens ?? null;
-  const fallbackTotal = task?.tokens_used ?? task?.usage?.total_tokens ?? null;
+  const summary = task?.usage_summary && typeof task.usage_summary === "object"
+    ? task.usage_summary
+    : {};
+  const usage = task?.usage && typeof task.usage === "object"
+    ? task.usage
+    : {};
+  const tokensIn = summary.tokens_in
+    ?? summary.input_tokens
+    ?? summary.prompt_tokens
+    ?? usage.input_tokens
+    ?? usage.prompt_tokens
+    ?? null;
+  const tokensOut = summary.tokens_out
+    ?? summary.output_tokens
+    ?? summary.completion_tokens
+    ?? usage.output_tokens
+    ?? usage.completion_tokens
+    ?? null;
+  const summaryTotal = summary.total_tokens ?? null;
+  const fallbackTotal = summaryTotal
+    ?? task?.tokens_used
+    ?? usage.total_tokens
+    ?? null;
   if (isNonNegFinite(tokensIn) && isNonNegFinite(tokensOut)) {
     const inN = Number(tokensIn);
     const outN = Number(tokensOut);
-    const total = inN + outN;
+    const total = isNonNegFinite(summaryTotal) && Number(summaryTotal) > 0
+      ? Number(summaryTotal)
+      : inN + outN;
     if (total > 0) {
       return `${total.toLocaleString("en-US")} (${inN.toLocaleString("en-US")} in / ${outN.toLocaleString("en-US")} out)`;
     }

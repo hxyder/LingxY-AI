@@ -1070,30 +1070,6 @@
            leaving the tab. The right pane (.console-chat-panel) keeps
            the existing chat shell unchanged. -->
       <div class="chat-layout">
-        <!-- Console-internal inline preview pane. Hidden by default;
-             opens to the right of the chat panel (split view) when a
-             user clicks an artifact link / file chip inside Console.
-             Overlay-triggered preview keeps using the dedicated
-             BrowserWindow (see live-preview.js). The pane reuses the
-             same client-side preview registry as the standalone window
-             so format coverage is identical. -->
-        <aside id="consolePreviewPane" class="chat-preview-pane panel" aria-label="File preview" hidden>
-          <header class="chat-preview-head">
-            <div class="chat-preview-head-main">
-              <strong id="consolePreviewTitle" class="chat-preview-title">Preview</strong>
-              <span id="consolePreviewMeta" class="muted" style="font-size:11px;"></span>
-            </div>
-            <div class="chat-preview-head-actions">
-              <button id="consolePreviewOpenExternalBtn" class="btn btn-sm btn-ghost" type="button" title="Open in window / external app">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-              </button>
-              <button id="consolePreviewCloseBtn" class="btn btn-sm btn-ghost" type="button" aria-label="关闭预览" title="关闭预览">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-              </button>
-            </div>
-          </header>
-          <div id="consolePreviewBody" class="chat-preview-body" role="region" aria-label="Preview content"></div>
-        </aside>
         <aside class="chat-sidebar panel" data-chat-sidebar-mode="chats" aria-label="Conversation list">
           <header class="chat-sidebar-head">
             <button id="chatSidebarToggleBtn" class="chat-sidebar-toggle" type="button"
@@ -1142,7 +1118,6 @@
         <section class="panel console-chat-panel" aria-labelledby="consoleChatTitle">
           <div class="console-chat-shell">
             <div id="consoleChatActiveTitle" class="muted" style="font-size:12px;padding:4px 8px;" hidden></div>
-            <div id="consoleChatArtifacts" class="conversation-artifacts" hidden></div>
           <div id="consoleChatMessages" class="console-chat-messages">
             <div class="console-chat-empty">
               <svg class="console-chat-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1200,6 +1175,31 @@
           <input id="consoleChatAttachInput" type="file" multiple hidden>
         </div>
       </section>
+        <aside id="consoleChatArtifacts" class="conversation-artifacts panel" aria-label="Conversation and project files" hidden></aside>
+        <!-- Console-internal inline preview pane. Hidden by default;
+             opens to the right of the chat panel (split view) when a
+             user clicks an artifact link / file chip inside Console.
+             Overlay-triggered preview keeps using the dedicated
+             BrowserWindow (see live-preview.js). The pane reuses the
+             same client-side preview registry as the standalone window
+             so format coverage is identical. -->
+        <aside id="consolePreviewPane" class="chat-preview-pane panel" aria-label="File preview" hidden>
+          <header class="chat-preview-head">
+            <div class="chat-preview-head-main">
+              <strong id="consolePreviewTitle" class="chat-preview-title">Preview</strong>
+              <span id="consolePreviewMeta" class="muted" style="font-size:11px;"></span>
+            </div>
+            <div class="chat-preview-head-actions">
+              <button id="consolePreviewOpenExternalBtn" class="btn btn-sm btn-ghost" type="button" title="Open in window / external app">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+              </button>
+              <button id="consolePreviewCloseBtn" class="btn btn-sm btn-ghost" type="button" aria-label="关闭预览" title="关闭预览">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </header>
+          <div id="consolePreviewBody" class="chat-preview-body" role="region" aria-label="Preview content"></div>
+        </aside>
       </div><!-- /.chat-layout -->
     </section>
 

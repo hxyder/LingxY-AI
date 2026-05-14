@@ -156,8 +156,15 @@ test("project folder attachment recursively indexes readable files but skips gen
     await mkdir(path.join(folderPath, "node_modules"), { recursive: true });
     await writeFile(path.join(folderPath, "src", "brief.md"), "Project brief with useful retrieval text.", "utf8");
     await writeFile(path.join(folderPath, "node_modules", "ignored.md"), "Should not be indexed.", "utf8");
+    const recordedProjectFiles = [];
     const runtime = {
       platform: { embeddingStore: createEmbeddingStore() },
+      projectWorkspaces: {
+        recordProjectFiles(projectId, paths, options) {
+          recordedProjectFiles.push({ projectId, paths, options });
+          return [];
+        }
+      },
       configStore: createConfigStore({
         ui: {
           projectStore: {
@@ -178,6 +185,12 @@ test("project folder attachment recursively indexes readable files but skips gen
     assert.equal(result.payload.attached_paths[0], folderPath);
     assert.equal(result.payload.attached_entries[0].kind, "folder");
     assert.equal(result.payload.attached_entries[0].files_seen, 1);
+    assert.equal(recordedProjectFiles.length, 1);
+    assert.equal(recordedProjectFiles[0].projectId, "proj_a");
+    assert.deepEqual(recordedProjectFiles[0].paths, [folderPath]);
+    assert.equal(recordedProjectFiles[0].options.status, "indexed");
+    assert.equal(recordedProjectFiles[0].options.metadata.kind, "folder");
+    assert.equal(recordedProjectFiles[0].options.metadata.source, "project_file_attach");
     const records = runtime.platform.embeddingStore.list({
       namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
       projectId: "proj_a"

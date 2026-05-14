@@ -17,8 +17,9 @@
  *   - 不打补丁: token derivation is a pure function on the task
  *     record (describeTaskTokens). No per-task carve-outs.
  *   - 不针对特定提问: handles all three known carrier shapes
- *     (usage_summary.tokens_in/out, usage.input_tokens/output_tokens,
- *     usage.total_tokens / tokens_used) with one priority chain.
+ *     (usage_summary tokens_in/out or input_tokens/output_tokens,
+ *     usage.input_tokens/output_tokens, usage.total_tokens / tokens_used)
+ *     with one priority chain.
  */
 
 import assert from "node:assert/strict";
@@ -106,6 +107,18 @@ function check(label, condition) {
     usage_summary: { tokens_in: 1200, tokens_out: 300 }
   });
   check("usage_summary: returns total + breakdown", display === "1,500 (1,200 in / 300 out)");
+}
+
+// ---------------------------------------------------------------------
+// 4b. describeTaskTokens: durable task_json usage_summary shape emitted
+//     by emitLlmUsage (input_tokens/output_tokens/total_tokens).
+// ---------------------------------------------------------------------
+{
+  const display = describeTaskTokens({
+    usage_summary: { input_tokens: 48404, output_tokens: 1820, total_tokens: 50224 }
+  });
+  check("usage_summary canonical task_json shape: returns total + breakdown",
+    display === "50,224 (48,404 in / 1,820 out)");
 }
 
 // ---------------------------------------------------------------------

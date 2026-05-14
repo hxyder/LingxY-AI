@@ -79,14 +79,22 @@ test("project workspace service separates projects, conversations, and files", (
     project_id: "proj_docs",
     title: "Revise brief"
   });
+  store.insertConversation({
+    conversation_id: "conv_docs_empty_legacy",
+    project_id: "proj_docs",
+    title: "Legacy placeholder",
+    metadata: { imported_from_project_store: true }
+  });
 
   const workspace = projects.getProjectWorkspace("proj_docs");
   assert.equal(workspace.project_id, "proj_docs");
-  assert.equal(workspace.conversations.length, 3);
-  assert.ok(workspace.conversations.some((conversation) =>
+  assert.equal(workspace.conversations.length, 2);
+  assert.equal(workspace.conversations.some((conversation) =>
     conversation.conversation_id === "conv_docs_legacy"
-    && conversation.metadata.imported_from_project_store === true
-  ));
+  ), false);
+  assert.equal(workspace.conversations.some((conversation) =>
+    conversation.conversation_id === "conv_docs_empty_legacy"
+  ), false);
   assert.deepEqual(workspace.files.map((file) => file.path).sort(), [
     "E:\\work\\brief.md",
     "E:\\work\\source.pdf"
@@ -117,6 +125,46 @@ test("project workspace store methods round-trip through sqlite", () => {
     assert.equal(workspace.project.name, "SQL project");
     assert.equal(workspace.files[0].status, "indexed");
     assert.equal(workspace.conversations[0].conversation_id, "conv_sql_project");
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("project store sync preserves indexed project file metadata", () => {
+  const fixture = sqliteFixture();
+  try {
+    const projects = createProjectWorkspaceService({ store: fixture.store });
+    projects.upsertProject({
+      id: "proj_sync",
+      name: "Sync project",
+      attachedFilePaths: []
+    });
+    projects.recordProjectFiles("proj_sync", ["E:\\work\\folder"], {
+      status: "indexed",
+      indexedAt: "2026-05-12T00:00:00.000Z",
+      metadata: {
+        source: "project_file_attach",
+        kind: "folder",
+        files_seen: 4
+      }
+    });
+
+    projects.syncProjectStore({
+      currentProjectId: "proj_sync",
+      projects: [{
+        id: "proj_sync",
+        name: "Sync project",
+        attachedFilePaths: ["E:\\work\\folder"]
+      }],
+      conversations: []
+    });
+
+    const workspace = projects.getProjectWorkspace("proj_sync");
+    assert.equal(workspace.files.length, 1);
+    assert.equal(workspace.files[0].status, "indexed");
+    assert.equal(workspace.files[0].metadata.kind, "folder");
+    assert.equal(workspace.files[0].metadata.source, "project_file_attach");
+    assert.equal(workspace.files[0].metadata.files_seen, 4);
   } finally {
     fixture.cleanup();
   }

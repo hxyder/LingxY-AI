@@ -96,6 +96,37 @@ export function backfillConversationMessageContextSummaries(messages = [], links
   });
 }
 
+export function enrichConversationMessageTaskLinks(links = [], store = null) {
+  if (!Array.isArray(links) || links.length === 0) return [];
+  if (!store || typeof store.getTask !== "function") return links;
+  const taskCache = new Map();
+  return links.map((link) => {
+    if (!link?.task_id) return link;
+    if (!taskCache.has(link.task_id)) {
+      let task = null;
+      try { task = store.getTask(link.task_id); } catch { task = null; }
+      taskCache.set(link.task_id, task);
+    }
+    const task = taskCache.get(link.task_id);
+    if (!task) return link;
+    return {
+      ...link,
+      status: task.status ?? link.status ?? null,
+      project_id: task.project_id
+        ?? task.context_packet?.selection_metadata?.project_id
+        ?? link.project_id
+        ?? null,
+      conversation_id: task.conversation_id
+        ?? task.context_packet?.selection_metadata?.conversation_id
+        ?? link.conversation_id
+        ?? null,
+      usage_summary: task.usage_summary && typeof task.usage_summary === "object"
+        ? task.usage_summary
+        : null
+    };
+  });
+}
+
 function normalizeConversationSearchTerm(value = "") {
   return String(value ?? "").trim().toLowerCase();
 }
@@ -535,13 +566,6 @@ export async function tryHandleNoteProjectConversationRoute({
       projectId: decodeURIComponent(projectFilesAttachMatch[1]),
       paths: body.paths ?? body.filePaths ?? []
     });
-    if (result?.ok && result.attached_paths?.length) {
-      runtime.projectWorkspaces?.recordProjectFiles?.(result.project_id, result.attached_paths, {
-        status: "indexed",
-        indexedAt: new Date().toISOString(),
-        metadata: { source: "project_file_attach_route" }
-      });
-    }
     sendJson(response, statusForProjectFileResult(result), result);
     return true;
   }
@@ -702,12 +726,13 @@ export async function tryHandleNoteProjectConversationRoute({
         for (const link of runtime.store.getMessageTasks(id) ?? []) links.push(link);
       }
     }
-    const enrichedMessages = backfillConversationMessageContextSummaries(messages, links, runtime.store);
+    const enrichedLinks = enrichConversationMessageTaskLinks(links, runtime.store);
+    const enrichedMessages = backfillConversationMessageContextSummaries(messages, enrichedLinks, runtime.store);
     sendJson(response, 200, {
       conversation_id: conversationId,
       since_seq: sinceSeq,
       messages: enrichedMessages,
-      message_task_links: links
+      message_task_links: enrichedLinks
     });
     return true;
   }
@@ -860,11 +885,12 @@ export async function tryHandleNoteProjectConversationRoute({
         for (const link of runtime.store.getMessageTasks(message.message_id) ?? []) links.push(link);
       }
     }
-    const enrichedMessages = backfillConversationMessageContextSummaries(messages, links, runtime.store);
+    const enrichedLinks = enrichConversationMessageTaskLinks(links, runtime.store);
+    const enrichedMessages = backfillConversationMessageContextSummaries(messages, enrichedLinks, runtime.store);
     sendJson(response, 200, {
       conversation: conv,
       messages: enrichedMessages,
-      message_task_links: links
+      message_task_links: enrichedLinks
     });
     return true;
   }

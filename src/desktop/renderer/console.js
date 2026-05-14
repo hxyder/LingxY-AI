@@ -1108,6 +1108,7 @@ let consoleChatSuppressedTextByTaskId = new Map();
 let consoleActiveConversation = null;
 let consoleChatArtifactsConversationId = null;
 let consoleChatArtifactItems = [];
+const consoleConversationUsageById = new Map();
 let consoleConversationLoadSeq = 0;
 let chatSidebarLoadingConversationId = null;
 const scheduleRunTaskWatchers = new Map();
@@ -1604,6 +1605,8 @@ function appendConsoleChatMessage(role, text, options = {}) {
     nav.addEventListener("click", (ev) => {
       const btn = ev.target.closest("[data-nav]");
       if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
       navigateUserMessage(wrapper, btn.dataset.nav);
     });
     body.appendChild(nav);
@@ -1625,6 +1628,8 @@ function appendConsoleChatMessage(role, text, options = {}) {
     actions.addEventListener("click", (ev) => {
       const btn = ev.target.closest("[data-action]");
       if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
       const content = bubble.dataset.rawText || bubble.textContent || "";
       if (btn.dataset.action === "copy") {
         try { navigator.clipboard?.writeText?.(content); } catch { /* ignore */ }
@@ -3112,6 +3117,11 @@ function renderConsoleChatEmptyState() {
   `;
 }
 
+function setConsoleChatFilesDrawerOpen(open) {
+  const layout = document.querySelector("#panel-chat .chat-layout");
+  if (layout) layout.classList.toggle("files-open", open === true);
+}
+
 function renderConsoleChatArtifacts(artifacts = []) {
   if (!consoleChatArtifacts) return;
   if (Array.isArray(artifacts)) consoleChatArtifactItems = artifacts;
@@ -3131,12 +3141,14 @@ function renderConsoleChatArtifacts(artifacts = []) {
     : [];
   if (files.length === 0 && projectFileEntries.length === 0) {
     consoleChatArtifacts.hidden = true;
+    setConsoleChatFilesDrawerOpen(false);
     setHtmlIfChanged(consoleChatArtifacts, "");
     if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
     return;
   }
   if (!consoleChatArtifactsExpanded) {
     consoleChatArtifacts.hidden = true;
+    setConsoleChatFilesDrawerOpen(false);
     if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
     return;
   }
@@ -3144,7 +3156,7 @@ function renderConsoleChatArtifacts(artifacts = []) {
     const filePath = entry.path;
     const label = formatArtifactLabel(filePath);
     const ext = artifactExtension(filePath);
-    const kind = entry.metadata?.kind === "folder" || entry.kind === "folder" ? "folder" : "file";
+    const kind = entry.metadata?.kind === "folder" || entry.kind === "folder" || !ext ? "folder" : "file";
     const status = entry.legacyScopeLabel ? "Project scope" : entry.status || (entry.indexed_at ? "indexed" : "attached");
     return `
       <div class="conversation-artifact conversation-artifact--project-file" title="${escapeHtml(filePath)}">
@@ -3202,6 +3214,7 @@ function renderConsoleChatArtifacts(artifacts = []) {
     ` : ""}
   `);
   consoleChatArtifacts.hidden = false;
+  setConsoleChatFilesDrawerOpen(true);
   if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "true");
 }
 
@@ -3468,6 +3481,10 @@ async function loadConsoleConversationFromBackend(conversationId) {
     project_id: detail.conversation.project_id,
     metadata: detail.conversation.metadata ?? {}
   });
+  consoleConversationUsageById.set(
+    detail.conversation.conversation_id,
+    aggregateMessageTaskLinkTokenUsage(detail.message_task_links ?? [])
+  );
   setChatSidebarProjectScope(detail.conversation.project_id ?? null);
   if (consoleChatMessages) {
     // Defensive: if a streaming answer is in flight, drop its reference
@@ -3489,7 +3506,7 @@ async function loadConsoleConversationFromBackend(conversationId) {
     await refreshProjectWorkspace(detail.conversation.project_id, { force: true });
   }
   void refreshConsoleChatArtifacts({ force: true });
-  void refreshWorkspace().then(() => {
+  void refreshWorkspace({ mode: "background" }).then(() => {
     if (consoleActiveConversation?.conversation_id === detail.conversation.conversation_id) {
       syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);
     }
@@ -3628,8 +3645,18 @@ function conversationProjectId(conversation = {}) {
   return conversation?.project_id ?? conversation?.projectId ?? null;
 }
 
+function isVisibleConversationThread(conversation = {}) {
+  const metadata = conversation?.metadata && typeof conversation.metadata === "object"
+    ? conversation.metadata
+    : {};
+  const importedPlaceholder = metadata.imported_from_project_store === true
+    && Number(conversation?.message_count ?? 0) <= 0
+    && Number(conversation?.task_count ?? 0) <= 0;
+  return !importedPlaceholder;
+}
+
 function filterConversationsByChatScope(items = [], projectId = chatSidebarProjectId) {
-  const source = Array.isArray(items) ? items : [];
+  const source = (Array.isArray(items) ? items : []).filter(isVisibleConversationThread);
   if (projectId) {
     return source.filter((conversation) => conversationProjectId(conversation) === projectId);
   }
@@ -4068,6 +4095,19 @@ function aggregateTaskTokenUsage(tasks = [], { conversationId = null } = {}) {
   return totals;
 }
 
+function aggregateMessageTaskLinkTokenUsage(links = []) {
+  const totals = emptyTokenUsageTotals();
+  const seen = new Set();
+  for (const link of Array.isArray(links) ? links : []) {
+    const taskId = link?.task_id ?? "";
+    if (taskId && seen.has(taskId)) continue;
+    if (taskId) seen.add(taskId);
+    addTokenUsageTotals(totals, extractTaskTokenUsage(link));
+  }
+  if (totals.total === 0) totals.total = totals.input + totals.output;
+  return totals;
+}
+
 function budgetTokenUsage(budget = {}) {
   const spent = budget?.spent ?? {};
   const totals = emptyTokenUsageTotals();
@@ -4083,6 +4123,10 @@ function budgetTokenUsage(budget = {}) {
 
 function workspaceTokenUsage({ conversationId = null } = {}) {
   const taskTotals = aggregateTaskTokenUsage(state.workspace?.tasks ?? [], { conversationId });
+  if (conversationId && taskTotals.total <= 0) {
+    const conversationTotals = consoleConversationUsageById.get(conversationId) ?? null;
+    if (conversationTotals) return conversationTotals;
+  }
   if (conversationId || taskTotals.total > 0 || taskTotals.cacheHit > 0 || taskTotals.cacheMiss > 0) {
     return taskTotals;
   }
@@ -8784,7 +8828,9 @@ async function refreshWorkspace(options = {}) {
       const previous = state.workspace ?? {};
       const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, capabilityInventoryP, mcpP, skillsP, pluginsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
         fetchJsonWithFallback("/health", previous.health ?? {}, "health"),
-        fetchClientJsonWithFallback(() => consoleTaskClient.fetchTasks(), { tasks: previous.tasks ?? [] }, "tasks"),
+        fetchClientJsonWithFallback(() => consoleTaskClient.fetchTaskSummaries({
+          limit: activeTabId === "tasks" ? 500 : 240
+        }), { tasks: previous.tasks ?? [] }, "tasks"),
         fetchJsonWithFallback("/approvals", { approvals: previous.approvals ?? [] }, "approvals"),
         fetchJsonWithFallback("/schedules", { schedules: previous.schedules ?? [] }, "schedules"),
         fetchJsonWithFallback("/templates", { templates: previous.templates ?? [] }, "templates"),
@@ -9263,6 +9309,7 @@ consoleChatInput?.addEventListener("keydown", (event) => {
 });
 consoleChatFilesBtn?.addEventListener("click", async () => {
   consoleChatArtifactsExpanded = !consoleChatArtifactsExpanded;
+  if (consoleChatArtifactsExpanded && typeof closeInlinePreview === "function") closeInlinePreview();
   const projectId = getConsoleChatSubmitProjectId();
   if (consoleChatArtifactsExpanded && projectId && projectId !== DEFAULT_PROJECT_ID) {
     await refreshProjectWorkspace(projectId, { force: true });
@@ -9274,7 +9321,6 @@ consoleChatFilesBtn?.addEventListener("click", async () => {
   }
   switchTab("chat");
   if (consoleChatArtifactsExpanded && consoleChatArtifacts && !consoleChatArtifacts.hidden) {
-    consoleChatArtifacts.scrollIntoView({ block: "nearest", behavior: "smooth" });
     const firstFile = consoleChatArtifacts.querySelector("[data-conversation-artifact-open]");
     if (firstFile instanceof HTMLElement) firstFile.focus();
     return;
@@ -9329,10 +9375,10 @@ async function attachFilesToProject(projectId) {
     localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(nextStore));
     state.projectStoreRemoteReady = true;
     projectWorkspaceCache.delete(targetProjectId);
-    void refreshProjectWorkspace(targetProjectId, { force: true });
+    await refreshProjectWorkspace(targetProjectId, { force: true });
     renderProjectsWorkspace({ skipFetch: true });
     consoleChatArtifactsExpanded = true;
-    renderConsoleChatArtifacts([]);
+    renderConsoleChatArtifacts(consoleChatArtifactItems);
     const indexed = Number(result.indexed_count ?? 0);
     const attached = Array.isArray(result.attached_paths) ? result.attached_paths.length : paths.length;
     const failed = Array.isArray(result.failed_paths) ? result.failed_paths.length : 0;
@@ -9366,16 +9412,16 @@ projectArtifactList?.addEventListener("click", (event) => {
     if (!filePath || !projectId) return;
     reindexBtn.setAttribute("disabled", "true");
     showConsoleToast("Reindexing project file...", { kind: "info" });
-    void attachProjectFilesViaShell({ projectId, paths: [filePath] }).then((result) => {
+    void attachProjectFilesViaShell({ projectId, paths: [filePath] }).then(async (result) => {
       const store = normalizeProjectStore(result.store ?? state.projectStore ?? loadConsoleProjectStore());
       store.updatedAt = Date.now();
       state.projectStore = store;
       localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
       state.projectStoreRemoteReady = true;
       projectWorkspaceCache.delete(projectId);
-      void refreshProjectWorkspace(projectId, { force: true });
+      await refreshProjectWorkspace(projectId, { force: true });
       renderProjectsWorkspace({ skipFetch: true });
-      renderConsoleChatArtifacts([]);
+      renderConsoleChatArtifacts(consoleChatArtifactItems);
       showConsoleToast(`Reindexed ${Number(result.indexed_count ?? 0)} chunk(s).`, { kind: "success" });
     }).catch((error) => {
       showConsoleToast(error?.message ?? "Could not reindex project file.", { kind: "error" });
@@ -9393,11 +9439,11 @@ projectArtifactList?.addEventListener("click", (event) => {
     if (!filePath || !projectId) return;
     clearIndexBtn.setAttribute("disabled", "true");
     showConsoleToast("Clearing project search index...", { kind: "info" });
-    void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: false }).then((result) => {
+    void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: false }).then(async (result) => {
       projectWorkspaceCache.delete(projectId);
-      void refreshProjectWorkspace(projectId, { force: true });
+      await refreshProjectWorkspace(projectId, { force: true });
       renderProjectsWorkspace({ skipFetch: true });
-      renderConsoleChatArtifacts([]);
+      renderConsoleChatArtifacts(consoleChatArtifactItems);
       showConsoleToast(`Cleared ${Number(result.removed_count ?? 0)} indexed chunk(s).`, { kind: "success" });
     }).catch((error) => {
       showConsoleToast(error?.message ?? "Could not clear project search index.", { kind: "error" });
@@ -9414,16 +9460,16 @@ projectArtifactList?.addEventListener("click", (event) => {
     const projectId = detachBtn.dataset.projectFileDetachProjectId ?? state.selectedProjectId ?? "";
     if (!filePath || !projectId) return;
     detachBtn.setAttribute("disabled", "true");
-    void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: true }).then((result) => {
+    void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: true }).then(async (result) => {
       const store = normalizeProjectStore(result.store ?? state.projectStore ?? loadConsoleProjectStore());
       store.updatedAt = Date.now();
       state.projectStore = store;
       localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
       state.projectStoreRemoteReady = true;
       projectWorkspaceCache.delete(projectId);
-      void refreshProjectWorkspace(projectId, { force: true });
+      await refreshProjectWorkspace(projectId, { force: true });
       renderProjectsWorkspace({ skipFetch: true });
-      renderConsoleChatArtifacts([]);
+      renderConsoleChatArtifacts(consoleChatArtifactItems);
       showConsoleToast("已从项目文件范围移出，并清理该项目索引", { kind: "ok" });
     }).catch((error) => {
       showConsoleToast(error?.message ?? "Could not remove project file.", { kind: "error" });
@@ -11356,6 +11402,10 @@ async function openInlinePreviewInChat({ filePath, mime } = {}) {
   if (!filePath || !consolePreviewPane || !consolePreviewBody || !consolePreviewLayout) {
     return false;
   }
+  consoleChatArtifactsExpanded = false;
+  if (consoleChatArtifacts) consoleChatArtifacts.hidden = true;
+  setConsoleChatFilesDrawerOpen(false);
+  if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
 
   // The user might click a file from any tab; ensure they see the chat
   // tab so the split view is actually visible.

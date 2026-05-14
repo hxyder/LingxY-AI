@@ -29,6 +29,15 @@ function conversationIdFromUi(conversation = {}) {
   return String(conversation.conversation_id ?? conversation.id ?? "").trim().slice(0, 128);
 }
 
+function isVisibleWorkspaceConversation(conversation = {}) {
+  const metadata = conversation.metadata && typeof conversation.metadata === "object"
+    ? conversation.metadata
+    : {};
+  return !(metadata.imported_from_project_store === true
+    && Number(conversation.message_count ?? 0) <= 0
+    && Number(conversation.task_count ?? 0) <= 0);
+}
+
 function toUiProject(project = {}) {
   return {
     id: project.project_id ?? project.id,
@@ -121,7 +130,12 @@ export function createProjectWorkspaceService({ store, configStore = null } = {}
     ensureDefaultProject();
     for (const project of normalized.projects) {
       upsertProject(project);
-      recordProjectFiles(project.id, project.attachedFilePaths, {
+      const existingPaths = new Set(store.listProjectFiles(project.id, { limit: 1000 })
+        .map((file) => file.path)
+        .filter(Boolean));
+      const missingAttachedPaths = asArray(project.attachedFilePaths)
+        .filter((filePath) => filePath && !existingPaths.has(filePath));
+      recordProjectFiles(project.id, missingAttachedPaths, {
         status: "attached",
         metadata: { source: "project_store_sync" }
       });
@@ -188,6 +202,7 @@ export function createProjectWorkspaceService({ store, configStore = null } = {}
     if (!project) return null;
     const conversations = typeof store?.listConversations === "function"
       ? store.listConversations({ projectId: id, archived: 0, limit: conversationLimit })
+        .filter(isVisibleWorkspaceConversation)
       : [];
     const files = store.listProjectFiles(id, { limit: fileLimit });
     const artifacts = typeof store?.listProjectArtifacts === "function"

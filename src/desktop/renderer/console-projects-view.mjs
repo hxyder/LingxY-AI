@@ -136,7 +136,7 @@ export function renderProjectArtifactListHtml({
     const filePath = entry.path;
     const ext = artifactExtension(filePath);
     const label = labelForPath(filePath);
-    const kind = entry.metadata?.kind === "folder" || entry.kind === "folder" ? "folder" : "file";
+    const kind = entry.metadata?.kind === "folder" || entry.kind === "folder" || !ext ? "folder" : "file";
     const status = entry.legacyScopeLabel ? "Project scope" : entry.status || (entry.indexed_at ? "indexed" : "attached");
     const scopeLabel = kind === "folder" ? "Attached project folder" : "Attached project file";
     return `
