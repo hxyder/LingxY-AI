@@ -768,13 +768,6 @@ function switchTab(tabId) {
 
 tabButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
-    if (btn.dataset.tab === "projects") {
-      switchTab("chat");
-      renderChatSidebarProjectFilter();
-      void refreshChatSidebar({ force: true });
-      requestAnimationFrame(() => document.querySelector("#chatSidebarScopeSelect")?.focus?.());
-      return;
-    }
     switchTab(btn.dataset.tab);
     if (btn.dataset.tab === "files") {
       void loadAllArtifacts();
@@ -841,11 +834,16 @@ document.querySelectorAll(".theme-swatch").forEach((btn) => {
 if (consoleShellClient?.onNavigateConsole) {
   consoleShellClient.onNavigateConsole((payload = {}) => {
     const tabId = typeof payload.tabId === "string" ? payload.tabId : "settings";
-    switchTab(tabId);
     if (tabId === "projects") {
-      renderProjectsWorkspace();
-      void syncConsoleProjectStoreFromService({ rerender: true });
-    } else if (tabId === "connectors") {
+      switchTab("chat");
+      renderChatSidebarProjectFilter();
+      void syncConsoleProjectStoreFromService({ rerender: false });
+      void refreshChatSidebar({ force: true });
+      requestAnimationFrame(() => document.querySelector("#chatSidebarScopeSelect")?.focus?.());
+      return;
+    }
+    switchTab(tabId);
+    if (tabId === "connectors") {
       void loadConnectorsTab();
     } else if (tabId === "notes") {
       // Lazy-init the notes module so window.lingxyNotes is ready, then
@@ -3111,10 +3109,14 @@ function renderConsoleChatArtifacts(artifacts = []) {
   const project = projectId && projectId !== DEFAULT_PROJECT_ID
     ? getChatSidebarProject(projectId)
     : null;
-  const projectFiles = Array.isArray(project?.attachedFilePaths)
-    ? [...new Set(project.attachedFilePaths.filter((filePath) => typeof filePath === "string" && filePath.trim()).map((filePath) => filePath.trim()))]
+  const projectFileEntries = project
+    ? currentProjectFiles(project.id, Array.isArray(project.attachedFilePaths) ? project.attachedFilePaths : [])
+      .map((entry) => typeof entry === "string" ? { path: entry, legacyScopeLabel: true } : entry)
+      .filter((entry) => typeof entry?.path === "string" && entry.path.trim())
+      .map((entry) => ({ ...entry, path: entry.path.trim() }))
+      .filter((entry, index, all) => all.findIndex((item) => item.path === entry.path) === index)
     : [];
-  if (files.length === 0 && projectFiles.length === 0) {
+  if (files.length === 0 && projectFileEntries.length === 0) {
     consoleChatArtifacts.hidden = true;
     setHtmlIfChanged(consoleChatArtifacts, "");
     if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
@@ -3125,16 +3127,20 @@ function renderConsoleChatArtifacts(artifacts = []) {
     if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
     return;
   }
-  const projectRows = projectFiles.slice(0, 5).map((filePath) => {
+  const projectRows = projectFileEntries.map((entry) => {
+    const filePath = entry.path;
     const label = formatArtifactLabel(filePath);
     const ext = artifactExtension(filePath);
+    const kind = entry.metadata?.kind === "folder" || entry.kind === "folder" ? "folder" : "file";
+    const status = entry.legacyScopeLabel ? "Project scope" : entry.status || (entry.indexed_at ? "indexed" : "attached");
     return `
       <div class="conversation-artifact conversation-artifact--project-file" title="${escapeHtml(filePath)}">
         <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
         <button type="button" class="conversation-artifact-main" data-conversation-artifact-open="${escapeHtml(filePath)}">
           <span class="conversation-artifact-name">${escapeHtml(label)}</span>
           <span class="conversation-artifact-meta">
-            <span>Project scope</span>
+            <span>${kind === "folder" ? "Project folder" : "Project file"}</span>
+            <span>${escapeHtml(status)}</span>
           </span>
         </button>
         <button type="button" class="conversation-artifact-action" data-conversation-artifact-reveal="${escapeHtml(filePath)}" aria-label="Reveal ${escapeHtml(label)}" title="Reveal in folder">
@@ -3143,7 +3149,7 @@ function renderConsoleChatArtifacts(artifacts = []) {
       </div>
     `;
   }).join("");
-  const generatedRows = files.slice(0, 8).map((artifact) => {
+  const generatedRows = files.map((artifact) => {
     const filePath = `${artifact.path ?? ""}`;
     const label = formatArtifactLabel(filePath);
     const ext = artifactExtension(filePath);
@@ -3166,20 +3172,19 @@ function renderConsoleChatArtifacts(artifacts = []) {
     `;
   }).join("");
   const rows = [
-    projectRows ? `<span class="conversation-artifacts-section">Project files</span>${projectRows}` : "",
-    generatedRows ? `<span class="conversation-artifacts-section">Generated</span>${generatedRows}` : ""
+    generatedRows ? `<span class="conversation-artifacts-section">Current chat</span>${generatedRows}` : "",
+    projectRows ? `<span class="conversation-artifacts-section">Project files</span>${projectRows}` : ""
   ].filter(Boolean).join("");
-  const total = files.length + projectFiles.length;
+  const total = files.length + projectFileEntries.length;
   setHtmlIfChanged(consoleChatArtifacts, `
     <div class="conversation-artifacts-head">
-      <span>Context files</span>
+      <span>Files</span>
       <span>${total}</span>
     </div>
     <div class="conversation-artifacts-list">${rows}</div>
     ${project ? `
       <div class="conversation-artifacts-actions">
         <button type="button" class="conversation-artifacts-manage" data-chat-project-files-add="${escapeHtml(project.id)}">Add files/folders</button>
-        <button type="button" class="conversation-artifacts-manage" data-chat-project-files-manage="${escapeHtml(project.id)}">Manage</button>
       </div>
     ` : ""}
   `);
@@ -3206,7 +3211,7 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
   consoleChatArtifactsConversationId = conversationId;
   if (previousId !== conversationId) renderConsoleChatArtifacts([]);
   try {
-    const artifacts = await fetchConsoleConversationArtifacts(conversationId, { limit: 8 });
+    const artifacts = await fetchConsoleConversationArtifacts(conversationId, { limit: 100 });
     if (consoleActiveConversation?.conversation_id !== conversationId) return;
     renderConsoleChatArtifacts(artifacts);
   } catch {
@@ -3502,6 +3507,7 @@ function setChatSidebarProjectScope(projectId = null) {
   syncChatSidebarProjectScopeStorage();
   renderConsoleChatHeader();
   renderChatSidebarProjectFilter();
+  if (nextId) void refreshProjectWorkspace(nextId);
   return true;
 }
 
@@ -8980,6 +8986,10 @@ consoleChatInput?.addEventListener("keydown", (event) => {
 });
 consoleChatFilesBtn?.addEventListener("click", async () => {
   consoleChatArtifactsExpanded = !consoleChatArtifactsExpanded;
+  const projectId = getConsoleChatSubmitProjectId();
+  if (consoleChatArtifactsExpanded && projectId && projectId !== DEFAULT_PROJECT_ID) {
+    await refreshProjectWorkspace(projectId);
+  }
   if (consoleActiveConversation?.conversation_id) {
     await refreshConsoleChatArtifacts({ force: true });
   } else {
@@ -9001,17 +9011,6 @@ consoleChatArtifacts?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     void attachFilesToProject(addBtn.dataset.chatProjectFilesAdd ?? "");
-    return;
-  }
-  const manageBtn = target?.closest?.("[data-chat-project-files-manage]");
-  if (manageBtn instanceof HTMLElement) {
-    event.preventDefault();
-    event.stopPropagation();
-    const projectId = manageBtn.dataset.chatProjectFilesManage ?? "";
-    if (projectId) state.selectedProjectId = projectId;
-    switchTab("projects");
-    renderProjectsWorkspace();
-    void syncConsoleProjectStoreFromService({ rerender: true });
     return;
   }
   const revealBtn = target?.closest?.("[data-conversation-artifact-reveal]");

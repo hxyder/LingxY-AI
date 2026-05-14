@@ -50,7 +50,7 @@ assert.match(consoleJs, /project_id: chatSidebarProjectId/u, "Chat submissions m
 assert.match(projectsView, /renderProjectWorkspaceSummaryHtml/u, "Projects UI view model must render workspace stats");
 assert.match(docs, /Project is a product workspace/u, "boundary doc must define project semantics");
 assert.match(docs, /chat-first/u, "boundary doc must define project chat IA");
-assert.match(docs, /visually close to the Chat surface/u, "boundary doc must keep the Project UI clean");
+assert.match(docs, /no visible top-level Project rail tab/u, "boundary doc must keep Project out of primary rail navigation");
 assert.match(docs, /Chat remains the only full conversation surface/u, "boundary doc must prevent duplicate project chat surfaces");
 assert.match(roadmap, /PMAT-007 Project workspace separation/u, "roadmap must track PMAT-007");
 assert.match(roadmap, /PMAT-008 Project workbench IA/u, "roadmap must track PMAT-008");

@@ -18,16 +18,14 @@ Layer contract:
 - Project workbench UI reads `/projects/:id/workspace` for conversations,
   files, generated artifacts, and project stats. Renderer-local project store
   data is a compatibility/cache shape, not the workbench fact source.
-- Project UI is chat-first: selecting a project opens a project-scoped
-  conversation surface, with project files and instructions as adjacent context
-  instead of a separate project-admin page.
-- Project UI must stay visually close to the Chat surface: compact left rail,
-  central thread list, and a restrained right context rail. Avoid nested cards,
-  oversized stats, repeated headings, duplicate chat composers, or
-  admin-dashboard density.
-- Chat remains the only full conversation surface. Project pages set the Chat
-  project scope, start or resume project conversations, and manage project
-  context; they must not introduce a second parallel chat composer.
+- Project UI is chat-first: selecting a project means selecting a project
+  scope inside Chat. There is no visible top-level Project rail tab for normal
+  browsing; any retained project management panel is an internal compatibility
+  surface, not a primary workspace.
+- Chat remains the only full conversation surface. Project selection, project
+  chats, and project files live in Chat's compact scope selector and Files
+  drawer; they must not introduce a second parallel chat composer or a visible
+  project-admin dashboard.
 - Ordinary conversations and project conversations are separate conversation
   domains. The Chat sidebar's default domain is independent conversations with
   no real project `project_id`; selecting a project switches Chat into that
@@ -36,10 +34,10 @@ Layer contract:
   The UI must not present an "All conversations" mixed scope as the primary
   browsing mode.
 - There is no top-level Files workspace. Generated artifacts and attached files
-  are conversation/project context assets: Chat shows the active conversation's
-  context files and generated artifacts, and Project shows the selected
-  project's files/artifacts. Legacy files view IDs may stay as compatibility
-  handles, but visible navigation must route users through Chat or Project.
+  are conversation/project context assets: Chat's Files drawer distinguishes
+  current-chat generated/related files from all files attached to the selected
+  project. Legacy files/project view IDs may stay as compatibility handles, but
+  visible navigation must route users through Chat.
 - Clicking a generated artifact from Console opens the Console inline preview
   pane first. External open/reveal remains an explicit secondary action so users
   can inspect generated content without leaving the conversation.

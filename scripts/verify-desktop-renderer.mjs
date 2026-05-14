@@ -173,7 +173,7 @@ assert.ok(
 );
 assert.equal(consoleHtml.includes("Tasks"), true);
 assert.equal(consoleHtml.includes("Settings"), true);
-assert.equal(consoleHtml.includes("data-tab=\"projects\""), true);
+assert.equal(consoleHtml.includes("data-tab=\"projects\""), false);
 assert.equal(consoleHtml.includes("panel-projects"), true);
 assert.equal(consoleHtml.includes("projectList"), true);
 assert.equal(consoleHtml.includes("projectConversationList"), true);

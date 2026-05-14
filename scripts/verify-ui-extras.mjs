@@ -180,8 +180,10 @@ assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(con
   "project files: console must expose an explicit picker before attach/index");
 assert.ok(/openFile/.test(mainProcessIpc) && /openDirectory/.test(mainProcessIpc) && /Add files or folders to this project/.test(mainProcessIpc),
   "project files: desktop picker must allow both local files and folders");
-assert.ok(/Context files/.test(consoleJs) && /data-chat-project-files-manage/.test(consoleJs),
-  "project files: chat must surface project-scoped context files and a management path");
+assert.ok(/<span>Files<\/span>/.test(consoleJs) && /Current chat/.test(consoleJs) && /Project files/.test(consoleJs),
+  "project files: chat Files drawer must distinguish current-chat files from all selected-project files");
+assert.ok(/data-chat-project-files-add/.test(consoleJs) && /data-conversation-artifact-open/.test(consoleJs),
+  "project files: chat Files drawer must add project files/folders and preview project files inline");
 assert.ok(/conversation-artifact--project-file/.test(sharedCss) && /conversation-artifacts-manage/.test(sharedCss),
   "project files: chat context file strip must have dedicated styling");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
@@ -468,14 +470,14 @@ assert.ok(/cite-source-row--flash/.test(sharedCss) && /cursor:\s*pointer/.test(s
   "citations: citation chips and revealed source rows must have interactive styling");
 assert.ok(/id="chatSidebarScopeSelect"/.test(consoleHtml) && /独立会话/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
   "chat projects: sidebar must expose the active ordinary/project conversation domain as a compact selector");
-assert.ok(!/All conversations/.test(consoleHtml) && !/Personal chats/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml),
-  "chat projects: UI must not expose a mixed conversation scope or a top-level Files rail entry");
+assert.ok(!/All conversations/.test(consoleHtml) && !/Personal chats/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml) && !/data-tab="projects"/.test(consoleHtml),
+  "chat projects: UI must not expose a mixed conversation scope, top-level Files rail entry, or top-level Projects rail entry");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
   "chat projects: console must persist chat sidebar project scope");
 assert.ok(/function\s+filterConversationsByChatScope/.test(consoleJs) && /id\s*===\s*DEFAULT_PROJECT_ID/.test(consoleJs),
   "chat projects: ordinary Chat sidebar must include legacy default-project conversations while filtering out real projects");
-assert.ok(/data-tab="projects"/.test(consoleHtml) && /btn\.dataset\.tab\s*===\s*["']projects["'][\s\S]{0,240}switchTab\(["']chat["']\)/.test(consoleJs),
-  "chat projects: Projects rail entry must route to Chat's project selector instead of a dashboard-like duplicate chat surface");
+assert.ok(/tabId\s*===\s*["']projects["'][\s\S]{0,260}switchTab\(["']chat["']\)/.test(consoleJs),
+  "chat projects: external project navigation must route to Chat's project selector instead of a dashboard-like duplicate chat surface");
 assert.ok(/savedView\s*===\s*["']projects["'][\s\S]{0,120}savedView\s*=\s*["']chat["']/.test(consoleJs)
     && /tabId\s*===\s*["']projects["']\s*\?\s*["']chat["']\s*:\s*tabId/.test(consoleJs),
   "chat projects: stale/special project management views must not trap normal startup navigation");
@@ -489,6 +491,8 @@ assert.ok(/id="consoleChatFilesBtn"/.test(consoleHtml) && /aria-controls="consol
   "chat artifacts: files must be reachable from the Chat header instead of a top-level Files tab");
 assert.ok(/consoleChatArtifactsExpanded/.test(consoleJs) && /data-chat-project-files-add/.test(consoleJs) && /function\s+attachFilesToProject/.test(consoleJs),
   "chat artifacts: Files button must expand a conversation/project context panel and allow project file/folder attach");
+assert.ok(/currentProjectFiles\(project\.id/.test(consoleJs) && !/projectFiles\.slice\(0,\s*5\)/.test(consoleJs) && !/files\.slice\(0,\s*8\)/.test(consoleJs),
+  "chat artifacts: Files drawer must render all selected project files and all fetched current-chat files without per-section UI truncation");
 assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes) && /getArtifactsForConversation/.test(noteProjectConversationRoutes),
   "chat artifacts: conversation route must expose getArtifactsForConversation");
 assert.ok(/function\s+refreshConsoleChatArtifacts/.test(consoleJs) && /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/artifacts/.test(consoleJs),
@@ -520,13 +524,13 @@ assert.ok(/function\s+resolveActiveWindowFileSelection/.test(overlayJs)
     && /filePaths:\s*contextDecision\.filePaths/.test(overlayJs),
   "active-window files: overlay must route explicit current-file/document commands through file submission");
 assert.ok(/refreshProjectWorkspace/.test(consoleJs) && /\/projects\/\$\{encodeURIComponent\(projectId\)\}\/workspace/.test(consoleJs),
-  "projects: project tab must read service-owned project workspace summaries");
+  "projects: internal project compatibility surface must read service-owned project workspace summaries");
 assert.ok(/legacyProjectConversations/.test(consoleJs) && /projectStore\.conversations|store\.conversations/.test(consoleJs),
   "projects: legacy projectStore conversations must remain as fallback only");
 assert.ok(/conversation\.conversation_id/.test(consoleProjectsView) && /conversation\.message_count/.test(consoleProjectsView),
   "projects: project conversation renderer must accept SQL conversation summaries");
 assert.ok(/id="projectArtifactList"/.test(consoleHtml) && /id="projectArtifactCount"/.test(consoleHtml),
-  "projects: project tab must expose a scoped files column");
+  "projects: internal project compatibility surface must retain the scoped files column");
 assert.ok(/projectArtifactsMatch/.test(noteProjectConversationRoutes) && /listProjectArtifacts/.test(noteProjectConversationRoutes),
   "projects: project artifact route must aggregate conversation artifacts");
 assert.ok(/currentProjectArtifacts/.test(consoleJs) && /projectWorkspaceDetail\?\.artifacts/.test(consoleJs),
