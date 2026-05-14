@@ -1107,6 +1107,9 @@ let consoleChatSuppressedTextByTaskId = new Map();
 // conversation hangs together server-side. New chat clears it.
 let consoleActiveConversation = null;
 let consoleChatArtifactsConversationId = null;
+let consoleChatArtifactItems = [];
+let consoleConversationLoadSeq = 0;
+let chatSidebarLoadingConversationId = null;
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
 const surfacedApprovalPopupIds = new Set();
@@ -2398,11 +2401,17 @@ async function openNoteTargetPicker(text, anchorEl) {
   });
 }
 
-function appendConsoleChatTimelineNode(node) {
+function appendConsoleChatTimelineNode(node, { taskId = null } = {}) {
   if (!consoleChatMessages || !node) return node;
   const streamingWrapper = consoleChatStreamingAnswer?.wrapper;
+  const completedAssistantWrapper = taskId ? consoleChatAssistantWrapperForTask(taskId) : null;
   if (streamingWrapper?.parentElement === consoleChatMessages && node !== streamingWrapper) {
     consoleChatMessages.insertBefore(node, streamingWrapper);
+  } else if (
+    completedAssistantWrapper?.parentElement === consoleChatMessages
+    && node !== completedAssistantWrapper
+  ) {
+    consoleChatMessages.insertBefore(node, completedAssistantWrapper);
   } else {
     consoleChatMessages.appendChild(node);
   }
@@ -2427,6 +2436,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
   const card = document.createElement("div");
   card.className = `chat-tool-card is-${inferredState}`;
   card.dataset.toolId = toolName;
+  if (options.taskId) card.dataset.taskId = options.taskId;
   card.setAttribute("role", "group");
   card.setAttribute("aria-label", `tool call ${formatConsoleToolDisplayName(toolName)}`);
 
@@ -2459,7 +2469,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
   `;
   bindConsoleToolCardToggle(card);
   setConsoleToolCardCollapsed(card, inferredState === "ok");
-  appendConsoleChatTimelineNode(card);
+  appendConsoleChatTimelineNode(card, { taskId: options.taskId ?? null });
   consoleChatPin.maybeScrollToBottom();
   return card;
 }
@@ -3084,12 +3094,12 @@ function getChatSidebarProjectLabel(projectId = chatSidebarProjectId) {
 }
 
 function getConsoleChatSubmitProjectId() {
-  return consoleActiveConversation?.project_id ?? chatSidebarProjectId ?? null;
+  return consoleActiveConversation?.project_id ?? getChatSidebarConversationProjectId() ?? null;
 }
 
 function renderConsoleChatEmptyState() {
   if (!consoleChatMessages) return;
-  const projectLabel = getChatSidebarProjectLabel();
+  const projectLabel = getChatSidebarProjectLabel(getChatSidebarConversationProjectId());
   const scopeLine = projectLabel
     ? `新对话会保存到项目：${escapeHtml(projectLabel)}`
     : "新对话会保存到独立会话。";
@@ -3104,6 +3114,7 @@ function renderConsoleChatEmptyState() {
 
 function renderConsoleChatArtifacts(artifacts = []) {
   if (!consoleChatArtifacts) return;
+  if (Array.isArray(artifacts)) consoleChatArtifactItems = artifacts;
   const files = Array.isArray(artifacts)
     ? artifacts.filter((artifact) => `${artifact?.path ?? ""}`.trim())
     : [];
@@ -3205,6 +3216,7 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
   const conversationId = consoleActiveConversation?.conversation_id ?? null;
   if (!conversationId) {
     consoleChatArtifactsConversationId = null;
+    consoleChatArtifactItems = [];
     renderConsoleChatArtifacts([]);
     return;
   }
@@ -3215,9 +3227,13 @@ async function refreshConsoleChatArtifacts({ force = false } = {}) {
   try {
     const artifacts = await fetchConsoleConversationArtifacts(conversationId, { limit: 100 });
     if (consoleActiveConversation?.conversation_id !== conversationId) return;
+    consoleChatArtifactItems = artifacts;
     renderConsoleChatArtifacts(artifacts);
   } catch {
-    if (consoleActiveConversation?.conversation_id === conversationId) renderConsoleChatArtifacts([]);
+    if (consoleActiveConversation?.conversation_id === conversationId) {
+      consoleChatArtifactItems = [];
+      renderConsoleChatArtifacts([]);
+    }
   }
 }
 
@@ -3367,7 +3383,12 @@ function renderConsoleChatHeader() {
   const label = consoleActiveConversation.title
     || consoleActiveConversation.conversation_id.slice(0, 12);
   const projectLabel = getChatSidebarProjectLabel(consoleActiveConversation.project_id);
-  titleEl.textContent = projectLabel ? `Continuing in ${projectLabel}: ${label}` : `Continuing: ${label}`;
+  const usage = workspaceTokenUsage({ conversationId: consoleActiveConversation.conversation_id });
+  const tokenLabel = `${formatTokensCompact(usage.total || usage.input + usage.output)} tokens`;
+  titleEl.innerHTML = `
+    <span>${escapeHtml(projectLabel ? `Continuing in ${projectLabel}: ${label}` : `Continuing: ${label}`)}</span>
+    <span class="chat-token-counter" title="Current conversation token usage">${escapeHtml(tokenLabel)}</span>
+  `;
   titleEl.hidden = false;
   updateChatModelChip();
 }
@@ -3387,17 +3408,13 @@ const consoleChatMessageAdapter = {
   },
   onAppend(message) {
     if (message.role === "user") {
-      const wrapper = document.createElement("div");
-      wrapper.className = "console-chat-message console-chat-message-user";
-      wrapper.dataset.messageId = message.message_id;
-      wrapper.dataset.seq = String(message.seq);
-      const body = document.createElement("div");
-      body.className = "console-chat-message-body";
-      renderConsoleChatBubbleContent(body, message.content);
-      wrapper.appendChild(body);
-      appendConsoleMessageContext(wrapper, message);
-      appendConsoleChatBranchActions(wrapper, message);
-      consoleChatMessages.appendChild(wrapper);
+      const wrapper = appendConsoleChatMessage("user", message.content, { ts: message.ts });
+      if (wrapper && wrapper.dataset) {
+        wrapper.dataset.messageId = message.message_id;
+        wrapper.dataset.seq = String(message.seq);
+        appendConsoleMessageContext(wrapper, message);
+        appendConsoleChatBranchActions(wrapper, message);
+      }
     } else if (message.role === "assistant" || message.role === "system") {
       // Reuse the existing renderer for assistant/system bubbles.
       // Pass through any task_id the backend recorded so the replayed
@@ -3425,8 +3442,26 @@ const consoleChatMessageAdapter = {
 
 async function loadConsoleConversationFromBackend(conversationId) {
   if (!conversationId) return;
-  const detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
-  if (!detail?.conversation) return;
+  const loadSeq = ++consoleConversationLoadSeq;
+  chatSidebarLoadingConversationId = conversationId;
+  renderChatSidebar();
+  let detail;
+  try {
+    detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
+  } catch (error) {
+    if (loadSeq === consoleConversationLoadSeq) {
+      chatSidebarLoadingConversationId = null;
+      renderChatSidebar();
+      showConsoleToast(`加载对话失败：${error.message}`, { kind: "err" });
+    }
+    return;
+  }
+  if (loadSeq !== consoleConversationLoadSeq) return;
+  if (!detail?.conversation) {
+    chatSidebarLoadingConversationId = null;
+    renderChatSidebar();
+    return;
+  }
   consoleActiveConversation = cacheEnsureBackendFields({
     conversation_id: detail.conversation.conversation_id,
     title: detail.conversation.title,
@@ -3448,9 +3483,12 @@ async function loadConsoleConversationFromBackend(conversationId) {
   }
   cacheApplyBatch(consoleActiveConversation, detail, consoleChatMessageAdapter);
   renderConsoleChatHeader();
-  void refreshConsoleChatArtifacts();
   switchTab("chat");
   syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);
+  if (detail.conversation.project_id) {
+    await refreshProjectWorkspace(detail.conversation.project_id, { force: true });
+  }
+  void refreshConsoleChatArtifacts({ force: true });
   void refreshWorkspace().then(() => {
     if (consoleActiveConversation?.conversation_id === detail.conversation.conversation_id) {
       syncConsoleChatActiveTaskForConversation(detail.conversation.conversation_id);
@@ -3458,6 +3496,7 @@ async function loadConsoleConversationFromBackend(conversationId) {
   }).catch(() => {});
   // Update the sidebar's active highlight to track the just-loaded
   // conversation.
+  chatSidebarLoadingConversationId = null;
   renderChatSidebar();
 }
 
@@ -3466,6 +3505,34 @@ function clearConsoleActiveConversation() {
   renderConsoleChatHeader();
   renderConsoleChatArtifacts([]);
   renderChatSidebar();
+}
+
+async function deleteConsoleConversation(conversationId) {
+  if (!conversationId) return;
+  const conversation = chatSidebarItems.find((item) => item?.conversation_id === conversationId)
+    ?? conversationsState.items.find((item) => item?.conversation_id === conversationId)
+    ?? null;
+  const title = conversation?.title || conversationId.slice(0, 12);
+  if (typeof globalThis.confirm === "function" && !globalThis.confirm(`删除对话「${title}」？`)) {
+    return;
+  }
+  try {
+    await fetchJson(`/conversation/${encodeURIComponent(conversationId)}`, {
+      method: "DELETE",
+      headers: { "X-Lingxy-Desktop-Actor": "desktop_console" }
+    });
+    chatSidebarItems = chatSidebarItems.filter((item) => item?.conversation_id !== conversationId);
+    conversationsState.items = conversationsState.items.filter((item) => item?.conversation_id !== conversationId);
+    if (consoleActiveConversation?.conversation_id === conversationId) {
+      clearConsoleActiveConversation();
+      renderConsoleChatEmptyState();
+    }
+    await refreshChatSidebar({ force: true });
+    await refreshWorkspace({ mode: "summary" });
+    showConsoleToast("对话已删除。", { kind: "ok" });
+  } catch (error) {
+    showConsoleToast(`删除对话失败：${error.message}`, { kind: "err" });
+  }
 }
 
 /* ═══════════════════════════════════════════════
@@ -3599,6 +3666,7 @@ function renderChatSidebarProjectFilter() {
   const scopeWrap = document.querySelector("#chatSidebarProjectSelectWrap");
   const chatsTab = document.querySelector("#chatSidebarChatsTabBtn");
   const projectsTab = document.querySelector("#chatSidebarProjectsTabBtn");
+  const sidebar = document.querySelector(".chat-sidebar");
   const projects = getChatSidebarProjects();
   if (chatSidebarProjectId && !projects.some((project) => project.id === chatSidebarProjectId)) {
     chatSidebarProjectId = chatSidebarMode === "projects" ? projects[0]?.id ?? null : null;
@@ -3613,12 +3681,16 @@ function renderChatSidebarProjectFilter() {
     syncChatSidebarProjectScopeStorage();
   }
   const isProjectsMode = chatSidebarMode === "projects";
+  if (sidebar) sidebar.dataset.chatSidebarMode = isProjectsMode ? "projects" : "chats";
   for (const [btn, active] of [[chatsTab, !isProjectsMode], [projectsTab, isProjectsMode]]) {
     if (!btn) continue;
     btn.classList.toggle("active", active);
     btn.setAttribute("aria-selected", active ? "true" : "false");
   }
-  if (scopeWrap) scopeWrap.hidden = !isProjectsMode;
+  if (scopeWrap) {
+    scopeWrap.hidden = !isProjectsMode;
+    scopeWrap.setAttribute("aria-hidden", isProjectsMode ? "false" : "true");
+  }
   if (!select) return;
   const options = [
     projects.length === 0 ? `<option value="">暂无项目</option>` : `<option value="">选择项目</option>`,
@@ -3696,6 +3768,7 @@ function renderChatSidebar() {
     searchTerm: chatSidebarSearchTerm,
     activeConversationId: activeId,
     projectId: chatSidebarMode === "projects" ? (projectId ?? "__projects__") : null,
+    loadingConversationId: chatSidebarLoadingConversationId,
     searchAlreadyApplied: chatSidebarShowingServerSearch
   });
   for (const btn of listEl.querySelectorAll("[data-chat-sidebar-id]")) {
@@ -3703,6 +3776,15 @@ function renderChatSidebar() {
       const id = btn.dataset.chatSidebarId;
       if (!id || id === activeId) return;
       void loadConsoleConversationFromBackend(id);
+    });
+  }
+  for (const btn of listEl.querySelectorAll("[data-chat-sidebar-delete-id]")) {
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const id = btn.dataset.chatSidebarDeleteId;
+      if (!id) return;
+      void deleteConsoleConversation(id);
     });
   }
 }
@@ -3873,14 +3955,14 @@ function computeSummary(tasks, budget) {
   // as the inaccurate signal, so we now compute monthlyTokens
   // instead — same role (running tally that should reset monthly)
   // but with the honest unit.
-  const tokensIn = Number(budget?.spent?.this_month_tokens_in ?? 0);
-  const tokensOut = Number(budget?.spent?.this_month_tokens_out ?? 0);
+  const taskUsage = aggregateTaskTokenUsage(tasks);
+  const budgetUsage = budgetTokenUsage(budget);
+  const usage = taskUsage.total > 0 ? taskUsage : budgetUsage;
   return {
     running: tasks.filter((t) => ["running", "cancelling"].includes(t.status)).length,
     queued: tasks.filter((t) => t.status === "queued").length,
     todaySuccess: tasks.filter((t) => t.status === "success" && `${t.updated_at ?? t.created_at ?? ""}`.startsWith(today)).length,
-    monthlyTokens: (Number.isFinite(tokensIn) ? Math.max(0, tokensIn) : 0)
-      + (Number.isFinite(tokensOut) ? Math.max(0, tokensOut) : 0)
+    monthlyTokens: usage.total
   };
 }
 
@@ -3924,6 +4006,87 @@ function formatTokensCompact(n) {
   if (v < 1000) return String(Math.round(v));
   if (v < 1_000_000) return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}K`;
   return `${(v / 1_000_000).toFixed(v < 10_000_000 ? 1 : 0)}M`;
+}
+
+function safeTokenNumber(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function extractTaskTokenUsage(task = {}) {
+  const usage = task?.usage_summary ?? task?.usage ?? task?.metadata?.usage_summary ?? {};
+  const input = safeTokenNumber(usage.tokens_in ?? usage.input_tokens ?? usage.prompt_tokens);
+  const output = safeTokenNumber(usage.tokens_out ?? usage.output_tokens ?? usage.completion_tokens);
+  const total = safeTokenNumber(usage.total_tokens) || input + output || safeTokenNumber(task?.tokens_used);
+  return {
+    input,
+    output,
+    total,
+    cacheHit: safeTokenNumber(usage.cache_hit_tokens ?? usage.prompt_cache_hit_tokens),
+    cacheMiss: safeTokenNumber(usage.cache_miss_tokens ?? usage.prompt_cache_miss_tokens),
+    cacheCreate: safeTokenNumber(usage.cache_creation_input_tokens),
+    cacheRead: safeTokenNumber(usage.cache_read_input_tokens),
+    callCount: safeTokenNumber(usage.call_count ?? usage.llm_usage_call_count)
+  };
+}
+
+function addTokenUsageTotals(total, next) {
+  total.input += next.input;
+  total.output += next.output;
+  total.total += next.total;
+  total.cacheHit += next.cacheHit;
+  total.cacheMiss += next.cacheMiss;
+  total.cacheCreate += next.cacheCreate;
+  total.cacheRead += next.cacheRead;
+  total.callCount += next.callCount;
+  return total;
+}
+
+function emptyTokenUsageTotals() {
+  return {
+    input: 0,
+    output: 0,
+    total: 0,
+    cacheHit: 0,
+    cacheMiss: 0,
+    cacheCreate: 0,
+    cacheRead: 0,
+    callCount: 0
+  };
+}
+
+function aggregateTaskTokenUsage(tasks = [], { conversationId = null } = {}) {
+  const totals = emptyTokenUsageTotals();
+  for (const task of Array.isArray(tasks) ? tasks : []) {
+    if (conversationId) {
+      const owner = task?.conversation_id ?? task?.context_packet?.selection_metadata?.conversation_id ?? null;
+      if (owner !== conversationId) continue;
+    }
+    addTokenUsageTotals(totals, extractTaskTokenUsage(task));
+  }
+  if (totals.total === 0) totals.total = totals.input + totals.output;
+  return totals;
+}
+
+function budgetTokenUsage(budget = {}) {
+  const spent = budget?.spent ?? {};
+  const totals = emptyTokenUsageTotals();
+  totals.input = safeTokenNumber(spent.this_month_tokens_in);
+  totals.output = safeTokenNumber(spent.this_month_tokens_out);
+  totals.total = totals.input + totals.output;
+  totals.cacheHit = safeTokenNumber(spent.cache_hit_tokens ?? spent.prompt_cache_hit_tokens);
+  totals.cacheMiss = safeTokenNumber(spent.cache_miss_tokens ?? spent.prompt_cache_miss_tokens);
+  totals.cacheCreate = safeTokenNumber(spent.cache_creation_input_tokens);
+  totals.cacheRead = safeTokenNumber(spent.cache_read_input_tokens);
+  return totals;
+}
+
+function workspaceTokenUsage({ conversationId = null } = {}) {
+  const taskTotals = aggregateTaskTokenUsage(state.workspace?.tasks ?? [], { conversationId });
+  if (conversationId || taskTotals.total > 0 || taskTotals.cacheHit > 0 || taskTotals.cacheMiss > 0) {
+    return taskTotals;
+  }
+  return budgetTokenUsage(state.workspace?.budget ?? {});
 }
 
 function bindTokenUsageShortcut() {
@@ -4333,7 +4496,7 @@ function renderUserMemorySettings() {
   }
   if (userMemorySwitchHint) {
     userMemorySwitchHint.textContent = enabled
-      ? "Enabled. Saved preferences and approved governed memories can be injected as typed background context."
+      ? "Enabled. Saved preferences and approved memories can be injected as typed context; completed tasks create reviewable memory proposals."
       : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
   }
   if (userMemoryState) {
@@ -7736,17 +7899,13 @@ function renderBudget() {
   // C17/PMAT: tokens are the primary usage signal. The runtime may still
   // keep legacy monetary caps internally, but the user-facing Console shows
   // token movement only unless provider-owned cache-hit fields exist.
-  const tokensIn = Number(b.spent?.this_month_tokens_in ?? 0);
-  const tokensOut = Number(b.spent?.this_month_tokens_out ?? 0);
-  const cacheHit = Number(b.spent?.cache_hit_tokens ?? b.spent?.prompt_cache_hit_tokens ?? 0);
-  const cacheMiss = Number(b.spent?.cache_miss_tokens ?? b.spent?.prompt_cache_miss_tokens ?? 0);
-  const safeToken = (value) => Number.isFinite(value) && value > 0 ? value : 0;
-  const totalIn = safeToken(tokensIn);
-  const totalOut = safeToken(tokensOut);
-  const total = totalIn + totalOut;
-  const hit = safeToken(cacheHit);
-  const miss = safeToken(cacheMiss);
-  const formatTokens = (n) => safeToken(Number(n)).toLocaleString("en-US");
+  const usage = workspaceTokenUsage();
+  const totalIn = usage.input;
+  const totalOut = usage.output;
+  const total = usage.total || totalIn + totalOut;
+  const hit = usage.cacheHit;
+  const miss = usage.cacheMiss;
+  const formatTokens = (n) => safeTokenNumber(Number(n)).toLocaleString("en-US");
   const entries = [
     { label: "Tokens this month", value: formatTokens(total), detail: "input + output" },
     { label: "Input tokens", value: formatTokens(totalIn), detail: `${total > 0 ? Math.round((totalIn / total) * 100) : 0}% of total` },
@@ -7761,7 +7920,7 @@ function renderBudget() {
     </div>
   `).join("");
   if (budgetState) {
-    budgetState.textContent = "Token usage is aggregated from runtime usage records. Price display is hidden.";
+    budgetState.textContent = "Token usage is aggregated from task llm_usage records; price display is hidden.";
   }
   if (monthlyBudgetInput) monthlyBudgetInput.value = `${b.limits?.monthly_usd_limit ?? ""}`;
 }
@@ -7921,6 +8080,9 @@ async function refreshProjectWorkspace(projectId, { force = false } = {}) {
     projectWorkspaceDetail = cached;
   }
   renderProjectsWorkspace({ skipFetch: true });
+  if (projectId === getConsoleChatSubmitProjectId()) {
+    renderConsoleChatArtifacts(consoleChatArtifactItems);
+  }
 }
 
 function renderProjectsWorkspace({ skipFetch = false } = {}) {
@@ -8673,6 +8835,7 @@ async function refreshWorkspace(options = {}) {
 
       setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
       updateTopRuntimePill();
+      renderConsoleChatHeader();
       await renderWorkspaceAfterFetch({ mode, activeTabId });
     } catch (error) {
       setRuntimeBadge(false, `Unavailable · ${error.message}`);
@@ -9102,7 +9265,7 @@ consoleChatFilesBtn?.addEventListener("click", async () => {
   consoleChatArtifactsExpanded = !consoleChatArtifactsExpanded;
   const projectId = getConsoleChatSubmitProjectId();
   if (consoleChatArtifactsExpanded && projectId && projectId !== DEFAULT_PROJECT_ID) {
-    await refreshProjectWorkspace(projectId);
+    await refreshProjectWorkspace(projectId, { force: true });
   }
   if (consoleActiveConversation?.conversation_id) {
     await refreshConsoleChatArtifacts({ force: true });
@@ -11021,7 +11184,7 @@ userMemoryEnabled?.addEventListener("change", () => {
   }
   if (userMemorySwitchHint) {
     userMemorySwitchHint.textContent = enabled
-      ? "Enabled. Saved preferences and approved governed memories can be injected as typed background context."
+      ? "Enabled. Saved preferences and approved memories can be injected as typed context; completed tasks create reviewable memory proposals."
       : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
   }
 });

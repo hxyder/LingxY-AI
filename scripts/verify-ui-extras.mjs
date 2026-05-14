@@ -89,6 +89,7 @@ const taskSubmission = read("src/service/core/task-runtime/task-submission.mjs")
 const taskCancellation = read("src/service/core/task-runtime/task-cancellation.mjs");
 const notesStore = read("src/service/store/notes-store.mjs");
 const noteProjectConversationRoutes = read("src/service/core/http-routes/note-project-conversation-routes.mjs");
+const taskRoutes = read("src/service/core/http-routes/task-routes.mjs");
 const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
 
 // ── Toast system ───────────────────────────────────────────────────────
@@ -472,6 +473,11 @@ assert.ok(/id="chatSidebarChatsTabBtn"/.test(consoleHtml) && /id="chatSidebarPro
     && /id="chatSidebarScopeSelect"/.test(consoleHtml) && /选择项目/.test(consoleHtml)
     && /chat-sidebar-mode/.test(sharedCss) && /chat-sidebar-scope/.test(sharedCss),
   "chat projects: sidebar must expose ordinary conversations and projects as distinct tabs with a project selector");
+assert.ok(/dataset\.chatSidebarMode/.test(consoleJs) && /data-chat-sidebar-mode="chats"[\s\S]{0,120}\.chat-sidebar-scope/.test(sharedCss),
+  "chat projects: project selector must be structurally hidden in ordinary Chat mode");
+assert.ok(/data-chat-sidebar-delete-id/.test(consoleChatSidebar) && /function\s+deleteConsoleConversation/.test(consoleJs)
+    && /method:\s*["']DELETE["'][\s\S]{0,160}X-Lingxy-Desktop-Actor/.test(consoleJs),
+  "chat projects: conversation rows must expose guarded soft-delete");
 assert.ok(!/All conversations/.test(consoleHtml) && !/Personal chats/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml) && !/data-tab="projects"/.test(consoleHtml),
   "chat projects: UI must not expose a mixed conversation scope, top-level Files rail entry, or top-level Projects rail entry");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /CHAT_SIDEBAR_MODE_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
@@ -485,6 +491,8 @@ assert.ok(/savedView\s*===\s*["']projects["'][\s\S]{0,120}savedView\s*=\s*["']ch
   "chat projects: stale/special project management views must not trap normal startup navigation");
 assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project_id:\s*projectId/.test(consoleJs),
   "chat projects: /task submit must carry structured project_id when scoped");
+assert.ok(/getConsoleChatSubmitProjectId\(\)\s*\{[\s\S]{0,160}getChatSidebarConversationProjectId\(\)/.test(consoleJs),
+  "chat projects: submissions must not leak a stale project id while the ordinary Chat tab is selected");
 assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
   "chat empty: New chat must use the rich empty-state renderer instead of plain text");
 assert.ok(/id="consoleChatArtifacts"/.test(consoleHtml) && /\.conversation-artifacts\b/.test(sharedCss),
@@ -499,8 +507,20 @@ assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes) && /g
   "chat artifacts: conversation route must expose getArtifactsForConversation");
 assert.ok(/function\s+refreshConsoleChatArtifacts/.test(consoleJs) && /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/artifacts/.test(consoleJs),
   "chat artifacts: console must fetch the current conversation artifact index");
+assert.ok(/refreshProjectWorkspace\(projectId,\s*\{\s*force:\s*true\s*\}/.test(consoleJs)
+    && /renderConsoleChatArtifacts\(consoleChatArtifactItems\)/.test(consoleJs),
+  "chat artifacts: project Files drawer must force-refresh and rerender selected-project files");
 assert.ok(/setHtmlIfChanged\(consoleChatArtifacts/.test(consoleJs),
   "chat artifacts: renderer must avoid unnecessary innerHTML churn");
+assert.ok(/appendConsoleChatTimelineNode\(node,\s*\{\s*taskId/.test(consoleJs)
+    && /consoleChatAssistantWrapperForTask\(taskId\)/.test(consoleJs),
+  "chat timeline: late tool cards must stay above the final assistant answer for their task");
+assert.ok(/appendConsoleChatMessage\(["']user["'],\s*message\.content/.test(consoleJs)
+    && /data-nav="prev"/.test(consoleJs) && /data-nav="next"/.test(consoleJs),
+  "chat timeline: loaded backend user messages must reuse the user bubble renderer with previous/next navigation");
+assert.ok(/workspaceTokenUsage/.test(consoleJs) && /chat-token-counter/.test(consoleJs)
+    && /usage_summary:\s*taskUsageSummary/.test(taskRoutes),
+  "token usage: chat and Settings token counters must aggregate task llm_usage summaries");
 assert.ok(/data-conversation-artifact-open/.test(consoleJs) && /data-conversation-artifact-reveal/.test(consoleJs),
   "chat artifacts: file strip must expose open and reveal actions");
 assert.ok(/artifactStatusInfo/.test(sharedUi) && /\.artifact-status\b/.test(sharedCss),

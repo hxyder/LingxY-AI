@@ -37,6 +37,7 @@ export function renderChatSidebarListHtml({
   searchTerm = "",
   activeConversationId = null,
   projectId = null,
+  loadingConversationId = null,
   searchAlreadyApplied = false
 } = {}) {
   const source = Array.isArray(items) ? items : [];
@@ -55,24 +56,29 @@ export function renderChatSidebarListHtml({
     const safeDepth = Math.max(0, Math.min(Number(depth) || 0, 4));
     const conversationId = String(conversation?.conversation_id ?? "");
     const isActive = conversationId === activeConversationId;
+    const isLoading = conversationId === loadingConversationId;
     const snippet = conversationSearchSnippet(conversation);
     const branch = conversationBranchMeta(conversation);
     return `
-      <button type="button" class="chat-sidebar-item ${isBranch ? "chat-sidebar-item--branch" : ""} ${isActive ? "active" : ""}"
-              data-chat-sidebar-id="${escapeHtml(conversationId)}"
-              style="--conversation-indent:${safeDepth * 16}px;--conversation-line-offset:${Math.max(0, safeDepth - 1) * 16}px;">
-        <div class="chat-sidebar-item-title">
-          <span>${escapeHtml(conversationTitle(conversation))}</span>
-          ${branch ? `<span class="conversation-branch-chip">${escapeHtml(branch.kind)}</span>` : ""}
-        </div>
-        ${branch?.source ? `<div class="chat-sidebar-item-branch">from ${escapeHtml(branch.source.slice(0, 18))}</div>` : ""}
-        ${snippet ? `<div class="chat-sidebar-item-snippet">${escapeHtml(snippet)}</div>` : ""}
-        <div class="chat-sidebar-item-meta">
-          <span>${escapeHtml(String(conversation.message_count ?? 0))}m · ${escapeHtml(String(conversation.task_count ?? 0))}t</span>
-          <span>·</span>
-          <span>${escapeHtml(formatDateTime(conversation.updated_at))}</span>
-        </div>
-      </button>
+      <div class="chat-sidebar-item-row ${isActive ? "active" : ""} ${isLoading ? "loading" : ""}"
+           style="--conversation-indent:${safeDepth * 16}px;--conversation-line-offset:${Math.max(0, safeDepth - 1) * 16}px;">
+        <button type="button" class="chat-sidebar-item ${isBranch ? "chat-sidebar-item--branch" : ""} ${isActive ? "active" : ""}"
+                data-chat-sidebar-id="${escapeHtml(conversationId)}">
+          <div class="chat-sidebar-item-title">
+            <span>${escapeHtml(conversationTitle(conversation))}</span>
+            ${branch ? `<span class="conversation-branch-chip">${escapeHtml(branch.kind)}</span>` : ""}
+          </div>
+          ${branch?.source ? `<div class="chat-sidebar-item-branch">from ${escapeHtml(branch.source.slice(0, 18))}</div>` : ""}
+          ${snippet ? `<div class="chat-sidebar-item-snippet">${escapeHtml(snippet)}</div>` : ""}
+          <div class="chat-sidebar-item-meta">
+            <span>${escapeHtml(String(conversation.message_count ?? 0))}m · ${escapeHtml(String(conversation.task_count ?? 0))}t</span>
+            <span>·</span>
+            <span>${escapeHtml(formatDateTime(conversation.updated_at))}</span>
+            ${isLoading ? `<span>· loading</span>` : ""}
+          </div>
+        </button>
+        <button type="button" class="chat-sidebar-delete" data-chat-sidebar-delete-id="${escapeHtml(conversationId)}" aria-label="Delete ${escapeHtml(conversationTitle(conversation))}" title="Delete conversation">×</button>
+      </div>
     `;
   }).join("");
 }

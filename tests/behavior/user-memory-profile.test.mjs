@@ -11,6 +11,7 @@ import {
   createMemoryProposal,
   deleteApprovedMemory,
   filterMemoryGovernanceProfile,
+  proposeTaskCompletionMemory,
   rejectMemoryProposal,
   sanitizeUserMemoryProfile,
   undoMemoryReview
@@ -165,6 +166,44 @@ test("memory governance requires proposal review before approved memory injectio
   assert.equal(entries.length, 1);
   assert.match(entries[0].content, /rejected_assumption/);
   assert.deepEqual(entries[0].metadata.memory_types, ["rejected_assumption"]);
+});
+
+test("user memory can automatically propose bounded task completion summaries", () => {
+  const profile = proposeTaskCompletionMemory(
+    sanitizeUserMemoryProfile({ enabled: true }),
+    {
+      task: {
+        task_id: "task_auto_memory",
+        status: "success",
+        executor: "tool_using",
+        conversation_id: "conv_auto_memory",
+        project_id: "proj_auto_memory",
+        user_command: "帮我总结这个项目的部署偏好"
+      },
+      finalText: "项目部署时优先使用本地校验，再推送远程。",
+      now: "2026-05-13T12:00:00.000Z"
+    }
+  );
+
+  assert.equal(profile.proposals.length, 1);
+  assert.equal(profile.proposals[0].type, "episodic_task");
+  assert.equal(profile.proposals[0].scope, "project");
+  assert.equal(profile.proposals[0].projectId, "proj_auto_memory");
+  assert.equal(profile.proposals[0].provenance.task_id, "task_auto_memory");
+  assert.match(profile.proposals[0].text, /User asked:/);
+  assert.match(profile.proposals[0].text, /Assistant outcome:/);
+
+  const duplicate = proposeTaskCompletionMemory(profile, {
+    task: {
+      task_id: "task_auto_memory",
+      status: "success",
+      conversation_id: "conv_auto_memory",
+      user_command: "same task"
+    },
+    finalText: "same result",
+    now: "2026-05-13T12:01:00.000Z"
+  });
+  assert.equal(duplicate.proposals.length, 1);
 });
 
 test("memory governance can reject proposals and delete approved memory", () => {

@@ -621,6 +621,10 @@
   font-size: 11px;
   color: var(--muted);
 }
+.chat-sidebar[data-chat-sidebar-mode="chats"] .chat-sidebar-scope,
+.chat-sidebar-scope[hidden] {
+  display: none !important;
+}
 .chat-sidebar-scope select {
   width: 100%;
   height: 32px;
@@ -662,11 +666,25 @@
   flex-direction: column;
   gap: 2px;
 }
+.chat-sidebar-item-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 24px;
+  align-items: stretch;
+  border-radius: 6px;
+}
+.chat-sidebar-item-row.loading {
+  opacity: 0.72;
+}
+.chat-sidebar-item-row:hover .chat-sidebar-delete,
+.chat-sidebar-delete:focus-visible {
+  opacity: 1;
+}
 .chat-sidebar-item {
   display: block;
   width: 100%;
   text-align: left;
-  padding: 8px 10px 8px calc(10px + var(--conversation-indent, 0px));
+  padding: 8px 4px 8px calc(10px + var(--conversation-indent, 0px));
   border-radius: 6px;
   border: 0;
   background: transparent;
@@ -743,11 +761,40 @@
   gap: 6px;
   align-items: center;
 }
+.chat-sidebar-delete {
+  align-self: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+.chat-sidebar-delete:hover {
+  background: color-mix(in srgb, #ff3b30 12%, var(--panel));
+  color: #c02b22;
+}
 .chat-sidebar-empty {
   padding: 14px;
   font-size: 12px;
   color: var(--muted);
   text-align: center;
+}
+.chat-token-counter {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
 }
 
 /* Right-click context menu for chat bubbles (Copy / Quote / Regenerate

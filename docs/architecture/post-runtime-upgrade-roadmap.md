@@ -80,6 +80,20 @@ the top of Skills Registries so adding user skills is the primary path, while
 User Memory shows an explicit enabled/disabled state instead of relying on a bare
 checkbox.
 
+PMAT-013 follow-up, 2026-05-13: Chat/project interaction must keep three
+separate invariants locked. Ordinary Chat mode cannot leak a stale selected
+project into the selector, empty-state copy, file drawer, or task submission.
+Project mode must force-refresh service-owned project workspace files before
+rendering the Files drawer, so project files/folders are available even before a
+specific project conversation has generated artifacts. Conversation rows need
+instant loading feedback, guarded soft-delete, and loaded user-message
+previous/next navigation, while assistant final answers must remain below their
+tool-call cards even if late tool events arrive. Token Usage is task
+`llm_usage` aggregation first, budget fallback second, with a per-conversation
+counter in the active chat header. User Memory remains review-governed:
+completed tasks may create bounded automatic `episodic_task` proposals, but
+nothing becomes injected memory until the user approves it.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

@@ -379,6 +379,68 @@ export function createMemoryProposal({
   return normalized;
 }
 
+function boundedTurnSummary({ command = "", finalText = "" } = {}) {
+  const user = normalizeText(command, 260);
+  const outcome = normalizeText(finalText, 260);
+  if (!user || !outcome) return "";
+  return normalizeText(`User asked: ${user}\nAssistant outcome: ${outcome}`, MAX_TEXT_CHARS);
+}
+
+export function proposeTaskCompletionMemory(profile = {}, {
+  task = {},
+  finalText = "",
+  now = nowIso()
+} = {}) {
+  const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
+  if (!sanitized.enabled) return sanitized;
+  const taskId = normalizeText(task?.task_id, 120);
+  if (!taskId) return sanitized;
+  const alreadyKnown = [
+    ...(sanitized.proposals ?? []),
+    ...(sanitized.approvedMemories ?? [])
+  ].some((item) => item?.provenance?.task_id === taskId);
+  if (alreadyKnown) return sanitized;
+
+  const projectId = normalizeText(
+    task?.project_id
+      ?? task?.context_packet?.selection_metadata?.project_id
+      ?? task?.context_packet?.selectionMetadata?.project_id,
+    120
+  ) || null;
+  const conversationId = normalizeText(
+    task?.conversation_id
+      ?? task?.context_packet?.selection_metadata?.conversation_id
+      ?? task?.context_packet?.selectionMetadata?.conversation_id,
+    120
+  ) || null;
+  const text = boundedTurnSummary({
+    command: task?.user_command,
+    finalText
+  });
+  if (!text) return sanitized;
+  const proposal = createMemoryProposal({
+    type: "episodic_task",
+    text,
+    scope: projectId ? "project" : (conversationId ? "conversation" : "global"),
+    projectId,
+    conversationId,
+    source: "task_completion_summary",
+    provenance: {
+      task_id: taskId,
+      conversation_id: conversationId,
+      project_id: projectId,
+      executor: normalizeText(task?.executor, 80) || null,
+      status: normalizeText(task?.status, 80) || null
+    },
+    now
+  });
+  return sanitizeUserMemoryProfile({
+    ...sanitized,
+    updatedAt: now,
+    proposals: [proposal, ...sanitized.proposals]
+  }, { now });
+}
+
 export function approveMemoryProposal(profile = {}, proposalId, patch = {}, { now = nowIso() } = {}) {
   const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
   const proposal = sanitized.proposals.find((item) => item.proposalId === proposalId);

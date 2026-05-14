@@ -7,6 +7,11 @@
  * orchestration shell that combines task creation, audit, queueing, and events.
  */
 
+import {
+  proposeTaskCompletionMemory,
+  readUserMemoryProfileFromConfig
+} from "../../memory/user-profile.mjs";
+
 export function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   try {
     const parent = runtime.store.getTask(parentTaskId);
@@ -156,6 +161,25 @@ export function backfillConversationTitles(runtime) {
 
 const MAX_OUTCOME_ARTIFACT_PATHS = 8;
 
+function maybeProposeTaskCompletionMemory(runtime, task, finalText) {
+  try {
+    if (task?.status !== "success" && task?.status !== "partial_success") return;
+    if (typeof runtime?.configStore?.load !== "function" || typeof runtime.configStore.patch !== "function") return;
+    const config = runtime.configStore.load();
+    const current = readUserMemoryProfileFromConfig(config);
+    const next = proposeTaskCompletionMemory(current, {
+      task,
+      finalText,
+      now: new Date().toISOString()
+    });
+    if ((next.proposals ?? []).length === (current.proposals ?? []).length) return;
+    runtime.configStore.patch({ ai: { userMemory: next } });
+  } catch {
+    // Memory proposal generation is background bookkeeping; it must never
+    // change the task terminal state or visible conversation reply.
+  }
+}
+
 export function appendTaskOutcomeMessage(runtime, task) {
   if (!runtime?.store?.appendMessage || !runtime.store.linkMessageToTask) return null;
   const conversationId = task?.conversation_id;
@@ -199,6 +223,9 @@ export function appendTaskOutcomeMessage(runtime, task) {
       task_id: task.task_id,
       executor: task.executor
     };
+    if (task?.usage_summary && typeof task.usage_summary === "object") {
+      metadata.usage_summary = task.usage_summary;
+    }
     const evidenceSummary = task?.evidence_summary ?? task?.result?.evidence_summary ?? null;
     if (evidenceSummary && typeof evidenceSummary === "object") {
       metadata.evidence_summary = evidenceSummary;
@@ -224,6 +251,7 @@ export function appendTaskOutcomeMessage(runtime, task) {
       metadata
     });
     runtime.store.linkMessageToTask(message.message_id, task.task_id, "answered_by");
+    maybeProposeTaskCompletionMemory(runtime, task, content);
     return message;
   } catch {
     return null;
