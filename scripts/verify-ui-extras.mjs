@@ -1184,6 +1184,20 @@ assert.ok(/preview\/shell-preview-client\.js/.test(previewWindowHtml)
     && !/window\.ucaShell/.test(imagePreviewHandler)
     && !/window\.ucaShell/.test(pdfPreviewHandler),
   "preview shell bridge calls must stay behind the preview shell client");
+assert.ok(/preview\/shell-preview-client\.js/.test(consoleHtml)
+    && /preview\/runtime-preview-client\.js/.test(consoleHtml)
+    && /statPath/.test(consolePreload)
+    && /listDirectory/.test(consolePreload)
+    && /fs\.readdir/.test(consolePreload)
+    && /statPath/.test(previewShellClient)
+    && /listDirectory/.test(previewShellClient),
+  "console inline preview must load preview clients and expose directory stat/list through the shell bridge");
+assert.ok(/id="consolePreviewBackBtn"/.test(consoleHtml)
+    && /inlinePreviewBackStack/.test(consoleJs)
+    && /data-directory-entry-open/.test(consoleJs)
+    && /data-directory-entry-reveal/.test(consoleJs)
+    && /\.directory-preview-row/.test(sharedCss),
+  "console inline preview must support folder navigation, reveal actions, and back navigation");
 
 // ── Step copy on row ───────────────────────────────────────────────────
 assert.ok(/\.bubble\.step\s+\.step-copy/.test(overlayHtml),

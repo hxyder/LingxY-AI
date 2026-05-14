@@ -30,6 +30,8 @@ assert.match(profile, /rejectMemoryProposal/, "memory profile must reject propos
 assert.match(profile, /deleteApprovedMemory/, "memory profile must delete approved memory");
 assert.match(profile, /approvedMemories/, "profile must persist approved memories");
 assert.match(profile, /proposals/, "profile must persist memory proposals");
+assert.match(profile, /autoApproveGenerated/, "profile must persist explicit generated-memory auto-save opt-in");
+assert.match(profile, /user_opt_in_auto_memory/, "automatic approval must be marked as user opt-in");
 assert.doesNotMatch(profile, /silent auto-learning|autoLearnPermanent/u,
   "memory governance must not introduce silent permanent auto-learning");
 
@@ -42,6 +44,7 @@ assert.match(routes, /requireDesktopActor[\s\S]{0,120}desktop_console/u,
 
 assert.match(consoleHtml, /userMemoryApprovedList/, "Console Settings must show approved memory");
 assert.match(consoleHtml, /userMemoryProposalList/, "Console Settings must show memory proposals");
+assert.match(consoleHtml, /userMemoryAutoApprove/, "Console Settings must expose generated-memory auto-save opt-in");
 assert.match(consoleJs, /renderGovernedMemoryList/, "Console must render governed memory");
 assert.match(consoleJs, /data-memory-approve/, "Console must support proposal approval");
 assert.match(consoleJs, /data-memory-reject/, "Console must support proposal rejection");
@@ -56,6 +59,8 @@ assert.match(tests, /requires proposal review before approved memory injection/,
   "tests must prove proposals are not injected before approval");
 assert.match(tests, /automatically propose bounded task completion summaries/,
   "tests must prove automatic task memory stays proposal-governed");
+assert.match(tests, /auto-approves only after explicit user opt-in/,
+  "tests must prove generated task memory can only auto-approve behind explicit opt-in");
 assert.match(tests, /can reject proposals and delete approved memory/,
   "tests must prove reject/delete governance flows");
 assert.match(tests, /context compiler can select scoped reviewed memory/,

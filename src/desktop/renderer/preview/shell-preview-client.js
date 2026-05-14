@@ -21,6 +21,12 @@
       readTextFile(filePath, maxBytes, message = "ucaShell.readTextFile 未挂载") {
         return requireMethod("readTextFile", message)(filePath, maxBytes);
       },
+      statPath(filePath, message = "ucaShell.statPath 未挂载") {
+        return requireMethod("statPath", message)(filePath);
+      },
+      listDirectory(filePath, options = {}, message = "ucaShell.listDirectory 未挂载") {
+        return requireMethod("listDirectory", message)(filePath, options ?? {});
+      },
       readFileAsDataUrl(filePath, mime, message = "ucaShell.readFileAsDataUrl 未挂载") {
         return requireMethod("readFileAsDataUrl", message)(filePath, mime);
       },

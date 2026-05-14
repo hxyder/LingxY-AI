@@ -184,6 +184,12 @@ export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOSt
   return {
     schemaVersion: USER_MEMORY_PROFILE_VERSION,
     enabled: profile.enabled !== false,
+    autoApproveGenerated: profile.autoApproveGenerated === true
+      || profile.autoApproveGeneratedMemory === true
+      || profile.autoApproveTaskMemory === true
+      || profile.autoSaveGenerated === true
+      || profile.auto_save_generated === true
+      || profile.auto_approve_generated === true,
     updatedAt: now,
     preferences: normalizeMemoryItems(profile.preferences ?? [], { defaultScope: "global" }),
     projectMemories: normalizeMemoryItems(profile.projectMemories ?? profile.project_memories ?? [], {
@@ -280,7 +286,11 @@ function renderGovernedMemoryList(items = []) {
   return items.map((item) => `- [${item.type}] ${item.text}`).join("\n");
 }
 
-export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = null } = {}) {
+export function buildUserMemoryBackgroundEntries(profile = {}, {
+  projectId = null,
+  conversationId = null,
+  artifactId = null
+} = {}) {
   const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? new Date().toISOString() });
   if (!sanitized.enabled) return [];
 
@@ -300,14 +310,34 @@ export function buildUserMemoryBackgroundEntries(profile = {}, { projectId = nul
     });
   }
 
-  const governed = relevantGovernedMemories(sanitized.approvedMemories, { projectId });
-  const globalGoverned = governed.filter((item) => item.scope !== "project");
+  const governed = relevantGovernedMemories(sanitized.approvedMemories, { projectId, conversationId, artifactId });
+  const globalGoverned = governed.filter((item) => !["project", "conversation"].includes(item.scope));
+  const conversationGoverned = governed.filter((item) => item.scope === "conversation");
   const normalizedProjectId = normalizeText(projectId, 120);
+  const normalizedConversationId = normalizeText(conversationId, 120);
   const projectItems = sanitized.projectMemories
     .filter((item) => Boolean(normalizedProjectId) && item.projectId === normalizedProjectId);
   const projectGoverned = governed.filter((item) => item.scope === "project");
-  // Specific scope should precede broad reviewed memory so project facts win
-  // when a task explicitly carries project_id.
+  // Specific scope should precede broad reviewed memory so conversation and
+  // project facts win when a task explicitly carries those identifiers.
+  if (conversationGoverned.length > 0) {
+    entries.push({
+      kind: "conversation_memory",
+      priority: "background",
+      origin: "pre_task_seed",
+      content: [
+        `Conversation memory${normalizedConversationId ? ` for conversation_id=${normalizedConversationId}` : ""}. Treat as scoped background, not a replacement for current instructions or fresh evidence.`,
+        renderGovernedMemoryList(conversationGoverned)
+      ].join("\n"),
+      metadata: {
+        conversation_id: normalizedConversationId || null,
+        memory_governance: true,
+        user_memory_ids: conversationGoverned.map((item) => item.id),
+        memory_types: [...new Set(conversationGoverned.map((item) => item.type))]
+      }
+    });
+  }
+
   if (projectItems.length > 0 || projectGoverned.length > 0) {
     entries.push({
       kind: "project_memory",
@@ -434,11 +464,17 @@ export function proposeTaskCompletionMemory(profile = {}, {
     },
     now
   });
-  return sanitizeUserMemoryProfile({
+  const withProposal = sanitizeUserMemoryProfile({
     ...sanitized,
     updatedAt: now,
     proposals: [proposal, ...sanitized.proposals]
   }, { now });
+  if (withProposal.autoApproveGenerated === true) {
+    return approveMemoryProposal(withProposal, proposal.proposalId, {
+      actor: "user_opt_in_auto_memory"
+    }, { now });
+  }
+  return withProposal;
 }
 
 export function approveMemoryProposal(profile = {}, proposalId, patch = {}, { now = nowIso() } = {}) {
@@ -618,9 +654,13 @@ export function upsertApprovedMemory(profile = {}, memory = {}, { now = nowIso()
   }, { now });
 }
 
-export function applyUserMemoryProfileToContext(contextPacket = {}, profile = {}, { projectId = null } = {}) {
+export function applyUserMemoryProfileToContext(contextPacket = {}, profile = {}, {
+  projectId = null,
+  conversationId = null,
+  artifactId = null
+} = {}) {
   let next = contextPacket;
-  const entries = buildUserMemoryBackgroundEntries(profile, { projectId });
+  const entries = buildUserMemoryBackgroundEntries(profile, { projectId, conversationId, artifactId });
   for (const entry of entries) {
     next = appendBackgroundContext(next, entry);
   }

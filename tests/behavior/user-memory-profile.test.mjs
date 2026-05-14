@@ -85,6 +85,29 @@ test("user memory profile does not leak project memory without matching scope co
   assert.doesNotMatch(scopedBlock, /Only project B/);
 });
 
+test("conversation-scoped memory injects only for the matching conversation", () => {
+  const profile = sanitizeUserMemoryProfile({
+    approvedMemories: [
+      { id: "conv_a_1", scope: "conversation", conversationId: "conv_a", type: "episodic_task", text: "Conversation A remembers the Excel format correction." },
+      { id: "conv_b_1", scope: "conversation", conversationId: "conv_b", type: "episodic_task", text: "Conversation B private detail." },
+      { id: "global_1", scope: "global", type: "user_preference", text: "Global reviewed note." }
+    ]
+  }, { now: "2026-05-14T00:00:00.000Z" });
+
+  const context = applyUserMemoryProfileToContext(
+    { text: "", selection_metadata: {} },
+    profile,
+    { conversationId: "conv_a" }
+  );
+  assert.equal(context.selection_metadata.user_memory_injected, true);
+  assert.deepEqual(context.background_contexts.map((entry) => entry.kind), ["conversation_memory", "user_profile"]);
+
+  const rendered = renderBackgroundContextsBlock(context);
+  assert.match(rendered, /Conversation A remembers the Excel format correction/);
+  assert.match(rendered, /Global reviewed note/);
+  assert.doesNotMatch(rendered, /Conversation B private detail/);
+});
+
 test("project-scoped memory precedes global reviewed memory for project tasks", () => {
   const profile = sanitizeUserMemoryProfile({
     approvedMemories: [
@@ -204,6 +227,38 @@ test("user memory can automatically propose bounded task completion summaries", 
     now: "2026-05-13T12:01:00.000Z"
   });
   assert.equal(duplicate.proposals.length, 1);
+});
+
+test("generated task memory auto-approves only after explicit user opt-in", () => {
+  const profile = proposeTaskCompletionMemory(
+    sanitizeUserMemoryProfile({ enabled: true, autoApproveGenerated: true }),
+    {
+      task: {
+        task_id: "task_auto_approved_memory",
+        status: "success",
+        executor: "tool_using",
+        conversation_id: "conv_auto_approved",
+        user_command: "记住这个会话里的文件命名偏好"
+      },
+      finalText: "后续导出的简历文件使用中文职位名作为文件名前缀。",
+      now: "2026-05-14T12:00:00.000Z"
+    }
+  );
+
+  assert.equal(profile.proposals.length, 1);
+  assert.equal(profile.proposals[0].status, "approved");
+  assert.equal(profile.approvedMemories.length, 1);
+  assert.equal(profile.approvedMemories[0].scope, "conversation");
+  assert.equal(profile.approvedMemories[0].conversationId, "conv_auto_approved");
+  assert.equal(profile.reviewHistory[0].action, "approve_proposal");
+  assert.equal(profile.reviewHistory[0].actor, "user_opt_in_auto_memory");
+
+  const context = applyUserMemoryProfileToContext(
+    { text: "", selection_metadata: {} },
+    profile,
+    { conversationId: "conv_auto_approved" }
+  );
+  assert.ok(context.background_contexts.some((entry) => entry.kind === "conversation_memory"));
 });
 
 test("memory governance can reject proposals and delete approved memory", () => {

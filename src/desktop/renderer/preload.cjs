@@ -1,5 +1,6 @@
 const { contextBridge, ipcRenderer, clipboard, shell, webUtils } = require("electron");
 const { promises: fs } = require("node:fs");
+const path = require("node:path");
 
 function serializeErrorLike(value) {
   if (!value) return { message: "" };
@@ -85,6 +86,55 @@ contextBridge.exposeInMainWorld("ucaShell", {
       return content;
     }
     return content.slice(0, maxChars);
+  },
+  async statPath(targetPath) {
+    const stat = await fs.stat(targetPath);
+    return {
+      path: targetPath,
+      isDirectory: stat.isDirectory(),
+      isFile: stat.isFile(),
+      size: stat.size,
+      mtimeMs: stat.mtimeMs
+    };
+  },
+  async listDirectory(targetPath, options = {}) {
+    const rootStat = await fs.stat(targetPath);
+    if (!rootStat.isDirectory()) {
+      throw new Error("not a directory");
+    }
+    const limit = Math.max(1, Math.min(Number(options?.limit) || 250, 500));
+    const dirents = await fs.readdir(targetPath, { withFileTypes: true });
+    const sorted = dirents
+      .map((entry) => ({
+        name: entry.name,
+        isDirectory: entry.isDirectory(),
+        isFile: entry.isFile(),
+        isSymbolicLink: entry.isSymbolicLink()
+      }))
+      .sort((a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+      });
+    const entries = [];
+    for (const entry of sorted.slice(0, limit)) {
+      const entryPath = path.join(targetPath, entry.name);
+      let stat = null;
+      try { stat = await fs.stat(entryPath); } catch { /* inaccessible entry */ }
+      entries.push({
+        ...entry,
+        path: entryPath,
+        kind: entry.isDirectory ? "folder" : "file",
+        size: stat?.size ?? null,
+        mtimeMs: stat?.mtimeMs ?? null
+      });
+    }
+    return {
+      path: targetPath,
+      parentPath: path.dirname(targetPath),
+      total: sorted.length,
+      truncated: sorted.length > entries.length,
+      entries
+    };
   },
   // Read a binary file (typically an image) as a base64 data URL so the
   // renderer can drop it into an <img src="…"> without needing a file://

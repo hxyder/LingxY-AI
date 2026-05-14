@@ -218,6 +218,7 @@ const locationButton = document.querySelector("#locationButton");
 const onboardingState = document.querySelector("#onboardingState");
 const wizardList = document.querySelector("#wizardList");
 const userMemoryEnabled = document.querySelector("#userMemoryEnabled");
+const userMemoryAutoApprove = document.querySelector("#userMemoryAutoApprove");
 const userMemoryPreferences = document.querySelector("#userMemoryPreferences");
 const userMemoryProjectNotes = document.querySelector("#userMemoryProjectNotes");
 const userMemoryScopeFilter = document.querySelector("#userMemoryScopeFilter");
@@ -4560,6 +4561,7 @@ function renderUserMemorySettings() {
   const profile = state.workspace.userMemory ?? {};
   const enabled = profile.enabled !== false;
   if (userMemoryEnabled) userMemoryEnabled.checked = enabled;
+  if (userMemoryAutoApprove) userMemoryAutoApprove.checked = profile.autoApproveGenerated === true;
   if (userMemoryPreferences) userMemoryPreferences.value = memoryItemsToLines(profile.preferences);
   if (userMemoryProjectNotes) userMemoryProjectNotes.value = projectMemoryItemsToLines(profile.projectMemories);
   if (userMemoryEnabledPill) {
@@ -4588,6 +4590,7 @@ async function saveUserMemorySettings() {
   try {
     const payload = {
       enabled: userMemoryEnabled?.checked !== false,
+      autoApproveGenerated: userMemoryAutoApprove?.checked === true,
       preferences: parseMemoryLines(userMemoryPreferences?.value ?? ""),
       projectMemories: parseProjectMemoryLines(userMemoryProjectNotes?.value ?? ""),
       approvedMemories: state.workspace.userMemory?.approvedMemories ?? [],
@@ -11265,6 +11268,13 @@ userMemoryEnabled?.addEventListener("change", () => {
       : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
   }
 });
+userMemoryAutoApprove?.addEventListener("change", () => {
+  state.workspace.userMemory = {
+    ...(state.workspace.userMemory ?? {}),
+    autoApproveGenerated: userMemoryAutoApprove.checked
+  };
+  renderUserMemorySettings();
+});
 for (const control of [userMemoryScopeFilter, userMemoryProjectFilter, userMemoryConversationFilter]) {
   control?.addEventListener("input", () => renderGovernedMemoryList(state.workspace.userMemory ?? {}));
   control?.addEventListener("change", () => renderGovernedMemoryList(state.workspace.userMemory ?? {}));
@@ -11411,10 +11421,12 @@ const consolePreviewPane = document.querySelector("#consolePreviewPane");
 const consolePreviewBody = document.querySelector("#consolePreviewBody");
 const consolePreviewTitle = document.querySelector("#consolePreviewTitle");
 const consolePreviewMeta = document.querySelector("#consolePreviewMeta");
+const consolePreviewBackBtn = document.querySelector("#consolePreviewBackBtn");
 const consolePreviewCloseBtn = document.querySelector("#consolePreviewCloseBtn");
 const consolePreviewOpenExternalBtn = document.querySelector("#consolePreviewOpenExternalBtn");
 
 let currentInlinePreviewPath = null;
+let inlinePreviewBackStack = [];
 
 function fileNameFromPath(filePath) {
   if (!filePath) return "Preview";
@@ -11427,11 +11439,73 @@ function closeInlinePreview() {
   if (consolePreviewPane) consolePreviewPane.hidden = true;
   if (consolePreviewBody) consolePreviewBody.innerHTML = "";
   currentInlinePreviewPath = null;
+  inlinePreviewBackStack = [];
+  updateInlinePreviewBackButton();
 }
 
-async function openInlinePreviewInChat({ filePath, mime } = {}) {
+function updateInlinePreviewBackButton() {
+  if (!consolePreviewBackBtn) return;
+  consolePreviewBackBtn.hidden = inlinePreviewBackStack.length === 0;
+  consolePreviewBackBtn.disabled = inlinePreviewBackStack.length === 0;
+}
+
+function formatFileSize(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return "";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
+  return `${(value / 1024 / 1024).toFixed(value < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+}
+
+function directoryEntryIcon(entry = {}) {
+  if (entry.isDirectory || entry.kind === "folder") return "DIR";
+  return artifactIconText(entry.path ?? entry.name ?? "");
+}
+
+async function renderDirectoryPreviewInChat(filePath) {
+  if (!consolePreviewBody) return;
+  const listing = await consoleShellClient.listDirectory(filePath, { limit: 300 });
+  const parentPath = listing.parentPath && listing.parentPath !== listing.path ? listing.parentPath : "";
+  const rows = (listing.entries ?? []).map((entry) => {
+    const isDirectory = entry.isDirectory || entry.kind === "folder";
+    const meta = [
+      isDirectory ? "Folder" : "File",
+      !isDirectory ? formatFileSize(entry.size) : "",
+      entry.mtimeMs ? formatDateTime(entry.mtimeMs) : ""
+    ].filter(Boolean).join(" · ");
+    return `
+      <div class="directory-preview-row" title="${escapeHtml(entry.path)}">
+        <span class="artifact-icon ${artifactIconClass(entry.path)}">${escapeHtml(directoryEntryIcon(entry))}</span>
+        <button type="button" class="directory-preview-main" data-directory-entry-open="${escapeHtml(entry.path)}">
+          <span class="directory-preview-name">${escapeHtml(entry.name)}</span>
+          <span class="directory-preview-meta">${escapeHtml(meta)}</span>
+        </button>
+        <button type="button" class="conversation-artifact-action" data-directory-entry-reveal="${escapeHtml(entry.path)}" aria-label="Reveal ${escapeHtml(entry.name)}" title="Reveal in folder">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
+        </button>
+      </div>
+    `;
+  }).join("");
+  consolePreviewBody.innerHTML = `
+    <div class="directory-preview">
+      <div class="directory-preview-toolbar">
+        ${parentPath ? `<button type="button" class="btn btn-sm btn-ghost" data-directory-entry-open="${escapeHtml(parentPath)}">上一层</button>` : ""}
+        <span class="muted">${escapeHtml(`${listing.entries?.length ?? 0}/${listing.total ?? 0} items${listing.truncated ? " · truncated" : ""}`)}</span>
+      </div>
+      <div class="directory-preview-list">
+        ${rows || `<div class="muted" style="padding:24px;text-align:center;">此文件夹为空。</div>`}
+      </div>
+    </div>
+  `;
+}
+
+async function openInlinePreviewInChat({ filePath, mime, fromHistory = false } = {}) {
   if (!filePath || !consolePreviewPane || !consolePreviewBody || !consolePreviewLayout) {
     return false;
+  }
+  if (!fromHistory && currentInlinePreviewPath && currentInlinePreviewPath !== filePath) {
+    inlinePreviewBackStack.push(currentInlinePreviewPath);
+    if (inlinePreviewBackStack.length > 30) inlinePreviewBackStack = inlinePreviewBackStack.slice(-30);
   }
   consoleChatArtifactsExpanded = false;
   if (consoleChatArtifacts) consoleChatArtifacts.hidden = true;
@@ -11452,9 +11526,24 @@ async function openInlinePreviewInChat({ filePath, mime } = {}) {
   consolePreviewPane.hidden = false;
   consolePreviewLayout.classList.add("preview-open");
   currentInlinePreviewPath = filePath;
+  updateInlinePreviewBackButton();
 
   // Loading placeholder while the registered handler renders.
   consolePreviewBody.innerHTML = `<div class="muted" style="padding:24px;text-align:center;font-size:12px;">Loading preview…  正在加载预览</div>`;
+
+  try {
+    const stat = typeof consoleShellClient?.statPath === "function"
+      ? await consoleShellClient.statPath(filePath)
+      : null;
+    if (stat?.isDirectory) {
+      if (consolePreviewTitle) consolePreviewTitle.textContent = fileNameFromPath(filePath) || "Folder";
+      if (consolePreviewMeta) consolePreviewMeta.textContent = filePath;
+      await renderDirectoryPreviewInChat(filePath);
+      return true;
+    }
+  } catch {
+    // Fall through to format handlers; they will render a useful error.
+  }
 
   if (typeof window.livePreviewClient?.render !== "function") {
     consolePreviewBody.innerHTML = `<div class="muted" style="padding:24px;text-align:center;">Inline preview is unavailable (registry not loaded).</div>`;
@@ -11473,6 +11562,12 @@ async function openInlinePreviewInChat({ filePath, mime } = {}) {
   return true;
 }
 
+consolePreviewBackBtn?.addEventListener("click", () => {
+  const previous = inlinePreviewBackStack.pop();
+  updateInlinePreviewBackButton();
+  if (previous) void openInlinePreviewInChat({ filePath: previous, fromHistory: true });
+});
+
 consolePreviewCloseBtn?.addEventListener("click", () => closeInlinePreview());
 consolePreviewOpenExternalBtn?.addEventListener("click", async () => {
   // "Open external" closes the inline pane and routes through the
@@ -11485,6 +11580,23 @@ consolePreviewOpenExternalBtn?.addEventListener("click", async () => {
       await consoleShellClient.openPath(path);
     }
   } catch { /* ignore */ }
+});
+
+consolePreviewBody?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const revealBtn = target?.closest?.("[data-directory-entry-reveal]");
+  if (revealBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void revealConversationArtifactPath(revealBtn.dataset.directoryEntryReveal ?? "");
+    return;
+  }
+  const openBtn = target?.closest?.("[data-directory-entry-open]");
+  if (openBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void openInlinePreviewInChat({ filePath: openBtn.dataset.directoryEntryOpen ?? "" });
+  }
 });
 
 // Override livePreview.openForFile so console-internal callers route to

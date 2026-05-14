@@ -101,6 +101,18 @@ task row, and `emitLlmUsage` updates that summary at emission time. Historical
 event-log aggregation belongs in task detail, diagnostics, or explicit usage
 reports, never in `/tasks/summary` or first-screen conversation rendering.
 
+PMAT-013 file/memory follow-up, 2026-05-14: generated files and attached
+folders must be previewable from the Console without falling through to the
+external OS app as the only path. The inline preview pane owns folder listing,
+child-folder navigation, reveal actions, and a local back stack. File/folder
+reads stay behind the preload `ucaShell` bridge and the preview shell client;
+renderer code must not call Node filesystem APIs directly. User Memory follows
+the mainstream consent pattern used by mature assistant products: memory is
+enabled/disabled explicitly, generated memories remain proposal-governed by
+default, and automatic approval is allowed only after a separate user opt-in.
+Approved memory is scoped by global/project/conversation identifiers and injected
+as typed background context only for matching project or conversation tasks.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

@@ -33,14 +33,27 @@ assert.match(contextSubmission, /applyUserMemoryProfileToContext/u, "submitConte
 assert.match(contextSubmission, /readUserMemoryProfileFromConfig/u, "submitContextTask should read memory from config");
 assert.match(bgContexts, /"user_profile"/u, "background context schema should allow user_profile");
 assert.match(bgContexts, /"project_memory"/u, "background context schema should allow project_memory");
+assert.match(bgContexts, /"conversation_memory"/u, "background context schema should allow conversation_memory");
 assert.match(contextSources, /case "user_profile":/u, "context source classifier should treat user_profile as background");
 assert.match(contextSources, /case "project_memory":/u, "context source classifier should treat project_memory as background");
+assert.match(contextSources, /case "conversation_memory":/u, "context source classifier should treat conversation_memory as background");
+assert.match(
+  contextSubmission,
+  /applyUserMemoryProfileToContext[\s\S]{0,260}conversationId:\s*effectiveConversationId/u,
+  "submitContextTask should pass conversationId into user memory injection"
+);
 assert.match(providerRoutes, /\/config\/user-memory/u, "local HTTP surface should expose user memory config route");
 assert.match(providerRoutes, /requireDesktopActor[\s\S]{0,120}desktop_console/u, "user memory save route should be desktop guarded");
 assert.match(consoleHtml, /id="userMemoryPanel"/u, "Console Settings should expose editable user memory panel");
+assert.match(consoleHtml, /id="userMemoryAutoApprove"/u, "Console Settings should expose explicit auto-save memory opt-in");
 assert.match(consoleJs, /renderUserMemorySettings/u, "Console should render user memory settings");
 assert.match(consoleJs, /saveUserMemorySettings/u, "Console should save user memory settings");
+assert.match(consoleJs, /autoApproveGenerated/u, "Console should persist the auto-save memory opt-in");
 assert.match(behaviorTest, /background-only/u, "behavior tests should prove user memory remains background-only");
+assert.match(behaviorTest, /conversation-scoped memory injects only for the matching conversation/u,
+  "behavior tests should prove conversation memory is scoped");
+assert.match(behaviorTest, /auto-approves only after explicit user opt-in/u,
+  "behavior tests should prove generated memories require opt-in before auto-approval");
 assert.match(
   plan,
   /FW-019[\s\S]*User\/project memory[\s\S]*PARTIAL/u,
@@ -54,5 +67,21 @@ const profile = sanitizeUserMemoryProfile({
 const context = applyUserMemoryProfileToContext({ text: "hello", selection_metadata: {} }, profile, { projectId: "proj_a" });
 assert.equal(context.selection_metadata.user_memory_injected, true);
 assert.equal(context.background_contexts.length, 2);
+
+const conversationProfile = sanitizeUserMemoryProfile({
+  approvedMemories: [
+    { id: "conv_a", scope: "conversation", conversationId: "conv_a", type: "episodic_task", text: "Conversation scoped marker." },
+    { id: "conv_b", scope: "conversation", conversationId: "conv_b", type: "episodic_task", text: "Wrong conversation marker." }
+  ]
+}, { now: "2026-05-14T00:00:00.000Z" });
+const conversationContext = applyUserMemoryProfileToContext(
+  { text: "hello", selection_metadata: {} },
+  conversationProfile,
+  { conversationId: "conv_a" }
+);
+assert.equal(conversationContext.background_contexts.length, 1);
+assert.equal(conversationContext.background_contexts[0].kind, "conversation_memory");
+assert.match(conversationContext.background_contexts[0].content, /Conversation scoped marker/);
+assert.doesNotMatch(conversationContext.background_contexts[0].content, /Wrong conversation marker/);
 
 console.log("user memory profile verification passed");

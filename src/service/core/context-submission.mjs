@@ -1388,7 +1388,10 @@ export async function submitContextTask({
   const withUserMemoryContext = applyUserMemoryProfileToContext(
     withParentContext,
     readUserMemoryProfileFromConfig(runtime.configStore?.load?.() ?? {}),
-    { projectId: projectId ?? withParentContext?.selection_metadata?.project_id ?? null }
+    {
+      projectId: projectId ?? withParentContext?.selection_metadata?.project_id ?? null,
+      conversationId: effectiveConversationId
+    }
   );
 
   const normalizedContextPacket = attachPriorBackendMessages(

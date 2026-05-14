@@ -1190,6 +1190,9 @@
               <span id="consolePreviewMeta" class="muted" style="font-size:11px;"></span>
             </div>
             <div class="chat-preview-head-actions">
+              <button id="consolePreviewBackBtn" class="btn btn-sm btn-ghost" type="button" title="Back" hidden>
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+              </button>
               <button id="consolePreviewOpenExternalBtn" class="btn btn-sm btn-ghost" type="button" title="Open in window / external app">
                 <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
               </button>
@@ -2329,6 +2332,13 @@
             </div>
             <input id="userMemoryEnabled" class="switch-control" type="checkbox">
           </label>
+          <label class="switch-row">
+            <div class="switch-copy">
+              <strong>Auto-save generated memories</strong>
+              <span class="muted">When enabled, completed task summaries can become approved scoped memory after your opt-in. You can delete or undo them anytime.</span>
+            </div>
+            <input id="userMemoryAutoApprove" class="switch-control" type="checkbox">
+          </label>
           <label for="userMemoryPreferences" style="margin-top:10px;">Global preferences</label>
           <textarea id="userMemoryPreferences" rows="5" placeholder="One preference per line"></textarea>
           <label for="userMemoryProjectNotes" style="margin-top:10px;">Project memory</label>
@@ -2757,6 +2767,8 @@
 
     <script src="./drop-guard.js"></script>
     <script src="./preview/client-registry.js"></script>
+    <script src="./preview/shell-preview-client.js"></script>
+    <script src="./preview/runtime-preview-client.js"></script>
     <script src="./preview/handlers/iframe-remote.js"></script>
     <script src="./preview/handlers/text.js"></script>
     <script src="./preview/handlers/csv.js"></script>
