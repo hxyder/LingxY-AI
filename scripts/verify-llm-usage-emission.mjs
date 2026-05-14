@@ -68,9 +68,15 @@ function sseStream(events) {
 {
   const events = [];
   const audits = [];
+  const tasks = new Map([["task_usage", { task_id: "task_usage" }]]);
   const runtime = {
     emitTaskEvent(eventType, payload) { events.push({ eventType, payload }); },
     store: {
+      getTask(taskId) { return tasks.get(taskId) ?? null; },
+      updateTask(taskId, task) {
+        tasks.set(taskId, task);
+        return task;
+      },
       appendAuditLog(entry) { audits.push(entry); }
     }
   };
@@ -99,6 +105,9 @@ function sseStream(events) {
   assert.equal(events[0].eventType, "llm_usage");
   assert.equal(events[0].payload.call_site, "fixture.call");
   assert.equal(audits[0].event_subtype, "ai.llm_usage");
+  assert.equal(tasks.get("task_usage").usage_summary.input_tokens, 10);
+  assert.equal(tasks.get("task_usage").usage_summary.output_tokens, 5);
+  assert.equal(tasks.get("task_usage").usage_summary.total_tokens, 15);
   ok("emitLlmUsage emits durable-compatible payload and audit log");
 }
 

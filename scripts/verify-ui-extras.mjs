@@ -519,7 +519,8 @@ assert.ok(/appendConsoleChatMessage\(["']user["'],\s*message\.content/.test(cons
     && /data-nav="prev"/.test(consoleJs) && /data-nav="next"/.test(consoleJs),
   "chat timeline: loaded backend user messages must reuse the user bubble renderer with previous/next navigation");
 assert.ok(/workspaceTokenUsage/.test(consoleJs) && /chat-token-counter/.test(consoleJs)
-    && /usage_summary:\s*taskUsageSummary/.test(taskRoutes),
+    && /usage_summary:\s*taskUsageSummary\(task\)/.test(taskRoutes)
+    && !/getTaskEvents\(task\.task_id\)/.test(taskRoutes),
   "token usage: chat and Settings token counters must aggregate task llm_usage summaries");
 assert.ok(/data-conversation-artifact-open/.test(consoleJs) && /data-conversation-artifact-reveal/.test(consoleJs),
   "chat artifacts: file strip must expose open and reveal actions");

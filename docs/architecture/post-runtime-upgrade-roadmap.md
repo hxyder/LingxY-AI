@@ -94,6 +94,13 @@ counter in the active chat header. User Memory remains review-governed:
 completed tasks may create bounded automatic `episodic_task` proposals, but
 nothing becomes injected memory until the user approves it.
 
+PMAT-013 hotfix rule, 2026-05-14: task/conversation lists are critical
+navigation surfaces and must not scan full task event logs or artifact content
+before rendering. Token counters read persisted `task.usage_summary` from the
+task row, and `emitLlmUsage` updates that summary at emission time. Historical
+event-log aggregation belongs in task detail, diagnostics, or explicit usage
+reports, never in `/tasks/summary` or first-screen conversation rendering.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

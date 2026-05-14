@@ -26,34 +26,15 @@ import {
   applyFileReversibilityCheckpoint,
   collectFileReversibilityCheckpoints
 } from "../../capabilities/tools/file-reversibility.mjs";
-import { collectLlmUsageSummary } from "../../../shared/llm-usage-summary.mjs";
 
 function taskDeletedFilterFromUrl(url) {
   return normalizeDeletedFilter(url.searchParams.get("deleted") ?? false);
 }
 
-function taskUsageSummary(runtime, task) {
-  if (task?.usage_summary && typeof task.usage_summary === "object") {
-    return task.usage_summary;
-  }
-  const events = typeof runtime.store?.getTaskEvents === "function"
-    ? runtime.store.getTaskEvents(task.task_id)
-    : [];
-  const summary = collectLlmUsageSummary(events);
-  if (!summary?.totals) return null;
-  return {
-    call_count: summary.call_count ?? 0,
-    tokens_in: summary.totals.input_tokens ?? 0,
-    tokens_out: summary.totals.output_tokens ?? 0,
-    input_tokens: summary.totals.input_tokens ?? 0,
-    output_tokens: summary.totals.output_tokens ?? 0,
-    total_tokens: summary.totals.total_tokens ?? 0,
-    cache_hit_tokens: summary.cache?.hit_tokens ?? 0,
-    cache_miss_tokens: summary.cache?.miss_tokens ?? 0,
-    cache_creation_input_tokens: summary.cache?.creation_input_tokens ?? 0,
-    cache_read_input_tokens: summary.cache?.read_input_tokens ?? 0,
-    llm_usage_call_count: summary.call_count ?? 0
-  };
+function taskUsageSummary(task) {
+  return task?.usage_summary && typeof task.usage_summary === "object"
+    ? task.usage_summary
+    : null;
 }
 
 function listTaskSummaries(runtime, { deleted = false } = {}) {
@@ -94,7 +75,7 @@ function listTaskSummaries(runtime, { deleted = false } = {}) {
     child_index: task.child_index ?? null,
     is_continuation: task.is_continuation === true,
     child_count: Array.isArray(task.child_task_ids) ? task.child_task_ids.length : 0,
-    usage_summary: taskUsageSummary(runtime, task)
+    usage_summary: taskUsageSummary(task)
   }));
 }
 

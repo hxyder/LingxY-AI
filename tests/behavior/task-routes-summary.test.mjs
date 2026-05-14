@@ -43,19 +43,14 @@ test("task summary payload exposes conversation id and llm usage for token UI", 
     status: "success",
     user_command: "count tokens",
     conversation_id: "conv_usage",
+    usage_summary: {
+      input_tokens: 100,
+      output_tokens: 25,
+      total_tokens: 125,
+      cache_hit_tokens: 60,
+      cache_miss_tokens: 40
+    },
     context_packet: { source_type: "manual", source_app: "uca.test" }
-  });
-  store.appendEvent({
-    task_id: "task_usage",
-    event_type: "llm_usage",
-    payload: {
-      usage: {
-        input_tokens: 100,
-        output_tokens: 25,
-        prompt_cache_hit_tokens: 60,
-        prompt_cache_miss_tokens: 40
-      }
-    }
   });
 
   const payload = buildTaskSummaryPayload({ store }, { recentLimit: 10 });
@@ -67,4 +62,31 @@ test("task summary payload exposes conversation id and llm usage for token UI", 
   assert.equal(task.usage_summary.total_tokens, 125);
   assert.equal(task.usage_summary.cache_hit_tokens, 60);
   assert.equal(task.usage_summary.cache_miss_tokens, 40);
+});
+
+test("task summary payload does not scan event logs for first-screen usage", () => {
+  const store = createInMemoryStoreScaffold();
+  store.insertTask({
+    task_id: "task_fast_summary",
+    created_at: "2026-05-13T11:00:00.000Z",
+    updated_at: "2026-05-13T11:01:00.000Z",
+    status: "success",
+    user_command: "show fast list",
+    conversation_id: "conv_fast_summary",
+    usage_summary: {
+      input_tokens: 12,
+      output_tokens: 8,
+      total_tokens: 20
+    },
+    context_packet: { source_type: "manual", source_app: "uca.test" }
+  });
+  store.getTaskEvents = () => {
+    throw new Error("task summary should not scan task event logs");
+  };
+
+  const payload = buildTaskSummaryPayload({ store }, { recentLimit: 10 });
+  const task = payload.tasks.find((item) => item.task_id === "task_fast_summary");
+
+  assert.equal(task.conversation_id, "conv_fast_summary");
+  assert.equal(task.usage_summary.total_tokens, 20);
 });

@@ -117,6 +117,54 @@ export function buildLlmUsagePayload({
   };
 }
 
+function usageValue(value) {
+  const n = Number(value ?? 0);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function mergeUsageSummary(existing = {}, usage = {}) {
+  const current = existing && typeof existing === "object" ? existing : {};
+  const nextInput = usageValue(usage.input_tokens);
+  const nextOutput = usageValue(usage.output_tokens);
+  const nextTotal = usageValue(usage.total_tokens) || nextInput + nextOutput;
+  const input = usageValue(current.input_tokens ?? current.tokens_in) + nextInput;
+  const output = usageValue(current.output_tokens ?? current.tokens_out) + nextOutput;
+  const total = usageValue(current.total_tokens) + nextTotal || input + output;
+  return {
+    call_count: usageValue(current.call_count ?? current.llm_usage_call_count) + 1,
+    tokens_in: input,
+    tokens_out: output,
+    input_tokens: input,
+    output_tokens: output,
+    total_tokens: total,
+    cache_hit_tokens: usageValue(current.cache_hit_tokens ?? current.prompt_cache_hit_tokens) + usageValue(usage.cache_hit_tokens),
+    cache_miss_tokens: usageValue(current.cache_miss_tokens ?? current.prompt_cache_miss_tokens) + usageValue(usage.cache_miss_tokens),
+    prompt_cache_hit_tokens: usageValue(current.cache_hit_tokens ?? current.prompt_cache_hit_tokens) + usageValue(usage.cache_hit_tokens),
+    prompt_cache_miss_tokens: usageValue(current.cache_miss_tokens ?? current.prompt_cache_miss_tokens) + usageValue(usage.cache_miss_tokens),
+    cache_creation_input_tokens: usageValue(current.cache_creation_input_tokens) + usageValue(usage.cache_creation_input_tokens),
+    cache_read_input_tokens: usageValue(current.cache_read_input_tokens) + usageValue(usage.cache_read_input_tokens),
+    llm_usage_call_count: usageValue(current.call_count ?? current.llm_usage_call_count) + 1
+  };
+}
+
+function persistTaskUsageSummary({ runtime = null, task = null, taskId = null, payload = null } = {}) {
+  const id = taskId ?? task?.task_id ?? null;
+  if (!id || !payload?.usage || typeof runtime?.store?.updateTask !== "function") return;
+  try {
+    const current = runtime.store.getTask?.(id) ?? task ?? null;
+    if (!current || typeof current !== "object") return;
+    const usageSummary = mergeUsageSummary(current.usage_summary, payload.usage);
+    const updated = {
+      ...current,
+      usage_summary: usageSummary
+    };
+    if (task && typeof task === "object") task.usage_summary = usageSummary;
+    runtime.store.updateTask(id, updated);
+  } catch {
+    // Usage telemetry must never break provider execution or streaming.
+  }
+}
+
 export function emitLlmUsage({
   runtime = null,
   onEvent = null,
@@ -148,6 +196,7 @@ export function emitLlmUsage({
   } else if (typeof runtime?.emitTaskEvent === "function") {
     runtime.emitTaskEvent("llm_usage", payload);
   }
+  persistTaskUsageSummary({ runtime, task, taskId: id, payload });
   if (typeof runtime?.store?.appendAuditLog === "function" && id) {
     try {
       runtime.store.appendAuditLog({
