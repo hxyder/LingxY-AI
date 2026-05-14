@@ -8214,13 +8214,23 @@ settingsBtn?.addEventListener("click", async () => {
    TASK LIST DOCK
    ═══════════════════════════════════════════════ */
 
-taskListDock?.addEventListener("click", async () => {
+async function toggleTaskListPanel() {
   const isOpen = taskListPanel?.dataset.open === "true";
   const nextOpen = !isOpen;
   if (taskListPanel) taskListPanel.dataset.open = nextOpen ? "true" : "false";
   taskListDock?.setAttribute("aria-expanded", nextOpen ? "true" : "false");
   await refreshTaskSummaries(true);
   renderTaskListDock();
+}
+
+taskListDock?.addEventListener("click", () => {
+  void toggleTaskListPanel();
+});
+
+taskListDock?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") return;
+  event.preventDefault();
+  void toggleTaskListPanel();
 });
 
 taskListCloseBtn?.addEventListener("click", () => {

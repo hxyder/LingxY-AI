@@ -466,22 +466,29 @@ assert.ok(/revealEvidenceSource/.test(overlayJs) && /\.cite-chip\[data-source-id
   "citations: overlay must reveal evidence rows when citation chips are clicked");
 assert.ok(/cite-source-row--flash/.test(sharedCss) && /cursor:\s*pointer/.test(sharedCss),
   "citations: citation chips and revealed source rows must have interactive styling");
-assert.ok(/id="chatSidebarScopeLabel"/.test(consoleHtml) && /id="chatSidebarScopeClearBtn"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
-  "chat projects: sidebar must expose the active personal/project conversation domain");
-assert.ok(!/All conversations/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml),
+assert.ok(/id="chatSidebarScopeSelect"/.test(consoleHtml) && /独立会话/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
+  "chat projects: sidebar must expose the active ordinary/project conversation domain as a compact selector");
+assert.ok(!/All conversations/.test(consoleHtml) && !/Personal chats/.test(consoleHtml) && !/data-tab="files"/.test(consoleHtml),
   "chat projects: UI must not expose a mixed conversation scope or a top-level Files rail entry");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
   "chat projects: console must persist chat sidebar project scope");
-assert.ok(/function\s+filterConversationsByChatScope/.test(consoleJs) && /return source\.filter\(\(conversation\) => !conversationProjectId\(conversation\)\)/.test(consoleJs),
-  "chat projects: personal Chat sidebar must filter out project conversations");
+assert.ok(/function\s+filterConversationsByChatScope/.test(consoleJs) && /id\s*===\s*DEFAULT_PROJECT_ID/.test(consoleJs),
+  "chat projects: ordinary Chat sidebar must include legacy default-project conversations while filtering out real projects");
+assert.ok(/data-tab="projects"/.test(consoleHtml) && /btn\.dataset\.tab\s*===\s*["']projects["'][\s\S]{0,240}switchTab\(["']chat["']\)/.test(consoleJs),
+  "chat projects: Projects rail entry must route to Chat's project selector instead of a dashboard-like duplicate chat surface");
+assert.ok(/savedView\s*===\s*["']projects["'][\s\S]{0,120}savedView\s*=\s*["']chat["']/.test(consoleJs)
+    && /tabId\s*===\s*["']projects["']\s*\?\s*["']chat["']\s*:\s*tabId/.test(consoleJs),
+  "chat projects: stale/special project management views must not trap normal startup navigation");
 assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project_id:\s*projectId/.test(consoleJs),
   "chat projects: /task submit must carry structured project_id when scoped");
 assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
   "chat empty: New chat must use the rich empty-state renderer instead of plain text");
 assert.ok(/id="consoleChatArtifacts"/.test(consoleHtml) && /\.conversation-artifacts\b/.test(sharedCss),
   "chat artifacts: console must expose a conversation-scoped file strip");
-assert.ok(/id="consoleChatFilesBtn"/.test(consoleHtml),
+assert.ok(/id="consoleChatFilesBtn"/.test(consoleHtml) && /aria-controls="consoleChatArtifacts"/.test(consoleHtml),
   "chat artifacts: files must be reachable from the Chat header instead of a top-level Files tab");
+assert.ok(/consoleChatArtifactsExpanded/.test(consoleJs) && /data-chat-project-files-add/.test(consoleJs) && /function\s+attachFilesToProject/.test(consoleJs),
+  "chat artifacts: Files button must expand a conversation/project context panel and allow project file/folder attach");
 assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes) && /getArtifactsForConversation/.test(noteProjectConversationRoutes),
   "chat artifacts: conversation route must expose getArtifactsForConversation");
 assert.ok(/function\s+refreshConsoleChatArtifacts/.test(consoleJs) && /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/artifacts/.test(consoleJs),

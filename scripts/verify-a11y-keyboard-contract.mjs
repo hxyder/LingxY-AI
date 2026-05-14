@@ -61,6 +61,10 @@ assert.match(overlayJs, /function activateTaskListFilter\(btn\)[\s\S]{0,420}aria
   "task-list filter activation must keep aria-selected and roving tabIndex in sync");
 assert.match(overlayJs, /function handleTaskListFilterKeydown\(event\)[\s\S]{0,180}ArrowLeft[\s\S]{0,80}ArrowRight[\s\S]{0,80}Home[\s\S]{0,80}End/s,
   "task-list filter tabs must support arrow/Home/End keyboard navigation");
+assert.match(overlayJs, /function toggleTaskListPanel\(\)[\s\S]{0,260}aria-expanded/s,
+  "task-list dock must share one toggle path for pointer and keyboard activation");
+assert.match(overlayJs, /taskListDock\?\.addEventListener\("keydown"[\s\S]{0,160}event\.key !== "Enter"[\s\S]{0,160}toggleTaskListPanel\(\)/s,
+  "task-list dock must explicitly support Enter/Space keyboard activation");
 assert.match(overlayJs, /taskListPanel\?\.addEventListener\("keydown"[\s\S]{0,120}event\.key === "Escape"[\s\S]{0,120}closeTaskListPanel\(\)/s,
   "task-list panel must close with Escape and restore dock focus");
 

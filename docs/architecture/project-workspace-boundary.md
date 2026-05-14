@@ -29,8 +29,10 @@ Layer contract:
   project scope, start or resume project conversations, and manage project
   context; they must not introduce a second parallel chat composer.
 - Ordinary conversations and project conversations are separate conversation
-  domains. The Chat sidebar's default domain is personal conversations with no
-  `project_id`; selecting a project switches Chat into that project's domain.
+  domains. The Chat sidebar's default domain is independent conversations with
+  no real project `project_id`; selecting a project switches Chat into that
+  project's domain. Legacy default-project conversation ids are treated as
+  independent conversations so older history remains visible after the split.
   The UI must not present an "All conversations" mixed scope as the primary
   browsing mode.
 - There is no top-level Files workspace. Generated artifacts and attached files

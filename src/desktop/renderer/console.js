@@ -708,6 +708,10 @@ renderEchoDiagnostics();
       savedView = "chat";
       localStorage.setItem("lingxy.view", "chat");
     }
+    if (savedView === "projects") {
+      savedView = "chat";
+      localStorage.setItem("lingxy.view", "chat");
+    }
     if (savedView && document.querySelector(`[data-tab="${savedView}"]`)) {
       // Defer to next frame so any page-load hooks (applyConsoleInfo…
       // etc) finish their own default state first.
@@ -755,7 +759,7 @@ function switchTab(tabId) {
   // both rail clicks and saved-view restore on startup).
   if (tabId === "notes" && typeof initNotesIfNeeded === "function") initNotesIfNeeded();
   // UCA-107: persist the selection so the app boots back to where you left.
-  try { localStorage.setItem("lingxy.view", tabId); } catch { /* sandbox: ignore */ }
+  try { localStorage.setItem("lingxy.view", tabId === "projects" ? "chat" : tabId); } catch { /* sandbox: ignore */ }
   // Background polling only refreshes the visible workspace slice. When the
   // user switches tabs, render that slice from the latest cached state without
   // waiting for the next network poll.
@@ -764,12 +768,16 @@ function switchTab(tabId) {
 
 tabButtons.forEach((btn) => {
   btn.addEventListener("click", () => {
+    if (btn.dataset.tab === "projects") {
+      switchTab("chat");
+      renderChatSidebarProjectFilter();
+      void refreshChatSidebar({ force: true });
+      requestAnimationFrame(() => document.querySelector("#chatSidebarScopeSelect")?.focus?.());
+      return;
+    }
     switchTab(btn.dataset.tab);
     if (btn.dataset.tab === "files") {
       void loadAllArtifacts();
-    } else if (btn.dataset.tab === "projects") {
-      renderProjectsWorkspace();
-      void syncConsoleProjectStoreFromService({ rerender: true });
     } else if (btn.dataset.tab === "connectors") {
       void loadConnectorsTab();
     } else if (btn.dataset.tab === "inbox") {
@@ -3083,8 +3091,8 @@ function renderConsoleChatEmptyState() {
   if (!consoleChatMessages) return;
   const projectLabel = getChatSidebarProjectLabel();
   const scopeLine = projectLabel
-    ? `New chat in project: ${escapeHtml(projectLabel)}`
-    : "Saved as a regular conversation.";
+    ? `新对话会保存到项目：${escapeHtml(projectLabel)}`
+    : "新对话会保存到独立会话。";
   consoleChatMessages.innerHTML = `
     <div class="console-chat-empty">
       <svg class="console-chat-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -3109,6 +3117,12 @@ function renderConsoleChatArtifacts(artifacts = []) {
   if (files.length === 0 && projectFiles.length === 0) {
     consoleChatArtifacts.hidden = true;
     setHtmlIfChanged(consoleChatArtifacts, "");
+    if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
+    return;
+  }
+  if (!consoleChatArtifactsExpanded) {
+    consoleChatArtifacts.hidden = true;
+    if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
     return;
   }
   const projectRows = projectFiles.slice(0, 5).map((filePath) => {
@@ -3162,9 +3176,15 @@ function renderConsoleChatArtifacts(artifacts = []) {
       <span>${total}</span>
     </div>
     <div class="conversation-artifacts-list">${rows}</div>
-    ${project ? `<button type="button" class="conversation-artifacts-manage" data-chat-project-files-manage="${escapeHtml(project.id)}">Manage</button>` : ""}
+    ${project ? `
+      <div class="conversation-artifacts-actions">
+        <button type="button" class="conversation-artifacts-manage" data-chat-project-files-add="${escapeHtml(project.id)}">Add files/folders</button>
+        <button type="button" class="conversation-artifacts-manage" data-chat-project-files-manage="${escapeHtml(project.id)}">Manage</button>
+      </div>
+    ` : ""}
   `);
   consoleChatArtifacts.hidden = false;
+  if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "true");
 }
 
 async function fetchConsoleConversationArtifacts(conversationId, { limit = 8 } = {}) {
@@ -3463,6 +3483,7 @@ let chatSidebarItems = [];
 let chatSidebarCacheKey = "";
 let chatSidebarCacheLoaded = false;
 let chatSidebarShowingServerSearch = false;
+let consoleChatArtifactsExpanded = false;
 
 function syncChatSidebarProjectScopeStorage() {
   try {
@@ -3472,7 +3493,8 @@ function syncChatSidebarProjectScopeStorage() {
 }
 
 function setChatSidebarProjectScope(projectId = null) {
-  const nextId = typeof projectId === "string" && projectId.trim() ? projectId.trim() : null;
+  const rawId = typeof projectId === "string" && projectId.trim() ? projectId.trim() : null;
+  const nextId = rawId === DEFAULT_PROJECT_ID ? null : rawId;
   if (chatSidebarProjectId === nextId) return false;
   chatSidebarProjectId = nextId;
   chatSidebarCacheLoaded = false;
@@ -3492,7 +3514,10 @@ function filterConversationsByChatScope(items = [], projectId = chatSidebarProje
   if (projectId) {
     return source.filter((conversation) => conversationProjectId(conversation) === projectId);
   }
-  return source.filter((conversation) => !conversationProjectId(conversation));
+  return source.filter((conversation) => {
+    const id = conversationProjectId(conversation);
+    return !id || id === DEFAULT_PROJECT_ID;
+  });
 }
 
 function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = null } = {}) {
@@ -3518,17 +3543,24 @@ async function searchConversationsList({
 }
 
 function renderChatSidebarProjectFilter() {
-  const label = document.querySelector("#chatSidebarScopeLabel");
-  const clearBtn = document.querySelector("#chatSidebarScopeClearBtn");
-  if (!label && !clearBtn) return;
+  const select = document.querySelector("#chatSidebarScopeSelect");
+  if (!select) return;
   const store = state.projectStore ?? loadConsoleProjectStore();
-  const projects = Array.isArray(store.projects) ? store.projects : [];
+  const projects = (Array.isArray(store.projects) ? store.projects : [])
+    .filter((project) => project?.id && project.id !== DEFAULT_PROJECT_ID);
   if (chatSidebarProjectId && !projects.some((project) => project.id === chatSidebarProjectId)) {
+    chatSidebarProjectId = null;
+    chatSidebarCacheLoaded = false;
+    chatSidebarCacheKey = "";
     syncChatSidebarProjectScopeStorage();
   }
-  const projectLabel = getChatSidebarProjectLabel();
-  if (label) label.textContent = projectLabel ? `${projectLabel} · project chats` : "Personal chats";
-  if (clearBtn) clearBtn.hidden = !projectLabel;
+  const options = [
+    `<option value="">独立会话</option>`,
+    ...projects.map((project) => `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name ?? project.id)}</option>`)
+  ].join("");
+  if (select.innerHTML !== options) select.innerHTML = options;
+  const nextValue = chatSidebarProjectId ?? "";
+  if (select.value !== nextValue) select.value = nextValue;
 }
 
 async function ensureConversationsCache({
@@ -3551,7 +3583,7 @@ async function ensureConversationsCache({
       chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId }) + `:search:${searchQuery}`;
       chatSidebarCacheLoaded = true;
       chatSidebarShowingServerSearch = true;
-      return items;
+      return chatSidebarItems;
     } catch {
       return chatSidebarItems;
     }
@@ -3567,7 +3599,7 @@ async function ensureConversationsCache({
     chatSidebarCacheKey = key;
     chatSidebarCacheLoaded = true;
     chatSidebarShowingServerSearch = false;
-    return items;
+    return chatSidebarItems;
   } catch {
     if (chatSidebarCacheKey !== key) {
       chatSidebarItems = [];
@@ -8947,22 +8979,30 @@ consoleChatInput?.addEventListener("keydown", (event) => {
   }
 });
 consoleChatFilesBtn?.addEventListener("click", async () => {
+  consoleChatArtifactsExpanded = !consoleChatArtifactsExpanded;
   if (consoleActiveConversation?.conversation_id) {
     await refreshConsoleChatArtifacts({ force: true });
   } else {
     renderConsoleChatArtifacts([]);
   }
   switchTab("chat");
-  if (consoleChatArtifacts && !consoleChatArtifacts.hidden) {
+  if (consoleChatArtifactsExpanded && consoleChatArtifacts && !consoleChatArtifacts.hidden) {
     consoleChatArtifacts.scrollIntoView({ block: "nearest", behavior: "smooth" });
     const firstFile = consoleChatArtifacts.querySelector("[data-conversation-artifact-open]");
     if (firstFile instanceof HTMLElement) firstFile.focus();
     return;
   }
-  showConsoleToast("当前对话还没有可预览的文件。", { kind: "info" });
+  if (consoleChatArtifactsExpanded) showConsoleToast("当前对话还没有可预览的文件。", { kind: "info" });
 });
 consoleChatArtifacts?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  const addBtn = target?.closest?.("[data-chat-project-files-add]");
+  if (addBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void attachFilesToProject(addBtn.dataset.chatProjectFilesAdd ?? "");
+    return;
+  }
   const manageBtn = target?.closest?.("[data-chat-project-files-manage]");
   if (manageBtn instanceof HTMLElement) {
     event.preventDefault();
@@ -8989,10 +9029,10 @@ consoleChatArtifacts?.addEventListener("click", (event) => {
   }
 });
 
-projectAttachFilesBtn?.addEventListener("click", async () => {
+async function attachFilesToProject(projectId) {
   const store = state.projectStore ?? loadConsoleProjectStore();
-  const projectId = state.selectedProjectId || store.currentProjectId || "";
-  if (!projectId || projectId === DEFAULT_PROJECT_ID) {
+  const targetProjectId = projectId || state.selectedProjectId || store.currentProjectId || "";
+  if (!targetProjectId || targetProjectId === DEFAULT_PROJECT_ID) {
     showConsoleToast("Select a project before adding files.", { kind: "info" });
     return;
   }
@@ -9001,20 +9041,21 @@ projectAttachFilesBtn?.addEventListener("click", async () => {
     return;
   }
   try {
-    projectAttachFilesBtn.disabled = true;
+    if (projectAttachFilesBtn) projectAttachFilesBtn.disabled = true;
     const picked = await consoleShellClient.pickProjectFiles();
     const paths = Array.isArray(picked?.paths) ? picked.paths.filter(Boolean) : [];
     if (picked?.canceled || paths.length === 0) return;
     showConsoleToast("Indexing selected project files...", { kind: "info" });
-    const result = await attachProjectFilesViaShell({ projectId, paths });
+    const result = await attachProjectFilesViaShell({ projectId: targetProjectId, paths });
     const nextStore = normalizeProjectStore(result.store ?? store);
     nextStore.updatedAt = Date.now();
     state.projectStore = nextStore;
     localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(nextStore));
     state.projectStoreRemoteReady = true;
-    projectWorkspaceCache.delete(projectId);
-    void refreshProjectWorkspace(projectId, { force: true });
+    projectWorkspaceCache.delete(targetProjectId);
+    void refreshProjectWorkspace(targetProjectId, { force: true });
     renderProjectsWorkspace({ skipFetch: true });
+    consoleChatArtifactsExpanded = true;
     renderConsoleChatArtifacts([]);
     const indexed = Number(result.indexed_count ?? 0);
     const attached = Array.isArray(result.attached_paths) ? result.attached_paths.length : paths.length;
@@ -9028,8 +9069,14 @@ projectAttachFilesBtn?.addEventListener("click", async () => {
   } catch (error) {
     showConsoleToast(error?.message ?? "Could not attach project files.", { kind: "error" });
   } finally {
+    if (projectAttachFilesBtn) projectAttachFilesBtn.disabled = false;
     renderProjectsWorkspace({ skipFetch: true });
   }
+}
+
+projectAttachFilesBtn?.addEventListener("click", () => {
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  void attachFilesToProject(state.selectedProjectId || store.currentProjectId || "");
 });
 
 projectArtifactList?.addEventListener("click", (event) => {
@@ -9475,9 +9522,13 @@ document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) 
   }, 120);
 });
 
-document.querySelector("#chatSidebarScopeClearBtn")?.addEventListener("click", () => {
-  setChatSidebarProjectScope(null);
-  if (consoleActiveConversation?.project_id) {
+document.querySelector("#chatSidebarScopeSelect")?.addEventListener("change", (event) => {
+  const nextProjectId = event.target?.value || null;
+  const changed = setChatSidebarProjectScope(nextProjectId);
+  const activeProjectId = consoleActiveConversation?.project_id ?? null;
+  const normalizedActive = activeProjectId === DEFAULT_PROJECT_ID ? null : activeProjectId;
+  const normalizedNext = nextProjectId || null;
+  if (changed && consoleActiveConversation?.conversation_id && normalizedActive !== normalizedNext) {
     clearConsoleActiveConversation();
   }
   if (!consoleActiveConversation?.conversation_id) {

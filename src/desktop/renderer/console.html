@@ -1063,7 +1063,7 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
             New chat
           </button>
-          <button id="consoleChatFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Show context files">
+          <button id="consoleChatFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Show context files" aria-expanded="false" aria-controls="consoleChatArtifacts">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><polyline points="14 2 14 8 20 8"/></svg>
             Files
           </button>
@@ -1116,9 +1116,10 @@
             </button>
           </header>
           <div class="chat-sidebar-search">
-            <div class="chat-sidebar-scope" title="Conversation domain">
-              <span id="chatSidebarScopeLabel">Personal chats</span>
-              <button id="chatSidebarScopeClearBtn" class="btn btn-sm btn-ghost" type="button" hidden>Personal</button>
+            <div class="chat-sidebar-scope" title="Conversation scope">
+              <select id="chatSidebarScopeSelect" aria-label="Conversation scope">
+                <option value="">独立会话</option>
+              </select>
             </div>
             <label class="search-input" style="margin:0;width:100%;">
               <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>

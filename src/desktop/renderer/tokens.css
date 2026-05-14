@@ -9,9 +9,9 @@
  * --fw-*, --space-*) resolves to the new system, so existing components
  * keep rendering without rewrites.
  *
- * Warm paper base (#f6f5f2) + ink (#1a1917) + terracotta accent
- * (#b85c2a). Dark mode flips to an inky warm background so the
- * terracotta still reads as warm rather than neon.
+ * Crisp Apple-inspired system palette: white, soft grays, near-black text,
+ * and a restrained system-blue action color. The desktop shell should feel
+ * native, quiet, and spacious instead of copied from any one chat product.
  */
 
 :root {
@@ -28,18 +28,18 @@
      over-weight the page. */
   --bg: #ffffff;
   --panel: #ffffff;
-  --panel-2: #f4f4f5;
-  --ink: #0d0d0d;
-  --ink-2: #262626;
-  --muted: #525252;
-  --muted-2: #8a8a8a;
-  --line: #ececec;
-  --line-2: #d4d4d4;
+  --panel-2: #f5f5f7;
+  --ink: #1d1d1f;
+  --ink-2: #3a3a3c;
+  --muted: #6e6e73;
+  --muted-2: #9a9aa0;
+  --line: #e5e5ea;
+  --line-2: #d1d1d6;
 
-  --accent: #b85c2a;
+  --accent: #007aff;
   --accent-ink: #ffffff;
-  --accent-soft: #f5e5d8;
-  --accent-strong: #9a4a1f;
+  --accent-soft: #e8f2ff;
+  --accent-strong: #005ecb;
 
   --ok: #3e7a46;
   --ok-soft: #e4efdf;
@@ -52,9 +52,9 @@
 
   --rail-w: 240px;
   --top-h: 54px;
-  --radius: 10px;
+  --radius: 8px;
   --radius-sm: 7px;
-  --radius-lg: 14px;
+  --radius-lg: 12px;
   --shadow: 0 1px 2px rgba(26, 25, 23, .03), 0 4px 12px rgba(26, 25, 23, .04);
   --shadow-lg: 0 8px 28px rgba(26, 25, 23, .08);
 
@@ -194,25 +194,25 @@
 }
 
 /* ── dark theme ────────────────────────────────────────────────── */
-/* UCA-179: Claude.ai-dark / ChatGPT-dark inspired palette.
-   bg (#0f0f0f) → panel (#1a1a1a) → panel-2 (#262626) forms a clean
+/* UCA-179: crisp dark palette.
+   bg (#000) → panel (#1c1c1e) → panel-2 (#2c2c2e) forms a clean
    3-step surface stack so chat backgrounds, bubbles, and inputs
    actually look layered instead of bleeding together. Muted nudged
    brighter for AA contrast against deep black. */
 :is(html, body)[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0f0f0f;
-  --panel: #1a1a1a;
-  --panel-2: #262626;
-  --ink: #f2f2f2;
-  --ink-2: #cfcfcf;
-  --muted: #a3a3a3;
-  --muted-2: #737373;
-  --line: #2e2e2e;
-  --line-2: #3d3d3d;
+  --bg: #000000;
+  --panel: #1c1c1e;
+  --panel-2: #2c2c2e;
+  --ink: #f5f5f7;
+  --ink-2: #d1d1d6;
+  --muted: #aeaeb2;
+  --muted-2: #8e8e93;
+  --line: #38383a;
+  --line-2: #48484a;
 
-  --accent-soft: rgba(184, 92, 42, .18);
+  --accent-soft: rgba(10, 132, 255, .20);
   --ok-soft: rgba(62, 122, 70, .18);
   --warn-soft: rgba(180, 120, 32, .18);
   --err-soft: rgba(168, 56, 47, .18);
@@ -257,8 +257,9 @@
 }
 
 /* ── accent families ───────────────────────────────────────────── */
-/* Default (unset) → terra. */
-:root,
+/* Default (unset) → system blue. */
+:root { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
+:is(html, body)[data-theme="dark"] { --accent: #0a84ff; --accent-strong: #409cff; --accent-soft: rgba(10, 132, 255, .20); --accent-ink: #ffffff; }
 html[data-accent="terra"]  { --accent: #b85c2a; --accent-strong: #9a4a1f; --accent-soft: #f5e5d8; --accent-ink: #ffffff; }
 html[data-theme="dark"][data-accent="terra"] { --accent-soft: rgba(184, 92, 42, .18); }
 
