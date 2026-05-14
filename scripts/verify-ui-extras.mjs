@@ -181,11 +181,18 @@ assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(con
   "project files: console must expose an explicit picker before attach/index");
 assert.ok(/openFile/.test(mainProcessIpc) && /openDirectory/.test(mainProcessIpc) && /Add files or folders to this project/.test(mainProcessIpc),
   "project files: desktop picker must allow both local files and folders");
-assert.ok(/<span>Files<\/span>/.test(consoleJs) && /Current chat/.test(consoleJs) && /Project files/.test(consoleJs),
+assert.ok(/<span>Files<\/span>/.test(consoleJs)
+    && /Current chat/.test(consoleJs)
+    && /Project generated/.test(consoleJs)
+    && /Project attachments/.test(consoleJs)
+    && /currentProjectArtifacts\(project\.id\)/.test(consoleJs)
+    && /conversation-artifact--current-conversation/.test(consoleJs),
   "project files: chat Files drawer must distinguish current-chat files from all selected-project files");
 assert.ok(/data-chat-project-files-add/.test(consoleJs) && /data-conversation-artifact-open/.test(consoleJs),
   "project files: chat Files drawer must add project files/folders and preview project files inline");
-assert.ok(/conversation-artifact--project-file/.test(sharedCss) && /conversation-artifacts-manage/.test(sharedCss),
+assert.ok(/conversation-artifact--project-file/.test(sharedCss)
+    && /conversation-artifact--current-conversation/.test(sharedCss)
+    && /conversation-artifacts-manage/.test(sharedCss),
   "project files: chat context file strip must have dedicated styling");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "project store: console must not POST /projects/store directly via fetchJson");

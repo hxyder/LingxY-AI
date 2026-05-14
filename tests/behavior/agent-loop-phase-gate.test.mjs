@@ -3,6 +3,10 @@ import test from "node:test";
 
 import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { runToolAgentLoop } from "../../src/service/executors/tool_using/agent-loop.mjs";
+import {
+  planContractActionHandoff,
+  planRequiredPolicyGroupGuidance
+} from "../../src/service/executors/tool_using/phase-gate.mjs";
 
 function makeWebSearchTool({ calls, outcomes }) {
   return {
@@ -84,6 +88,36 @@ function makeRuntime({ outcomes }) {
   };
   return { runtime, calls, events, auditLog };
 }
+
+test("phase gate does not enter action-only handoff while non-action policy groups are still missing", () => {
+  const stepGate = {
+    satisfied: false,
+    next_action: "continue",
+    violations: [
+      { kind: "email_send_required_not_called" },
+      { kind: "external_web_read_required_not_called" }
+    ]
+  };
+
+  const handoff = planContractActionHandoff({
+    stepGate,
+    transcript: [],
+    iteration: 1,
+    maxIterations: 6,
+    contractActionGuidanceCount: 0,
+    terminalContractActionGuidanceCount: 0
+  });
+  assert.equal(handoff, null);
+
+  const guidance = planRequiredPolicyGroupGuidance({
+    stepGate,
+    iteration: 1,
+    maxIterations: 6,
+    requiredPolicyGuidanceCount: 0
+  });
+  assert.deepEqual(guidance?.groups, ["external_web_read"]);
+  assert.match(guidance?.transcriptEntry?.instruction ?? "", /web_search_fetch|fetch_url_content/);
+});
 
 function makeFileReadRuntime() {
   const calls = [];

@@ -58,6 +58,14 @@ export function planContractActionHandoff({
   terminalContractActionGuidanceCount,
   limits = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS
 }) {
+  // Action handoff is terminal by design: once we tell the planner to
+  // stop exploring and perform a side effect, the remaining transcript
+  // becomes the action body. Do not enter that mode while a non-action
+  // contract, such as external_web_read or local_file_text_read, is still
+  // unsatisfied.
+  if (missingNonActionRequiredPolicyGroups(stepGate).length > 0) {
+    return null;
+  }
   const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript, { allowTerminal: true });
   const terminalActionOnly = ["escalate", "abort"].includes(stepGate.next_action);
   const canInjectNormalActionGuidance = contractActionGuidanceCount < limits.maxContractActionGuidance;

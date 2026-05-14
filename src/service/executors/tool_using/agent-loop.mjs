@@ -38,6 +38,7 @@ import {
   validateSuccessContract
 } from "../../core/policy/success-contract-validator.mjs";
 import {
+  ACTION_OBLIGATION_GROUPS,
   actionObligationsWithStatus,
   buildActionObligationGuidance,
   buildActionObligationPrompt,
@@ -154,12 +155,27 @@ function collectArtifactPathsFromTranscript(transcript = []) {
 function collectTranscriptObservations(transcript = []) {
   const parts = [];
   for (const entry of transcript ?? []) {
-    if (entry?.type === "tool_call_completed" && typeof entry.observation === "string") {
+    if ((entry?.type === "tool_call_completed" || entry?.type === "tool_result")
+        && typeof entry.observation === "string") {
       const trimmed = entry.observation.trim();
       if (trimmed) parts.push(trimmed);
     }
   }
   return parts.join("\n\n---\n\n");
+}
+
+const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty)$/;
+const ACTION_OBLIGATION_GROUP_SET = new Set(ACTION_OBLIGATION_GROUPS);
+
+function hasUnsatisfiedNonActionRequiredPolicyGroups({ task, transcript = [] }) {
+  const taskSpec = selectSuccessContractValidationSpec(task);
+  const gate = validateSuccessContract(taskSpec, transcript);
+  if (gate.satisfied) return false;
+  return (gate.violations ?? []).some((violation) => {
+    const match = REQUIRED_POLICY_GROUP_VIOLATION_RE.exec(String(violation?.kind ?? ""));
+    if (!match) return false;
+    return !ACTION_OBLIGATION_GROUP_SET.has(match[1]);
+  });
 }
 
 const EMAIL_SEND_FALLBACK_TOOL_PREFERENCE = Object.freeze([
@@ -192,6 +208,7 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
   if (auth?.decision !== "preauthorized") return null;
   if (!Array.isArray(auth.groups) || !auth.groups.includes("email_send")) return null;
   if (!Array.isArray(allowed) || allowed.length === 0) return null;
+  if (hasUnsatisfiedNonActionRequiredPolicyGroups({ task, transcript })) return null;
   const contract = task?.context_packet?.selection_metadata?.side_effect_contract;
   const recipients = contract?.groups?.email_send?.slots?.to?.values;
   if (!Array.isArray(recipients) || recipients.length === 0) return null;

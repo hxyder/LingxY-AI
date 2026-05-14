@@ -19,10 +19,17 @@ import { synthesiseDeterministicActionFallback } from "../../src/service/executo
 function makePreauthorizedTask({
   recipients = ["reviewer@example.com"],
   authorizedGroups = ["email_send"],
-  decision = "preauthorized"
+  decision = "preauthorized",
+  requiredPolicyGroups = []
 } = {}) {
   return {
     user_command: "整理今天美股新闻发送邮件到 reviewer@example.com",
+    task_spec: {
+      success_contract: {
+        required_policy_groups: requiredPolicyGroups,
+        required_tool_names: []
+      }
+    },
     context_packet: {
       selection_metadata: {
         side_effect_authorization: {
@@ -51,10 +58,13 @@ function makePreauthorizedTask({
 function makeTranscript({ observation = "Dow Jones up 0.6%, Nasdaq up 0.4%." } = {}) {
   return [
     {
-      type: "tool_call_completed",
+      type: "tool_result",
       tool: "web_search_fetch",
       success: true,
-      observation
+      observation,
+      metadata: {
+        results: [{ title: "Market evidence", url: "https://example.com/market" }]
+      }
     }
   ];
 }
@@ -73,6 +83,25 @@ test("returns a tool_call when preauthorized + recipients + allowed email tool",
   assert.ok(decision.args.body && decision.args.body.length > 0, "body is filled in");
   assert.match(decision.args.body, /Dow Jones up 0\.6%/, "body includes transcript observations");
   assert.equal(decision.__deterministic_fallback, true);
+});
+
+test("returns null when a required non-action policy group is still unsatisfied", () => {
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask({ requiredPolicyGroups: ["external_web_read", "email_send"] }),
+    transcript: [],
+    allowed: ["account_send_email"]
+  });
+  assert.equal(decision, null);
+});
+
+test("allows deterministic email fallback after required web evidence is satisfied", () => {
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask({ requiredPolicyGroups: ["external_web_read", "email_send"] }),
+    transcript: makeTranscript(),
+    allowed: ["account_send_email"]
+  });
+  assert.equal(decision?.tool, "account_send_email");
+  assert.match(decision?.args?.body ?? "", /Dow Jones up 0\.6%/);
 });
 
 test("returns null when authorization is missing (interactive task)", () => {

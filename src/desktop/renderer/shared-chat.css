@@ -342,6 +342,11 @@
 .conversation-artifact--project-file {
   background: color-mix(in srgb, var(--accent-soft) 35%, var(--panel));
 }
+.conversation-artifact--current-conversation {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent-soft) 48%, var(--panel));
+  box-shadow: inset 3px 0 0 var(--accent);
+}
 .conversation-artifact .artifact-icon {
   width: 26px;
   height: 26px;

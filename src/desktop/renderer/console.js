@@ -3122,6 +3122,23 @@ function setConsoleChatFilesDrawerOpen(open) {
   if (layout) layout.classList.toggle("files-open", open === true);
 }
 
+function artifactPathKey(filePath) {
+  return `${filePath ?? ""}`.trim().replace(/\\/g, "/").toLowerCase();
+}
+
+function dedupeFileEntriesByPath(entries = []) {
+  const seen = new Set();
+  const deduped = [];
+  for (const entry of entries) {
+    const path = `${entry?.path ?? ""}`.trim();
+    const key = artifactPathKey(path);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    deduped.push({ ...entry, path });
+  }
+  return deduped;
+}
+
 function renderConsoleChatArtifacts(artifacts = []) {
   if (!consoleChatArtifacts) return;
   if (Array.isArray(artifacts)) consoleChatArtifactItems = artifacts;
@@ -3137,9 +3154,17 @@ function renderConsoleChatArtifacts(artifacts = []) {
       .map((entry) => typeof entry === "string" ? { path: entry, legacyScopeLabel: true } : entry)
       .filter((entry) => typeof entry?.path === "string" && entry.path.trim())
       .map((entry) => ({ ...entry, path: entry.path.trim() }))
-      .filter((entry, index, all) => all.findIndex((item) => item.path === entry.path) === index)
     : [];
-  if (files.length === 0 && projectFileEntries.length === 0) {
+  const activeConversationId = consoleActiveConversation?.conversation_id ?? null;
+  const currentConversationFileKeys = new Set(files.map((artifact) => artifactPathKey(artifact.path)));
+  const projectGeneratedEntries = project
+    ? dedupeFileEntriesByPath([
+      ...currentProjectArtifacts(project.id),
+      ...files
+    ])
+    : dedupeFileEntriesByPath(files);
+  const projectAttachedEntries = dedupeFileEntriesByPath(projectFileEntries);
+  if (projectGeneratedEntries.length === 0 && projectAttachedEntries.length === 0) {
     consoleChatArtifacts.hidden = true;
     setConsoleChatFilesDrawerOpen(false);
     setHtmlIfChanged(consoleChatArtifacts, "");
@@ -3152,7 +3177,7 @@ function renderConsoleChatArtifacts(artifacts = []) {
     if (consoleChatFilesBtn) consoleChatFilesBtn.setAttribute("aria-expanded", "false");
     return;
   }
-  const projectRows = projectFileEntries.map((entry) => {
+  const projectRows = projectAttachedEntries.map((entry) => {
     const filePath = entry.path;
     const label = formatArtifactLabel(filePath);
     const ext = artifactExtension(filePath);
@@ -3174,18 +3199,24 @@ function renderConsoleChatArtifacts(artifacts = []) {
       </div>
     `;
   }).join("");
-  const generatedRows = files.map((artifact) => {
+  const generatedRows = projectGeneratedEntries.map((artifact) => {
     const filePath = `${artifact.path ?? ""}`;
     const label = formatArtifactLabel(filePath);
     const ext = artifactExtension(filePath);
     const createdAt = artifact.created_at ? formatDateTime(artifact.created_at) : "";
     const status = artifactStatusInfo(artifact.status);
+    const isCurrentConversation = (activeConversationId && artifact.conversation_id === activeConversationId)
+      || currentConversationFileKeys.has(artifactPathKey(filePath));
+    const scopeLabel = isCurrentConversation
+      ? "Current chat"
+      : (artifact.conversation_title ? `Chat: ${artifact.conversation_title}` : "Project chat");
     return `
-      <div class="conversation-artifact" title="${escapeHtml(filePath)}">
+      <div class="conversation-artifact ${isCurrentConversation ? "conversation-artifact--current-conversation" : ""}" title="${escapeHtml(filePath)}">
         <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
         <button type="button" class="conversation-artifact-main" data-conversation-artifact-open="${escapeHtml(filePath)}">
           <span class="conversation-artifact-name">${escapeHtml(label)}</span>
           <span class="conversation-artifact-meta">
+            <span>${escapeHtml(scopeLabel)}</span>
             ${createdAt ? `<span>${escapeHtml(createdAt)}</span>` : ""}
             ${status ? `<span class="artifact-status ${status.className}">${escapeHtml(status.label)}</span>` : ""}
           </span>
@@ -3197,10 +3228,10 @@ function renderConsoleChatArtifacts(artifacts = []) {
     `;
   }).join("");
   const rows = [
-    generatedRows ? `<span class="conversation-artifacts-section">Current chat</span>${generatedRows}` : "",
-    projectRows ? `<span class="conversation-artifacts-section">Project files</span>${projectRows}` : ""
+    generatedRows ? `<span class="conversation-artifacts-section">${project ? "Project generated" : "Current chat"}</span>${generatedRows}` : "",
+    projectRows ? `<span class="conversation-artifacts-section">Project attachments</span>${projectRows}` : ""
   ].filter(Boolean).join("");
-  const total = files.length + projectFileEntries.length;
+  const total = projectGeneratedEntries.length + projectAttachedEntries.length;
   setHtmlIfChanged(consoleChatArtifacts, `
     <div class="conversation-artifacts-head">
       <span>Files</span>
