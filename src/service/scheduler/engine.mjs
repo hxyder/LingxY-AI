@@ -4,6 +4,7 @@ import { applyMisfirePolicy, computeMissedRunTimes, computeNextRunAt } from "./m
 import { normalizeTerminalOneShotSchedule, resumeSchedule } from "./lifecycle.mjs";
 import { createPendingApprovalService } from "./pending-approvals.mjs";
 import { dispatchSchedule } from "./dispatch.mjs";
+import { recoverStaleScheduleRuns } from "./stale-runs.mjs";
 import { executeProposedAction } from "./execute-action.mjs";
 import { getSystemTimezone, getUserLocation } from "../utils/location.mjs";
 import {
@@ -211,6 +212,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
       return cloneSchedule(schedule);
     },
     listSchedules() {
+      recoverStaleScheduleRuns({ runtime });
       return runtime.store.listSchedules().map(cloneSchedule);
     },
     getSchedule(scheduleId) {
@@ -279,6 +281,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
       });
     },
     async runDueSchedules({ now = new Date().toISOString() } = {}) {
+      recoverStaleScheduleRuns({ runtime, now });
       const dueSchedules = runtime.store.listSchedules()
         .filter((schedule) => schedule.enabled && schedule.next_run_at && schedule.next_run_at <= now);
 
@@ -293,6 +296,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
       return results;
     },
     async recoverSchedules({ now = new Date().toISOString() } = {}) {
+      recoverStaleScheduleRuns({ runtime, now });
       const runs = [];
       for (const schedule of runtime.store.listSchedules().filter((item) => item.enabled)) {
         if (normalizeTerminalOneShotSchedule(schedule, { now })) {
@@ -338,6 +342,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
       });
     },
     listScheduleRuns(scheduleId) {
+      recoverStaleScheduleRuns({ runtime, scheduleId });
       return runtime.store.listScheduleRuns(scheduleId);
     },
     approvePendingApproval(approvalId, options) {
