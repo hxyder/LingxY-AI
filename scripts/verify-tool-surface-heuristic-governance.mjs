@@ -29,6 +29,19 @@ for (const path of surfaces) {
     /ARTIFACT_REQUEST_RE|taskTextExplicitlyAsksForArtifact/u,
     `${path} must not use raw user-text artifact regexes as a tool-surface gate`
   );
+  assert.doesNotMatch(
+    source,
+    /EXTERNAL_RESEARCH_ACTION_RE|EXTERNAL_RESEARCH_TOPIC_RE|hasExternalResearchIntent/u,
+    `${path} must not use raw current-research topic regexes as a connector/web surface gate`
+  );
+  assert.ok(
+    source.includes("CODE_EXECUTION_TOOL_IDS"),
+    `${path} must explicitly govern code-execution tool visibility`
+  );
+  assert.ok(
+    source.includes("taskAllowsCodeExecutionTools"),
+    `${path} must hide run_script unless typed capability or explicit execution intent allows it`
+  );
 }
 
 const testFiles = [
@@ -45,6 +58,10 @@ for (const path of testFiles) {
   assert.ok(
     source.includes("typed artifact_generation capability is not vetoed by live text heuristics"),
     `${path} must lock typed artifact_generation precedence over live text`
+  );
+  assert.ok(
+    source.includes("run_script"),
+    `${path} must lock code-execution tool-surface governance`
   );
 }
 

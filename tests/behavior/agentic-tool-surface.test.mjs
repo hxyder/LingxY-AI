@@ -141,6 +141,29 @@ test("agentic tool surface keeps connector-scoped searches out of generic web se
   assert.ok(visible.includes("connector_workflow_run"));
 });
 
+test("agentic tool surface keeps web tools for degraded side-effect routing and hides unrequested run_script", () => {
+  const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
+    user_command: "收集最新信息并发送邮件到 a@example.com",
+    task_spec: {
+      routing_degraded: true,
+      success_contract: { required_policy_groups: ["email_send"] }
+    }
+  }).map((tool) => tool.id);
+
+  assert.ok(visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("connector_workflow_run"));
+  assert.ok(!visible.includes("run_script"));
+});
+
+test("agentic tool surface exposes run_script only for explicit code execution", () => {
+  const visible = filterToolsForAgenticTask(BUILTIN_ACTION_TOOLS, {
+    user_command: "用 Node.js 执行脚本检查生成文件。",
+    task_spec: {}
+  }).map((tool) => tool.id);
+
+  assert.ok(visible.includes("run_script"));
+});
+
 test("agentic tool surface only counts successful prior tool calls", () => {
   const transcript = [
     { role: "tool", name: "send_email_smtp", success: false },

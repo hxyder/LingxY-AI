@@ -182,6 +182,17 @@ test("body falls back to a placeholder when the transcript has no observations",
   assert.match(decision.args.body, /未能整理出文本内容|LingxY/);
 });
 
+test("degraded routing does not send deterministic email fallback without evidence", () => {
+  const task = makePreauthorizedTask();
+  task.task_spec.routing_degraded = true;
+  const decision = synthesiseDeterministicActionFallback({
+    task,
+    transcript: [],
+    allowed: ["account_send_email"]
+  });
+  assert.equal(decision, null);
+});
+
 test("subject derives from the first line of user_command, capped to 80 chars", () => {
   const longCommand = "请把今天的美股摘要".repeat(20);
   const task = makePreauthorizedTask();

@@ -217,7 +217,9 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
   if (!tool) return null;
   const userCommand = String(task?.user_command ?? "").trim();
   const subject = (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80);
-  const body = collectTranscriptObservations(transcript).slice(0, 8000)
+  const evidenceBody = collectTranscriptObservations(transcript).slice(0, 8000);
+  if (task?.task_spec?.routing_degraded === true && !evidenceBody.trim()) return null;
+  const body = evidenceBody
     || `LingxY 已完成调度任务（${userCommand.slice(0, 200)}）但未能整理出文本内容。`;
   return {
     type: "tool_call",

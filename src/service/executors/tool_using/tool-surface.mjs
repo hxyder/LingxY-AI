@@ -177,9 +177,6 @@ function filterWebSearchPage(list = [], task) {
 
 const CONNECTOR_SCOPE_RE = /(云盘|网盘|邮箱|邮件|日历|收件箱|google\s*drive|gmail|calendar|onedrive|outlook)/iu;
 const INTERNET_SCOPE_RE = /(互联网|联网|网页|网站|站点|浏览器|web|internet|online|browser)/iu;
-const EXTERNAL_RESEARCH_ACTION_RE = /(收集|整理|汇总|查询|查一下|搜索|研究|调研|总结|分析|compare|research|collect|summari[sz]e|search|look\s+up)/iu;
-const EXTERNAL_RESEARCH_TOPIC_RE = /(最新|今日|今天|实时|当前|current|latest|news|新闻|资讯|市场|行情|股市|股票|美股|港股|A股|指数|板块|涨跌|财报|价格|price|quote|market|stock|index|earnings)/iu;
-
 function userCommandIsConnectorScoped(task) {
   return liveUserIntentSources(task).some((text) =>
     CONNECTOR_SCOPE_RE.test(text) && !INTERNET_SCOPE_RE.test(text)
@@ -199,13 +196,10 @@ function taskNeedsExternalWebReadSurface(task) {
   const webToolMode = spec?.tool_policy?.web_search_fetch?.mode ?? spec?.tool_policy?.fetch_url_content?.mode;
   if (webGroupMode === "required" || webToolMode === "required") return true;
 
-  // Connector-scoped commands can still require external research:
-  // "collect today's market news and email it" contains "email", but the
-  // research source is the outside world, not the mailbox. Keep this lexical
-  // fallback narrow so "search my Drive/mailbox" continues to hide web search.
-  return liveUserIntentSources(task).some((text) =>
-    EXTERNAL_RESEARCH_ACTION_RE.test(text) && EXTERNAL_RESEARCH_TOPIC_RE.test(text)
-  );
+  return spec?.routing_degraded === true
+    && requiredPolicyGroupsOf(task).some((group) =>
+      group === "email_send" || group === "calendar_create" || group === "file_upload"
+    );
 }
 
 function filterConnectorScopedWebTools(list = [], task) {
@@ -370,11 +364,26 @@ function filterUnrequestedArtifactTools(list = [], task) {
   return list.filter((tool) => !ARTIFACT_TOOL_IDS.has(tool?.id));
 }
 
+function taskHasTypedCodeExecutionCapability(task) {
+  return neededCapabilitiesOf(task).includes("code_execution")
+    || requiredPolicyGroupsOf(task).includes("code_execution");
+}
+
+function taskAllowsCodeExecutionTools(task) {
+  return taskHasTypedCodeExecutionCapability(task) || taskTextExplicitlyAsksForCodeExecution(task);
+}
+
+function filterUnrequestedCodeExecutionTools(list = [], task) {
+  if (taskAllowsCodeExecutionTools(task)) return list;
+  return list.filter((tool) => !CODE_EXECUTION_TOOL_IDS.has(tool?.id));
+}
+
 export function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
   const stripTaskScopedTools = (list) => {
     const withoutArtifacts = filterUnrequestedArtifactTools(list, task);
-    const withoutDirectOpen = filterDirectFileOpenTools(withoutArtifacts, task);
+    const withoutCodeExecution = filterUnrequestedCodeExecutionTools(withoutArtifacts, task);
+    const withoutDirectOpen = filterDirectFileOpenTools(withoutCodeExecution, task);
     const withoutOpenUrl = filterOpenUrl(withoutDirectOpen, task);
     const withoutConnectorScopedWeb = filterConnectorScopedWebTools(withoutOpenUrl, task);
     const withoutWebSearchPage = filterWebSearchPage(withoutConnectorScopedWeb, task);

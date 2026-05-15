@@ -277,6 +277,7 @@ test("agent tool surface keeps web research available for scheduled research ema
     task_spec: {
       goal: "search_and_answer",
       connector_domain: true,
+      routing_degraded: true,
       tool_policy: {
         policy_groups: {
           external_web_read: { mode: "optional" }
@@ -296,6 +297,26 @@ test("agent tool surface keeps web research available for scheduled research ema
   assert.ok(visible.includes("account_send_email"));
   assert.ok(visible.includes("connector_workflow_run"));
   assert.ok(!visible.includes("create_scheduled_task"));
+});
+
+test("agent tool surface hides run_script unless code execution is explicitly required", () => {
+  const visible = filterToolsForTask(tools, {
+    user_command: "收集最新市场信息并发送邮件到 a@example.com",
+    task_spec: {
+      success_contract: { required_policy_groups: ["email_send"] }
+    }
+  }).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("run_script"));
+
+  const explicit = filterToolsForTask(tools, {
+    user_command: "用 Node.js 执行脚本检查生成文件。",
+    task_spec: {
+      success_contract: { required_policy_groups: [] }
+    }
+  }).map((tool) => tool.id);
+
+  assert.ok(explicit.includes("run_script"));
 });
 
 test("capability_management still hides direct file open tools when not required", () => {

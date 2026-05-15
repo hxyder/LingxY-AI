@@ -136,6 +136,19 @@ unavailable" apologies: such claims must be reconciled against structured tool
 transcript failures and available evidence, with a `final_composer_guarded_claim`
 event when the deterministic transcript-based wording replaces the model text.
 
+PMAT-013 stock/side-effect routing follow-up, 2026-05-15: scheduled market
+digest task `task_f69f6c2d-b13c-46a4-aad1-db728378d778` exposed two framework
+gaps after SemanticRouter timed out. First, `run_script` was visible to a task
+that did not carry typed `code_execution` capability or explicit code-execution
+intent, so the planner executed an unrelated spreadsheet script. Second,
+deterministic scheduled-email fallback could still synthesize an email body
+from no evidence when routing was degraded. The fix is framework-level and
+language-neutral: code execution tools are hidden unless TaskSpec/SemanticRouter
+or explicit execution intent allows them; degraded side-effect routing keeps
+web/evidence tools reachable but refuses deterministic email fallback when no
+tool observations exist. Do not reintroduce current-research topic regexes into
+tool-surface gates.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

@@ -30,6 +30,8 @@ const EXTERNAL_WEB_READ_TOOL_IDS = new Set([
   "fetch_url_content"
 ]);
 
+const CODE_EXECUTION_TOOL_IDS = new Set(["run_script"]);
+
 export function toolDescriptorForAdapter(tool) {
   return {
     name: tool.id,
@@ -111,13 +113,43 @@ function userCommandIsConnectorScoped(task) {
   );
 }
 
+function taskNeedsExternalWebReadSurface(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  const decision = semanticDecisionOf(task);
+  const capabilities = neededCapabilitiesOf(task);
+  if (capabilities.includes("external_web_read")) return true;
+  if (decision?.source_scope === "external_world" || decision?.web_policy === "required") return true;
+  if (spec?.needs_current_web_data === true || spec?.research_signals_present === true) return true;
+  const requiredGroups = requiredPolicyGroupsOf(task);
+  if (requiredGroups.includes("external_web_read")) return true;
+  return spec?.routing_degraded === true
+    && requiredGroups.some((group) =>
+      group === "email_send" || group === "calendar_create" || group === "file_upload"
+    );
+}
+
+const CODE_EXECUTION_REQUEST_RE = /(执行|运行|跑一下|用\s*(node|python|powershell).{0,12}(脚本|代码)|脚本.{0,12}(执行|运行)|代码.{0,12}(执行|运行)|\b(run|execute)\b.{0,24}\b(script|code|node|python|powershell)\b|\b(node|python|powershell)\b.{0,24}\b(run|execute|script|code)\b)/iu;
+
+function taskTextExplicitlyAsksForCodeExecution(task) {
+  return liveUserIntentSources(task).some((text) => CODE_EXECUTION_REQUEST_RE.test(text));
+}
+
+function taskAllowsCodeExecutionTools(task) {
+  return neededCapabilitiesOf(task).includes("code_execution")
+    || requiredPolicyGroupsOf(task).includes("code_execution")
+    || taskTextExplicitlyAsksForCodeExecution(task);
+}
+
 export function filterToolsForAgenticTask(tools = [], task) {
   const allowArtifacts = taskAllowsArtifactTools(task);
   const connectorScoped = userCommandIsConnectorScoped(task);
+  const allowCodeExecution = taskAllowsCodeExecutionTools(task);
+  const allowConnectorWeb = !connectorScoped || taskNeedsExternalWebReadSurface(task);
   return tools.filter((tool) => {
     if (!tool?.id) return false;
     if (!allowArtifacts && ARTIFACT_TOOL_IDS.has(tool.id)) return false;
-    if (connectorScoped && EXTERNAL_WEB_READ_TOOL_IDS.has(tool.id)) return false;
+    if (!allowCodeExecution && CODE_EXECUTION_TOOL_IDS.has(tool.id)) return false;
+    if (!allowConnectorWeb && EXTERNAL_WEB_READ_TOOL_IDS.has(tool.id)) return false;
     return true;
   });
 }
