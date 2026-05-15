@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import { createTaskEventStream, encodeSseFrame } from "../../events/sse.mjs";
 import { retryTask } from "../../retry/retry-manager.mjs";
 import {
@@ -108,6 +109,25 @@ function normalizeRequestPathArray(value) {
   return Array.isArray(value)
     ? value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
     : [];
+}
+
+const LAUNCHABLE_FILE_EXTENSIONS = new Set([
+  ".appref-ms",
+  ".bat",
+  ".cmd",
+  ".com",
+  ".exe",
+  ".lnk",
+  ".msi",
+  ".ps1",
+  ".url"
+]);
+
+function isLaunchableLocalResource(filePath = "") {
+  const value = String(filePath ?? "").trim();
+  if (!value) return false;
+  if (/^shell:/i.test(value)) return true;
+  return LAUNCHABLE_FILE_EXTENSIONS.has(path.extname(value).toLowerCase());
 }
 
 function buildMixedAttachmentContextPacket(body, {
@@ -364,6 +384,29 @@ export async function submitTaskFromBody(runtime, body) {
   }
 
   if (requestFilePaths.length) {
+    const launchableFilePaths = requestFilePaths.filter(isLaunchableLocalResource);
+    if (launchableFilePaths.length > 0) {
+      return submitActionToolTask({
+        userCommand: body.userCommand,
+        executionMode: body.executionMode,
+        sourceApp: body.sourceApp,
+        captureMode: body.captureMode,
+        selectionMetadata: {
+          ...selectionMetadata,
+          launchable_file_context: true,
+          launchable_file_paths: launchableFilePaths,
+          file_count: requestFilePaths.length
+        },
+        filePaths: requestFilePaths,
+        executorOverride: body.executorOverride,
+        parentTaskId: effectiveRequestParentTaskId,
+        conversationId: requestConversationId,
+        clientMessageId: requestClientMessageId,
+        projectId: requestProjectId,
+        background,
+        runtime
+      });
+    }
     return submitFileTask({
       filePaths: requestFilePaths,
       userCommand: body.userCommand,

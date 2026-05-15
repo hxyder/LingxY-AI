@@ -241,7 +241,7 @@ const mainProcess = mainProcessSources.join("\n");
 const preload = readFileSync(preloadPath, "utf8");
 
 assert(count(mainProcess, /ipcMain\.handle\(/g) === 113, "main-process ipcMain.handle count changed");
-assert(count(mainProcess, /\.\w*send\(/g) === 27, "main-process send reference count changed");
+assert(count(mainProcess, /\.\w*send\(/g) === 26, "main-process send reference count changed");
 assert(count(preload, /ipcRenderer\.invoke\(/g) === 109, "preload invoke count changed");
 assert(count(preload, /ipcRenderer\.on\(/g) === 22, "preload listener count changed");
 

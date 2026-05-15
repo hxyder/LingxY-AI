@@ -46,8 +46,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const mockFixturePath = path.join(repoRoot, "tests", "fixtures", "mock-active-window-probe.mjs");
 const electronMainSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "electron-main.mjs"), "utf8");
-const shellLocalIpcSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "ipc", "register-shell-local-ipc.mjs"), "utf8");
-const shortcutRouterSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "desktop-shortcut-router.mjs"), "utf8");
+const shellLocalIpcSource = readFileSync(path.join(repoRoot, "src", "desktop", "main", "ipc", "register-shell-local-ipc.mjs"), "utf8");
+const shortcutRouterSource = readFileSync(path.join(repoRoot, "src", "desktop", "shell", "desktop-shortcut-router.mjs"), "utf8");
 const mainWithIpcSource = `${electronMainSource}\n${shellLocalIpcSource}`;
 const mainWithShortcutRouterSource = `${electronMainSource}\n${shortcutRouterSource}`;
 
@@ -194,8 +194,8 @@ assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallbac
   const guardIndex = guardIndexRaw >= 0 ? guardIndexRaw : mainWithShortcutRouterSource.indexOf("captureInFlight = true;", captureBlockStart);
   const showIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', guardIndex >= 0 ? guardIndex : captureBlockStart);
   const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", guardIndex >= 0 ? guardIndex : captureBlockStart);
-  assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && captureIndex > guardIndex && showIndex > captureIndex,
-    "capture-and-ask must guard re-entrance, start async capture, then reveal the overlay on resolution");
+  assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && showIndex > guardIndex && captureIndex > showIndex,
+    "capture-and-ask must guard re-entrance, reveal the overlay immediately, then hydrate capture context asynchronously");
 }
 assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\s\S]{0,220}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,520}clipboardBaseline/.test(electronMainSource)
@@ -301,6 +301,25 @@ assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\
   const payload = buildShellContextPayload({ context, sourceApp: "explorer.exe" });
   assert.deepEqual(payload.file_paths, ["C:\\Users\\der\\Documents\\notes.md"]);
   assert.equal(payload.active_window, undefined);
+}
+
+{
+  const context = {
+    processName: "explorer",
+    windowTitle: "Start Menu",
+    filePaths: ["C:\\Users\\der\\Desktop\\Example.lnk"],
+    selectedText: null,
+    activeWindow: {
+      process: "explorer",
+      title: "Desktop",
+      detectedKind: "window_title",
+      extra: {},
+      blocked: false
+    }
+  };
+  const payload = buildShellContextPayload({ context, sourceApp: "explorer.exe" });
+  assert.deepEqual(payload.file_paths, ["C:\\Users\\der\\Desktop\\Example.lnk"]);
+  assert.equal(payload.active_window, undefined, "selected files must dominate active-window preview/tracking");
 }
 
 {

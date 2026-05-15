@@ -191,9 +191,30 @@ test("memory governance requires proposal review before approved memory injectio
   assert.deepEqual(entries[0].metadata.memory_types, ["rejected_assumption"]);
 });
 
-test("user memory can automatically propose bounded task completion summaries", () => {
+test("routine task completion summaries do not enter memory proposals by default", () => {
   const profile = proposeTaskCompletionMemory(
     sanitizeUserMemoryProfile({ enabled: true }),
+    {
+      task: {
+        task_id: "task_auto_memory",
+        status: "success",
+        executor: "tool_using",
+        conversation_id: "conv_auto_memory",
+        project_id: "proj_auto_memory",
+        user_command: "帮我总结这个项目的部署偏好"
+      },
+      finalText: "项目部署时优先使用本地校验，再推送远程。",
+      now: "2026-05-13T12:00:00.000Z"
+    }
+  );
+
+  assert.equal(profile.proposals.length, 0);
+  assert.equal(profile.approvedMemories.length, 0);
+});
+
+test("user memory can review bounded task completion summaries after explicit review-mode opt-in", () => {
+  const profile = proposeTaskCompletionMemory(
+    sanitizeUserMemoryProfile({ enabled: true, generatedTaskMemoryMode: "review" }),
     {
       task: {
         task_id: "task_auto_memory",

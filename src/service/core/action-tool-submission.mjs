@@ -39,18 +39,23 @@ function buildActionContextPacket({
   userCommand,
   sourceApp = "uca.console",
   captureMode = "manual",
-  selectionMetadata = null
+  selectionMetadata = null,
+  filePaths = []
 }) {
+  const normalizedFilePaths = Array.isArray(filePaths)
+    ? filePaths.filter((value) => typeof value === "string" && value.trim())
+    : [];
   return {
     schema_version: "1.0",
     context_id: `ctx_${crypto.randomUUID()}`,
     trace_id: `trace_${crypto.randomUUID()}`,
-    source_type: "clipboard",
+    source_type: normalizedFilePaths.length > 0 ? "launchable_file" : "clipboard",
     source_app: sourceApp,
     capture_mode: captureMode,
     security_level: "internal",
     redaction_applied: false,
     text: userCommand,
+    ...(normalizedFilePaths.length > 0 ? { file_paths: normalizedFilePaths } : {}),
     ...(selectionMetadata && typeof selectionMetadata === "object"
       ? { selection_metadata: selectionMetadata }
       : {}),
@@ -118,6 +123,7 @@ export async function submitActionToolTask({
   // call the tool directly and return immediately (< 200ms).
   fastPathTool = null,
   fastPathArgs = null,
+  filePaths = [],
   selectionMetadata = null,
   background = false
 }) {
@@ -126,7 +132,8 @@ export async function submitActionToolTask({
     userCommand,
     sourceApp,
     captureMode,
-    selectionMetadata
+    selectionMetadata,
+    filePaths
   });
   const route = routeIntent(userCommand);
   const { task } = submitTaskWithConversation({
@@ -161,7 +168,27 @@ export async function submitActionToolTask({
       final_text: finalText
     };
   }
-  runtime.queue.enqueue(task);
+  const enqueued = runtime.queue.enqueue(task);
+  if (!enqueued.accepted) {
+    updateTask(runtime, task, {
+      status: "partial_success",
+      sub_status: "deduped_recent_submission"
+    }, true);
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "partial_success",
+      payload: {
+        deduped_task_id: enqueued.dedupedTaskId ?? null
+      }
+    });
+    markTaskSucceeded(runtime, task);
+    return {
+      task,
+      taskEvents: runtime.store.getTaskEvents(task.task_id),
+      artifacts: []
+    };
+  }
 
   const artifactMetadataByPath = new Map();
   const emitExecutorEvent = (eventType, payload) => {

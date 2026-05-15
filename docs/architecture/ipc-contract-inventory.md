@@ -17,7 +17,13 @@ Status: verified against the current repository on 2026-05-09.
 
 - IPC channel count: 116
 - Main-process handler registration references across `electron-main.mjs` and IPC modules: 113
-- Main-process send references across `electron-main.mjs`, desktop main IPC helpers, and IPC modules: 27
+- Main-process send references across `electron-main.mjs`, desktop main IPC helpers, and IPC modules: 26
+
+PMAT-014 note, 2026-05-15: `capture-and-ask` now sends
+`uca:shortcut-triggered` once immediately when the hotkey is pressed, then
+hydrates selected file/text/window context asynchronously. The send-reference
+snapshot dropped by one because the previous capture-failure/resolution resend
+was retired; the IPC channel contract is unchanged.
 - Renderer invoke references: 109
 - Renderer listener references: 22
 - Hard-coded main IPC handler channels outside `IPC_CHANNELS`: 13

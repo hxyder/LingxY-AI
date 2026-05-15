@@ -24,7 +24,9 @@ assert.match(profile, /user_correction/, "memory types must include user_correct
 assert.match(profile, /rejected_assumption/, "memory types must include rejected_assumption");
 assert.match(profile, /createMemoryProposal/, "memory profile must create proposals");
 assert.match(profile, /proposeTaskCompletionMemory/,
-  "memory profile must create reviewable automatic task-completion proposals");
+  "memory profile must own generated task-completion memory policy");
+assert.match(profile, /generatedTaskMemoryMode/,
+  "memory profile must separate routine task history from durable memory proposals");
 assert.match(profile, /approveMemoryProposal/, "memory profile must approve proposals");
 assert.match(profile, /rejectMemoryProposal/, "memory profile must reject proposals");
 assert.match(profile, /deleteApprovedMemory/, "memory profile must delete approved memory");
@@ -49,16 +51,18 @@ assert.match(consoleJs, /renderGovernedMemoryList/, "Console must render governe
 assert.match(consoleJs, /data-memory-approve/, "Console must support proposal approval");
 assert.match(consoleJs, /data-memory-reject/, "Console must support proposal rejection");
 assert.match(consoleJs, /data-memory-delete/, "Console must support memory deletion");
-assert.match(consoleJs, /completed tasks create reviewable memory proposals/i,
-  "Console must explain how automatic memory proposals are created");
+assert.match(consoleJs, /autoApproveGenerated/i,
+  "Console must expose explicit generated-memory controls");
 assert.match(lifecycle, /maybeProposeTaskCompletionMemory/,
   "Task lifecycle must enqueue automatic memory proposals in service code");
 
 assert.match(compiler, /context_packet\.background_contexts/, "ContextCompiler must select scoped memory via background contexts");
 assert.match(tests, /requires proposal review before approved memory injection/,
   "tests must prove proposals are not injected before approval");
-assert.match(tests, /automatically propose bounded task completion summaries/,
-  "tests must prove automatic task memory stays proposal-governed");
+assert.match(tests, /routine task completion summaries do not enter memory proposals by default/,
+  "tests must prove routine task memory does not become approval noise by default");
+assert.match(tests, /review bounded task completion summaries after explicit review-mode opt-in/,
+  "tests must prove generated task memory can still use proposal review after explicit opt-in");
 assert.match(tests, /auto-approves only after explicit user opt-in/,
   "tests must prove generated task memory can only auto-approve behind explicit opt-in");
 assert.match(tests, /can reject proposals and delete approved memory/,

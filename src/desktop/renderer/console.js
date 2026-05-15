@@ -4777,7 +4777,7 @@ function renderUserMemorySettings() {
   }
   if (userMemorySwitchHint) {
     userMemorySwitchHint.textContent = enabled
-      ? "Enabled. Saved preferences and approved memories can be injected as typed context; completed tasks create reviewable memory proposals."
+      ? "Enabled. Saved preferences and approved memories can be injected as typed context. Routine task history stays separate from durable memory."
       : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
   }
   if (userMemoryState) {
@@ -11499,7 +11499,7 @@ userMemoryEnabled?.addEventListener("change", () => {
   }
   if (userMemorySwitchHint) {
     userMemorySwitchHint.textContent = enabled
-      ? "Enabled. Saved preferences and approved memories can be injected as typed context; completed tasks create reviewable memory proposals."
+      ? "Enabled. Saved preferences and approved memories can be injected as typed context. Routine task history stays separate from durable memory."
       : "Disabled. Stored entries stay saved, but they are not injected into runtime context.";
   }
 });

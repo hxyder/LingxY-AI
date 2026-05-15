@@ -84,6 +84,10 @@ export function createShortcutRouter({
         }
         setCaptureInFlight(true);
         const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
+        showWindow("overlay");
+        for (const bw of windows.values()) {
+          bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+        }
         captureActiveWindowContext({
           allowClipboardFallback: false,
           clipboardBaseline: hotKeyClipboardSnapshot
@@ -101,11 +105,6 @@ export function createShortcutRouter({
           const hasText = Boolean(ctx.selectedText);
           const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
 
-          showWindow("overlay");
-          for (const bw of windows.values()) {
-            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-          }
-
           if (hasFiles || hasText || hasActiveWindow) {
             const shellPayload = buildShellContextPayload({
               context: ctx,
@@ -115,10 +114,9 @@ export function createShortcutRouter({
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
           }
         }).catch(() => {
-          showWindow("overlay");
-          for (const bw of windows.values()) {
-            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-          }
+          // The overlay is already visible. A capture failure should leave the
+          // user in the composer instead of turning the hotkey into a blocking
+          // desktop probe.
         }).finally(() => {
           setCaptureInFlight(false);
         });

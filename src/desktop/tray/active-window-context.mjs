@@ -214,6 +214,10 @@ export function buildShellContextPayload({ context, sourceApp, captureMode = "ho
     source_app: sourceApp ?? context.processName ?? "unknown",
     capture_mode: captureMode
   };
+  if (context.filePaths.length > 0) {
+    base.file_paths = context.filePaths;
+    return base;
+  }
   if (context.activeWindow) {
     base.active_window = {
       process: context.activeWindow.process,
@@ -224,10 +228,6 @@ export function buildShellContextPayload({ context, sourceApp, captureMode = "ho
       blocked: Boolean(context.activeWindow.blocked),
       extra: context.activeWindow.extra ?? {}
     };
-  }
-  if (context.filePaths.length > 0) {
-    base.file_paths = context.filePaths;
-    return base;
   }
   if (context.selectedText) {
     const selectedUrl = parseHttpUrl(context.selectedText);

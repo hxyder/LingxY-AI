@@ -368,7 +368,9 @@ export function createElectronShellRuntime({
       setLastClipboardText(context.selectedText);
     }
 
-    rememberExternalWindowContext(context);
+    if (!Array.isArray(context.filePaths) || context.filePaths.length === 0) {
+      rememberExternalWindowContext(context);
+    }
     return context;
   }
 

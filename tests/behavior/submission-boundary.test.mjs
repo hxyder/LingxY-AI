@@ -232,6 +232,22 @@ test("file submission direct path declares its submission kind through the centr
   });
 });
 
+test("launchable selected files use action-tool submission instead of document analysis", async () => {
+  const runtime = createRuntime({ enqueueAccepted: false });
+  const { task } = await submitTaskFromBody(runtime, {
+    userCommand: "启动",
+    filePaths: ["C:\\Users\\der\\Desktop\\Example.lnk"],
+    sourceApp: "explorer.exe",
+    captureMode: "hotkey_capture",
+    background: true
+  });
+
+  assert.equal(task.submission_boundary.submission_kind, "action_tool");
+  assert.equal(task.context_packet.source_type, "launchable_file");
+  assert.deepEqual(task.context_packet.file_paths, ["C:\\Users\\der\\Desktop\\Example.lnk"]);
+  assert.equal(task.context_packet.selection_metadata.launchable_file_context, true);
+});
+
 test("office submission declares its submission kind through the central boundary", async () => {
   const runtime = createRuntime({ enqueueAccepted: false });
   const { task } = await submitOfficeTask({

@@ -19,6 +19,7 @@ const MEMORY_TYPES = new Set([
 const PROPOSAL_STATUSES = new Set(["pending", "approved", "rejected"]);
 const REVIEW_ACTIONS = new Set(["approve_proposal", "reject_proposal", "delete_memory"]);
 const REVIEW_STATUSES = new Set(["applied", "undone"]);
+const GENERATED_TASK_MEMORY_MODES = new Set(["off", "review", "auto_approve"]);
 
 function normalizeText(value, max = MAX_TEXT_CHARS) {
   return `${value ?? ""}`
@@ -49,6 +50,30 @@ function normalizeMemoryType(value, fallback = "user_preference") {
 function normalizeScope(value, fallback = "global") {
   const scope = normalizeText(value, 40) || fallback;
   return ["global", "project", "conversation", "artifact"].includes(scope) ? scope : fallback;
+}
+
+function normalizeGeneratedTaskMemoryMode(profile = {}) {
+  const explicit = normalizeText(
+    profile.generatedTaskMemoryMode
+      ?? profile.generated_task_memory_mode
+      ?? profile.taskMemoryMode
+      ?? profile.task_memory_mode,
+    40
+  );
+  if (GENERATED_TASK_MEMORY_MODES.has(explicit)) return explicit;
+  if (profile.autoApproveGenerated === true
+      || profile.autoApproveGeneratedMemory === true
+      || profile.autoApproveTaskMemory === true
+      || profile.autoSaveGenerated === true
+      || profile.auto_save_generated === true
+      || profile.auto_approve_generated === true) {
+    return "auto_approve";
+  }
+  if (profile.reviewGeneratedTaskMemory === true
+      || profile.review_generated_task_memory === true) {
+    return "review";
+  }
+  return "off";
 }
 
 function normalizeProvenance(value = {}) {
@@ -184,12 +209,8 @@ export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOSt
   return {
     schemaVersion: USER_MEMORY_PROFILE_VERSION,
     enabled: profile.enabled !== false,
-    autoApproveGenerated: profile.autoApproveGenerated === true
-      || profile.autoApproveGeneratedMemory === true
-      || profile.autoApproveTaskMemory === true
-      || profile.autoSaveGenerated === true
-      || profile.auto_save_generated === true
-      || profile.auto_approve_generated === true,
+    autoApproveGenerated: normalizeGeneratedTaskMemoryMode(profile) === "auto_approve",
+    generatedTaskMemoryMode: normalizeGeneratedTaskMemoryMode(profile),
     updatedAt: now,
     preferences: normalizeMemoryItems(profile.preferences ?? [], { defaultScope: "global" }),
     projectMemories: normalizeMemoryItems(profile.projectMemories ?? profile.project_memories ?? [], {
@@ -423,6 +444,7 @@ export function proposeTaskCompletionMemory(profile = {}, {
 } = {}) {
   const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
   if (!sanitized.enabled) return sanitized;
+  if (sanitized.generatedTaskMemoryMode === "off") return sanitized;
   const taskId = normalizeText(task?.task_id, 120);
   if (!taskId) return sanitized;
   const alreadyKnown = [
@@ -469,7 +491,7 @@ export function proposeTaskCompletionMemory(profile = {}, {
     updatedAt: now,
     proposals: [proposal, ...sanitized.proposals]
   }, { now });
-  if (withProposal.autoApproveGenerated === true) {
+  if (withProposal.generatedTaskMemoryMode === "auto_approve") {
     return approveMemoryProposal(withProposal, proposal.proposalId, {
       actor: "user_opt_in_auto_memory"
     }, { now });
