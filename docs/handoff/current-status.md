@@ -4657,3 +4657,45 @@ Next valid work:
 - The post-runtime roadmap is complete. Use the separate product maturity board
   for broader desktop/product polish, optional network OTEL, measured
   multi-candidate model loops, or future automatic sub-agent delegation.
+
+## Codex Update: Scheduled Email Completion And Compact Live Progress
+
+Date: 2026-05-15
+
+Scope:
+- Investigated `task_e809923e-3873-4dc3-9c59-9ddfe2391a57`: the Gmail send
+  workflow completed, but the task still reported `partial_success` because the
+  email obligation evaluator required connector workflow success metadata that
+  is not guaranteed to be emitted on every successful workflow envelope.
+- Fixed the typed action-obligation contract so a successful matching
+  `connector_workflow_run` satisfies `email_send` unless explicit non-success
+  connector metadata says otherwise.
+- Optimized preauthorized scheduled side effects: once non-action evidence
+  requirements are satisfied, preauthorized action groups enter action-only
+  handoff immediately, compose one side-effect body from structured evidence,
+  validate it, execute the send once, and return success without extra planner
+  rounds.
+- Replaced many Console progress system messages with a single collapsed live
+  progress card that shows the latest status and can be expanded for details.
+
+Verification run by Codex:
+- `node --test tests/behavior/action-obligation-evaluator.test.mjs`: passed.
+- `node --test tests/behavior/agent-loop-action-only-fallback.test.mjs`: passed.
+- `node --test tests/behavior/agent-loop-final-composer.test.mjs`: passed.
+- `node --test tests/behavior/agent-loop-sequencing.test.mjs`: passed.
+- `node --test tests/behavior/agent-loop-phase-gate.test.mjs`: passed.
+- `node scripts/verify-console-ui.mjs`: passed.
+- `node scripts/verify-renderer-stream-batching.mjs`: passed.
+- `node scripts/verify-renderer-direct-runtime-calls.mjs`: passed.
+- `node scripts/verify-runtime-upgrade-guardrails.mjs`: passed.
+- `node scripts/verify-post-runtime-roadmap.mjs`: passed.
+- `npm run check:fast`: passed, 141/141 commands including 1170/1170 behavior
+  tests.
+- `npm run verify:desktop-gui-smoke`: passed 49/49 (`startup=488ms`,
+  `first_window=488ms`, `interaction=5252ms`, `total=5733ms`).
+- `git diff --check`: passed with line-ending warnings only.
+
+Next valid work:
+- Use a real scheduled digest task only when an external email side effect is
+  intentionally desired; the framework tests now prove the shared status,
+  action-only, and compact-progress contracts without sending another email.

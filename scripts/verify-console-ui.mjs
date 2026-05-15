@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createConsoleViewModel } from "../src/desktop/console/view-model.mjs";
 import { buildFirstRunWizardViewModel } from "../src/desktop/console/first_run_wizard/view-model.mjs";
 import { buildTaskDetailViewModel } from "../src/desktop/console/task-detail/view-model.mjs";
@@ -134,5 +135,12 @@ assert.equal(detailVm.provider, "openai.gpt-5.4-mini");
 assert.equal(detailVm.cost.usd, 0.012);
 assert.equal(detailVm.canRetry, true);
 assert.equal(detailVm.canCancel, false);
+
+const consoleRenderer = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
+const sharedChatCss = readFileSync(new URL("../src/desktop/renderer/shared-chat.css", import.meta.url), "utf8");
+assert.match(consoleRenderer, /function appendConsoleChatProgress/);
+assert.match(consoleRenderer, /chat-progress-card/);
+assert.match(consoleRenderer, /closeConsoleChatProgressCard/);
+assert.match(sharedChatCss, /\.chat-progress-card/);
 
 console.log("Console UI view-model verification passed.");

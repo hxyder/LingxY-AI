@@ -38,6 +38,47 @@ test("agent final composer uses injected composer and emits timing events", asyn
   ));
 });
 
+test("side-effect body composer ignores pending-action wait text and skips final reviewer", async () => {
+  let reviewCalls = 0;
+  const text = await composeFinalAnswer({
+    task: {
+      user_command: "Summarize the market and send the result to reviewer@example.com",
+      reviewer_loop: { enabled: true },
+      task_spec: {
+        goal: "search_and_answer",
+        success_contract: { required_policy_groups: ["email_send"] }
+      }
+    },
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "web_search_fetch",
+        success: true,
+        observation: "Market evidence."
+      },
+      {
+        type: "pending_approval",
+        tool: "account_send_email",
+        approval_id: "approval_1"
+      }
+    ],
+    runtime: {
+      emitTaskEvent() {},
+      finalAnswerComposer: async () => "Polished email body from evidence.",
+      finalAnswerReviewer: async () => {
+        reviewCalls += 1;
+        return { verdict: "reject", reason: "not expected" };
+      }
+    },
+    reason: "action_only_email_body",
+    purpose: "side_effect_body"
+  });
+
+  assert.equal(text, "Polished email body from evidence.");
+  assert.equal(reviewCalls, 0);
+  assert.doesNotMatch(text, /approval|waiting|等待|确认/i);
+});
+
 test("agent final composer falls back to collected tool observations when composition throws", async () => {
   const events = [];
   const text = await composeFinalAnswer({

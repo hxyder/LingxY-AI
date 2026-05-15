@@ -2379,6 +2379,63 @@ button.capability-tool-view-action:focus-visible {
   overflow: auto;
 }
 
+.chat-progress-card {
+  margin: 5px 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, var(--panel-2));
+  color: var(--ink-2);
+  overflow: hidden;
+}
+.chat-progress-card .cpg-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 9px;
+  cursor: pointer;
+  user-select: none;
+}
+.chat-progress-card .cpg-summary::-webkit-details-marker { display: none; }
+.chat-progress-card .cpg-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+  flex: 0 0 auto;
+}
+.chat-progress-card.is-complete .cpg-icon {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.chat-progress-card .cpg-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--ink-2);
+}
+.chat-progress-card .cpg-status {
+  margin-left: auto;
+  min-width: 0;
+  max-width: min(560px, 70%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.chat-progress-card .cpg-body {
+  padding: 0 9px 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+}
+
 /* Composer toolbar row (attach / voice / model chip / send). */
 .console-chat-attachments {
   display: flex;

@@ -136,8 +136,10 @@ export function actionGroupHitSatisfies(group, entry = {}) {
   if (!isMemberEntryForGroup(group, entry)) return false;
   if (!isSuccessfulActionHit(entry)) return false;
   if (entry.tool === WORKFLOW_TOOL) {
-    return entry?.metadata?.connector_status === "success"
-      && workflowMatchesActionGroup(group, entry);
+    if (!workflowMatchesActionGroup(group, entry)) return false;
+    const connectorStatus = entry?.metadata?.connector_status ?? null;
+    if (connectorStatus) return connectorStatus === "success";
+    return entry.success !== false;
   }
   return true;
 }

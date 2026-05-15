@@ -679,9 +679,12 @@ assert.ok(/isInternalToolInvocationText/.test(taskEventStream)
 assert.ok(/sanitizeAssistantVisibleText/.test(consoleJs) && /looksLikeInternalAssistantText/.test(consoleJs),
   "chat tools: console must not render serialized tool invocations as assistant prose");
 assert.ok(/consoleChatSuppressedTextByTaskId/.test(consoleJs)
-    && /frame\.event === "failed"[\s\S]{0,180}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs)
-    && /frame\.event === "cancelled"[\s\S]{0,180}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs)
-    && /frame\.event === "success" \|\| frame\.event === "partial_success"[\s\S]{0,220}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs),
+    && /function clearConsoleChatTerminalBuffers\(taskId\)/.test(consoleJs)
+    && /clearConsoleChatTerminalBuffers[\s\S]{0,180}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs)
+    && /clearConsoleChatTerminalBuffers[\s\S]{0,220}pendingConsoleChatTextDeltas\.delete\(taskId\)/.test(consoleJs)
+    && /frame\.event === "failed"[\s\S]{0,220}clearConsoleChatTerminalBuffers\(taskId\)/.test(consoleJs)
+    && /frame\.event === "cancelled"[\s\S]{0,220}clearConsoleChatTerminalBuffers\(taskId\)/.test(consoleJs)
+    && /frame\.event === "success" \|\| frame\.event === "partial_success"[\s\S]{0,360}clearConsoleChatTerminalBuffers\(taskId\)/.test(consoleJs),
   "chat tools: console must clear suppressed internal-text buffers on terminal events");
 assert.ok(/sanitizeAssistantVisibleText/.test(overlayJs) && /looksLikeInternalAssistantText/.test(overlayJs),
   "chat tools: overlay must not render serialized tool invocations as assistant prose");

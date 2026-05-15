@@ -1103,6 +1103,8 @@ let consoleChatToolCardCounter = 0;
 let consoleChatToolCards = new Map();
 let consoleChatThinkingCard = null;
 let consoleChatThinkingText = "";
+let consoleChatProgressCard = null;
+let consoleChatProgressLines = [];
 let consoleChatStreamingAnswer = null;
 let consoleChatProgressEventIds = new Set();
 let consoleChatEvidenceByTaskId = new Map();
@@ -2608,7 +2610,60 @@ function appendConsoleChatProgress(frame, textOverride = "") {
       : `${summary.title}: ${summary.body}`
   )).trim();
   if (!text) return;
-  appendConsoleChatMessage("system", text);
+  consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+  if (!consoleChatProgressCard) {
+    const card = document.createElement("details");
+    card.className = "chat-progress-card";
+    card.open = false;
+    card.innerHTML = `
+      <summary class="cpg-summary">
+        <span class="cpg-icon" aria-hidden="true"></span>
+        <span class="cpg-label">执行状态</span>
+        <span class="cpg-status"></span>
+      </summary>
+      <div class="cpg-body"></div>
+    `;
+    consoleChatMessages.appendChild(card);
+    consoleChatProgressCard = card;
+    consoleChatProgressLines = [];
+  }
+  consoleChatProgressLines.push(text);
+  if (consoleChatProgressLines.length > 40) {
+    consoleChatProgressLines = consoleChatProgressLines.slice(-40);
+  }
+  const status = consoleChatProgressCard.querySelector(".cpg-status");
+  if (status) status.textContent = text;
+  const body = consoleChatProgressCard.querySelector(".cpg-body");
+  if (body) body.textContent = consoleChatProgressLines.join("\n");
+  placeConsoleChatProgressCardAtBottom();
+  consoleChatPin.maybeScrollToBottom();
+}
+
+function placeConsoleChatProgressCardAtBottom() {
+  if (!consoleChatMessages || !consoleChatProgressCard) return;
+  if (consoleChatProgressCard.parentElement === consoleChatMessages) {
+    consoleChatMessages.appendChild(consoleChatProgressCard);
+  }
+}
+
+function closeConsoleChatProgressCard({ terminalText = "" } = {}) {
+  if (!consoleChatProgressCard) return;
+  placeConsoleChatProgressCardAtBottom();
+  const status = consoleChatProgressCard.querySelector(".cpg-status");
+  if (status && terminalText) status.textContent = terminalText;
+  consoleChatProgressCard.classList.add("is-complete");
+  consoleChatProgressCard.open = false;
+  consoleChatProgressCard = null;
+  consoleChatProgressLines = [];
+}
+
+function clearConsoleChatTerminalBuffers(taskId) {
+  if (!taskId) return;
+  consoleChatSuppressedTextByTaskId.delete(taskId);
+  pendingConsoleChatTextDeltas.delete(taskId);
+  if (consoleChatStreamingAnswer?.taskId === taskId) {
+    consoleChatStreamingAnswer = null;
+  }
 }
 
 function closeConsoleChatThinkingCard() {
@@ -2758,6 +2813,7 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
     consoleChatToolCards = new Map();
     consoleChatStreamingAnswer = null;
     consoleChatProgressEventIds = new Set();
+    closeConsoleChatProgressCard();
     consoleChatSuppressedTextByTaskId.delete(taskId);
     pendingConsoleChatTextDeltas.delete(taskId);
     consoleChatEvidenceByTaskId.delete(taskId);
@@ -2875,6 +2931,8 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
       } else if (frame.event === "inline_result") {
         flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
+        closeConsoleChatProgressCard({ terminalText: "生成最终回复" });
+        clearConsoleChatTerminalBuffers(taskId);
         appendConsoleChatFinalText(taskId, payload.text ?? payload.message ?? "", {
           evidence: payload.evidence_summary ?? null
         });
@@ -2884,8 +2942,8 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
       } else if (frame.event === "failed") {
         flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
-        consoleChatSuppressedTextByTaskId.delete(taskId);
-        consoleChatStreamingAnswer = null;
+        closeConsoleChatProgressCard({ terminalText: "执行失败" });
+        clearConsoleChatTerminalBuffers(taskId);
         appendConsoleChatErrorBlock(taskId, payload);
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Failed.";
@@ -2893,17 +2951,19 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
       } else if (frame.event === "cancelled") {
         flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
-        consoleChatSuppressedTextByTaskId.delete(taskId);
-        consoleChatStreamingAnswer = null;
+        closeConsoleChatProgressCard({ terminalText: "已取消" });
+        clearConsoleChatTerminalBuffers(taskId);
         appendConsoleChatErrorBlock(taskId, payload, { cancelled: true });
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Cancelled.";
         markConsoleChatTaskTerminal(taskId);
       } else if (frame.event === "success" || frame.event === "partial_success") {
         flushConsoleChatTextDeltas(taskId);
+        closeConsoleChatThinkingCard();
+        closeConsoleChatProgressCard({ terminalText: frame.event === "partial_success" ? "部分完成" : "完成" });
         void appendConsoleChatFinalResult(taskId, payload);
         appendConsoleChatEvidenceSources(taskId, payload.evidence_summary ?? null);
-        consoleChatSuppressedTextByTaskId.delete(taskId);
+        clearConsoleChatTerminalBuffers(taskId);
         consoleChatState.textContent = frame.event === "partial_success" ? "Partially done." : "Done.";
         markConsoleChatTaskTerminal(taskId);
       } else if (frame.event === "evidence_summary") {

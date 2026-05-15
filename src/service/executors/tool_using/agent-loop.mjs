@@ -201,6 +201,12 @@ function hasUnsatisfiedNonActionRequiredPolicyGroups({ task, transcript = [] }) 
   });
 }
 
+function preauthorizedActionGroups(task = {}) {
+  const auth = task?.context_packet?.selection_metadata?.side_effect_authorization;
+  if (auth?.decision !== "preauthorized" || !Array.isArray(auth.groups)) return [];
+  return auth.groups.filter((group) => ACTION_OBLIGATION_GROUP_SET.has(group));
+}
+
 const EMAIL_SEND_FALLBACK_TOOL_PREFERENCE = Object.freeze([
   "account_send_email",
   "send_email_smtp",
@@ -226,7 +232,7 @@ const TOOL_USING_CACHEABLE_SYSTEM_PREFIX = [
 //     with a fully-specified slot contract in the scheduler. Calendar /
 //     file_upload can be wired later once their slot specs land.
 //   - Picks the highest-trust tool the planner is allowed to call.
-export function synthesiseDeterministicActionFallback({ task, transcript = [], allowed = [] }) {
+export function synthesiseDeterministicActionFallback({ task, transcript = [], allowed = [], bodyOverride = null }) {
   const auth = task?.context_packet?.selection_metadata?.side_effect_authorization;
   if (auth?.decision !== "preauthorized") return null;
   if (!Array.isArray(auth.groups) || !auth.groups.includes("email_send")) return null;
@@ -240,7 +246,8 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
   if (!tool) return null;
   const userCommand = String(task?.user_command ?? "").trim();
   const subject = (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80);
-  const evidenceBody = buildDeterministicActionBody({ task, transcript });
+  const overrideBody = typeof bodyOverride === "string" ? bodyOverride.trim() : "";
+  const evidenceBody = overrideBody || buildDeterministicActionBody({ task, transcript });
   if (task?.task_spec?.routing_degraded === true && !evidenceBody.trim()) return null;
   const body = evidenceBody
     || `LingxY 已完成调度任务（${userCommand.slice(0, 200)}）但未能整理出文本内容。`;
@@ -254,6 +261,43 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
     },
     __deterministic_fallback: true
   };
+}
+
+async function synthesisePreauthorizedActionOnlyDecision({
+  task,
+  transcript = [],
+  allowed = [],
+  runtime = null,
+  signal = null
+} = {}) {
+  const actionToolIds = actionOnlyToolIds(transcript);
+  const emailActionOnly = [...EMAIL_SEND_FALLBACK_TOOL_PREFERENCE, "connector_workflow_run"]
+    .some((toolId) => actionToolIds.has(toolId));
+  if (!emailActionOnly) return null;
+  const obligations = evaluateActionObligations(task?.task_spec ?? task?.task_spec_initial, transcript);
+  const pendingEmail = actionObligationsWithStatus(obligations, ["pending"])
+    .some((obligation) => obligation.group === "email_send");
+  if (!pendingEmail) return null;
+  if (hasUnsatisfiedNonActionRequiredPolicyGroups({ task, transcript })) return null;
+  const body = await composeFinalAnswer({
+    task,
+    transcript,
+    runtime,
+    reason: "action_only_email_body",
+    signal,
+    streamToUser: false,
+    purpose: "side_effect_body"
+  });
+  const deterministicBody = buildDeterministicActionBody({ task, transcript });
+  const bodyOverride = String(body ?? "").trim().length >= 80 || !deterministicBody
+    ? body
+    : deterministicBody;
+  return synthesiseDeterministicActionFallback({
+    task,
+    transcript,
+    allowed,
+    bodyOverride
+  });
 }
 
 function defaultPlanner({ task, runtime: plannerRuntime = null }) {
@@ -1498,21 +1542,42 @@ async function _runToolAgentLoopCore({
     // `decision` is reassignable: the deterministic action_only fallback
     // path may overwrite a stalled LLM decision with a synthesised
     // tool_call after the planner exhausts its retries.
-    let decision = await resolvedPlanner({
+    let decision = await synthesisePreauthorizedActionOnlyDecision({
       task,
       transcript,
-      tools: visibleTools,
-      iteration,
+      allowed: [...visibleToolIds],
       runtime,
       signal
     });
+    if (decision) {
+      decision.__deterministic_action_only_finalizer = true;
+      runtime?.emitTaskEvent?.("deterministic_action_fallback", {
+        iteration,
+        reason: "preauthorized_action_only_finalizer",
+        tool_id: decision.tool
+      });
+      appendAuditLog(runtime, task, "tool_loop.deterministic_action_fallback", {
+        iteration,
+        reason: "preauthorized_action_only_finalizer",
+        tool_id: decision.tool
+      });
+    } else {
+      decision = await resolvedPlanner({
+        task,
+        transcript,
+        tools: visibleTools,
+        iteration,
+        runtime,
+        signal
+      });
+    }
     runtime.emitTaskEvent?.("tool_planner_decision", {
       iteration,
-      planner: plannerLabel,
+      planner: decision?.__deterministic_fallback ? "deterministic_action_finalizer" : plannerLabel,
       decision_type: decision?.type ?? "none",
       tool: decision?.type === "tool_call" ? decision.tool : null,
       reason: decision?.type === "tool_call"
-        ? `planner=${plannerLabel} chose ${decision.tool}`
+        ? `planner=${decision?.__deterministic_fallback ? "deterministic_action_finalizer" : plannerLabel} chose ${decision.tool}`
         : decision?.type === "final"
           ? `planner=${plannerLabel} returned final text`
           : `planner=${plannerLabel} returned no decision`
@@ -1700,6 +1765,7 @@ async function _runToolAgentLoopCore({
             maxIterations,
             contractActionGuidanceCount,
             terminalContractActionGuidanceCount,
+            forceActionOnlyGroups: preauthorizedActionGroups(task),
             limits: {
               maxContractActionGuidance: MAX_CONTRACT_ACTION_GUIDANCE,
               maxTerminalContractActionGuidance: MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE
@@ -2501,6 +2567,22 @@ async function _runToolAgentLoopCore({
           transcript
         };
       }
+      if (decision?.__deterministic_action_only_finalizer === true && result.success !== false) {
+        const pending = actionObligationsWithStatus(actionObligations, ["pending"]);
+        const terminal = actionObligationsWithStatus(actionObligations, [
+          "blocked_missing_input",
+          "abandoned_with_reason"
+        ]);
+        if (pending.length === 0 && terminal.length === 0) {
+          return {
+            status: "success",
+            final_text: String(decision?.args?.body ?? result.observation ?? "").trim(),
+            transcript,
+            obligations: actionObligations,
+            artifacts: collectArtifactPathsFromTranscript(transcript)
+          };
+        }
+      }
     }
 
     {
@@ -2706,6 +2788,7 @@ async function _runToolAgentLoopCore({
         maxIterations,
         contractActionGuidanceCount,
         terminalContractActionGuidanceCount,
+        forceActionOnlyGroups: preauthorizedActionGroups(task),
         limits: {
           maxContractActionGuidance: MAX_CONTRACT_ACTION_GUIDANCE,
           maxTerminalContractActionGuidance: MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE

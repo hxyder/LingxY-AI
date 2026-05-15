@@ -220,6 +220,102 @@ test("agent loop carries tool_result into the next planner turn and final compos
   assert.ok(events.some((event) => event.eventType === "tool_call_completed" && event.payload?.success === true));
 });
 
+test("preauthorized action-only handoff sends once without another planner turn", async () => {
+  const sent = [];
+  const webTool = makeNoopTool("web_search_fetch", {
+    async execute() {
+      return {
+        success: true,
+        observation: "Market evidence from a successful search.",
+        metadata: {
+          results: [{ title: "Market", url: "https://example.com/market", snippet: "Market evidence." }]
+        }
+      };
+    }
+  });
+  const emailTool = {
+    id: "account_send_email",
+    name: "Account Send Email",
+    description: "Send email for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["to", "subject", "body"],
+      properties: {
+        to: { type: "array", items: { type: "string" } },
+        subject: { type: "string" },
+        body: { type: "string" }
+      }
+    },
+    async execute(args) {
+      sent.push(args);
+      return {
+        success: true,
+        observation: "Email sent."
+      };
+    }
+  };
+  const plannerIterations = [];
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([webTool, emailTool]),
+    finalAnswerComposer: async ({ reason }) => {
+      assert.equal(reason, "action_only_email_body");
+      return "Polished email body with enough synthesized context to pass side-effect validation. It is based on the successful market evidence and excludes tool logs.";
+    }
+  });
+  const task = {
+    ...makeTask(),
+    execution_mode: "unattended_safe",
+    user_command: "Summarize market news and email reviewer@example.com",
+    task_spec: {
+      goal: "search_and_answer",
+      tool_policy: { web_search_fetch: { mode: "required" } },
+      success_contract: { required_policy_groups: ["external_web_read", "email_send"] }
+    },
+    context_packet: {
+      selection_metadata: {
+        side_effect_authorization: {
+          kind: "scheduled_fire",
+          decision: "preauthorized",
+          source: "schedule_definition",
+          execution_mode: "unattended_safe",
+          groups: ["email_send"]
+        },
+        side_effect_contract: {
+          version: 1,
+          kind: "side_effect_contract",
+          groups: {
+            email_send: {
+              slots: {
+                to: { entity: "email_address", values: ["reviewer@example.com"], mode: "preserve" }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+  const planner = async ({ iteration }) => {
+    plannerIterations.push(iteration);
+    if (iteration === 0) return { type: "tool_call", tool: "web_search_fetch", args: { query: "market" } };
+    return { type: "final", text: "Ready to send." };
+  };
+
+  const result = await runToolAgentLoop({ task, runtime, planner, maxIterations: 5 });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "Polished email body with enough synthesized context to pass side-effect validation. It is based on the successful market evidence and excludes tool logs.");
+  assert.deepEqual(plannerIterations, [0]);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].to, ["reviewer@example.com"]);
+  assert.equal(sent[0].body, "Polished email body with enough synthesized context to pass side-effect validation. It is based on the successful market evidence and excludes tool logs.");
+  assert.ok(events.some((event) =>
+    event.eventType === "deterministic_action_fallback"
+    && event.payload?.reason === "preauthorized_action_only_finalizer"
+  ));
+});
+
 test("recent local event runs downgrade when final answer lacks dated event details", async () => {
   const webTool = {
     id: "web_search_fetch",

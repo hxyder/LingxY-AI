@@ -243,3 +243,14 @@ test("forwards multiple recipients verbatim", () => {
   });
   assert.deepEqual(decision.args.to, recipients);
 });
+
+test("uses a composed side-effect body instead of raw transcript evidence when provided", () => {
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask(),
+    transcript: makeTranscript({ observation: "Raw market transcript." }),
+    allowed: ["account_send_email"],
+    bodyOverride: "Polished user-facing email body."
+  });
+  assert.equal(decision?.args?.body, "Polished user-facing email body.");
+  assert.doesNotMatch(decision?.args?.body ?? "", /Raw market transcript/);
+});

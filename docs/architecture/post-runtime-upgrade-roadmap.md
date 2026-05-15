@@ -180,6 +180,24 @@ stays as a compact real-time process indicator unless opened, and planner skill
 context is filtered by typed artifact/file relevance so unrelated local skills
 do not inflate every research/email iteration.
 
+PMAT-013 scheduled side-effect completion follow-up, 2026-05-15: scheduled
+market digest task `task_e809923e-3873-4dc3-9c59-9ddfe2391a57` sent the email
+but still surfaced `partial_success`. The root cause was not a user-language or
+task-id issue: successful `connector_workflow_run` events can satisfy a typed
+`email_send` obligation even when the nested connector did not echo
+`metadata.connector_status=success`; explicit non-success metadata still blocks
+satisfaction. A second performance root cause was that, after research evidence
+was complete and the schedule had preauthorized `email_send`, the loop still
+gave the LLM planner multiple chances to propose more research and then denied
+those calls. The framework now forces preauthorized action groups into
+action-only handoff immediately after non-action requirements are satisfied,
+composes one side-effect body from structured evidence, validates it through the
+normal side-effect content contract, sends exactly once, and returns success
+without another planner round. Console task progress is rendered as one
+collapsed live status card with expandable details rather than a stream of
+system-message cards; final answer streaming remains reserved for user-visible
+answer text.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

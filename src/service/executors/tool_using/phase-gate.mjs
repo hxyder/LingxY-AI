@@ -56,6 +56,7 @@ export function planContractActionHandoff({
   maxIterations,
   contractActionGuidanceCount,
   terminalContractActionGuidanceCount,
+  forceActionOnlyGroups = [],
   limits = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS
 }) {
   // Action handoff is terminal by design: once we tell the planner to
@@ -67,9 +68,14 @@ export function planContractActionHandoff({
     return null;
   }
   const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript, { allowTerminal: true });
+  const forcedActionOnlySet = new Set(
+    Array.isArray(forceActionOnlyGroups) ? forceActionOnlyGroups.filter(Boolean) : []
+  );
+  const forcedActionOnly = actionGroups.length > 0
+    && actionGroups.every((group) => forcedActionOnlySet.has(group));
   const terminalActionOnly = ["escalate", "abort"].includes(stepGate.next_action);
   const canInjectNormalActionGuidance = contractActionGuidanceCount < limits.maxContractActionGuidance;
-  const actionOnlyHandoff = terminalActionOnly || !canInjectNormalActionGuidance;
+  const actionOnlyHandoff = forcedActionOnly || terminalActionOnly || !canInjectNormalActionGuidance;
   const canInjectTerminalActionGuidance = actionOnlyHandoff
     && terminalContractActionGuidanceCount < limits.maxTerminalContractActionGuidance;
   const canInject = (canInjectNormalActionGuidance || canInjectTerminalActionGuidance)

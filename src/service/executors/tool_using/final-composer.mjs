@@ -98,7 +98,15 @@ export function formatEvidenceSummaryForComposer(evidence = null) {
   return lines.join("\n");
 }
 
-export async function composeFinalAnswer({ task, transcript, runtime, reason = "", signal = null }) {
+export async function composeFinalAnswer({
+  task,
+  transcript,
+  runtime,
+  reason = "",
+  signal = null,
+  streamToUser = true,
+  purpose = "final_answer"
+}) {
   runtime?.emitTaskEvent?.("final_composer_started", { reason });
   const started = Date.now();
   try {
@@ -119,6 +127,9 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
           guarded_chars: guardedText.length
         });
       }
+      if (purpose === "side_effect_body") {
+        return guardedText;
+      }
       const reviewed = await reviewFinalAnswer({
         task,
         transcript,
@@ -130,11 +141,13 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       });
       return reviewed.text;
     };
-    const waitingAction = findWaitingActionApproval(
-      evaluateActionObligations(taskSpec, transcript)
-    ) ?? findWaitingActionApprovalInTranscript(transcript);
-    if (waitingAction) {
-      return formatWaitingActionFinal({ task, obligation: waitingAction });
+    if (purpose !== "side_effect_body") {
+      const waitingAction = findWaitingActionApproval(
+        evaluateActionObligations(taskSpec, transcript)
+      ) ?? findWaitingActionApprovalInTranscript(transcript);
+      if (waitingAction) {
+        return formatWaitingActionFinal({ task, obligation: waitingAction });
+      }
     }
 
     if (typeof runtime?.finalAnswerComposer === "function") {
@@ -159,10 +172,14 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
     const userCommand = task?.user_command ?? "";
     const expected = taskSpec?.synthesis?.expected_output ?? null;
     const system = [
-      "You are LingxY's final answer composer.",
+      purpose === "side_effect_body"
+        ? "You are LingxY's side-effect content composer."
+        : "You are LingxY's final answer composer.",
       "Use only the user request, task spec, and sanitized tool transcript below.",
       "Do not call tools. Do not mention internal pipeline, retries, budgets, validators, or raw tool protocol.",
-      "Turn tool observations into the final answer the user asked for, in the user's language.",
+      purpose === "side_effect_body"
+        ? "Write only the content body that should be sent through the pending side-effect tool, in the user's language. Do not claim the message was sent or completed."
+        : "Turn tool observations into the final answer the user asked for, in the user's language.",
       "When tool metadata marks `result_kind=record_list` and the expected output is summary, comparison, recommendation, or analysis, produce collection-level synthesis: counts, groups, priorities, implications, or next steps. Do not merely restate each record as a list.",
       "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
       "If the user said not to open a webpage/browser, interpret that as no visible navigation. It does not prohibit using already executed search/fetch evidence or returning source/application links.",
@@ -195,7 +212,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       tools: [],
       maxTokens: 1024,
       signal,
-      onTextDelta: adapter.supportsStreaming === true
+      onTextDelta: adapter.supportsStreaming === true && streamToUser
         ? (delta) => {
             if (!delta) return;
             text += delta;
@@ -209,7 +226,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       callSite: "tool_using.final_composer",
       usage: response?.usage,
       provider: adapter,
-      stream: adapter.supportsStreaming === true,
+      stream: adapter.supportsStreaming === true && streamToUser,
       promptSegments: [
         { name: "system", content: system },
         { name: "current", content: messages[1]?.content ?? "" }
