@@ -201,6 +201,15 @@ collapsed live status card with expandable details rather than a stream of
 system-message cards; final answer streaming remains reserved for user-visible
 answer text.
 
+PMAT-014 desktop latency follow-up, 2026-05-15: hotkey capture must not trade
+speed for wrong context. `capture-and-ask` starts the PowerShell capture promise
+before focusing LingxY, then shows the overlay immediately while the capture
+result hydrates asynchronously. The active-window feature flag is cached
+locally; `/health` refresh runs after capture starts so a slow service health
+request cannot make the probe capture the Electron overlay/console. If the
+foreground result is still a LingxY shell window, the shell wrapper prefers the
+last remembered external window or suppresses the shell preview.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed

@@ -194,13 +194,23 @@ assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallbac
   const guardIndex = guardIndexRaw >= 0 ? guardIndexRaw : mainWithShortcutRouterSource.indexOf("captureInFlight = true;", captureBlockStart);
   const showIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', guardIndex >= 0 ? guardIndex : captureBlockStart);
   const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", guardIndex >= 0 ? guardIndex : captureBlockStart);
-  assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && showIndex > guardIndex && captureIndex > showIndex,
-    "capture-and-ask must guard re-entrance, reveal the overlay immediately, then hydrate capture context asynchronously");
+  assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && captureIndex > guardIndex && showIndex > captureIndex,
+    "capture-and-ask must guard re-entrance, start capture before focusing LingxY, then reveal overlay immediately while capture hydrates asynchronously");
 }
 assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\s\S]{0,220}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,520}clipboardBaseline/.test(electronMainSource)
   && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,520}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(mainWithIpcSource),
   "electron-main + shell-local-ipc must forward clipboardBaseline through every active-window capture path");
+{
+  const wrapperStart = electronMainSource.indexOf("async function captureActiveWindowContext");
+  const wrapper = electronMainSource.slice(wrapperStart, electronMainSource.indexOf("const {\n    startActiveWindowMemoryPoll", wrapperStart));
+  const runIndex = wrapper.indexOf("runCaptureActiveWindowContext({");
+  const refreshIndex = wrapper.indexOf("refreshActiveWindowProbeFeature");
+  assert.ok(runIndex >= 0 && refreshIndex > runIndex,
+    "desktop capture wrapper must start PowerShell capture from cached feature state before refreshing remote feature flags");
+  assert.match(wrapper, /activeWindowProbeEnabledCache/, "desktop capture wrapper must use a cached active-window feature flag");
+  assert.match(wrapper, /preferLastExternalWindowContext/, "desktop capture wrapper must avoid returning LingxY shell windows when prior external context exists");
+}
 
 {
   const ctx = await runScenario("office-word-com");

@@ -84,14 +84,16 @@ export function createShortcutRouter({
         }
         setCaptureInFlight(true);
         const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
+        const capturePromise = captureActiveWindowContext({
+          allowClipboardFallback: false,
+          clipboardBaseline: hotKeyClipboardSnapshot,
+          preferLastExternal: true
+        });
         showWindow("overlay");
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
-        captureActiveWindowContext({
-          allowClipboardFallback: false,
-          clipboardBaseline: hotKeyClipboardSnapshot
-        }).then((ctx) => {
+        capturePromise.then((ctx) => {
           if (!ctx.selectedText) {
             const postClipboard = clipboard.readText() ?? "";
             const postTrimmed = postClipboard.trim();

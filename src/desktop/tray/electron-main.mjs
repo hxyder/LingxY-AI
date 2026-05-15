@@ -342,24 +342,51 @@ export function createElectronShellRuntime({
     });
   }
 
+  let activeWindowProbeEnabledCache = true;
+  let activeWindowProbeFeatureRefreshInFlight = null;
+  let activeWindowProbeFeatureLastRefreshAt = 0;
+
+  function refreshActiveWindowProbeFeature({ force = false } = {}) {
+    const now = Date.now();
+    if (!force && now - activeWindowProbeFeatureLastRefreshAt < 30_000) {
+      return Promise.resolve(activeWindowProbeEnabledCache);
+    }
+    if (activeWindowProbeFeatureRefreshInFlight) {
+      return activeWindowProbeFeatureRefreshInFlight;
+    }
+    activeWindowProbeFeatureRefreshInFlight = checkRemoteFeatureEnabled({
+      serviceBaseUrl: resolvedServiceBaseUrl,
+      featureId: "active_window_probe",
+      timeoutMs: 750
+    }).then((enabled) => {
+      activeWindowProbeEnabledCache = enabled;
+      activeWindowProbeFeatureLastRefreshAt = Date.now();
+      return enabled;
+    }).catch(() => activeWindowProbeEnabledCache)
+      .finally(() => {
+        activeWindowProbeFeatureRefreshInFlight = null;
+      });
+    return activeWindowProbeFeatureRefreshInFlight;
+  }
+
   async function captureActiveWindowContext({
     includeSelection = true,
     allowClipboardFallback = true,
-    clipboardBaseline = null
+    clipboardBaseline = null,
+    preferLastExternal = false,
+    maxExternalAgeMs = 10 * 60_000
   } = {}) {
-    const activeWindowEnabled = await checkRemoteFeatureEnabled({
-      serviceBaseUrl: resolvedServiceBaseUrl,
-      featureId: "active_window_probe"
-    });
-    const context = await runCaptureActiveWindowContext({
+    const contextPromise = runCaptureActiveWindowContext({
       runPowerShell: runPowerShellScript,
       clipboardFallback: () => clipboard.readText() ?? "",
       timeoutMs: 3000,
-      activeWindowEnabled,
+      activeWindowEnabled: activeWindowProbeEnabledCache,
       includeSelection,
       allowClipboardFallback,
       clipboardBaseline
     });
+    void refreshActiveWindowProbeFeature();
+    const context = await contextPromise;
 
     // Keep the clipboard watcher in sync when capture-context.ps1 surfaced
     // selected text so dock pulse behaviour does not replay stale clipboard
@@ -368,10 +395,23 @@ export function createElectronShellRuntime({
       setLastClipboardText(context.selectedText);
     }
 
-    if (!Array.isArray(context.filePaths) || context.filePaths.length === 0) {
-      rememberExternalWindowContext(context);
+    let effectiveContext = preferLastExternalWindowContext(context, {
+      preferLastExternal,
+      maxExternalAgeMs
+    });
+    if (looksLikeShellWindowContext(effectiveContext)
+        && (!Array.isArray(effectiveContext.filePaths) || effectiveContext.filePaths.length === 0)
+        && !effectiveContext.selectedText) {
+      effectiveContext = {
+        ...effectiveContext,
+        activeWindow: null
+      };
     }
-    return context;
+
+    if (!Array.isArray(effectiveContext.filePaths) || effectiveContext.filePaths.length === 0) {
+      rememberExternalWindowContext(effectiveContext);
+    }
+    return effectiveContext;
   }
 
   const {
