@@ -153,6 +153,8 @@ test("agentic tool surface keeps web tools for degraded side-effect routing and 
   assert.ok(visible.includes("web_search_fetch"));
   assert.ok(visible.includes("connector_workflow_run"));
   assert.ok(!visible.includes("run_script"));
+  assert.ok(!visible.includes("vision_analyze"));
+  assert.ok(!visible.includes("file_op"));
 });
 
 test("agentic tool surface exposes run_script only for explicit code execution", () => {

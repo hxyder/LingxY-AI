@@ -31,6 +31,8 @@ const EXTERNAL_WEB_READ_TOOL_IDS = new Set([
 ]);
 
 const CODE_EXECUTION_TOOL_IDS = new Set(["run_script"]);
+const IMAGE_UNDERSTANDING_TOOL_IDS = new Set(["vision_analyze"]);
+const BROAD_FILE_OPERATION_TOOL_IDS = new Set(["file_op"]);
 
 export function toolDescriptorForAdapter(tool) {
   return {
@@ -69,6 +71,21 @@ function requiredPolicyGroupsOf(task) {
     groups.push(...required.filter((group) => typeof group === "string" && group.trim()));
   }
   return [...new Set(groups)];
+}
+
+function requiredToolNamesOf(task) {
+  const names = [];
+  for (const spec of [task?.task_spec, task?.task_spec_initial]) {
+    const requiredTools = spec?.success_contract?.required_tool_names;
+    if (Array.isArray(requiredTools)) {
+      names.push(...requiredTools.filter((name) => typeof name === "string" && name.trim()));
+    }
+    const requiredSteps = spec?.required_steps;
+    if (Array.isArray(requiredSteps)) {
+      names.push(...requiredSteps.filter((name) => typeof name === "string" && name.trim()));
+    }
+  }
+  return [...new Set(names)];
 }
 
 function semanticDecisionOf(task) {
@@ -140,15 +157,78 @@ function taskAllowsCodeExecutionTools(task) {
     || taskTextExplicitlyAsksForCodeExecution(task);
 }
 
+function taskHasAttachedImages(task) {
+  const packets = [
+    task?.context_packet,
+    task?.task_spec?.context_packet,
+    task?.task_spec_initial?.context_packet
+  ];
+  return packets.some((packet) =>
+    Array.isArray(packet?.image_paths) && packet.image_paths.some((path) => typeof path === "string" && path.trim())
+  );
+}
+
+function taskAllowsImageUnderstandingTools(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  const decision = semanticDecisionOf(task);
+  return capabilities.includes("image_understanding")
+    || decision?.expected_output === "image_understanding"
+    || taskHasAttachedImages(task)
+    || requiredToolNamesOf(task).some((toolId) => IMAGE_UNDERSTANDING_TOOL_IDS.has(toolId));
+}
+
+function taskAllowsBroadFileOperationTools(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  if (capabilities.includes("file_read")) return true;
+  const groups = requiredPolicyGroupsOf(task);
+  if (groups.includes("local_file_text_read")) return true;
+  return requiredToolNamesOf(task).some((toolId) => BROAD_FILE_OPERATION_TOOL_IDS.has(toolId));
+}
+
+function externalWebReadForbidden(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  const policyGroups = spec?.tool_policy?.policy_groups ?? {};
+  const webGroupMode = policyGroups?.external_web_read?.mode;
+  const webFetchMode = spec?.tool_policy?.web_search_fetch?.mode;
+  const fetchUrlMode = spec?.tool_policy?.fetch_url_content?.mode;
+  return webGroupMode === "forbidden" || webFetchMode === "forbidden" || fetchUrlMode === "forbidden";
+}
+
+function taskUsesDegradedSideEffectSurface(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  if (spec?.routing_degraded !== true) return false;
+  return requiredPolicyGroupsOf(task).some((group) => SIDE_EFFECT_OBLIGATION_GROUPS.has(group));
+}
+
+function toolSatisfiesPolicyGroup(tool, group) {
+  if (!tool?.id || !group) return false;
+  return tool.policy_group === group || groupsOfTool(tool.id).includes(group);
+}
+
 export function filterToolsForAgenticTask(tools = [], task) {
   const allowArtifacts = taskAllowsArtifactTools(task);
   const connectorScoped = userCommandIsConnectorScoped(task);
   const allowCodeExecution = taskAllowsCodeExecutionTools(task);
+  const allowImageUnderstanding = taskAllowsImageUnderstandingTools(task);
+  const allowBroadFileOperation = taskAllowsBroadFileOperationTools(task);
   const allowConnectorWeb = !connectorScoped || taskNeedsExternalWebReadSurface(task);
+  const degradedSideEffectSurface = taskUsesDegradedSideEffectSurface(task);
+  const requiredGroups = requiredPolicyGroupsOf(task);
+  const requiredTools = requiredToolNamesOf(task);
+  const allowWebReadForDegradedSurface = !externalWebReadForbidden(task);
   return tools.filter((tool) => {
     if (!tool?.id) return false;
+    if (degradedSideEffectSurface) {
+      const required = requiredTools.includes(tool.id)
+        || requiredGroups.some((group) => toolSatisfiesPolicyGroup(tool, group));
+      if (!required && !(allowWebReadForDegradedSurface && EXTERNAL_WEB_READ_TOOL_IDS.has(tool.id))) {
+        return false;
+      }
+    }
     if (!allowArtifacts && ARTIFACT_TOOL_IDS.has(tool.id)) return false;
     if (!allowCodeExecution && CODE_EXECUTION_TOOL_IDS.has(tool.id)) return false;
+    if (!allowImageUnderstanding && IMAGE_UNDERSTANDING_TOOL_IDS.has(tool.id)) return false;
+    if (!allowBroadFileOperation && BROAD_FILE_OPERATION_TOOL_IDS.has(tool.id)) return false;
     if (!allowConnectorWeb && EXTERNAL_WEB_READ_TOOL_IDS.has(tool.id)) return false;
     return true;
   });

@@ -291,6 +291,54 @@ test("agent final reviewer appends user-facing accuracy check instead of leaking
   assert.equal(completed?.payload?.visible_note_applied, true);
 });
 
+test("agent final reviewer reject replaces unsupported candidate answer", async () => {
+  const events = [];
+  const text = await composeFinalAnswer({
+    task: {
+      user_command: "收集最新市场信息并发送邮件到 a@example.com",
+      reviewer_loop: { enabled: true },
+      task_spec: {
+        goal: "search_and_answer",
+        connector_domain: true,
+        success_contract: { required_policy_groups: ["email_send"] }
+      }
+    },
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "vision_analyze",
+        success: false,
+        observation: "vision_analyze refused: no image was attached."
+      },
+      {
+        type: "tool_denied",
+        tool: "run_script",
+        reason: "allowed tools only include email tools"
+      }
+    ],
+    runtime: {
+      emitTaskEvent: (event_type, payload) => events.push({ event_type, payload }),
+      finalAnswerComposer: async () => "道琼斯上涨 0.56%，我已经把完整美股汇总发送到 a@example.com。",
+      finalAnswerReviewer: async () => ({
+        verdict: "reject",
+        confidence: 0.94,
+        reason: "Reviewer note: The candidate fabricates market data and claims email delivery without supported tool evidence.",
+        corrections: ["Do not claim market values or email delivery until evidence and send tools succeed."]
+      })
+    },
+    reason: "unit_test"
+  });
+
+  assert.doesNotMatch(text, /道琼斯上涨 0\.56%/);
+  assert.doesNotMatch(text, /已经把完整美股汇总发送/);
+  assert.doesNotMatch(text, /Reviewer note:/);
+  assert.match(text, /没有可靠完成|did not complete reliably/);
+  assert.match(text, /Accuracy check:/);
+  const completed = events.find((event) => event.event_type === "final_reviewer_completed");
+  assert.equal(completed?.payload?.verdict, "reject");
+  assert.equal(completed?.payload?.visible_note_applied, true);
+});
+
 test("agent final reviewer degrades gracefully on reviewer failure", async () => {
   const events = [];
   const text = await composeFinalAnswer({

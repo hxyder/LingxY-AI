@@ -141,15 +141,48 @@ export function normalizeFinalAnswerReview(raw = null) {
 
 function noteFromReview(review = {}) {
   const parts = [];
-  if (review.reason) parts.push(review.reason);
-  if (review.corrections?.length) parts.push(`Corrections: ${review.corrections.join("; ")}`);
+  if (review.reason) parts.push(sanitizeReviewNote(review.reason));
+  if (review.corrections?.length) {
+    parts.push(`Corrections: ${review.corrections.map(sanitizeReviewNote).join("; ")}`);
+  }
   return parts.join(" ").trim().slice(0, 700);
 }
 
-export function applyFinalAnswerReview(candidateText = "", review = {}, { visibleWarnings = true } = {}) {
+function sanitizeReviewNote(value = "") {
+  return String(value ?? "")
+    .replace(/\b(?:Reviewer|Review)\s+note:\s*/giu, "")
+    .trim();
+}
+
+function hasCjk(value = "") {
+  return /[\u3400-\u9fff]/u.test(String(value ?? ""));
+}
+
+function formatRejectedFinalAnswer({ task = null, review = {} } = {}) {
+  const zh = hasCjk(task?.user_command ?? task?.context_packet?.user_command ?? "");
+  const note = noteFromReview(review);
+  if (zh) {
+    return [
+      "这次任务没有可靠完成，我不会把候选答案当作完成结果。",
+      note ? `Accuracy check: ${note}` : "Accuracy check: 最终审核拒绝了候选答案，因为它缺少足够的工具证据或包含未完成操作的声明。",
+      "需要重新执行并先取得必要的工具证据、完成必需操作后，才能给出结论或确认已发送。"
+    ].join("\n");
+  }
+  return [
+    "This task did not complete reliably, so I will not present the candidate answer as finished.",
+    note ? `Accuracy check: ${note}` : "Accuracy check: the final reviewer rejected the candidate because it lacked sufficient tool evidence or claimed an action that was not completed.",
+    "Please retry after the required evidence-gathering tools and required actions have completed."
+  ].join("\n");
+}
+
+export function applyFinalAnswerReview(candidateText = "", review = {}, { visibleWarnings = true, task = null } = {}) {
   const text = String(candidateText ?? "").trim();
-  if (!text || visibleWarnings === false) return text;
+  if (!text) return text;
   if (!["revise", "reject"].includes(review?.verdict)) return text;
+  if (review.verdict === "reject") {
+    return formatRejectedFinalAnswer({ task, review });
+  }
+  if (visibleWarnings === false) return text;
   const note = noteFromReview(review);
   if (!note) return text;
   return [
@@ -314,7 +347,8 @@ export async function reviewFinalAnswer({
     );
     const review = normalizeFinalAnswerReview(raw);
     const reviewedText = applyFinalAnswerReview(text, review, {
-      visibleWarnings: configInfo.raw.visibleWarnings !== false
+      visibleWarnings: configInfo.raw.visibleWarnings !== false,
+      task
     });
     runtime?.emitTaskEvent?.("final_reviewer_completed", {
       status: "completed",

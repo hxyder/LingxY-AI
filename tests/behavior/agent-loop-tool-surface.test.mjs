@@ -9,7 +9,9 @@ import {
 
 const tools = [
   { id: "web_search_fetch", policy_group: "external_web_read" },
+  { id: "fetch_url_content", policy_group: "external_web_read" },
   { id: "vision_analyze" },
+  { id: "file_op" },
   { id: "generate_document" },
   { id: "write_file" },
   { id: "run_script" },
@@ -39,7 +41,7 @@ test("agent tool surface composes image understanding with external web tools", 
 
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
-  assert.deepEqual(visible.sort(), ["vision_analyze", "web_search_fetch"].sort());
+  assert.deepEqual(visible.sort(), ["vision_analyze", "web_search_fetch", "fetch_url_content"].sort());
   assert.deepEqual(neededCapabilitiesOf(task), ["image_understanding", "external_web_read"]);
 });
 
@@ -64,6 +66,8 @@ test("agent tool surface hides direct file open tools unless the task requires t
   };
 
   assert.ok(!filterToolsForTask(tools, neutralTask).some((tool) => tool.id === "open_file"));
+  assert.ok(!filterToolsForTask(tools, neutralTask).some((tool) => tool.id === "vision_analyze"));
+  assert.ok(!filterToolsForTask(tools, neutralTask).some((tool) => tool.id === "file_op"));
   assert.ok(filterToolsForTask(tools, openTask).some((tool) => tool.id === "open_file"));
 });
 
@@ -294,9 +298,13 @@ test("agent tool surface keeps web research available for scheduled research ema
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
   assert.ok(visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("fetch_url_content"));
   assert.ok(visible.includes("account_send_email"));
   assert.ok(visible.includes("connector_workflow_run"));
   assert.ok(!visible.includes("create_scheduled_task"));
+  assert.ok(!visible.includes("vision_analyze"));
+  assert.ok(!visible.includes("file_op"));
+  assert.ok(!visible.includes("run_script"));
 });
 
 test("agent tool surface hides run_script unless code execution is explicitly required", () => {

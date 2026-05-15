@@ -86,6 +86,11 @@ const EXTERNAL_WEB_READ_TOOL_IDS = new Set([
   "web_search_fetch",
   "fetch_url_content"
 ]);
+const SIDE_EFFECT_REQUIRED_GROUPS = new Set([
+  "email_send",
+  "calendar_create",
+  "file_upload"
+]);
 
 const OPEN_URL_VERB_RE = /(打开|访问|进入|跳转|浏览|前往|登录到|登录上)|\bopen\b|\bvisit\b|\bnavigate\b|\bgo\s+to\b|\bload\s+(this\s+page|that\s+page|the\s+url)\b/iu;
 
@@ -268,6 +273,8 @@ const ARTIFACT_TOOL_IDS = new Set([
   "verify_file_exists"
 ]);
 const CODE_EXECUTION_TOOL_IDS = new Set(["run_script"]);
+const IMAGE_UNDERSTANDING_TOOL_IDS = new Set(["vision_analyze"]);
+const BROAD_FILE_OPERATION_TOOL_IDS = new Set(["file_op"]);
 
 export function isScheduledFireTask(task) {
   return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
@@ -309,6 +316,25 @@ function toolSatisfiesRequiredPolicyGroup(tool, groups = []) {
   return groups.some((group) =>
     tool.policy_group === group || toolsInGroup(group).includes(tool.id)
   );
+}
+
+function requiredToolNamesOf(task) {
+  const names = [];
+  for (const spec of [task?.task_spec, task?.task_spec_initial]) {
+    const requiredTools = spec?.success_contract?.required_tool_names;
+    if (Array.isArray(requiredTools)) {
+      names.push(...requiredTools.filter((name) => typeof name === "string" && name.trim()));
+    }
+    const requiredSteps = spec?.required_steps;
+    if (Array.isArray(requiredSteps)) {
+      names.push(...requiredSteps.filter((name) => typeof name === "string" && name.trim()));
+    }
+  }
+  return [...new Set(names)];
+}
+
+function toolIsRequiredByName(tool, task) {
+  return requiredToolNamesOf(task).includes(tool?.id);
 }
 
 function mergeToolLists(primary = [], extra = []) {
@@ -359,6 +385,44 @@ function codeExecutionToolsFrom(tools = []) {
   return tools.filter((tool) => CODE_EXECUTION_TOOL_IDS.has(tool.id));
 }
 
+function taskHasAttachedImages(task) {
+  const packets = [
+    task?.context_packet,
+    task?.task_spec?.context_packet,
+    task?.task_spec_initial?.context_packet
+  ];
+  return packets.some((packet) =>
+    Array.isArray(packet?.image_paths) && packet.image_paths.some((path) => typeof path === "string" && path.trim())
+  );
+}
+
+function taskAllowsImageUnderstandingTools(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  const decision = semanticDecisionOf(task);
+  return capabilities.includes("image_understanding")
+    || decision?.expected_output === "image_understanding"
+    || taskHasAttachedImages(task)
+    || requiredToolNamesOf(task).some((toolId) => IMAGE_UNDERSTANDING_TOOL_IDS.has(toolId));
+}
+
+function filterUnrequestedImageUnderstandingTools(list = [], task) {
+  if (taskAllowsImageUnderstandingTools(task)) return list;
+  return list.filter((tool) => !IMAGE_UNDERSTANDING_TOOL_IDS.has(tool?.id));
+}
+
+function taskAllowsBroadFileOperationTools(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  if (capabilities.includes("file_read")) return true;
+  const groups = requiredPolicyGroupsOf(task);
+  if (groups.includes("local_file_text_read")) return true;
+  return requiredToolNamesOf(task).some((toolId) => BROAD_FILE_OPERATION_TOOL_IDS.has(toolId));
+}
+
+function filterUnrequestedBroadFileOperationTools(list = [], task) {
+  if (taskAllowsBroadFileOperationTools(task)) return list;
+  return list.filter((tool) => !BROAD_FILE_OPERATION_TOOL_IDS.has(tool?.id));
+}
+
 function filterUnrequestedArtifactTools(list = [], task) {
   if (taskAllowsArtifactTools(task)) return list;
   return list.filter((tool) => !ARTIFACT_TOOL_IDS.has(tool?.id));
@@ -378,12 +442,40 @@ function filterUnrequestedCodeExecutionTools(list = [], task) {
   return list.filter((tool) => !CODE_EXECUTION_TOOL_IDS.has(tool?.id));
 }
 
+function externalWebReadForbidden(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  const policyGroups = spec?.tool_policy?.policy_groups ?? {};
+  const webGroupMode = policyGroups?.external_web_read?.mode;
+  const webFetchMode = spec?.tool_policy?.web_search_fetch?.mode;
+  const fetchUrlMode = spec?.tool_policy?.fetch_url_content?.mode;
+  return webGroupMode === "forbidden" || webFetchMode === "forbidden" || fetchUrlMode === "forbidden";
+}
+
+function taskUsesDegradedSideEffectSurface(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  if (spec?.routing_degraded !== true) return false;
+  return requiredPolicyGroupsOf(task).some((group) => SIDE_EFFECT_REQUIRED_GROUPS.has(group));
+}
+
+function degradedSideEffectToolsFrom(tools = [], task) {
+  if (!taskUsesDegradedSideEffectSurface(task)) return null;
+  const requiredGroups = requiredPolicyGroupsOf(task);
+  const allowWebRead = !externalWebReadForbidden(task);
+  return tools.filter((tool) =>
+    toolSatisfiesRequiredPolicyGroup(tool, requiredGroups)
+    || toolIsRequiredByName(tool, task)
+    || (allowWebRead && EXTERNAL_WEB_READ_TOOL_IDS.has(tool?.id))
+  );
+}
+
 export function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
   const stripTaskScopedTools = (list) => {
     const withoutArtifacts = filterUnrequestedArtifactTools(list, task);
     const withoutCodeExecution = filterUnrequestedCodeExecutionTools(withoutArtifacts, task);
-    const withoutDirectOpen = filterDirectFileOpenTools(withoutCodeExecution, task);
+    const withoutImageUnderstanding = filterUnrequestedImageUnderstandingTools(withoutCodeExecution, task);
+    const withoutBroadFileOperation = filterUnrequestedBroadFileOperationTools(withoutImageUnderstanding, task);
+    const withoutDirectOpen = filterDirectFileOpenTools(withoutBroadFileOperation, task);
     const withoutOpenUrl = filterOpenUrl(withoutDirectOpen, task);
     const withoutConnectorScopedWeb = filterConnectorScopedWebTools(withoutOpenUrl, task);
     const withoutWebSearchPage = filterWebSearchPage(withoutConnectorScopedWeb, task);
@@ -394,6 +486,8 @@ export function filterToolsForTask(tools = [], task) {
   };
 
   const capabilities = neededCapabilitiesOf(task).filter((capability) => capability !== "none");
+  const degradedSideEffectTools = degradedSideEffectToolsFrom(tools, task);
+  if (degradedSideEffectTools) return stripTaskScopedTools(degradedSideEffectTools);
   if (capabilities.length === 0) return stripTaskScopedTools(tools);
   const filtered = tools.filter((tool) => capabilities.some((capability) => {
     const matcher = CAPABILITY_TOOL_MATCHERS[capability];

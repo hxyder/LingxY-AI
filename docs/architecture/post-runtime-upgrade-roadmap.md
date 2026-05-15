@@ -149,6 +149,20 @@ web/evidence tools reachable but refuses deterministic email fallback when no
 tool observations exist. Do not reintroduce current-research topic regexes into
 tool-surface gates.
 
+PMAT-013 degraded side-effect safety follow-up, 2026-05-15: scheduled market
+digest task `task_3326a472-b929-4dae-8009-d2a0c57dc874` showed that the prior
+fix was necessary but incomplete. When SemanticRouter degraded, the broad
+zero-capability tool surface still exposed unrelated `file_op` and
+`vision_analyze`, allowing stale file/image context to distract the planner.
+The final reviewer correctly rejected the fabricated market/email answer, but
+the rejected candidate still remained the main user-visible reply. The framework
+contract is now stricter: degraded side-effect tasks expose only required
+side-effect tools, explicitly required tools, and permitted web-evidence tools;
+unrequested image understanding, broad file operations, and code execution stay
+hidden. A final-reviewer `reject` now replaces the candidate with a deterministic
+safe incomplete-result message instead of appending a warning to unsupported
+claims.
+
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
 `杂项` folder even though the real Desktop contained it. The task log showed
