@@ -59,11 +59,21 @@ function makeTranscript({ observation = "Dow Jones up 0.6%, Nasdaq up 0.4%." } =
   return [
     {
       type: "tool_result",
+      tool: "account_list_connected_accounts",
+      success: true,
+      observation: "Connected accounts: google: reviewer@example.com"
+    },
+    {
+      type: "tool_result",
       tool: "web_search_fetch",
       success: true,
       observation,
       metadata: {
-        results: [{ title: "Market evidence", url: "https://example.com/market" }]
+        results: [{
+          title: "Market evidence",
+          url: "https://example.com/market",
+          snippet: observation
+        }]
       }
     }
   ];
@@ -82,6 +92,8 @@ test("returns a tool_call when preauthorized + recipients + allowed email tool",
   assert.ok(decision.args.subject && decision.args.subject.length > 0, "subject is filled in");
   assert.ok(decision.args.body && decision.args.body.length > 0, "body is filled in");
   assert.match(decision.args.body, /Dow Jones up 0\.6%/, "body includes transcript observations");
+  assert.doesNotMatch(decision.args.body, /Connected accounts:/, "body excludes connector/account logs");
+  assert.doesNotMatch(decision.args.body, /\n---\n/, "body is not a raw transcript join");
   assert.equal(decision.__deterministic_fallback, true);
 });
 
@@ -102,6 +114,7 @@ test("allows deterministic email fallback after required web evidence is satisfi
   });
   assert.equal(decision?.tool, "account_send_email");
   assert.match(decision?.args?.body ?? "", /Dow Jones up 0\.6%/);
+  assert.doesNotMatch(decision?.args?.body ?? "", /Connected accounts:/);
 });
 
 test("returns null when authorization is missing (interactive task)", () => {
@@ -209,7 +222,13 @@ test("body is capped at 8000 chars to keep the email tractable", () => {
   const big = "x".repeat(20000);
   const decision = synthesiseDeterministicActionFallback({
     task: makePreauthorizedTask(),
-    transcript: [{ type: "tool_call_completed", observation: big }],
+    transcript: [{
+      type: "tool_result",
+      tool: "web_search_fetch",
+      success: true,
+      observation: big,
+      metadata: { results: [{ title: "Long evidence", url: "https://example.com/long", snippet: big }] }
+    }],
     allowed: ["account_send_email"]
   });
   assert.ok(decision.args.body.length <= 8000);

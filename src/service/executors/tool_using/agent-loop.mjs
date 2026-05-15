@@ -152,16 +152,39 @@ function collectArtifactPathsFromTranscript(transcript = []) {
   return [...paths];
 }
 
-function collectTranscriptObservations(transcript = []) {
-  const parts = [];
-  for (const entry of transcript ?? []) {
-    if ((entry?.type === "tool_call_completed" || entry?.type === "tool_result")
-        && typeof entry.observation === "string") {
-      const trimmed = entry.observation.trim();
-      if (trimmed) parts.push(trimmed);
-    }
-  }
-  return parts.join("\n\n---\n\n");
+function commandLooksCjk(value = "") {
+  return /[\u3400-\u9fff]/u.test(String(value ?? ""));
+}
+
+function clipLine(value = "", max = 360) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
+function buildDeterministicActionBody({ task, transcript = [] }) {
+  const evidence = extractEvidence(transcript);
+  const sources = Array.isArray(evidence.sources) ? evidence.sources.slice(0, 8) : [];
+  if (sources.length === 0) return "";
+  const cjk = commandLooksCjk(task?.user_command);
+  const lines = [
+    cjk
+      ? "以下是 LingxY 根据本次已抓取证据整理的任务结果："
+      : "LingxY prepared the result below from the evidence gathered during this run:",
+    ""
+  ];
+  sources.forEach((source, index) => {
+    const title = clipLine(source.title ?? source.locator ?? `Source ${index + 1}`, 120);
+    const excerpt = clipLine(source.excerpt ?? "", 360);
+    const locator = clipLine(source.locator ?? "", 240);
+    lines.push(`${index + 1}. ${title}`);
+    if (excerpt) lines.push(`   ${excerpt}`);
+    if (locator) lines.push(`   ${locator}`);
+  });
+  lines.push("");
+  lines.push(cjk
+    ? "说明：这是基于工具返回的结构化来源整理的自动发送内容；未包含账号、连接器或调试日志。"
+    : "Note: this automatically sent content is based on structured tool evidence and excludes account, connector, and debug logs.");
+  return lines.join("\n").slice(0, 8000);
 }
 
 const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty)$/;
@@ -217,7 +240,7 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
   if (!tool) return null;
   const userCommand = String(task?.user_command ?? "").trim();
   const subject = (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80);
-  const evidenceBody = collectTranscriptObservations(transcript).slice(0, 8000);
+  const evidenceBody = buildDeterministicActionBody({ task, transcript });
   if (task?.task_spec?.routing_degraded === true && !evidenceBody.trim()) return null;
   const body = evidenceBody
     || `LingxY 已完成调度任务（${userCommand.slice(0, 200)}）但未能整理出文本内容。`;
@@ -2209,7 +2232,8 @@ async function _runToolAgentLoopCore({
 
     const validation = validateToolCall(tool, decision.args, {
       ...(runtime.toolContext ?? {}),
-      task
+      task,
+      transcript
     });
     if (!validation.ok) {
       transcript.push({

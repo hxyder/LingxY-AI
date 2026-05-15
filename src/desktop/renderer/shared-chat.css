@@ -2344,7 +2344,18 @@ button.capability-tool-view-action:focus-visible {
   user-select: none;
 }
 .chat-thinking-card .cth-summary::-webkit-details-marker { display: none; }
-.chat-thinking-card .cth-icon { font-size: 11px; color: var(--muted); }
+.chat-thinking-card .cth-icon {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+  flex: 0 0 auto;
+}
+.chat-thinking-card:not([open]) .cth-icon {
+  background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 14%, transparent);
+}
 .chat-thinking-card .cth-label {
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);

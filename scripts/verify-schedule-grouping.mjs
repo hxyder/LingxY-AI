@@ -7,7 +7,8 @@
  *   - renderSchedules() partitions schedules into three groups
  *     (active / paused / completed) with collapsible headers.
  *   - Completed rows render a "Re-run" label; paused rows a "paused" pill.
- *   - Calendar entries carry data-schedule-ref and click focuses the row.
+ *   - Calendar entries carry data-schedule-ref, expand recurring cron
+ *     schedules across the visible range, and click focuses the row.
  *   - shared.css covers .sched-group, .sched-group-head, chev rotation,
  *     .is-completed / .is-paused / .is-highlighted state styles,
  *     and .cal-entry hover affordance.
@@ -27,6 +28,7 @@ const html = read("src/desktop/renderer/console.html");
 const js = read("src/desktop/renderer/console.js");
 const css = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const schedulesView = read("src/desktop/renderer/console-schedules-view.mjs");
+const scheduleOccurrences = read("src/shared/schedule-occurrences.mjs");
 
 // Search input exists in schedules toolbar.
 assert.match(html, /<input id="scheduleSearchInput"/, "console.html missing #scheduleSearchInput");
@@ -34,9 +36,12 @@ assert.match(html, /<div class="sched-toolbar">/, "console.html missing .sched-t
 
 // renderSchedules consumes the schedule view module instead of owning the pure helpers.
 assert.match(js, /from\s+["']\.\/console-schedules-view\.mjs["']/, "console.js must import schedule view helpers");
+assert.match(js, /from\s+["']\.\.\/\.\.\/shared\/schedule-occurrences\.mjs["']/, "console.js must import shared schedule occurrence helpers");
 assert.match(schedulesView, /export function scheduleBucket\(/, "schedule view missing scheduleBucket()");
 assert.match(schedulesView, /export function scheduleMatchesSearch\(/, "schedule view missing scheduleMatchesSearch()");
 assert.match(schedulesView, /export function renderScheduleRow\(/, "schedule view missing renderScheduleRow()");
+assert.match(scheduleOccurrences, /export function getScheduleOccurrences\(/, "shared schedule occurrence helper missing getScheduleOccurrences()");
+assert.match(scheduleOccurrences, /export function getScheduleOccurrencesForRange\(/, "shared schedule occurrence helper missing range expander");
 
 // Three group keys appear in the spec block.
 for (const key of ["active", "paused", "completed"]) {
@@ -53,6 +58,7 @@ assert.match(schedulesView, /"Re-run"/, "schedule view missing Re-run label for 
 
 // Calendar entries carry ref + click handler.
 assert.match(js, /data-schedule-ref="/, "console.js calendar missing data-schedule-ref");
+assert.match(js, /getScheduleOccurrencesForRange\(schedules, rangeStart, rangeEnd\)/, "console.js calendar must expand recurring schedules for the visible range");
 assert.match(js, /function focusScheduleInList\(/, "console.js missing focusScheduleInList()");
 assert.match(js, /is-highlighted/, "console.js missing highlight behavior");
 

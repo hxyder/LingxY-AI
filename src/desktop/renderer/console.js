@@ -203,6 +203,10 @@ import {
   normalizeProjectStore as normalizeProjectStoreBase,
   mergeProjectStores as mergeProjectStoresBase
 } from "../../shared/project-store.mjs";
+import {
+  getScheduleOccurrencesForRange,
+  localDateKey
+} from "../../shared/schedule-occurrences.mjs";
 
 const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
@@ -2524,22 +2528,29 @@ function appendConsoleChatThinkingDelta(delta) {
   if (!consoleChatThinkingCard) {
     const card = document.createElement("details");
     card.className = "chat-thinking-card";
-    card.open = true;
+    card.open = false;
     card.innerHTML = `
       <summary class="cth-summary">
-        <span class="cth-icon">🧠</span>
-        <span class="cth-label">思考过程</span>
-        <span class="cth-status">…</span>
+        <span class="cth-icon" aria-hidden="true"></span>
+        <span class="cth-label">实时过程</span>
+        <span class="cth-status">running</span>
       </summary>
       <div class="cth-body"></div>
     `;
+    card.addEventListener("toggle", () => {
+      if (!card.open) return;
+      const body = card.querySelector(".cth-body");
+      if (body) body.textContent = consoleChatThinkingText;
+    });
     consoleChatMessages.appendChild(card);
     consoleChatThinkingCard = card;
     consoleChatThinkingText = "";
   }
   consoleChatThinkingText += String(delta);
+  const status = consoleChatThinkingCard.querySelector(".cth-status");
+  if (status) status.textContent = `${consoleChatThinkingText.length} chars`;
   const body = consoleChatThinkingCard.querySelector(".cth-body");
-  if (body) body.textContent = consoleChatThinkingText;
+  if (body && consoleChatThinkingCard.open) body.textContent = consoleChatThinkingText;
   placeConsoleChatThinkingCardAtBottom();
   consoleChatPin.maybeScrollToBottom();
 }
@@ -7631,21 +7642,30 @@ function renderScheduleCalendarGrid(schedules, mode) {
 
   const firstDay = cells[0]?.getDay() ?? 0;
   const padCells = mode === "month" ? Array.from({ length: firstDay }, () => '<div class="cal-cell empty"></div>').join("") : "";
+  const rangeStart = new Date(cells[0] ?? now);
+  rangeStart.setHours(0, 0, 0, 0);
+  const rangeEnd = new Date(cells.at(-1) ?? now);
+  rangeEnd.setHours(23, 59, 59, 999);
+  const occurrencesByDay = new Map();
+  for (const occurrence of getScheduleOccurrencesForRange(schedules, rangeStart, rangeEnd)) {
+    const key = localDateKey(occurrence.run_at);
+    if (!key) continue;
+    const bucket = occurrencesByDay.get(key) ?? [];
+    bucket.push(occurrence);
+    occurrencesByDay.set(key, bucket);
+  }
 
   const gridCells = cells.map((day) => {
-    const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
-    const daySchedules = schedules.filter((s) => {
-      if (!s.next_run_at) return false;
-      const runAt = new Date(s.next_run_at);
-      return runAt >= dayStart && runAt <= dayEnd;
-    });
+    const dayOccurrences = occurrencesByDay.get(localDateKey(day)) ?? [];
     const isToday = day.toDateString() === now.toDateString();
-    const entries = daySchedules.slice(0, 3).map((s) => {
+    const entries = dayOccurrences.slice(0, 3).map((occurrence) => {
+      const s = occurrence.schedule;
       const color = s.color || s.metadata?.color || "var(--accent)";
-      return `<div class="cal-entry" data-schedule-ref="${escapeHtml(s.schedule_id)}" style="border-left:3px solid ${escapeHtml(color)};padding:2px 4px;font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);" title="${escapeHtml(s.name)} — click to view">${escapeHtml(s.name)}</div>`;
+      const runAt = new Date(occurrence.run_at);
+      const time = Number.isNaN(runAt.getTime()) ? "" : runAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return `<div class="cal-entry" data-schedule-ref="${escapeHtml(s.schedule_id)}" style="border-left:3px solid ${escapeHtml(color)};padding:2px 4px;font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);" title="${escapeHtml(s.name)} — ${escapeHtml(time)} — click to view">${escapeHtml(time ? `${time} ${s.name}` : s.name)}</div>`;
     }).join("");
-    const overflow = daySchedules.length > 3 ? `<div style="font-size:9px;color:var(--muted);">+${daySchedules.length - 3} more</div>` : "";
+    const overflow = dayOccurrences.length > 3 ? `<div style="font-size:9px;color:var(--muted);">+${dayOccurrences.length - 3} more</div>` : "";
     return `<div class="cal-cell${isToday ? " today" : ""}" style="min-height:${mode === "week" ? "80" : "60"}px;padding:4px;border:1px solid var(--line);border-radius:6px;${isToday ? "background:var(--accent-soft);" : ""}"><div style="font-size:10px;font-weight:500;color:${isToday ? "var(--accent)" : "var(--muted)"};">${day.getDate()}</div>${entries}${overflow}</div>`;
   }).join("");
 

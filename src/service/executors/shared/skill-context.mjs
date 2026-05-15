@@ -33,6 +33,43 @@ function artifactKindFromTask(task = {}) {
   ).trim().toLowerCase();
 }
 
+const SKILL_KIND_KEYWORDS = Object.freeze({
+  xlsx: ["spreadsheet", "excel", "xlsx", "csv", "openpyxl", "pandas"],
+  docx: ["document", "docx", "word"],
+  pptx: ["presentation", "powerpoint", "ppt", "pptx", "slides"],
+  pdf: ["pdf"],
+  html: ["html", "web"]
+});
+
+function taskSkillKinds(task = {}) {
+  const kinds = new Set();
+  const kind = artifactKindFromTask(task);
+  if (kind) kinds.add(kind);
+  const text = String(task?.user_command ?? "").toLowerCase();
+  if (/\bexcel\b|xlsx|spreadsheet|csv|表格|电子表格/.test(text)) kinds.add("xlsx");
+  if (/\bdocx\b|word|文档/.test(text)) kinds.add("docx");
+  if (/\bpptx\b|powerpoint|ppt|演示文稿|幻灯片|slides?\b/.test(text)) kinds.add("pptx");
+  if (/\bpdf\b/.test(text)) kinds.add("pdf");
+  if (/\bhtml\b|网页|website|web page/.test(text)) kinds.add("html");
+  return kinds;
+}
+
+function skillMatchesKinds(skill = {}, kinds = new Set()) {
+  if (kinds.size === 0) return false;
+  const haystack = [
+    skill.id,
+    skill.name,
+    skill.displayName,
+    skill.description,
+    skill.entryPath
+  ].map((value) => String(value ?? "").toLowerCase()).join(" ");
+  for (const kind of kinds) {
+    const keywords = SKILL_KIND_KEYWORDS[kind] ?? [kind];
+    if (keywords.some((keyword) => haystack.includes(keyword))) return true;
+  }
+  return false;
+}
+
 export function workflowHintsForTask(task = {}) {
   const kind = artifactKindFromTask(task);
   const text = String(task?.user_command ?? "").toLowerCase();
@@ -54,8 +91,10 @@ export function workflowHintsForTask(task = {}) {
 
 export function summarizeSkillContext(skills = [], { task = null, limit = 20 } = {}) {
   const list = Array.isArray(skills) ? skills : [];
+  const relevantKinds = taskSkillKinds(task);
   const active = list
     .filter((skill) => skill?.active !== false)
+    .filter((skill) => skillMatchesKinds(skill, relevantKinds))
     .slice(0, limit)
     .map(summarizeSkillForTrace)
     .filter((skill) => skill.id || skill.name);

@@ -365,7 +365,7 @@ export async function runAgenticPlanner({
 
   const buildSystemPrompt = (validatorTranscript = []) => buildAgenticSystemPrompt({
     tools: effectiveTools,
-    skills: effectiveSkills,
+    skills: effectiveSkillContext.skills,
     task,
     requestedFormat,
     evidenceLedger: renderEvidenceLedger(validatorTranscript)

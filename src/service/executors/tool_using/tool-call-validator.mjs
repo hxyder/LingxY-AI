@@ -3,6 +3,8 @@ import {
   evaluateDocumentOutlineQuality,
   formatDocumentQualityError
 } from "../../core/artifact-quality.mjs";
+import { SYNTHESIS_REQUIRED_OUTPUTS } from "../../core/intent/semantic-router.mjs";
+import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { isSafeSvgMarkup } from "../../capabilities/tools/svg-sanitize.mjs";
 
 function isString(value) {
@@ -53,6 +55,97 @@ function validateAgainstSchema(schema, args) {
 }
 
 const DOCUMENT_KINDS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
+const EMAIL_SEND_TOOL_IDS = new Set([
+  "account_send_email",
+  "send_email_smtp",
+  "google.gmail.send_email",
+  "microsoft.outlook.send_email"
+]);
+
+const NON_USER_CONTENT_TOOL_IDS = new Set([
+  "account_list_connected_accounts",
+  "connector_catalog_search"
+]);
+
+function normalizeText(value) {
+  return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function bigramSet(value) {
+  const text = normalizeText(value);
+  const set = new Set();
+  for (let i = 0; i < text.length - 1; i += 1) {
+    set.add(text.slice(i, i + 2));
+  }
+  return set;
+}
+
+function overlapRatio(a, b) {
+  const aSet = bigramSet(a);
+  const bSet = bigramSet(b);
+  if (aSet.size === 0 || bSet.size === 0) return 0;
+  let hits = 0;
+  for (const item of aSet) {
+    if (bSet.has(item)) hits += 1;
+  }
+  return hits / Math.min(aSet.size, bSet.size);
+}
+
+function taskRequiresSynthesizedSideEffectBody(task = {}) {
+  const taskSpec = task?.task_spec ?? {};
+  const expected = taskSpec?.synthesis?.expected_output ?? null;
+  if (typeof expected === "string" && SYNTHESIS_REQUIRED_OUTPUTS.has(expected)) return true;
+  if (taskSpec?.research_quality && typeof taskSpec.research_quality === "object") return true;
+  const requiredGroups = taskSpec?.success_contract?.required_policy_groups;
+  return Array.isArray(requiredGroups)
+    && requiredGroups.includes("external_web_read")
+    && requiredGroups.includes("email_send");
+}
+
+function transcriptObservations(transcript = []) {
+  return (Array.isArray(transcript) ? transcript : [])
+    .filter((entry) => (entry?.type === "tool_result" || entry?.type === "tool_call_completed") && entry.success !== false)
+    .map((entry) => ({
+      tool: String(entry?.tool ?? entry?.name ?? entry?.tool_id ?? ""),
+      observation: typeof entry?.observation === "string" ? entry.observation.trim() : ""
+    }))
+    .filter((entry) => entry.observation);
+}
+
+function validateEmailSendContentArgs(args = {}, ctx = {}) {
+  if (!taskRequiresSynthesizedSideEffectBody(ctx.task)) return { ok: true };
+  const body = typeof args.body === "string" ? args.body.trim()
+    : typeof args.text === "string" ? args.text.trim()
+      : "";
+  if (!body) {
+    return { ok: false, error: "email_body_requires_synthesized_content" };
+  }
+
+  const observations = transcriptObservations(ctx.transcript);
+  if (observations.length === 0) return { ok: true };
+
+  for (const entry of observations) {
+    if (!NON_USER_CONTENT_TOOL_IDS.has(entry.tool)) continue;
+    if (entry.observation.length >= 24 && body.includes(entry.observation.slice(0, Math.min(160, entry.observation.length)))) {
+      return { ok: false, error: "email_body_must_not_include_connector_or_account_logs" };
+    }
+  }
+
+  const rawTranscript = observations.map((entry) => entry.observation).join("\n\n---\n\n");
+  const normalizedBody = normalizeText(body);
+  if (body.includes("\n---\n")
+      || observations.some((entry) => entry.observation.length >= 120 && normalizedBody === normalizeText(entry.observation))
+      || (rawTranscript.length >= 120 && body.includes("---") && overlapRatio(body, rawTranscript) > 0.82)) {
+    return { ok: false, error: "email_body_raw_tool_transcript_dump" };
+  }
+
+  const evidence = extractEvidence(ctx.transcript);
+  if ((evidence.blended_source_count ?? 0) > 0 && body.length < 80) {
+    return { ok: false, error: "email_body_requires_synthesized_content" };
+  }
+
+  return { ok: true };
+}
 
 function normalizeDocumentKind(value) {
   const raw = String(value ?? "").toLowerCase().trim();
@@ -188,6 +281,11 @@ export function validateToolCall(tool, args, ctx = {}) {
       ok: false,
       error: `schema validation failed: ${result.reason}`
     };
+  }
+
+  if (EMAIL_SEND_TOOL_IDS.has(tool.id)) {
+    const emailResult = validateEmailSendContentArgs(args, ctx);
+    if (!emailResult.ok) return emailResult;
   }
 
   if ((tool.id === "file_op" || tool.id === "open_file" || tool.id === "reveal_in_explorer") && typeof args.path === "string") {

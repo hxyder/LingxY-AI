@@ -158,10 +158,27 @@ The final reviewer correctly rejected the fabricated market/email answer, but
 the rejected candidate still remained the main user-visible reply. The framework
 contract is now stricter: degraded side-effect tasks expose only required
 side-effect tools, explicitly required tools, and permitted web-evidence tools;
-unrequested image understanding, broad file operations, and code execution stay
-hidden. A final-reviewer `reject` now replaces the candidate with a deterministic
+unrequested image understanding, broad file operations, code execution, and
+unrelated artifact/vision/file tools stay hidden until typed task facts allow
+them. A final-reviewer `reject` now replaces the candidate with a deterministic
 safe incomplete-result message instead of appending a warning to unsupported
 claims.
+
+PMAT-013 schedule/side-effect/performance follow-up, 2026-05-15: scheduled
+market digest task `task_3733f061-b6de-4b34-b82a-4883bdea0e3b` proved a second
+side-effect framework gap. The task did fetch web evidence, but action-only
+handoff sent email with raw tool/account transcript content and the final answer
+claimed a polished digest was sent. Email side-effect tools now have a
+pre-execution content contract: research/synthesis emails must contain
+synthesized user-facing content, cannot include connector/account/debug logs,
+and cannot be a raw transcript join. Deterministic scheduled-email fallback must
+build its body from structured evidence sources, not raw observations. Schedule
+calendar views now expand recurring cron triggers across the visible week/month
+instead of placing a recurring schedule only on `next_run_at`. Runtime
+responsiveness work for this incident has two rules: renderer reasoning output
+stays as a compact real-time process indicator unless opened, and planner skill
+context is filtered by typed artifact/file relevance so unrelated local skills
+do not inflate every research/email iteration.
 
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no
