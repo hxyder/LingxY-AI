@@ -3,16 +3,16 @@
  * verify-design-system.mjs — UCA-106 (Phase 4a)
  *
  * Asserts the expanded design system lands cleanly:
- *   - 5 accent families (amber default + indigo/teal/rose/slate)
- *     driven by html[data-accent]
+ *   - system-blue default accent, with legacy html[data-accent] aliases
+ *     still resolving for older documents
  *   - 3 density levels via html[data-density] writing --pad / --row-h
  *   - Status triples (bg/border/text) for 5 states, in both light
  *     and dark override blocks
  *   - JetBrains Mono leads the --font-mono cascade
  *   - .zh bilingual label + .pill (7 variants) + .tag components
  *     present in shared.css
- *   - console.html and overlay.html declare default accent=amber
- *     and density=roomy on <html>
+ *   - console.html can rely on the root default accent while both shell
+ *     documents declare a recognized density
  */
 
 import assert from "node:assert/strict";
@@ -30,10 +30,9 @@ const shared = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const consoleHtml = read("src/desktop/renderer/console.html");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 
-// ── accent families (v3 names + legacy aliases) ───────────────────────
-// v3 renamed the accent families: terra / ink / olive / ocean / plum.
-// Legacy names (amber/indigo/teal/rose/slate) are kept as aliases so any
-// existing html[data-accent="amber"] still resolves to a palette.
+// ── accent families (system default + legacy aliases) ─────────────────
+// PMAT-013: light mode no longer defaults to a warm accent. :root and the
+// legacy terra/amber aliases all resolve to Apple system blue.
 for (const name of ["terra", "ink", "olive", "ocean", "plum"]) {
   const re = new RegExp(`html\\[data-accent="${name}"\\]\\s*\\{[^}]*--accent:\\s*[^;]+;[^}]*--accent-strong:[^}]*--accent-soft:[^}]*--accent-ink:`, "s");
   assert.ok(re.test(tokens), `tokens.css missing [data-accent="${name}"] family`);
@@ -44,14 +43,18 @@ for (const legacy of ["amber", "indigo", "teal", "rose", "slate"]) {
     `tokens.css missing legacy alias [data-accent="${legacy}"]`
   );
 }
-// terra shares the :root default.
+// terra and amber share the :root default values by declaration.
 assert.ok(
   /html\[data-accent="terra"\]\s*\{/.test(tokens),
   "terra must be declared as an explicit accent"
 );
 assert.ok(
-  /:root,\s*\n?\s*html\[data-accent="terra"\]|html\[data-accent="terra"\]\s*,\s*:root/.test(tokens),
-  "terra must share the :root default"
+  /html\[data-accent="terra"\]\s*\{[^}]*--accent:\s*#007aff;[^}]*--accent-strong:\s*#005ecb;[^}]*--accent-soft:\s*#e8f2ff;[^}]*--accent-ink:\s*#ffffff;/s.test(tokens),
+  "terra must resolve to the system-blue default"
+);
+assert.ok(
+  /html\[data-accent="amber"\]\s*\{[^}]*--accent:\s*#007aff;[^}]*--accent-strong:\s*#005ecb;[^}]*--accent-soft:\s*#e8f2ff;[^}]*--accent-ink:\s*#ffffff;/s.test(tokens),
+  "legacy amber must resolve to the system-blue default"
 );
 
 // ── density levels (v3 names + legacy aliases) ────────────────────────
@@ -104,14 +107,13 @@ for (const variant of ["pill-success", "pill-running", "pill-queued", "pill-erro
 assert.ok(/\.tag\s*\{[^}]*font-family:\s*var\(--font-mono\)/.test(shared), ".tag utility missing or not mono");
 
 // ── html defaults on both documents ───────────────────────────────────
-// v3 defaults: data-accent="terra", data-density="regular". Legacy amber/
-// roomy still valid as fallback (accent-amber aliases to terra via
-// tokens.css, and density-roomy is still a declared level).
+// PMAT-013: Console relies on :root's system-blue default and must not set
+// amber. Overlay may still declare a legacy/default accent explicitly.
 const acceptAccent = /data-accent="(?:terra|amber)"/;
 const acceptDensity = /data-density="(?:regular|roomy|balanced)"/;
 assert.ok(
-  acceptAccent.test(consoleHtml) && acceptDensity.test(consoleHtml),
-  "console.html <html> must declare a recognized data-accent + data-density"
+  !/data-accent="amber"/.test(consoleHtml) && acceptDensity.test(consoleHtml),
+  "console.html <html> must avoid amber and declare a recognized data-density"
 );
 assert.ok(
   acceptAccent.test(overlayHtml) && acceptDensity.test(overlayHtml),
@@ -119,21 +121,18 @@ assert.ok(
 );
 
 // ── canonical accent names still resolve ──────────────────────────────
-assert.ok(/--accent:\s*#b85c2a/.test(tokens), "terra's --accent should be #b85c2a in :root");
+assert.ok(/--accent:\s*#007aff/.test(tokens), "default --accent should be Apple system blue (#007aff)");
 assert.ok(/--accent-ink:\s*#ffffff/.test(tokens), "accent family must write --accent-ink");
 
 // ── legacy --teal-soft kept for compat ────────────────────────────────
 assert.ok(/--teal-soft:/.test(tokens), "--teal-soft retained for legacy consumers");
 
 // ── UCA-120 / UCA-180: neutral white/black palette in tokens.css ──────
-// UCA-180 retuned ink to #0d0d0d (still near-black, crisper on pure
-// white) and dark --bg to #0f0f0f so the rail (#0b0b0b) can recess
-// behind the content canvas (#1a1a1a panels) in a clean 3-layer stack.
 assert.ok(/--bg:\s*#ffffff/.test(tokens), "light --bg must be #ffffff (pure white)");
-assert.ok(/--ink:\s*#0d0d0d/.test(tokens), "light --ink must be #0d0d0d (near-black)");
+assert.ok(/--ink:\s*#1d1d1f/.test(tokens), "light --ink must be #1d1d1f (Apple label)");
 const darkBlock = (tokens.match(/:is\(html, body\)\[data-theme="dark"\]\s*\{[\s\S]*?\n\}/) ?? [""])[0];
-assert.ok(/--bg:\s*#0f0f0f/.test(darkBlock), "dark --bg must be #0f0f0f");
-assert.ok(/--ink:\s*#f2f2f2/.test(darkBlock), "dark --ink must be #f2f2f2");
+assert.ok(/--bg:\s*#000000/.test(darkBlock), "dark --bg must be #000000");
+assert.ok(/--ink:\s*#f5f5f7/.test(darkBlock), "dark --ink must be #f5f5f7");
 
 // ── UCA-120: .btn canonical spec ──────────────────────────────────────
 // .btn base: height 32, .btn-sm: 26, .btn-lg: 38.

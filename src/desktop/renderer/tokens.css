@@ -19,8 +19,8 @@
 
   /* v3 CORE NAMES ------------------------------------------------ */
   /* UCA-120: pure white light mode (no warm paper), pure near-black
-     dark mode. Distinct from Claude's warm-ink palette. Terracotta
-     accent stays as the brand color and provides the only warmth. */
+     dark mode. Distinct from warm paper palettes. System blue is the
+     only light-mode accent. */
   /* UCA-123: contrast bump — #737373 felt too pale on pure white. */
   /* UCA-179: retuned for ChatGPT/Claude.ai/Linear-style crispness. Panel-2
      nudged slightly darker (#f4f4f5) so input/hover states read as a real
@@ -41,14 +41,14 @@
   --accent-soft: #e8f2ff;
   --accent-strong: #005ecb;
 
-  --ok: #3e7a46;
-  --ok-soft: #e4efdf;
-  --warn: #b47820;
-  --warn-soft: #f4e8cf;
-  --err: #a8382f;
-  --err-soft: #f1dfdb;
-  --info: #3a6d8f;
-  --info-soft: #dfe8ef;
+  --ok: #248a3d;
+  --ok-soft: #e8f5ea;
+  --warn: #7a6500;
+  --warn-soft: #fff7cc;
+  --err: #d70015;
+  --err-soft: #fde7e9;
+  --info: #007aff;
+  --info-soft: #e8f2ff;
 
   --rail-w: 240px;
   --top-h: 54px;
@@ -165,7 +165,7 @@
   --topbar-height: var(--top-h);
 
   /* ── GLASS tokens (floating layers: overlay / cheatsheet / palette) ──
-     Deliberately decoupled from Console's terracotta accent so the
+     Deliberately decoupled from Console's main accent so the
      floating UI keeps its frosted-glass, high-end, neutral aesthetic
      regardless of the Console's brand color. */
   --glass-surface: rgba(255, 255, 255, 0.78);
@@ -180,7 +180,7 @@
   --glass-muted: #6b7280;
   --glass-line: rgba(0, 0, 0, 0.08);
   --glass-line-strong: rgba(0, 0, 0, 0.14);
-  --glass-accent: #5b6b7a;          /* cool gray-blue, neutral (not terracotta) */
+  --glass-accent: #5b6b7a;          /* cool gray-blue, neutral */
   --glass-accent-strong: #44515d;
   --glass-accent-soft: rgba(91, 107, 122, 0.12);
   --glass-accent-ink: #ffffff;
@@ -260,8 +260,8 @@
 /* Default (unset) → system blue. */
 :root { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
 :is(html, body)[data-theme="dark"] { --accent: #0a84ff; --accent-strong: #409cff; --accent-soft: rgba(10, 132, 255, .20); --accent-ink: #ffffff; }
-html[data-accent="terra"]  { --accent: #b85c2a; --accent-strong: #9a4a1f; --accent-soft: #f5e5d8; --accent-ink: #ffffff; }
-html[data-theme="dark"][data-accent="terra"] { --accent-soft: rgba(184, 92, 42, .18); }
+html[data-accent="terra"]  { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
+html[data-theme="dark"][data-accent="terra"] { --accent-soft: rgba(10, 132, 255, .20); }
 
 html[data-accent="ink"]    { --accent: #1a1917; --accent-strong: #000000; --accent-soft: #e8e5dc; --accent-ink: #ffffff; }
 html[data-theme="dark"][data-accent="ink"] { --accent: #ece7da; --accent-strong: #ffffff; --accent-ink: #1a1917; --accent-soft: rgba(236, 231, 218, .18); }
@@ -276,8 +276,8 @@ html[data-accent="plum"]   { --accent: #7a3958; --accent-strong: #5d2843; --acce
 html[data-theme="dark"][data-accent="plum"] { --accent-soft: rgba(122, 57, 88, .22); }
 
 /* Legacy accent names map to the closest new family so existing
-   html[data-accent="amber"] still works (amber ≈ terra). */
-html[data-accent="amber"]  { --accent: #b85c2a; --accent-strong: #9a4a1f; --accent-soft: #f5e5d8; --accent-ink: #ffffff; }
+   html[data-accent="amber"] remains a legacy alias but maps to system blue. */
+html[data-accent="amber"]  { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
 html[data-accent="indigo"] { --accent: #2d6880; --accent-strong: #1f4e61; --accent-soft: #dae7ed; --accent-ink: #ffffff; }
 html[data-accent="teal"]   { --accent: #5b6b3b; --accent-strong: #465528; --accent-soft: #e4e8d6; --accent-ink: #ffffff; }
 html[data-accent="rose"]   { --accent: #7a3958; --accent-strong: #5d2843; --accent-soft: #eddbe5; --accent-ink: #ffffff; }

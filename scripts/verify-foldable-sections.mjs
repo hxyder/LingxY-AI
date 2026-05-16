@@ -31,13 +31,17 @@ assert.match(css, /\.panel-section\[data-foldable="true"\]\[data-collapsed="true
 
 // Fold CSS for settings-group.
 assert.match(css, /\.settings-group\[data-foldable="true"\]/, "shared.css missing .settings-group[data-foldable]");
-assert.match(css, /\.settings-group\[data-foldable="true"\]\[data-collapsed="true"\]\s*>\s*\*:not\(\.settings-group-head\)\s*\{[^}]*display:\s*none/,
-  "shared.css must hide settings-group body when collapsed");
+assert.match(
+  css,
+  /\.settings-group\[data-foldable="true"\]\[data-collapsed="true"\]\s*>\s*\*:not\(\.settings-group-head\):not\(\.settings-group-title\):not\(\.row:first-child\)\s*\{[^}]*display:\s*none/,
+  "shared.css must hide settings-group body while preserving supported header shapes when collapsed"
+);
 
 // Chevron rotates.
 assert.ok(
-  /data-collapsed="true"\]\s*>\s*\.(?:panel-section-header|settings-group-head)::after\s*\{[^}]*transform:\s*rotate\(-90deg\)/.test(css),
-  "shared.css must rotate chevron when collapsed (both patterns)"
+  /data-collapsed="true"\]\s*>\s*\.panel-section-header::after\s*\{[^}]*transform:\s*rotate\(-90deg\)/.test(css) &&
+    /data-collapsed="true"\]\s*>\s*\.settings-group-head::after,\s*\.settings-group\[data-foldable="true"\]\[data-collapsed="true"\]\s*>\s*\.settings-group-title::after,\s*\.settings-group\[data-foldable="true"\]\[data-collapsed="true"\]\s*>\s*\.row:first-child::after\s*\{[^}]*transform:\s*rotate\(-90deg\)/.test(css),
+  "shared.css must rotate chevrons for panel-section and all settings-group header shapes when collapsed"
 );
 
 // JS wires both shapes via one shared wireFoldable helper.
@@ -63,9 +67,9 @@ assert.match(css, /\.projects-col-head\s*\{[^}]*position:\s*sticky/, "shared.css
 assert.match(css, /\.projects-col-body\s*\{[^}]*overflow-y:\s*auto/, "shared.css must make .projects-col-body scrollable");
 
 // Projects panel markup uses projects-col wrappers.
-assert.ok(html.includes(`class="projects-col panel"`), "console.html must wrap projects columns in .projects-col.panel");
-assert.ok((html.match(/class="projects-col panel"/g) || []).length >= 3,
-  "expected 3 .projects-col.panel wrappers in console.html");
+const projectColumnMatches = html.match(/class="[^"]*\bprojects-col\b[^"]*\bpanel\b[^"]*"/g) || [];
+assert.ok(projectColumnMatches.length >= 3,
+  `expected ≥3 projects columns carrying .projects-col.panel, got ${projectColumnMatches.length}`);
 
 // Settings-group heads are present (not just plain .row) on foldable groups.
 assert.ok(

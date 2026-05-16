@@ -32,15 +32,19 @@ assert.ok(
 
 // ── current view targets present as rail items ───────────────────────────
 // UCA-121+: "history" and "advanced" retired; advanced settings moved into
-// Settings sections. Conversations/Inbox/Notes are first-class rail items.
+// Settings sections. Files/projects/conversations panels remain compatibility
+// targets, but visible rail buttons stay focused on daily destinations.
 const expectedViews = [
-  "tasks", "chat", "files", "schedules",
-  "inbox", "notes", "projects", "conversations",
-  "connectors", "settings"
+  "tasks", "chat", "schedules",
+  "inbox", "notes", "connectors", "settings"
 ];
 for (const view of expectedViews) {
   const re = new RegExp(`<button class="rail-item[^"]*"[^>]*data-tab="${view}"`);
   assert.ok(re.test(consoleHtml), `rail missing item for "${view}"`);
+}
+for (const hiddenView of ["files", "projects", "conversations"]) {
+  const re = new RegExp(`<button class="rail-item[^"]*"[^>]*data-tab="${hiddenView}"`);
+  assert.equal(re.test(consoleHtml), false, `rail should not expose noisy compatibility item "${hiddenView}"`);
 }
 
 // ── rail has the three groups (Workspace / Context / System) ────────────
@@ -102,9 +106,21 @@ assert.ok(
 // ── brand block + bilingual Chinese on Tasks rail item ─────────────────
 assert.ok(/rail-brand-mark/.test(consoleHtml), "rail must include a brand mark");
 assert.ok(/<span class="zh">任务/.test(consoleHtml), "Tasks rail item must carry Chinese suffix");
+assert.ok(
+  /<span class="cur topbar-title" id="topCrumb">Chat<\/span>/.test(consoleHtml),
+  "Console should open into Chat as the simplest default workspace"
+);
+assert.ok(
+  /<button class="rail-item active"[^>]*data-tab="chat"[^>]*aria-current="page"/.test(consoleHtml),
+  "Chat rail item should be the default active item"
+);
+assert.ok(
+  /<section id="panel-chat" class="tab-panel active">/.test(consoleHtml),
+  "Chat panel should be the default active panel"
+);
 
 // ── panel DOM preserved (zero regression in existing renderers) ─────────
-for (const id of expectedViews) {
+for (const id of [...expectedViews, "files", "projects", "conversations"]) {
   assert.ok(
     new RegExp(`id="panel-${id}"`).test(consoleHtml),
     `panel #panel-${id} removed? renderers depend on it`

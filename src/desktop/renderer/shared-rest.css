@@ -564,7 +564,7 @@
 .conn-logo.browser { background: #2d6880; color: #fff; }
 .conn-logo.figma   { background: #000000; color: #fff; }
 .conn-logo.github  { background: #24292f; color: #fff; }
-.conn-logo.mem     { background: #b85c2a; color: #fff; }
+.conn-logo.mem     { background: #007aff; color: #fff; }
 .conn-logo.slack   { background: #4a154b; color: #fff; }
 
 .conn-info, .acc-info { flex: 1; min-width: 0; }
@@ -1608,6 +1608,26 @@
   top: calc(var(--top-h) + 20px);
   align-self: start;
 }
+.settings-nav-search {
+  display: block;
+  margin-bottom: 8px;
+}
+.settings-nav-search input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0 10px;
+  font-size: var(--fs-sm);
+  box-shadow: none;
+}
+.settings-nav-search input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--ring-focus);
+  outline: none;
+}
 .settings-nav a {
   display: flex;
   align-items: center;
@@ -1646,7 +1666,7 @@
   font-weight: 700;
   color: #ffffff;
 }
-.prov-logo.anthropic { background: #c15f3c; }
+.prov-logo.anthropic { background: #6e6e73; }
 .prov-logo.openai    { background: #10a37f; }
 .prov-logo.deepseek  { background: #4b68de; }
 .prov-logo.kimi      { background: #1a1917; }
@@ -1892,7 +1912,7 @@ details.timeline-item[open] > summary {
    PALETTE (Ctrl+K) — v3 naming .pal-* + legacy .palette-*
    ========================================================================= */
 /* UCA-119: palette + cheatsheet use glass tokens so they stay
-   visually distinct from Console's terracotta. The frosted panel is
+   visually distinct from Console's main chrome. The frosted panel is
    the interaction language for floating layers across the app. */
 .pal-back, .palette-backdrop {
   position: fixed;

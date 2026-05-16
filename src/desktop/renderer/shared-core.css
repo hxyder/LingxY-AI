@@ -138,9 +138,9 @@ button.primary, button.secondary, button.ghost {
   background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
 }
 .btn.btn-cancelling {
-  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  background: linear-gradient(135deg, #0a84ff, #007aff) !important;
   color: #fff !important;
-  border-color: #b45309 !important;
+  border-color: #0066cc !important;
   animation: btn-cancelling-pulse 1.4s ease-in-out infinite;
 }
 @keyframes btn-cancelling-pulse {
@@ -656,16 +656,18 @@ label, .field-label {
 .settings-group[data-foldable="true"] {
   position: relative;
 }
-.settings-group[data-foldable="true"] > .settings-group-head {
+.settings-group[data-foldable="true"] > .settings-group-head,
+.settings-group[data-foldable="true"] > .settings-group-title,
+.settings-group[data-foldable="true"] > .row:first-child {
   cursor: pointer;
   user-select: none;
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
-  padding: 4px 0;
 }
-.settings-group[data-foldable="true"] > .settings-group-head::after {
+.settings-group[data-foldable="true"] > .settings-group-head::after,
+.settings-group[data-foldable="true"] > .settings-group-title::after,
+.settings-group[data-foldable="true"] > .row:first-child::after {
   content: "";
   width: 10px;
   height: 10px;
@@ -677,10 +679,12 @@ label, .field-label {
   color: var(--muted);
   transition: transform 160ms var(--ease-standard);
 }
-.settings-group[data-foldable="true"][data-collapsed="true"] > .settings-group-head::after {
+.settings-group[data-foldable="true"][data-collapsed="true"] > .settings-group-head::after,
+.settings-group[data-foldable="true"][data-collapsed="true"] > .settings-group-title::after,
+.settings-group[data-foldable="true"][data-collapsed="true"] > .row:first-child::after {
   transform: rotate(-90deg);
 }
-.settings-group[data-foldable="true"][data-collapsed="true"] > *:not(.settings-group-head) {
+.settings-group[data-foldable="true"][data-collapsed="true"] > *:not(.settings-group-head):not(.settings-group-title):not(.row:first-child) {
   display: none;
 }
 
@@ -1182,6 +1186,11 @@ label, .field-label {
   font-weight: 650;
   color: var(--ink);
 }
+.settings-group > .settings-group-head {
+  padding: 14px 18px;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+}
 .settings-group > .row:first-child {
   padding: 14px 18px;
   margin: 0;
@@ -1557,15 +1566,15 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   background: var(--bg);
 }
 .page-head {
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
 }
 .page-head > div:first-child { min-width: 0; flex: 1; }
 .page-head h1 {
   font-family: var(--font-sans);
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 650;
   letter-spacing: -.015em;
   margin: 0;
@@ -1582,6 +1591,7 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   margin-left: 2px;
 }
 .page-head .sub {
+  display: none;
   font-size: var(--fs-md);
   color: var(--muted);
   margin-top: 4px;

@@ -139,6 +139,14 @@ assert.equal(detailVm.canCancel, false);
 const consoleRenderer = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
 const consoleHtml = readFileSync(new URL("../src/desktop/renderer/console.html", import.meta.url), "utf8");
 const sharedChatCss = readFileSync(new URL("../src/desktop/renderer/shared-chat.css", import.meta.url), "utf8");
+const consoleStyleBundle = [
+  consoleHtml,
+  readFileSync(new URL("../src/desktop/renderer/tokens.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../src/desktop/renderer/shared-core.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../src/desktop/renderer/shared-rest.css", import.meta.url), "utf8"),
+  readFileSync(new URL("../src/desktop/renderer/shared-tasks.css", import.meta.url), "utf8"),
+  sharedChatCss
+].join("\n");
 assert.match(consoleRenderer, /function appendConsoleChatProgress/);
 assert.match(consoleRenderer, /function appendConsoleChatLiveProgress/);
 assert.match(consoleRenderer, /chat-progress-card/);
@@ -163,6 +171,17 @@ assert.match(consoleRenderer, /async function writeConsoleClipboardText/);
 assert.match(consoleRenderer, /consoleShellClient\?\.writeClipboardText/);
 assert.match(consoleRenderer, /data-action="copy"[\s\S]{0,900}writeConsoleClipboardText\(content\)/);
 assert.match(consoleRenderer, /data-md-copy[\s\S]{0,900}writeConsoleClipboardText\(code\)/);
+assert.doesNotMatch(consoleHtml, /data-accent="amber"/);
+assert.match(consoleHtml, /id="topCrumb">Chat<\/span>/);
+assert.match(consoleHtml, /id="panel-chat" class="tab-panel active"/);
+assert.match(consoleHtml, /id="settingsSearchInput"/);
+assert.match(consoleHtml, /data-settings-nav="userMemoryPanel"/);
+assert.match(consoleRenderer, /function initSettingsSearch\(/);
+assert.doesNotMatch(
+  consoleStyleBundle,
+  /#f59e0b|#d97706|#b45309|#b85c2a|#9a4a1f|#f5e5d8|#c15f3c|#fb923c|#f97316|#ea580c|#fdba74|#b47820|#f4e8cf/i,
+  "Console light-mode styles must avoid orange/amber accent colors"
+);
 assert.match(consoleHtml, /Review Inbox/);
 assert.match(consoleHtml, /userMemoryActivityList/);
 assert.match(consoleRenderer, /userMemoryActivityList/);

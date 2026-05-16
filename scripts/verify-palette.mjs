@@ -96,8 +96,8 @@ for (const q of ["translate", "summarize", "explain", "schedule"]) {
 // (userCommand / sourceApp) — UCA-110 follow-up replaced the legacy
 // snake_case payload, so the assertion must match the current shape.
 assert.ok(
-  /fetchJson\("\/task"/.test(consoleJs) && /sourceApp:\s*"console\.palette"/.test(consoleJs),
-  "palette must submit via POST /task tagged with sourceApp=console.palette"
+  /consoleSubmissionClient\.submitTask\(\{[\s\S]{0,120}sourceApp:\s*"console\.palette"/.test(consoleJs),
+  "palette must submit through the shared task client tagged with sourceApp=console.palette"
 );
 
 // ── cheatsheet documents Ctrl+K ────────────────────────────────────────

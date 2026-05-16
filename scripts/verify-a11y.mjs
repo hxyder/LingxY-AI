@@ -44,8 +44,10 @@ assert.ok(hasRail || hasTabBar, "console must have either a tab bar or a left ra
 // Every data-tab element must carry role=tab + aria-selected so screen
 // readers and keyboard users treat it as a tablist entry.
 const tabItems = [...consoleHtml.matchAll(/<button [^>]*data-tab="[^"]+"[^>]*>/g)];
-// UCA-121: Memory tab retired, so 8 rail items (was 9).
-assert.ok(tabItems.length >= 8, `expected 8+ data-tab buttons, found ${tabItems.length}`);
+// PMAT-013: Console rail is intentionally quieter. Compatibility panels for
+// files/projects/conversations remain in the DOM, but they are no longer
+// first-level rail buttons.
+assert.ok(tabItems.length >= 7, `expected 7+ data-tab buttons, found ${tabItems.length}`);
 for (const [match] of tabItems) {
   assert.ok(/role="tab"/.test(match), `data-tab button missing role="tab": ${match}`);
   assert.ok(

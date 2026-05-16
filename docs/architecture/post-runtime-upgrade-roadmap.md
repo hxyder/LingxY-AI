@@ -83,6 +83,15 @@ the top of Skills Registries so adding user skills is the primary path, while
 User Memory shows an explicit enabled/disabled state instead of relying on a bare
 checkbox.
 
+PMAT-013 console simplification follow-up, 2026-05-16: Console now opens into
+Chat by default, because the chat/workbench surface is the simplest user
+starting point while Tasks remains the execution log. Settings has a searchable
+section navigator with Memory as a first-class destination, and advanced areas
+start folded instead of flooding the page with configuration forms. Light mode
+uses Apple-style system blue, neutral gray, green, red, and yellow status
+tokens; legacy warm accent aliases map back to system blue so the Console does
+not render orange/amber chrome in light mode.
+
 PMAT-013 follow-up, 2026-05-13: Chat/project interaction must keep three
 separate invariants locked. Ordinary Chat mode cannot leak a stale selected
 project into the selector, empty-state copy, file drawer, or task submission.

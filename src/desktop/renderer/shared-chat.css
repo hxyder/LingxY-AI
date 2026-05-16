@@ -1242,7 +1242,7 @@
   max-width: 620px;
   margin-left: auto;
 }
-/* UCA-179: in dark mode the terracotta accent-soft read as an orange
+/* UCA-179: in dark mode warm accent-soft colors read too loud
    smear that clashed with the neutral chrome. ChatGPT/Claude.ai use a
    neutral gray for user bubbles in dark mode — match that. */
 [data-theme="dark"] .chat-msg.user .chat-msg-bubble {

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-accent="amber" data-density="roomy">
+<html lang="zh-CN" data-density="roomy">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -660,7 +660,7 @@
     <!-- ── Top Bar (v3) ── -->
     <header class="top topbar">
       <div class="top-crumbs">
-        <span class="cur topbar-title" id="topCrumb">Tasks</span>
+        <span class="cur topbar-title" id="topCrumb">Chat</span>
       </div>
       <div class="top-spacer"></div>
       <button class="top-search" id="openPaletteBtn" aria-label="Quick input — Ctrl+K">
@@ -781,12 +781,12 @@
 
       <div class="rail-group">
         <div class="rail-group-label">Workspace<span class="zh">工作</span></div>
-        <button class="rail-item active" data-tab="tasks" role="tab" aria-current="page" aria-selected="true" title="Tasks">
+        <button class="rail-item" data-tab="tasks" role="tab" aria-selected="false" title="Tasks">
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
           <span class="rail-item-label">Tasks<span class="zh">任务</span></span>
           <span class="rail-item-badge" id="railBadgeTasks" hidden></span>
         </button>
-        <button class="rail-item" data-tab="chat" role="tab" aria-selected="false" title="Chat">
+        <button class="rail-item active" data-tab="chat" role="tab" aria-current="page" aria-selected="true" title="Chat">
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="rail-item-label">Chat<span class="zh">对话</span></span>
         </button>
@@ -848,7 +848,7 @@
     <!-- ═══════════════════════════════════════
          TAB: TASKS
          ═══════════════════════════════════════ -->
-    <section id="panel-tasks" class="tab-panel active">
+    <section id="panel-tasks" class="tab-panel">
       <!-- UCA-125 Phase 1: v3-canonical .page-head replaces the retired
            PANEL_INTROS triple-line injection. -->
       <header class="page-head">
@@ -1044,7 +1044,7 @@
     <!-- ═══════════════════════════════════════
          TAB: CHAT
          ═══════════════════════════════════════ -->
-    <section id="panel-chat" class="tab-panel">
+    <section id="panel-chat" class="tab-panel active">
       <header class="page-head">
         <div>
           <h1 id="consoleChatTitle">Chat<span class="zh">对话</span></h1>
@@ -1986,6 +1986,10 @@
            settings-sections wrapper keeps the foldable behaviour intact. -->
       <div class="settings-grid">
         <nav class="settings-nav" aria-label="Settings sections">
+          <label class="settings-nav-search">
+            <span class="sr-only">Find settings</span>
+            <input id="settingsSearchInput" type="search" placeholder="Find setting">
+          </label>
           <a href="#providerSettingsPanel" data-settings-nav="providerSettingsPanel" class="active">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M22 2 12 12"/></svg>
             Providers
@@ -1993,6 +1997,10 @@
           <a href="#routingSettingsPanel" data-settings-nav="routingSettingsPanel">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="m9 19 9-14"/></svg>
             Routing
+          </a>
+          <a href="#userMemoryPanel" data-settings-nav="userMemoryPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v18"/><path d="M5 8a4 4 0 0 1 7-2.65A4 4 0 0 1 19 8c0 5-7 9-7 9s-7-4-7-9Z"/></svg>
+            Memory
           </a>
           <a href="#voiceEchoSettingsPanel" data-settings-nav="voiceEchoSettingsPanel">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
@@ -2072,7 +2080,7 @@
              See #connectorsMcpList + #mcpServerForm there. -->
 
         <!-- ── Voice / Echo ── -->
-        <div id="voiceEchoSettingsPanel" class="settings-group" data-foldable="true">
+        <div id="voiceEchoSettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">Voice & Echo<span class="zh">语音唤醒</span></h3>
           </div>
@@ -2311,7 +2319,7 @@
         </div>
 
         <!-- Status -->
-        <div id="systemStatusPanel" class="settings-group" data-foldable="true">
+        <div id="systemStatusPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">System Status</h3>
           </div>
@@ -2384,13 +2392,13 @@
         </div>
 
         <!-- Integrations -->
-        <div id="integrationsStatusPanel" class="settings-group">
+        <div id="integrationsStatusPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <h3 class="settings-group-title">Integrations</h3>
           <div id="integrationList" class="integration-list"></div>
         </div>
 
         <!-- One-click setup -->
-        <div id="officeSetupPanel" class="settings-group">
+        <div id="officeSetupPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <h3 class="settings-group-title">One-click Setup</h3>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">
             Configure local integrations that usually require manual Windows or Office setup.
@@ -2413,7 +2421,7 @@
         </div>
 
         <!-- Privacy & Security -->
-        <div id="privacySettingsPanel" class="settings-group">
+        <div id="privacySettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <div class="row" style="margin-bottom:10px;">
             <h3 class="settings-group-title" style="margin:0;">Privacy & Security</h3>
             <span id="privacyState" class="muted" style="font-size:12px;"></span>
@@ -2467,7 +2475,7 @@
           </div>
         </div>
 
-        <div id="dataExportPanel" class="settings-group">
+        <div id="dataExportPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <div class="row" style="justify-content:space-between;align-items:center;gap:12px;">
             <div>
               <h3 class="settings-group-title" style="margin:0;">Data Export</h3>
@@ -2494,7 +2502,7 @@
         </div>
 
         <!-- ── UCA-048: Default Output Path ── -->
-        <div class="settings-group" id="settings-output">
+        <div class="settings-group" id="settings-output" data-foldable="true" data-collapsed="true">
           <h3 class="settings-group-title">Default Output Path</h3>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">生成的文件将保存到这个目录（除非任务里指定了其他路径）。</p>
           <div class="row" style="gap:8px;align-items:end;">
@@ -2511,7 +2519,7 @@
         </div>
 
         <!-- ── UCA-048: Feature Toggles ── -->
-        <div class="settings-group" id="settings-features">
+        <div class="settings-group" id="settings-features" data-foldable="true" data-collapsed="true">
           <h3 class="settings-group-title">Feature Toggles</h3>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">关闭的功能会在运行时被屏蔽，用户尝试使用时会收到引导提示。</p>
           <div id="featureToggleList" class="stack" style="gap:6px;"></div>
@@ -2521,7 +2529,7 @@
           </div>
         </div>
 
-        <div class="settings-group" id="runtimeLabsPanel" data-foldable="true">
+        <div class="settings-group" id="runtimeLabsPanel" data-foldable="true" data-collapsed="true">
           <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">Runtime Labs</h3>
             <span id="runtimeLabsState" class="muted" style="font-size:12px;" data-no-fold></span>

@@ -251,6 +251,7 @@ const userMemoryProjectFilter = document.querySelector("#userMemoryProjectFilter
 const userMemoryConversationFilter = document.querySelector("#userMemoryConversationFilter");
 const userMemorySaveBtn = document.querySelector("#userMemorySaveBtn");
 const userMemoryState = document.querySelector("#userMemoryState");
+const settingsSearchInput = document.querySelector("#settingsSearchInput");
 const userMemoryEnabledPill = document.querySelector("#userMemoryEnabledPill");
 const userMemorySwitchHint = document.querySelector("#userMemorySwitchHint");
 const userMemoryApprovedState = document.querySelector("#userMemoryApprovedState");
@@ -731,8 +732,8 @@ renderEchoDiagnostics();
   try {
     let savedView = localStorage.getItem("lingxy.view");
     if (savedView === "history") {
-      savedView = "tasks";
-      localStorage.setItem("lingxy.view", "tasks");
+      savedView = "chat";
+      localStorage.setItem("lingxy.view", "chat");
     }
     if (savedView === "files") {
       savedView = "chat";
@@ -826,7 +827,7 @@ tabButtons.forEach((btn) => {
 // user asked for "normal theme switching" so we keep the topbar
 // swatches and drop the accent/density pickers. The underlying
 // [data-accent] / [data-density] tokens stay in tokens.css and
-// default to amber + roomy; power users can still flip them via
+// default to system blue + roomy; power users can still flip them via
 // devtools but there's no dedicated UI.
 const THEMES = ["default", "dark"];
 const THEME_KEY = "uca-console-theme";
@@ -13739,7 +13740,7 @@ function initFoldablePanelSections() {
     wireFoldable(section, ":scope > .panel-section-header");
   }
   for (const group of document.querySelectorAll('.settings-group[data-foldable="true"]')) {
-    wireFoldable(group, ":scope > .settings-group-head");
+    wireFoldable(group, ":scope > .settings-group-head, :scope > .settings-group-title, :scope > .row:first-child");
   }
 }
 initFoldablePanelSections();
@@ -13763,7 +13764,7 @@ function initSectionNav({ selector, datasetKey }) {
       const section = sectionForTarget(target);
       if (section.getAttribute("data-foldable") === "true" && section.getAttribute("data-collapsed") === "true") {
         section.setAttribute("data-collapsed", "false");
-        const head = section.querySelector(":scope > .settings-group-head, :scope > .panel-section-header");
+        const head = section.querySelector(":scope > .settings-group-head, :scope > .settings-group-title, :scope > .row:first-child, :scope > .panel-section-header");
         if (head) head.setAttribute("aria-expanded", "true");
       }
       section.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -13797,6 +13798,32 @@ function initSectionNav({ selector, datasetKey }) {
 // reflects the current section without needing extra clicks.
 initSectionNav({ selector: ".settings-nav [data-settings-nav]", datasetKey: "settingsNav" });
 initSectionNav({ selector: ".connectors-nav [data-connectors-nav]", datasetKey: "connectorsNav" });
+
+function initSettingsSearch() {
+  if (!settingsSearchInput) return;
+  const links = Array.from(document.querySelectorAll(".settings-nav [data-settings-nav]"));
+  const sectionById = new Map(links.map((link) => {
+    const id = link.dataset.settingsNav;
+    return [id, document.getElementById(id)];
+  }));
+  const searchableText = (id, link, section) => [
+    link?.textContent ?? "",
+    section?.querySelector(".settings-group-title, .panel-section-title, h3")?.textContent ?? "",
+    section?.id ?? id
+  ].join(" ").toLowerCase();
+  const apply = () => {
+    const query = settingsSearchInput.value.trim().toLowerCase();
+    for (const link of links) {
+      const id = link.dataset.settingsNav;
+      const section = sectionById.get(id);
+      const match = !query || searchableText(id, link, section).includes(query);
+      link.toggleAttribute("hidden", !match);
+      if (section) section.toggleAttribute("hidden", !match);
+    }
+  };
+  settingsSearchInput.addEventListener("input", apply);
+}
+initSettingsSearch();
 
 /* ═══════════════════════════════════════════════════════════════════════════
    UCA-178: QUICK NOTES
