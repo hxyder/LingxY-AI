@@ -163,3 +163,78 @@ test("agentic final gate uses the initial artifact contract when current spec is
     && event.payload?.args?.kind === "docx"
   ));
 });
+
+test("agentic final gate materializes markdown artifacts with write_file", async () => {
+  const calls = [];
+  const events = [];
+  const tool = {
+    id: "write_file",
+    name: "Write File",
+    risk_level: "medium",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      properties: {
+        filename: { type: "string" },
+        content: { type: "string" }
+      }
+    },
+    async execute(args) {
+      calls.push(args);
+      return {
+        success: true,
+        observation: "Markdown generated.",
+        artifact_paths: [`E:/linxiDoc/task_agentic_markdown/${args.filename}`],
+        metadata: { path: `E:/linxiDoc/task_agentic_markdown/${args.filename}` }
+      };
+    }
+  };
+  const adapter = {
+    supportsStreaming: false,
+    async generate() {
+      return {
+        text: "# Markdown Report\n\n- evidence\n\nAccuracy check: internal reviewer note",
+        tool_calls: []
+      };
+    }
+  };
+
+  const result = await runAgenticPlanner({
+    task: {
+      task_id: "task_agentic_markdown",
+      title: "markdown",
+      user_command: "整理成 markdown",
+      task_spec: {
+        goal: "generate_document",
+        artifact: { required: true, kind: "md" },
+        success_contract: {
+          artifact_created: true,
+          required_policy_groups: [],
+          required_tool_names: []
+        }
+      }
+    },
+    runtime: {
+      actionToolRegistry: makeRegistry(tool),
+      store: { appendAuditLog() {} },
+      toolContext: {}
+    },
+    adapterOverride: adapter,
+    onEvent(event) {
+      events.push(event);
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].filename, "markdown.md");
+  assert.match(calls[0].content, /Markdown Report/);
+  assert.doesNotMatch(calls[0].content, /Accuracy check/u);
+  assert.deepEqual(result.artifactPaths, ["E:/linxiDoc/task_agentic_markdown/markdown.md"]);
+  assert.ok(events.some((event) =>
+    event.event_type === "tool_call_proposed"
+    && event.payload?.tool_id === "write_file"
+    && event.payload?.source === "agentic_deterministic_artifact_obligation"
+  ));
+});

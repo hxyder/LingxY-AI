@@ -305,6 +305,8 @@ export const SQLITE_INDEX_SQL = Object.freeze([
      ON conversations(updated_at DESC) WHERE archived = 0`,
   `CREATE INDEX IF NOT EXISTS idx_messages_conv_seq
      ON conversation_messages(conversation_id, seq)`,
+  `CREATE INDEX IF NOT EXISTS idx_task_events_task_ts
+     ON task_events(task_id, ts)`,
   `CREATE INDEX IF NOT EXISTS idx_msg_tasks_task
      ON conversation_message_tasks(task_id)`,
   `CREATE INDEX IF NOT EXISTS idx_sessions_conversation

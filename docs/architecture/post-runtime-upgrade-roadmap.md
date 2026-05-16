@@ -201,6 +201,56 @@ collapsed live status card with expandable details rather than a stream of
 system-message cards; final answer streaming remains reserved for user-visible
 answer text.
 
+PMAT-013 scheduled title and email-shape follow-up, 2026-05-16: live scheduled
+weather and market-email tasks showed two related framework failures. Schedule
+names could still be selected from `action.params.userCommand`, so whole user
+prompts, tool names, URLs, and recipient strings leaked into task titles. Email
+approvals could also receive a joined recipient string such as
+`a@example.com和b@example.com`, making the UI display one recipient and making
+edits unreliable. The fix is a typed policy, not sample-specific prompt
+wording: scheduler titles are derived from schedule trigger/action/category and
+side-effect contract signals, old prompt-like stored names are normalized when
+listed or dispatched, and scheduled email subjects are normalized before
+approval/send when a prompt-like subject is proposed. Email recipient fields use
+one central extractor so account tools, connector workflow previews, and
+approval overrides preserve multiple editable recipients as arrays.
+
+PMAT-013 schedule/email/console framework follow-up, 2026-05-16: task
+`task_8fe808c1-1088-4a41-91f8-81bca4c22a94` and the market-news schedule
+exposed three framework-level flexibility bugs. First, provider/product names
+such as `Google/Microsoft connector` were still classified as explicit web
+search verbs, so architecture planning could be forced into irrelevant web
+contracts and then downgraded to `partial_success`. Provider names are no
+longer search intent by themselves; only actual search commands like
+`google it` / `search for` / Chinese search verbs drive the structural search
+signal. Second, scheduled research email could enter action-only handoff while
+research-quality violations were still present, allowing an irrelevant market
+digest to be sent and only then rejected by the final reviewer. Email side
+effects now require all non-action success-contract requirements, including
+research source coverage, to be satisfied before send; action obligations remain
+the only pending violation allowed at the email boundary. Third, console
+streaming could keep a partial text-delta bubble and append `inline_result` as a
+second answer because terminal cleanup ran before finalizing the streaming
+bubble. Terminal inline results now finalize the existing stream first. Schedule
+rows also expose editable email-recipient slots backed by the typed
+`side_effect_contract`, and paused schedule state is shown as neutral status
+text rather than a prominent English pill.
+
+PMAT-013 framework-comparison refinement, 2026-05-16: review of current
+LangGraph, AutoGen, CrewAI, and OpenAI Agents SDK patterns confirmed that
+LingxY should keep its own typed desktop runtime rather than importing a generic
+agent graph wholesale. The borrowed invariant is recoverable guardrails:
+LangGraph-style interrupts persist state and resume with corrected input;
+AutoGen termination conditions stop/resume on typed events; CrewAI Flows keep
+stateful event-driven steps; Agents SDK tool guardrails validate/block at the
+tool boundary and tracing records guardrail/tool spans. LingxY maps this to its
+existing TaskSpec + success-contract + transcript event spine: a blocked email
+side effect now emits `tool_call_denied` plus structured `contract_guidance`
+when prerequisite non-action evidence is missing, so the planner can return to
+the evidence phase and retry the side effect only after the contract is
+satisfied. This keeps flexibility in the workflow state, not in prompt wording
+or sample-specific exceptions.
+
 PMAT-014 desktop latency follow-up, 2026-05-15: hotkey capture must not trade
 speed for wrong context. `capture-and-ask` starts the PowerShell capture promise
 before focusing LingxY, then shows the overlay immediately while the capture
@@ -209,6 +259,186 @@ locally; `/health` refresh runs after capture starts so a slow service health
 request cannot make the probe capture the Electron overlay/console. If the
 foreground result is still a LingxY shell window, the shell wrapper prefers the
 last remembered external window or suppresses the shell preview.
+
+PMAT-014 global latency execution plan, 2026-05-15: the speed program is now
+tracked as an end-to-end runtime optimization, not a single-task micro-fix.
+External framework signals reviewed for this pass: LangGraph persistence treats
+threads, checkpoints, replay, and pending writes as the durable resume contract;
+OpenAI Agents SDK tracing models each agent run as spans for model calls, tool
+calls, handoffs, guardrails, and custom events; CrewAI production guidance keeps
+long-running work async and uses structured outputs between steps; AutoGen shows
+that multi-agent autonomy must stay inspectable through explicit conversation
+and human-in-the-loop patterns. LingxY should borrow the contracts, not copy the
+frameworks: keep its service-owned session/context/artifact spine, but make
+every slow phase measurable, bounded, and independent where ordering allows.
+
+PMAT-014 intake for current implementation step:
+
+- Module boundaries: service/runtime task submission and conversation lifecycle
+  own the hot path; SQLite/memory stores remain storage adapters; Electron main,
+  renderer, tool ids, provider adapters, connector routes, artifact transforms,
+  and prompt text are untouched.
+- Scope: reduce task-submission acknowledgement latency for long conversations
+  by reading only the recent prior-message window needed for context. This is a
+  framework invariant: first-screen/task-created paths must not scan broad
+  history when a bounded tail is enough.
+- Out of scope: changing executor behavior, changing history selection
+  semantics, adding a DB worker/queue, adding sidecars, or altering
+  SemanticRouter policy.
+- Contracts affected: `attachPriorBackendMessages()` may use
+  `countConversationMessages()` plus bounded `getConversationMessages()` when
+  available; the public `prior_messages` shape and ordering remain unchanged.
+- Test gate: add a targeted behavior test proving long conversations read a
+  bounded tail window, then run the conversation lifecycle test plus
+  `npm run check:fast`.
+- Patch check: this is not a phrase/task patch. It enforces a hot-path budget
+  rule for any long conversation.
+
+PMAT-014 next optimization slices:
+
+1. Hot-path reads: avoid broad `conversation_messages`, `task_events`, artifact
+   content, and skill inventory scans before task creation or first visible
+   output. Prefer bounded tail queries, persisted summaries, and lazy detail
+   hydration.
+2. Parallel preflight: run safe, side-effect-free classification, context-source
+   stamping, memory/file recall, and provider resolution concurrently only when
+   typed obligations do not depend on each other.
+3. Planner loop budget: after typed evidence and required side-effect
+   obligations are satisfied, route to synthesis/action-only completion instead
+   of offering extra planner rounds that can only be denied.
+4. Tool surface diet: expose only typed-required tool families during degraded
+   routing so planner search space stays small and unrelated local tools do not
+   inflate iterations.
+5. UI acknowledgement: keep hotkeys, conversation switching, and task shell
+   activation immediate while history, active-window details, and large traces
+   hydrate asynchronously.
+6. Evidence trend: extend existing trace/eval reports with p95 timings for
+   task_created, first executor event, first visible output, SemanticRouter
+   patch, context compile, tool-call latency, and final synthesis.
+
+PMAT-014 implementation notes, 2026-05-15:
+
+- Long conversation task submission now reads a bounded prior-message tail using
+  `countConversationMessages()` and `getConversationMessages({ sinceSeq,
+  limit })`; it preserves the `prior_messages` contract without broad history
+  reads before `task_created`.
+- Planner skill context now has a shared typed relevance gate in
+  `src/service/executors/shared/skill-context.mjs`. `tool_using` and `agentic`
+  skip skill registry scans entirely when the task has no artifact/file
+  relevance, while attached editable files and typed artifact tasks still load
+  matching workflow guidance.
+- SQLite task-event incremental reads are pushed into the store query for
+  `getTaskEventsSince()` so SSE replay after a cursor does not decode the full
+  task event log in service JS on every poll.
+- Task completion history indexing now prefers already-structured
+  `task.result_summary` and artifact rows before reading `task_events`; event
+  logs remain a fallback only when the structured summary or artifact rows are
+  missing.
+- Live API sweep on 2026-05-15 used DeepSeek `deepseek-v4-flash` plus a
+  connected Google account. Provider acceptance passed in 8.9s
+  (`.tmp/live-provider-acceptance/report-2026-05-15-17-41-59.json`); connector
+  OAuth/read acceptance passed in 7.9s with Google email/file/calendar read and
+  email write capability available
+  (`.tmp/connector-oauth-acceptance/report-2026-05-15-17-41-58.json`).
+- Representative real tasks exposed the actual latency shape: direct Q&A
+  9.3s, browser-context Q&A 1.7s, connector mail read 12.2s, and real Gmail
+  send to the audit recipient 4.3s. The translation fast path initially
+  returned in 0.2s but exposed a quality gap: inline commands such as
+  `翻译成英文：...` were not extracting the delimited source text from
+  `user_command`. The slow artifact failure was `D.npm_trends_md`: 108.7s,
+  18 LLM calls, about 189k tokens, failed because deterministic artifact
+  recovery treated `md` as unsupported and then let the planner loop until an
+  empty `write_file` call failed.
+- Deterministic artifact recovery is now a shared typed plan in
+  `src/service/executors/shared/deterministic-artifact-plan.mjs`: document/html
+  kinds route through `generate_document`; `md`, `txt`, `csv`, and `json` route
+  through `write_file`; runtime reviewer footers such as `Accuracy check:` are
+  stripped before file materialization. Both `tool_using` and `agentic` use the
+  shared plan.
+- After the fix, `D.npm_trends_md` passed in 15.2s with 3 LLM calls, about
+  13.2k tokens, `web_search_fetch -> write_file`, and a real `.md` artifact
+  without internal reviewer text
+  (`scripts/real-llm-test/report-2026-05-15-17-51-54.json`). The Gmail live
+  send case passed in 4.0s after the audit corpus accepted the canonical
+  expanded workflow tools (`google.gmail.create_draft_preview`,
+  `google.gmail.send_email`).
+- Translation inline source extraction is now structural instead of
+  phrase-specific: only explicit `:`/`：` delimited translation commands can
+  supply source text when no context packet text/file/selection is present.
+  `L.zh2en_proverb` passed the real runtime path in 0.86s with no LLM calls or
+  tools and visible text `A journey of a thousand miles begins with a single
+  step` (`scripts/real-llm-test/report-2026-05-15-17-57-54.json`).
+- Harness quality notes: live scripts should be invoked directly with `node`
+  when PowerShell/npm argument forwarding is ambiguous, and parallel runtime
+  harnesses must use distinct full Windows pipe names such as
+  `\\.\pipe\uca-helper-explorer-selection-<run>` to avoid false startup
+  failures.
+
+PMAT-013/014 Console streaming and link-choice follow-up, 2026-05-15: Console
+chat must show live task movement before final synthesis, even when the provider
+does not stream user-visible answer tokens until the final composer. The running
+Console progress card now opens while the task is active, captures structured
+runtime events such as `step_started`, `step_finished`, `log`, `status_changed`,
+file-read progress, and cancellation requests, then folds again on terminal
+events. Link clicks from overlay/Console/evidence surfaces still request
+`ask:true`; the shell URL IPC now attaches the native choice dialog only to a
+visible owner window and falls back to a no-owner dialog when the sender is a
+hidden overlay, so the user is asked between a LingxY browser window, the system
+browser, or cancel instead of silently navigating.
+
+PMAT-014 pre-generation latency follow-up, 2026-05-15: the next speed slice
+targets the time between user submit, task acceptance, and the first model/tool
+progress. Intake gates: owner modules are the service store adapters and shared
+executor conversation-history loader; caller boundary is executor prompt
+assembly before `planner_request_started`; no-touch areas are task creation,
+tool policy, artifacts, connectors, provider adapters, Electron main process,
+and renderer layout outside the Console progress surface. Affected contracts are
+the store conversation-message read API and the structured history loader. The
+new invariant is that model-start hot paths must read a bounded tail before the
+current trigger message, not scan the full conversation and filter in JS. Stores
+now expose `getConversationMessagesBefore(conversation_id, { beforeSeq, limit })`
+using the existing `(conversation_id, seq)` index; the shared loader requests the
+last 120 prior messages before grouping turns and applying the existing token
+budget. Console chat also starts the open progress card at client submission,
+before `/task` returns, then appends task-created/executor progress into the
+same card so the wait is visibly continuous. `fast` and `tool_using` provider
+waits now emit bounded `status_changed` heartbeats after the model request has
+been outstanding for 1.8s, and stop as soon as text/reasoning/tool-input deltas
+arrive or the call completes; they do not synthesize answer text. This is a
+framework invariant, not a phrase/task patch: long conversations stay
+structurally resumable while broad history hydration remains outside the
+first-model-start path, and slow provider first-token waits are observable
+instead of silent.
+
+PMAT-014 visible-output follow-up, 2026-05-15: a later Console report exposed
+two adjacent runtime-boundary issues. First, the tool executor's prose-trap
+retry note was user-shaped Chinese text, so an LLM could mirror it into the
+final answer ("no tool needed / plain-text final answer"). The retry note is
+now marked as an internal planning retry and final tool-loop results pass
+through a user-visible final-text sanitizer that strips internal retry
+preambles and audits the change before answer-quality validation. Second,
+Console subscription setup no longer closes the submission progress card; live
+reasoning and file-generation deltas also append throttled progress lines so
+provider waiting, planning, and generation remain visible before final text
+arrives. The tool planner now emits the first `waiting_for_planner_first_output`
+status immediately when the provider request is sent, then continues with
+bounded heartbeats, because real API evidence showed timer-only heartbeats can
+be missed by the user's perceived wait even when the task event stream is
+healthy. This preserves the existing Electron/renderer structure and keeps
+console rendering changes inside the progress surface.
+
+PMAT-014 file cleanup follow-up, 2026-05-16: file cleanup is now part of the
+global execution-efficiency program rather than an ad hoc deletion pass. The
+tracked execution board is
+`docs/architecture/global-execution-efficiency-and-cleanup-plan.md`. Cleanup is
+split into local generated output, historical evidence, old reachable
+implementation paths, and large mixed-responsibility files. Tracked source files
+may be deleted or archived only after import/reference sweeps, package script
+and public export checks, IPC/HTTP/tool/artifact/provider/storage sweeps where
+relevant, replacement verifier coverage, rollback or archive path, and
+`npm run check:fast`. This keeps cleanup tied to measurable latency, token,
+redundancy, and answer-quality work instead of treating old code as stale by
+appearance.
 
 PMAT-005 investigation note, 2026-05-12: task
 `task_b039b848-19ac-4833-8ffb-1e02b0151aa5` answered that Desktop had no

@@ -36,6 +36,24 @@ assert.match(
 );
 
 assert.match(
+  shellOpenUrlIpc,
+  /function resolveLinkDialogOwner\(sender\)[\s\S]*senderWindow\.isVisible\?\.\(\)[\s\S]*focusedWindow\.isVisible\?\.\(\)/,
+  "link choice dialog owner must be visible so hidden overlay windows cannot swallow the prompt"
+);
+
+assert.match(
+  shellOpenUrlIpc,
+  /function showLinkChoiceDialog\(owner, options\)[\s\S]{0,260}brandIcons\.showBrandedMessageBox\(dialog, owner, options\)[\s\S]{0,220}brandIcons\.showBrandedMessageBox\(dialog, options\)/,
+  "link choice dialog must fall back to the no-owner overload when no visible owner exists"
+);
+
+assert.doesNotMatch(
+  shellOpenUrlIpc,
+  /showBrandedMessageBox\(dialog,\s*owner\s*\?\?\s*undefined/,
+  "link choice dialog must not pass an undefined owner to the window-scoped message-box overload"
+);
+
+assert.match(
   linkBrowserModule,
   /function showLinkBrowserWindow\(url\)[\s\S]{0,900}frame:\s*true[\s\S]{0,400}closable:\s*true/,
   "LingxY link browser windows must keep native window controls enabled"

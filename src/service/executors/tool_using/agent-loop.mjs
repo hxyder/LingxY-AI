@@ -27,7 +27,7 @@ import {
 } from "../shared/resource-context.mjs";
 import { renderBackgroundContextsBlock } from "../../core/intent/background-contexts.mjs";
 import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
-import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
+import { renderToolPolicyForPrompt, toolsInGroup } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { verifyCitations } from "../../core/evidence/citation-verifier.mjs";
@@ -61,6 +61,7 @@ import { extractLaunchAppName } from "./planners/launch-helpers.mjs";
 import { buildLaunchSequenceGuidance } from "./launch-sequence.mjs";
 import {
   finalFallbackText,
+  formatLaunchDisambiguationFallback,
   hasActionAttempts,
   hasUnresolvedActionFailure,
   localFallbackFinal,
@@ -74,7 +75,11 @@ import {
   plannerToolDescriptorForAdapter
 } from "./planner-formatting.mjs";
 import { cacheableSystemMessage } from "../shared/prompt-cache.mjs";
-import { renderSkillContextForPrompt } from "../shared/skill-context.mjs";
+import {
+  renderSkillContextForPrompt,
+  shouldLoadSkillContextForTask
+} from "../shared/skill-context.mjs";
+import { sanitizeUserVisibleFinalText } from "../shared/final-answer-sanitizer.mjs";
 import {
   filterToolsForTask,
   isScheduledFireTask,
@@ -84,7 +89,7 @@ import {
   actionOnlyToolIds,
   filterToolsForActionOnlyGuidance
 } from "./action-guidance.mjs";
-import { spreadsheetOutlineFromText } from "../../core/spreadsheet-outline.mjs";
+import { buildDeterministicArtifactPlan } from "../shared/deterministic-artifact-plan.mjs";
 import {
   buildLeanChatSystemPrompt,
   renderRequiredContractForPlanner,
@@ -134,9 +139,13 @@ import {
 } from "./side-effect-gate.mjs";
 import { planScheduledFireRegistryGuard } from "./scheduled-fire-gate.mjs";
 import { planSaturationHint } from "./saturation-gate.mjs";
+import { deriveScheduledEmailSubject } from "../../core/policy/scheduled-work-policy.mjs";
 import { shouldPromptForToolApproval } from "../../../shared/permission-mode-model.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
+
+const PLANNER_MODEL_WAIT_HEARTBEAT_DELAY_MS = 1800;
+const PLANNER_MODEL_WAIT_HEARTBEAT_INTERVAL_MS = 2500;
 
 function nowIso() {
   return new Date().toISOString();
@@ -190,15 +199,17 @@ function buildDeterministicActionBody({ task, transcript = [] }) {
 const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty)$/;
 const ACTION_OBLIGATION_GROUP_SET = new Set(ACTION_OBLIGATION_GROUPS);
 
+function isActionOnlyContractViolation(violation = {}) {
+  const kind = String(violation?.kind ?? "");
+  const match = REQUIRED_POLICY_GROUP_VIOLATION_RE.exec(kind);
+  return Boolean(match && ACTION_OBLIGATION_GROUP_SET.has(match[1]));
+}
+
 function hasUnsatisfiedNonActionRequiredPolicyGroups({ task, transcript = [] }) {
   const taskSpec = selectSuccessContractValidationSpec(task);
   const gate = validateSuccessContract(taskSpec, transcript);
   if (gate.satisfied) return false;
-  return (gate.violations ?? []).some((violation) => {
-    const match = REQUIRED_POLICY_GROUP_VIOLATION_RE.exec(String(violation?.kind ?? ""));
-    if (!match) return false;
-    return !ACTION_OBLIGATION_GROUP_SET.has(match[1]);
-  });
+  return (gate.violations ?? []).some((violation) => !isActionOnlyContractViolation(violation));
 }
 
 function preauthorizedActionGroups(task = {}) {
@@ -245,7 +256,10 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
   const tool = EMAIL_SEND_FALLBACK_TOOL_PREFERENCE.find((id) => allowedSet.has(id));
   if (!tool) return null;
   const userCommand = String(task?.user_command ?? "").trim();
-  const subject = (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80);
+  const subject = deriveScheduledEmailSubject({
+    task,
+    args: { subject: (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80) }
+  });
   const overrideBody = typeof bodyOverride === "string" ? bodyOverride.trim() : "";
   const evidenceBody = overrideBody || buildDeterministicActionBody({ task, transcript });
   if (task?.task_spec?.routing_degraded === true && !evidenceBody.trim()) return null;
@@ -338,6 +352,50 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
   };
 }
 
+function startPlannerModelWaitHeartbeat(runtime, {
+  iteration = 0,
+  delayMs = PLANNER_MODEL_WAIT_HEARTBEAT_DELAY_MS,
+  intervalMs = PLANNER_MODEL_WAIT_HEARTBEAT_INTERVAL_MS,
+  emitImmediately = false
+} = {}) {
+  if (typeof runtime?.emitTaskEvent !== "function") return () => {};
+  let stopped = false;
+  let interval = null;
+  let emitted = false;
+  const emit = (count) => {
+    emitted = true;
+    runtime.emitTaskEvent("status_changed", {
+      status: "running",
+      sub_status: count > 0 ? "waiting_for_planner_response" : "waiting_for_planner_first_output",
+      progress: 0.35,
+      iteration,
+      heartbeat_count: count
+    });
+  };
+  if (emitImmediately) emit(0);
+  const timeout = setTimeout(() => {
+    if (stopped) return;
+    let count = emitted ? 1 : 0;
+    emit(count);
+    interval = setInterval(() => {
+      if (stopped) return;
+      count += 1;
+      emit(count);
+    }, intervalMs);
+  }, delayMs);
+  return () => {
+    stopped = true;
+    clearTimeout(timeout);
+    if (interval) clearInterval(interval);
+  };
+}
+
+function stopPlannerHeartbeatOnDelta(stopHeartbeatRef) {
+  if (typeof stopHeartbeatRef?.stop !== "function") return;
+  stopHeartbeatRef.stop();
+  stopHeartbeatRef.stop = () => {};
+}
+
 // UCA-077 P3-01: planDeterministicToolCall, planConnectorToolCall, and the
 // connector capability helpers moved to ./planners/. The launch-app helpers
 // moved to ./planners/launch-helpers.mjs.
@@ -421,6 +479,7 @@ async function resolveMcpCapabilitiesNote(runtime) {
 
 async function resolveSkillCapabilities(runtime, task = null) {
   try {
+    if (!shouldLoadSkillContextForTask(task)) return { note: "", context: null };
     const skills = await runtime?.platform?.skillRegistries?.listSkills?.({ runtime });
     if (!Array.isArray(skills) || skills.length === 0) return { note: "", context: null };
     const { prompt, context } = renderSkillContextForPrompt(skills, { task, limit: 20 });
@@ -647,33 +706,44 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       ...conversationMessages
     ];
     const adapter = createProviderAdapter(provider);
-    const response = await adapter.generate({
-      messages,
-      tools: toolSchemas,
-      maxTokens: 1024,
-      signal,
-      // Planner text is not user-facing output. Some providers stream natural
-      // language planning or fallback JSON protocol before native tool calls
-      // are resolved; keep that on the reasoning channel so only final
-      // composer text reaches the assistant bubble.
-      onTextDelta: adapter.supportsStreaming === true
-        ? (delta) => {
-            if (!delta) return;
-            runtime?.emitTaskEvent?.("reasoning_delta", { delta });
-          }
-        : undefined,
-      onToolInputDelta: (toolName, partialJson) => {
-        if (!isStreamableArtifactTool(toolName)) return;
-        runtime?.emitTaskEvent?.("tool_input_delta", {
-          tool_id: toolName,
-          partial_json: partialJson
-        });
-      },
-      onReasoningDelta: (delta) => {
-        if (!delta) return;
-        runtime?.emitTaskEvent?.("reasoning_delta", { delta });
-      }
-    });
+    const plannerHeartbeat = {
+      stop: startPlannerModelWaitHeartbeat(runtime, { iteration, emitImmediately: true })
+    };
+    let response;
+    try {
+      response = await adapter.generate({
+        messages,
+        tools: toolSchemas,
+        maxTokens: 1024,
+        signal,
+        // Planner text is not user-facing output. Some providers stream natural
+        // language planning or fallback JSON protocol before native tool calls
+        // are resolved; keep that on the reasoning channel so only final
+        // composer text reaches the assistant bubble.
+        onTextDelta: adapter.supportsStreaming === true
+          ? (delta) => {
+              if (!delta) return;
+              stopPlannerHeartbeatOnDelta(plannerHeartbeat);
+              runtime?.emitTaskEvent?.("reasoning_delta", { delta });
+            }
+          : undefined,
+        onToolInputDelta: (toolName, partialJson) => {
+          if (!isStreamableArtifactTool(toolName)) return;
+          stopPlannerHeartbeatOnDelta(plannerHeartbeat);
+          runtime?.emitTaskEvent?.("tool_input_delta", {
+            tool_id: toolName,
+            partial_json: partialJson
+          });
+        },
+        onReasoningDelta: (delta) => {
+          if (!delta) return;
+          stopPlannerHeartbeatOnDelta(plannerHeartbeat);
+          runtime?.emitTaskEvent?.("reasoning_delta", { delta });
+        }
+      });
+    } finally {
+      stopPlannerHeartbeatOnDelta(plannerHeartbeat);
+    }
     emitLlmUsage({
       runtime,
       task,
@@ -934,8 +1004,37 @@ function appendAuditLog(runtime, task, subtype, payload) {
 export async function runToolAgentLoop(opts = {}) {
   const result = await _runToolAgentLoopCore(opts);
   const contracted = await finaliseWithArtifactContract(result, opts);
-  const qualityChecked = finaliseWithAnswerQuality(contracted, opts);
+  const sanitized = finaliseWithUserVisibleFinalText(contracted, opts);
+  const qualityChecked = finaliseWithAnswerQuality(sanitized, opts);
   return finaliseWithEvidence(qualityChecked, opts);
+}
+
+function finaliseWithUserVisibleFinalText(result, { runtime, task } = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (!["success", "partial_success"].includes(result.status)) return result;
+  const key = Object.prototype.hasOwnProperty.call(result, "final_text") ? "final_text" : "finalText";
+  const current = result[key] ?? "";
+  let sanitized = sanitizeUserVisibleFinalText(current);
+  const disambiguation = formatLaunchDisambiguationFallback(result.transcript ?? [], task?.user_command ?? "");
+  if (disambiguation && !/(哪一个|哪个|which)/iu.test(sanitized)) {
+    sanitized = disambiguation;
+  }
+  if (sanitized === current) return result;
+  try {
+    runtime?.emitTaskEvent?.("final_answer_sanitized", {
+      reason: "internal_retry_preamble",
+      original_chars: String(current ?? "").length,
+      visible_chars: sanitized.length
+    });
+  } catch { /* observability must not break finalization */ }
+  try {
+    appendAuditLog(runtime, task, "tool_loop.final_answer_sanitized", {
+      reason: "internal_retry_preamble",
+      original_chars: String(current ?? "").length,
+      visible_chars: sanitized.length
+    });
+  } catch { /* audit failures must not break finalization */ }
+  return { ...result, [key]: sanitized };
 }
 
 function finaliseWithAnswerQuality(result, { runtime, task } = {}) {
@@ -991,6 +1090,56 @@ function countInvalidArtifactGenerationAttempts(transcript = []) {
   ).length;
 }
 
+function nonActionPolicyGroupsFromValidationError(error = "", task = {}) {
+  const text = String(error ?? "");
+  if (!text.startsWith("email_send_blocked_until_non_action_contract_satisfied:")) return [];
+  const kinds = text.slice(text.indexOf(":") + 1)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const requiredGroups = [
+    ...(task?.task_spec?.success_contract?.required_policy_groups ?? []),
+    ...(task?.task_spec_initial?.success_contract?.required_policy_groups ?? [])
+  ].filter((group) => !ACTION_OBLIGATION_GROUP_SET.has(group));
+  const groups = [];
+  for (const group of requiredGroups) {
+    if (kinds.some((kind) => kind === group || kind.startsWith(`${group}_`))) {
+      groups.push(group);
+    }
+  }
+  return [...new Set(groups)];
+}
+
+function buildValidationRecoveryGuidance({ toolId, error, task, iteration } = {}) {
+  const groups = nonActionPolicyGroupsFromValidationError(error, task);
+  if (groups.length === 0) return null;
+  const groupLines = groups.map((group) => {
+    const members = toolsInGroup(group);
+    const memberText = members.length > 0 ? members.join(", ") : "a registered tool in this policy group";
+    return `- ${group}: call at least one of ${memberText}, then synthesize from the new result before retrying ${toolId}.`;
+  });
+  return {
+    transcriptEntry: {
+      type: "contract_guidance",
+      groups,
+      source: "tool_validation",
+      instruction: [
+        `The ${toolId} tool call was blocked by a pre-execution guardrail because prerequisite non-action evidence is still missing.`,
+        ...groupLines,
+        "Do not retry the side-effect tool until these prerequisite groups are satisfied."
+      ].join("\n"),
+      action_only: false
+    },
+    eventPayload: {
+      iteration,
+      tool_id: toolId,
+      required_policy_groups: groups,
+      action_only: false,
+      source: "tool_validation"
+    }
+  };
+}
+
 function hasSuccessfulEvidenceToolResult(transcript = []) {
   const artifactOnlyTools = new Set([
     "generate_document",
@@ -1020,15 +1169,15 @@ function shouldRunEarlyArtifactObligation({ stepGate, transcript = [] } = {}) {
 // When the agent loop reports status="success" but the success-contract
 // validator says no artifact was created (D-class missing_artifact in
 // the 109 corpus), try ONCE to materialise the LLM's final_text into
-// an artifact by calling generate_document directly. If recovery
+// an artifact by calling the kind-appropriate artifact producer directly. If recovery
 // succeeds the result stays "success"; if recovery is unavailable or
 // fails, fall through to the existing partial_success path.
 //
 // SAFETY (locked by POLICY_GROUPS.artifact_generation invariant +
 // scripts/verify-artifact-generation-invariant.mjs):
 //   - Only no-side-effect tools may be invoked here. The membership of
-//     the artifact_generation group enforces this; we just route
-//     through generate_document, which is the canonical producer.
+//     the artifact_generation group enforces this; document kinds route
+//     through generate_document, while text-file kinds route through write_file.
 //   - Never reach for email_send / open_url / connector_workflow_run
 //     during recovery. The verifier blocks adding any side-effect
 //     tool to artifact_generation, so it cannot accidentally land on
@@ -1060,77 +1209,34 @@ export async function attemptArtifactRecovery({
   if (!finalText) {
     return { ok: false, reason: "no_final_text" };
   }
-  // Recovery is for "no usable artifact was created." A malformed
-  // generate_document proposal is still recoverable: no artifact-producing
-  // tool actually ran, and deterministic recovery uses the same safe
-  // artifact_generation group. Block only after a real generate_document
-  // tool result exists, because that points at an execution/path/kind
-  // failure the user should see explicitly.
+  const plan = buildDeterministicArtifactPlan({ task, taskSpec, finalText });
+  if (!plan.ok) return plan;
+
+  // Recovery is for "no usable artifact was created." A malformed proposal
+  // is still recoverable: no artifact-producing tool actually succeeded, and
+  // deterministic recovery uses the same safe artifact_generation surface.
+  // Keep the established generate_document guard for real document renderer
+  // failures, while allowing text-file kinds to recover from an invalid
+  // write_file proposal such as an empty path.
   const transcriptList = Array.isArray(transcript) ? transcript : [];
-  const llmAlreadyTriedArtifact = transcriptList.some((entry) => {
-    if (!entry) return false;
-    return entry.type === "tool_result" && entry.tool === "generate_document";
-  });
-  if (llmAlreadyTriedArtifact) {
+  const llmAlreadyTriedDocumentArtifact = plan.toolId === "generate_document"
+    && transcriptList.some((entry) => entry?.type === "tool_result" && entry.tool === "generate_document");
+  if (llmAlreadyTriedDocumentArtifact) {
     return { ok: false, reason: "llm_already_attempted_artifact" };
   }
+
   const visibleIds = registry.list().map((tool) => tool?.id);
-  if (!visibleIds.includes("generate_document")) {
-    return { ok: false, reason: "no_generate_document" };
+  if (!visibleIds.includes(plan.toolId)) {
+    return { ok: false, reason: `no_${plan.toolId}` };
   }
-
-  // Map task_spec.artifact.kind into generate_document.kind. The
-  // schema allows pptx/docx/xlsx/pdf/html only.
-  // codex round-1: silently substituting unsupported rawKind → html
-  // can hide a real contract mismatch (e.g. user asked for markdown
-  // but we delivered html, then the validator catches kind mismatch
-  // and the recovery falls through with a confusing reason). Resolve
-  // up front:
-  //   - rawKind empty → kind = "html" (best-effort default), and
-  //     audit emits kind_default_applied=true.
-  //   - rawKind in supported set or alias → kind = (resolved), no
-  //     default applied.
-  //   - rawKind non-empty but unrecognised → SKIP recovery with a
-  //     single-reason "unsupported_kind:<rawKind>" so the user sees
-  //     the real cause rather than a downstream kind-mismatch shadow.
-  const rawKind = String(taskSpec?.artifact?.kind ?? taskSpec?.contract?.output_contract?.kind ?? "")
-    .trim().toLowerCase();
-  const kindAliases = { word: "docx", excel: "xlsx", ppt: "pptx", powerpoint: "pptx" };
-  const supportedKinds = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
-  let kind;
-  let kindDefaultApplied = false;
-  if (rawKind === "") {
-    kind = "html";
-    kindDefaultApplied = true;
-  } else if (supportedKinds.has(rawKind)) {
-    kind = rawKind;
-  } else if (kindAliases[rawKind]) {
-    kind = kindAliases[rawKind];
-  } else {
-    return { ok: false, reason: `unsupported_kind:${rawKind}` };
-  }
-
-  const titleSource = String(
-    task?.user_command ?? taskSpec?.user_goal_text ?? "Document"
-  ).trim().slice(0, 80) || "Document";
-
-  const outline = kind === "xlsx"
-    ? spreadsheetOutlineFromText(finalText, { title: titleSource })
-    : kind === "pptx"
-      ? { title: titleSource, slides: [{ heading: titleSource, body: finalText }] }
-      : { title: titleSource, sections: [{ heading: titleSource, body: finalText }] };
-  if (kind === "xlsx" && !outline) {
-    return { ok: false, reason: "spreadsheet_outline_required" };
-  }
-  const args = { kind, outline };
 
   if (typeof onBeforeToolCall === "function") {
     await onBeforeToolCall({
-      tool: "generate_document",
-      args,
-      kind,
-      rawKind,
-      kindDefaultApplied
+      tool: plan.toolId,
+      args: plan.args,
+      kind: plan.kind,
+      rawKind: plan.rawKind,
+      kindDefaultApplied: plan.kindDefaultApplied
     });
   }
 
@@ -1151,9 +1257,9 @@ export async function attemptArtifactRecovery({
 
   try {
     const recovered = typeof registry.call === "function"
-      ? await registry.call("generate_document", args, ctx)
-      : await registry.list().find((tool) => tool?.id === "generate_document")
-          ?.execute?.(args, ctx);
+      ? await registry.call(plan.toolId, plan.args, ctx)
+      : await registry.list().find((tool) => tool?.id === plan.toolId)
+          ?.execute?.(plan.args, ctx);
     if (!recovered) {
       return { ok: false, reason: "recovery_failed:no_result" };
     }
@@ -1163,7 +1269,14 @@ export async function attemptArtifactRecovery({
         reason: `recovery_failed:${recovered.observation ?? "unknown_error"}`
       };
     }
-    return { ok: true, recovered, kind, kindDefaultApplied, rawKind };
+    return {
+      ok: true,
+      recovered,
+      toolId: plan.toolId,
+      kind: plan.kind,
+      kindDefaultApplied: plan.kindDefaultApplied,
+      rawKind: plan.rawKind
+    };
   } catch (error) {
     if (error?.code === "ABORT_ERR") throw error;
     return {
@@ -1269,7 +1382,7 @@ async function runDeterministicArtifactObligation({
   });
   transcript.push({
     type: "tool_result",
-    tool: "generate_document",
+    tool: recovery.toolId,
     success: true,
     observation: recovery.recovered.observation,
     metadata: recovery.recovered.metadata,
@@ -1279,10 +1392,10 @@ async function runDeterministicArtifactObligation({
   });
 
   runtime?.emitTaskEvent?.("tool_call_completed", {
-    tool_id: "generate_document",
+    tool_id: recovery.toolId,
     success: true,
     observation: String(recovery.recovered.observation ?? "").slice(0, 500),
-    ...artifactEventFieldsForToolResult("generate_document", recovery.recovered)
+    ...artifactEventFieldsForToolResult(recovery.toolId, recovery.recovered)
   });
   runtime?.emitTaskEvent?.("artifact_recovery_succeeded", recoveryEventPayload);
   for (const artifactPath of recoveredArtifactPaths) {
@@ -1315,7 +1428,7 @@ export async function finaliseWithArtifactContract(result, { runtime, task, sign
   if (violations.length === 0) return result;
 
   // B2-a (b) deterministic recovery: try ONCE to materialise the LLM's
-  // final_text into an artifact via generate_document before the outer
+  // final_text into an artifact via the kind-appropriate producer before the outer
   // submission boundary can turn the run into a hard missing_artifact
   // failure. This must run for success AND partial_success: phase/error
   // gates often downgrade the run before the artifact contract is checked,
@@ -1339,7 +1452,7 @@ export async function finaliseWithArtifactContract(result, { runtime, task, sign
       ...transcript,
       {
         type: "tool_result",
-        tool: "generate_document",
+        tool: recovery.toolId,
         success: true,
         observation: recovery.recovered.observation,
         metadata: recovery.recovered.metadata,
@@ -2307,6 +2420,22 @@ async function _runToolAgentLoopCore({
         tool: tool.id,
         error: validation.error
       });
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: tool.id,
+        reason: "tool_validation_failed",
+        error: validation.error
+      });
+      const recoveryGuidance = buildValidationRecoveryGuidance({
+        toolId: tool.id,
+        error: validation.error,
+        task,
+        iteration
+      });
+      if (recoveryGuidance) {
+        transcript.push(recoveryGuidance.transcriptEntry);
+        runtime.emitTaskEvent?.("contract_guidance", recoveryGuidance.eventPayload);
+        appendAuditLog(runtime, task, "tool_loop.contract_guidance", recoveryGuidance.eventPayload);
+      }
       // For LLM planner, continue the loop so the model can fix its arguments.
       // For keyword planner, give up — it can't self-correct.
       if (resolvedPlanner === defaultPlanner) {

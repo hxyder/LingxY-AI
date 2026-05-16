@@ -58,7 +58,10 @@ import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { appendAuditLog } from "../../security/audit-log.mjs";
 import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
 import { cacheableSystemMessage } from "../shared/prompt-cache.mjs";
-import { summarizeSkillContext } from "../shared/skill-context.mjs";
+import {
+  shouldLoadSkillContextForTask,
+  summarizeSkillContext
+} from "../shared/skill-context.mjs";
 import {
   selectSuccessContractValidationSpec,
   validateStepGate
@@ -79,7 +82,7 @@ import {
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
 import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
-import { spreadsheetOutlineFromText } from "../../core/spreadsheet-outline.mjs";
+import { buildDeterministicArtifactPlan } from "../shared/deterministic-artifact-plan.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -109,48 +112,19 @@ function buildAgenticArtifactContractGuidance({ taskSpec, violation } = {}) {
   const kind = artifactKindFromTaskSpec(taskSpec);
   return [
     "The task contract is not satisfied yet. Do not finalize with prose only.",
-    `A real file artifact is required (${kind}). Call an artifact-producing tool now, such as generate_document with kind="${kind}" and a structured outline, or another visible artifact tool if it better fits the request.`,
+    `A real file artifact is required (${kind}). Call an artifact-producing tool now: generate_document for document/html artifacts, or write_file for md/txt/csv/json artifacts.`,
     violation?.message ? `Current violation: ${violation.message}` : null
   ].filter(Boolean).join("\n");
 }
 
 function deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText } = {}) {
-  const rawKind = String(artifactKindFromTaskSpec(taskSpec) ?? "").trim().toLowerCase();
-  const kindAliases = { word: "docx", excel: "xlsx", ppt: "pptx", powerpoint: "pptx" };
-  const kind = kindAliases[rawKind] ?? rawKind ?? "docx";
-  const supported = new Set(["docx", "pdf", "xlsx", "pptx", "html"]);
-  if (!supported.has(kind)) return null;
-  const title = String(task?.title ?? task?.user_command ?? "Generated Document").trim().slice(0, 80) || "Generated Document";
-  const body = String(finalText ?? "").trim();
-  if (!body) return null;
-  if (kind === "xlsx") {
-    const outline = spreadsheetOutlineFromText(body, { title });
-    if (!outline) return null;
-    return {
-      kind,
-      outline
-    };
-  }
-  if (kind === "pptx") {
-    return {
-      kind,
-      outline: {
-        title,
-        slides: [
-          { heading: title, body }
-        ]
-      }
-    };
-  }
-  return {
-    kind,
-    outline: {
-      title,
-      sections: [
-        { heading: title, body }
-      ]
-    }
-  };
+  const plan = buildDeterministicArtifactPlan({
+    task,
+    taskSpec,
+    finalText,
+    defaultKind: "docx"
+  });
+  return plan.ok ? plan : null;
 }
 
 async function runDeterministicAgenticArtifactObligation({
@@ -167,17 +141,17 @@ async function runDeterministicAgenticArtifactObligation({
     throw Object.assign(new Error("Agentic artifact obligation aborted before execution."), { code: "ABORT_ERR" });
   }
   const registry = runtime?.actionToolRegistry;
-  if (!registry?.get?.("generate_document")) return { ok: false, reason: "no_generate_document" };
-  const args = deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText });
-  if (!args) return { ok: false, reason: "unsupported_or_empty_artifact" };
+  const plan = deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText });
+  if (!plan) return { ok: false, reason: "unsupported_or_empty_artifact" };
+  if (!registry?.get?.(plan.toolId)) return { ok: false, reason: `no_${plan.toolId}` };
   const call = {
-    id: `deterministic_generate_document_${iteration}`,
-    name: "generate_document",
-    arguments: args
+    id: `deterministic_${plan.toolId}_${iteration}`,
+    name: plan.toolId,
+    arguments: plan.args
   };
   const proposedPayload = {
-    tool_id: "generate_document",
-    args,
+    tool_id: plan.toolId,
+    args: plan.args,
     risk: { level: "low", requires_confirmation: false },
     source: "agentic_deterministic_artifact_obligation",
     iteration
@@ -189,8 +163,8 @@ async function runDeterministicAgenticArtifactObligation({
   onEvent?.({
     event_type: "tool_call_started",
     payload: {
-      tool_id: "generate_document",
-      arguments: args,
+      tool_id: plan.toolId,
+      arguments: plan.args,
       source: "agentic_deterministic_artifact_obligation"
     }
   });
@@ -218,7 +192,7 @@ async function runDeterministicAgenticArtifactObligation({
   const transcriptEntry = {
     role: "tool",
     tool_call_id: call.id,
-    name: "generate_document",
+    name: plan.toolId,
     success: result.success,
     observation: result.observation ?? "",
     metadata: result.metadata ?? {},
@@ -229,18 +203,18 @@ async function runDeterministicAgenticArtifactObligation({
   onEvent?.({
     event_type: "tool_call_completed",
     payload: {
-      tool_id: "generate_document",
+      tool_id: plan.toolId,
       success: result.success,
       observation: (result.observation ?? "").slice(0, 500),
       metadata: result.metadata ?? {},
       sources: normalizeSources(transcriptEntry),
-      ...artifactEventFieldsForToolResult("generate_document", result)
+      ...artifactEventFieldsForToolResult(plan.toolId, result)
     }
   });
   if (!result.success) {
-    return { ok: false, reason: result.error ?? result.observation ?? "generate_document_failed" };
+    return { ok: false, reason: result.error ?? result.observation ?? `${plan.toolId}_failed` };
   }
-  const artifactFields = artifactEventFieldsForToolResult("generate_document", {
+  const artifactFields = artifactEventFieldsForToolResult(plan.toolId, {
     ...result,
     artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
   });
@@ -323,9 +297,10 @@ export async function runAgenticPlanner({
   const mcpToolById = new Map(mcpTools.map((t) => [t.id, t]));
   const effectiveTools = filterToolsForAgenticTask([...builtinTools, ...mcpTools], task);
 
-  const effectiveSkills = await runtime?.platform?.skillRegistries?.listSkills?.({
-    runtime
-  }) ?? [];
+  let effectiveSkills = [];
+  if (shouldLoadSkillContextForTask(task)) {
+    effectiveSkills = await runtime?.platform?.skillRegistries?.listSkills?.({ runtime }) ?? [];
+  }
   const effectiveSkillContext = summarizeSkillContext(effectiveSkills, { task, limit: 20 });
   if (effectiveSkillContext.active_count > 0 || effectiveSkillContext.workflow_hints.length > 0) {
     onEvent?.({
@@ -692,12 +667,14 @@ export async function runAgenticPlanner({
         maxIterations
       });
       const artifactViolation = artifactContractViolation(finalStepGate);
+      const deterministicArtifactPlan = text && text.trim()
+        ? deterministicArtifactArgsFromFinalText({ task, taskSpec: validationSpec, finalText: text })
+        : null;
       if (
         artifactViolation
         && hasOnlyArtifactContractViolations(finalStepGate)
-        && text
-        && text.trim()
-        && effectiveTools.some((tool) => tool?.id === "generate_document")
+        && deterministicArtifactPlan
+        && effectiveTools.some((tool) => tool?.id === deterministicArtifactPlan.toolId)
       ) {
         const forcedArtifact = await runDeterministicAgenticArtifactObligation({
           runtime,
@@ -742,8 +719,11 @@ export async function runAgenticPlanner({
           role: "user",
           content: `[Artifact contract]\n${guidance}`
         });
-        if (effectiveTools.some((tool) => tool?.id === "generate_document")) {
-          forcedNextToolChoice = { type: "tool", name: "generate_document" };
+        const guidancePlan = text && text.trim()
+          ? deterministicArtifactArgsFromFinalText({ task, taskSpec: validationSpec, finalText: text })
+          : null;
+        if (guidancePlan && effectiveTools.some((tool) => tool?.id === guidancePlan.toolId)) {
+          forcedNextToolChoice = { type: "tool", name: guidancePlan.toolId };
         }
         onEvent?.({
           event_type: "phase_gate_signal",

@@ -201,7 +201,9 @@ function buildCorpus() {
         "account_send_email",
         "send_email_smtp",
         "google.gmail.draft_confirm_send",
-        "microsoft.outlook.draft_confirm_send"
+        "google.gmail.send_email",
+        "microsoft.outlook.draft_confirm_send",
+        "microsoft.outlook.send_email"
       ],
       behavior: "real email write requires approval auto-driver and original task terminal-state verification"
     }, { ...cleanExtra, liveWrite }));

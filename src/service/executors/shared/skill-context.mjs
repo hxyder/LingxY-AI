@@ -26,11 +26,25 @@ export function renderSkillForPrompt(skill = {}) {
 }
 
 function artifactKindFromTask(task = {}) {
-  return String(
+  const structuredKind = String(
     task?.task_spec?.artifact?.kind
     ?? task?.task_spec?.contract?.output_contract?.kind
     ?? ""
   ).trim().toLowerCase();
+  if (structuredKind) return structuredKind;
+  const paths = [
+    ...(Array.isArray(task?.context_packet?.file_paths) ? task.context_packet.file_paths : []),
+    ...(Array.isArray(task?.context_packet?.image_paths) ? task.context_packet.image_paths : [])
+  ];
+  for (const filePath of paths) {
+    const normalized = String(filePath ?? "").toLowerCase();
+    if (normalized.endsWith(".xlsx") || normalized.endsWith(".csv")) return "xlsx";
+    if (normalized.endsWith(".docx")) return "docx";
+    if (normalized.endsWith(".pptx")) return "pptx";
+    if (normalized.endsWith(".pdf")) return "pdf";
+    if (normalized.endsWith(".html") || normalized.endsWith(".htm")) return "html";
+  }
+  return "";
 }
 
 const SKILL_KIND_KEYWORDS = Object.freeze({
@@ -87,6 +101,10 @@ export function workflowHintsForTask(task = {}) {
     hints.push("pdf: structured sections/components with real rendered output");
   }
   return hints;
+}
+
+export function shouldLoadSkillContextForTask(task = {}) {
+  return taskSkillKinds(task).size > 0 || workflowHintsForTask(task).length > 0;
 }
 
 export function summarizeSkillContext(skills = [], { task = null, limit = 20 } = {}) {

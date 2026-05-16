@@ -12,6 +12,7 @@ const requiredPaths = [
   "docs/architecture/agent-runtime-spine.md",
   "docs/architecture/electron-js-runtime-performance-plan.md",
   "docs/architecture/post-runtime-upgrade-roadmap.md",
+  "docs/architecture/global-execution-efficiency-and-cleanup-plan.md",
   "docs/architecture/code-ownership-map.md",
   "docs/architecture/ipc-contract-inventory.md",
   "docs/architecture/http-route-ownership-inventory.md",

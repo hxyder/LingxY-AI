@@ -165,7 +165,9 @@ import {
 } from "./console-task-event-stream.mjs";
 import {
   groupSchedules,
-  renderScheduleRow
+  renderScheduleRow,
+  scheduleRecipients,
+  uniqueScheduleEmails
 } from "./console-schedules-view.mjs";
 import {
   exportAsHtml,
@@ -1107,6 +1109,7 @@ let consoleChatProgressCard = null;
 let consoleChatProgressLines = [];
 let consoleChatStreamingAnswer = null;
 let consoleChatProgressEventIds = new Set();
+let consoleChatLiveProgressLastAt = new Map();
 let consoleChatEvidenceByTaskId = new Map();
 let consoleChatSuppressedTextByTaskId = new Map();
 // G: console chat resume state. The chat composer threads this
@@ -1118,6 +1121,26 @@ let consoleChatArtifactItems = { artifacts: [], user_files: [] };
 const consoleConversationUsageById = new Map();
 let consoleConversationLoadSeq = 0;
 let chatSidebarLoadingConversationId = null;
+
+const CONSOLE_CHAT_PROGRESS_EVENT_TYPES = new Set([
+  "accepted",
+  "started",
+  "status_changed",
+  "step_started",
+  "step_finished",
+  "log",
+  "phase_timing",
+  "file_expand_started",
+  "file_expand_finished",
+  "file_ingest_started",
+  "file_ingest_progress",
+  "file_ingest_finished",
+  "file_read_started",
+  "file_read_progress",
+  "file_read_finished",
+  "cancel_requested",
+  "answer_quality_blocked"
+]);
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
 const surfacedApprovalPopupIds = new Set();
@@ -2614,7 +2637,9 @@ function appendConsoleChatProgress(frame, textOverride = "") {
   if (!consoleChatProgressCard) {
     const card = document.createElement("details");
     card.className = "chat-progress-card";
-    card.open = false;
+    // Keep the running card open so Console shows task movement before
+    // final synthesis; closeConsoleChatProgressCard folds it after terminal.
+    card.open = true;
     card.innerHTML = `
       <summary class="cpg-summary">
         <span class="cpg-icon" aria-hidden="true"></span>
@@ -2639,6 +2664,25 @@ function appendConsoleChatProgress(frame, textOverride = "") {
   consoleChatPin.maybeScrollToBottom();
 }
 
+function appendConsoleChatLiveProgress(taskId, key, text, minIntervalMs = 1600) {
+  if (!taskId || !text) return;
+  const cacheKey = `${taskId}:${key}`;
+  const now = Date.now();
+  const lastAt = consoleChatLiveProgressLastAt.get(cacheKey) ?? 0;
+  if (lastAt && now - lastAt < minIntervalMs) return;
+  consoleChatLiveProgressLastAt.set(cacheKey, now);
+  appendConsoleChatProgress({
+    event: "status_changed",
+    data: { task_id: taskId, source: key }
+  }, text);
+}
+
+function shouldAppendConsoleChatProgressFrame(frame) {
+  const eventType = frame?.event ?? "";
+  if (!eventType) return false;
+  return CONSOLE_CHAT_PROGRESS_EVENT_TYPES.has(eventType);
+}
+
 function placeConsoleChatProgressCardAtBottom() {
   if (!consoleChatMessages || !consoleChatProgressCard) return;
   if (consoleChatProgressCard.parentElement === consoleChatMessages) {
@@ -2661,7 +2705,13 @@ function clearConsoleChatTerminalBuffers(taskId) {
   if (!taskId) return;
   consoleChatSuppressedTextByTaskId.delete(taskId);
   pendingConsoleChatTextDeltas.delete(taskId);
+  for (const key of [...consoleChatLiveProgressLastAt.keys()]) {
+    if (key.startsWith(`${taskId}:`)) consoleChatLiveProgressLastAt.delete(key);
+  }
   if (consoleChatStreamingAnswer?.taskId === taskId) {
+    if (!String(consoleChatStreamingAnswer.text ?? "").trim()) {
+      consoleChatStreamingAnswer.wrapper?.remove?.();
+    }
     consoleChatStreamingAnswer = null;
   }
 }
@@ -2813,7 +2863,6 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
     consoleChatToolCards = new Map();
     consoleChatStreamingAnswer = null;
     consoleChatProgressEventIds = new Set();
-    closeConsoleChatProgressCard();
     consoleChatSuppressedTextByTaskId.delete(taskId);
     pendingConsoleChatTextDeltas.delete(taskId);
     consoleChatEvidenceByTaskId.delete(taskId);
@@ -2844,6 +2893,7 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
       }
       if (frame.event === "reasoning_delta") {
         queueConsoleChatThinkingDelta(payload.delta ?? "");
+        appendConsoleChatLiveProgress(taskId, "reasoning_delta", "模型正在规划下一步…");
       } else if (frame.event === "pending_approval_created") {
         void surfaceApprovalPopup(payload, { taskId });
         appendConsoleChatProgress(frame);
@@ -2866,6 +2916,7 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
         const toolName = payload.tool_id ?? "";
         if (window.livePreview?.isFileGenTool?.(toolName)) {
           window.livePreview.appendDelta({ toolName, partialJson: payload.partial_json ?? "" });
+          appendConsoleChatLiveProgress(taskId, `tool_input_delta:${toolName}`, `${formatConsoleToolDisplayName(toolName)} 正在生成内容…`);
         }
       } else if (frame.event === "tool_call_completed") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
@@ -2928,15 +2979,18 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
         "file_ingest_finished"
       ].includes(frame.event)) {
         appendConsoleChatProgress(frame);
+        if (["task_created", "accepted", "started"].includes(frame.event)) {
+          ensureConsoleChatAnswerPlaceholder(taskId, "正在执行，结果会实时更新…");
+        }
       } else if (frame.event === "inline_result") {
         flushConsoleChatTextDeltas(taskId);
         closeConsoleChatThinkingCard();
         closeConsoleChatProgressCard({ terminalText: "生成最终回复" });
-        clearConsoleChatTerminalBuffers(taskId);
         appendConsoleChatFinalText(taskId, payload.text ?? payload.message ?? "", {
           evidence: payload.evidence_summary ?? null
         });
         void appendConsoleChatContentEvidenceFromTask(taskId);
+        clearConsoleChatTerminalBuffers(taskId);
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
@@ -2968,6 +3022,8 @@ function subscribeConsoleChatTask(taskId, { conversationId = currentConsoleConve
         markConsoleChatTaskTerminal(taskId);
       } else if (frame.event === "evidence_summary") {
         appendConsoleChatEvidenceSources(taskId, payload);
+      } else if (shouldAppendConsoleChatProgressFrame(frame)) {
+        appendConsoleChatProgress(frame);
       }
     },
     onError(error) {
@@ -3511,7 +3567,10 @@ async function submitConsoleChat() {
   appendConsoleChatUserMessage(text, clientMessageId, { filePaths: attachedFilePaths });
   consoleChatInput.value = "";
   consoleChatState.textContent = "Submitting...";
-  appendConsoleChatMessage("system", "已收到请求，正在创建任务…");
+  appendConsoleChatProgress({
+    event: "submission_received",
+    data: { stage: "client_submit" }
+  }, "已收到请求，正在创建任务…");
   try {
     const result = await consoleSubmissionClient.submitTask({
       sourceApp: "uca.console.chat",
@@ -3539,7 +3598,10 @@ async function submitConsoleChat() {
       consoleChatResultTaskIds.delete(taskId);
       rememberConsoleChatTaskOwner(taskId, taskConversationId);
       subscribeConsoleChatTask(taskId, { conversationId: taskConversationId });
-      appendConsoleChatMessage("system", "任务已创建，正在执行…");
+      appendConsoleChatProgress({
+        event: "task_created",
+        data: { executor: result.task?.executor ?? "" }
+      }, "任务已创建，正在执行…");
     }
     // Phase 2: surface the new conversation in the sidebar
     // immediately. ensureConversationsCache() refetches from backend
@@ -7538,7 +7600,7 @@ function renderApprovals() {
           const key = input.dataset.fieldKey;
           let value = input.value;
           if (input.dataset.fieldKind === "list") {
-            value = value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+            value = splitEmailFieldValue(value);
           }
           overrides[key] = value;
         }
@@ -7640,6 +7702,16 @@ function deriveEditableApprovalFields(approval) {
   addField("description", "描述", "textarea", payload.description);
 
   return fields;
+}
+
+function splitEmailFieldValue(value) {
+  const text = String(value ?? "").trim();
+  if (!text) return [];
+  const matches = text.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g);
+  if (matches && matches.length > 0) {
+    return [...new Set(matches.map((item) => item.trim()).filter(Boolean))];
+  }
+  return text.split(/[,;\s]+/).map((item) => item.trim()).filter(Boolean);
 }
 
 // UCA-046: schedule view mode — "list" (default) / "week" / "month"
@@ -7774,6 +7846,25 @@ function focusScheduleInList(scheduleId) {
   });
 }
 
+function scheduleHasEditableEmailRecipients(schedule = {}) {
+  if (!schedule) return false;
+  if (scheduleRecipients(schedule).length > 0) return true;
+  const groups = schedule.metadata?.side_effect_contract?.groups ?? schedule.action_params?.side_effect_contract?.groups ?? {};
+  if (groups?.email_send) return true;
+  return /(?:邮件|邮箱|email|mail|send).{0,80}@/i.test([
+    schedule.name,
+    schedule.description,
+    schedule.action_target,
+    schedule.action_params?.userCommand,
+    schedule.action_params?.contextText,
+    schedule.action_params?.command
+  ].filter(Boolean).join("\n"));
+}
+
+function normalizeScheduleRecipientEditValue(value = "") {
+  return uniqueScheduleEmails(String(value ?? "").split(/[,;，；\s]+/));
+}
+
 // In-place schedule edit — supports renaming AND rewriting the
 // trigger time. Pops a small popover anchored to the row with two
 // inputs (name + when). Save sends both fields; backend honours
@@ -7793,6 +7884,8 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
     ?? currentSchedule?.action_params?.command
     ?? currentSchedule?.description
     ?? "").trim();
+  const currentRecipients = scheduleRecipients(currentSchedule);
+  const canEditRecipients = scheduleHasEditableEmailRecipients(currentSchedule);
   // The "Next: …" text is the human-friendly form; we don't fill the
   // input with it (date strings aren't natural-language enough). Leave
   // the trigger input blank and use placeholder for guidance.
@@ -7813,6 +7906,12 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
         ${currentSchedule?.action_type === "task" ? `
           <textarea class="sched-row-edit-command" rows="3" placeholder="执行内容">${escapeHtml(currentCommand)}</textarea>
         ` : ""}
+        ${canEditRecipients ? `
+          <label class="sched-row-edit-field">
+            <span>收件人</span>
+            <input type="text" class="sched-row-edit-recipients" value="${escapeHtml(currentRecipients.join(", "))}" placeholder="name@example.com, another@example.com"/>
+          </label>
+        ` : ""}
         <div class="sched-row-edit-trigger-picker">${buildSchedulePickerHtml({ prefix: `schedEdit_${scheduleId}` })}</div>
         <div style="display:flex;gap:6px;">
           <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
@@ -7825,6 +7924,7 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   }
   const nameInput = titleEl.querySelector(".sched-row-edit-input");
   const commandInput = metaEl?.querySelector(".sched-row-edit-command");
+  const recipientsInput = metaEl?.querySelector(".sched-row-edit-recipients");
   const pickerRoot = metaEl?.querySelector("[data-sched-picker]");
   const saveBtn = metaEl?.querySelector(".sched-row-edit-save");
   const cancelBtn = metaEl?.querySelector(".sched-row-edit-cancel");
@@ -7848,12 +7948,17 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   saveBtn?.addEventListener("click", async () => {
     const newName = nameInput?.value?.trim() ?? "";
     const newCommand = commandInput?.value?.trim() ?? "";
+    const newRecipients = recipientsInput ? normalizeScheduleRecipientEditValue(recipientsInput.value) : currentRecipients;
     const pickerTrigger = readSchedulePicker(pickerRoot);
     if (!newName) { showConsoleToast("名称不能为空", { kind: "err" }); return; }
     if (commandInput && !newCommand) { showConsoleToast("执行内容不能为空", { kind: "err" }); return; }
+    if (recipientsInput && newRecipients.length === 0) { showConsoleToast("收件人不能为空", { kind: "err" }); return; }
     const patch = {};
     if (newName !== currentName) patch.name = newName;
     if (commandInput && newCommand !== currentCommand) patch.userCommand = newCommand;
+    if (recipientsInput && newRecipients.join("\n").toLowerCase() !== currentRecipients.join("\n").toLowerCase()) {
+      patch.emailRecipients = newRecipients;
+    }
     if (pickerTrigger) patch.trigger = pickerTrigger;
     if (Object.keys(patch).length === 0) {
       // Nothing actually changed; just close the editor.
@@ -7867,6 +7972,7 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
       const labels = [];
       if (patch.name) labels.push("名称");
       if (patch.userCommand) labels.push("执行内容");
+      if (patch.emailRecipients) labels.push("收件人");
       if (patch.trigger) labels.push("触发时间");
       showConsoleToast(`已更新${labels.join(" + ")}`, { kind: "ok" });
       // Tear down the inline edit BEFORE refreshWorkspace runs.
@@ -7949,9 +8055,9 @@ function renderSchedules() {
   const { filtered, groups } = groupSchedules(schedules, scheduleSearch);
 
   const groupSpec = [
-    { key: "active",    label: "Active",    zh: "启用中" },
-    { key: "paused",    label: "Paused",    zh: "已暂停" },
-    { key: "completed", label: "Completed", zh: "已完成" }
+    { key: "active",    label: "启用中", zh: "" },
+    { key: "paused",    label: "已暂停", zh: "" },
+    { key: "completed", label: "已完成", zh: "" }
   ];
 
   const showingEmpty = filtered.length === 0;
@@ -7967,7 +8073,7 @@ function renderSchedules() {
           <div class="sched-group" data-sched-group="${g.key}" data-collapsed="${collapsed ? "true" : "false"}">
             <div class="sched-group-head" data-sched-group-toggle="${g.key}" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}">
               <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-              <span>${g.label}<span class="zh">${g.zh}</span></span>
+              <span>${g.label}${g.zh ? `<span class="zh">${g.zh}</span>` : ""}</span>
               <span class="count">· ${groups[g.key].length}</span>
             </div>
             <div class="sched-group-body">${rows}</div>

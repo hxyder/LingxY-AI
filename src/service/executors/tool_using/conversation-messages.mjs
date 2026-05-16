@@ -76,7 +76,13 @@ export function buildConversationMessages(prefixMessages, transcript, initialFil
       messages.push({
         role: "user",
         content: entry.retryHint
-          ?? "你上面说要执行操作，但没有发出 tool_call。如果确实需要操作，请直接调用工具；如果只是回答/解释而不需要操作，请重新输出最终答复（纯文本）。"
+          ?? [
+            "[Internal planning retry: missing tool call]",
+            "The previous assistant draft was not shown to the user.",
+            "If the original request requires an action, emit the required tool_call now.",
+            "If no tool is required, answer the original user request directly.",
+            "Do not mention this retry, tool-call policy, plain-text/final-answer instructions, or the previous draft."
+          ].join("\n")
       });
     } else if (entry.type === "runbook_guidance") {
       messages.push({

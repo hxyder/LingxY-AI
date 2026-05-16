@@ -44,7 +44,9 @@ function buildHistoryRecord(task, runtime) {
 
   if (task.result_summary) parts.push(task.result_summary);
 
-  let answerText = "";
+  let answerText = typeof task.result_summary === "string"
+    ? task.result_summary.slice(0, HISTORY_ANSWER_CAP)
+    : "";
   let artifactPaths = [];
   if (runtime?.store?.getArtifactsForTask) {
     try {
@@ -56,13 +58,15 @@ function buildHistoryRecord(task, runtime) {
       artifactPaths = [];
     }
   }
-  if (runtime?.store?.getTaskEvents) {
+  if ((!answerText || artifactPaths.length === 0) && runtime?.store?.getTaskEvents) {
     try {
       const events = runtime.store.getTaskEvents(task.task_id) ?? [];
-      const finalEvent = [...events].reverse().find((event) =>
-        event.event_type === "success" || event.event_type === "inline_result"
-      );
-      answerText = String(finalEvent?.payload?.text ?? "").slice(0, HISTORY_ANSWER_CAP);
+      if (!answerText) {
+        const finalEvent = [...events].reverse().find((event) =>
+          event.event_type === "success" || event.event_type === "inline_result"
+        );
+        answerText = String(finalEvent?.payload?.text ?? "").slice(0, HISTORY_ANSWER_CAP);
+      }
       if (artifactPaths.length === 0) {
         artifactPaths = events
           .filter((event) => event.event_type === "artifact_created")

@@ -29,6 +29,37 @@ function makeEmailTool({ calls }) {
   };
 }
 
+function makeWebSearchTool({ calls }) {
+  return {
+    id: "web_search_fetch",
+    name: "Web Search Fetch",
+    description: "Behavior-test fixture for evidence recovery flows.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: { type: "string" }
+      }
+    },
+    async execute(args) {
+      calls.push(args);
+      return {
+        success: true,
+        observation: "Search result: market source says major indexes moved higher.",
+        metadata: {
+          results: [{
+            title: "Market source",
+            url: "https://markets.example.com/us",
+            snippet: "Major indexes moved higher and market breadth improved."
+          }]
+        }
+      };
+    }
+  };
+}
+
 function makeTask(overrides = {}) {
   return {
     task_id: "task_agent_loop_side_effect_gate",
@@ -55,10 +86,14 @@ function makeTask(overrides = {}) {
 
 function makeRuntime(overrides = {}) {
   const calls = [];
+  const webCalls = [];
   const events = [];
   const auditLog = [];
   const runtime = {
-    actionToolRegistry: createActionToolRegistry([makeEmailTool({ calls })]),
+    actionToolRegistry: createActionToolRegistry([
+      makeEmailTool({ calls }),
+      makeWebSearchTool({ calls: webCalls })
+    ]),
     toolContext: {},
     toolOutputDir: null,
     securityBroker: {
@@ -83,7 +118,7 @@ function makeRuntime(overrides = {}) {
     },
     ...overrides
   };
-  return { runtime, calls, events, auditLog };
+  return { runtime, calls, webCalls, events, auditLog };
 }
 
 test("side-effect gate applies contract slots before tool schema validation", async () => {
@@ -163,5 +198,94 @@ test("side-effect gate blocks a repeated successful side-effect even with change
     event.eventType === "synthesis_retry"
     && event.payload?.reason === "redundant_side_effect_call"
     && event.payload?.tool_id === "account_send_email"
+  ));
+});
+
+test("email validation guardrail injects recoverable evidence guidance before retrying send", async () => {
+  const { runtime, calls, webCalls, events } = makeRuntime();
+  const task = makeTask({
+    task_id: "task_agent_loop_email_recovery_guidance",
+    user_command: "查找美股市场信息并发给 reviewer@example.com",
+    task_spec: {
+      goal: "execute",
+      synthesis: { expected_output: "summary", user_goal: "send market digest" },
+      research_quality: {
+        profile: "multi_source_research",
+        min_sources: 1,
+        min_distinct_domains: 1,
+        single_source_digest_satisfies: true
+      },
+      tool_policy: {
+        policy_groups: {
+          external_web_read: { mode: "required" },
+          email_send: { mode: "required" }
+        },
+        web_search_fetch: { mode: "required" }
+      },
+      success_contract: {
+        required_policy_groups: ["external_web_read", "email_send"],
+        required_tool_names: []
+      },
+      execution_constraints: {
+        error_budget: { max_tool_failures: 5 }
+      }
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration, transcript }) => {
+      if (iteration === 0) {
+        return {
+          type: "tool_call",
+          tool: "account_send_email",
+          args: {
+            to: ["reviewer@example.com"],
+            body: "This market digest is long enough to pass body length checks, but it has no evidence yet."
+          }
+        };
+      }
+      if (iteration === 1) {
+        assert.ok(transcript.some((entry) =>
+          entry.type === "contract_guidance"
+          && entry.source === "tool_validation"
+          && entry.groups?.includes("external_web_read")
+        ));
+        return {
+          type: "tool_call",
+          tool: "web_search_fetch",
+          args: { query: "US stock market major indexes today" }
+        };
+      }
+      return {
+        type: "tool_call",
+        tool: "account_send_email",
+        args: {
+          to: ["reviewer@example.com"],
+          body: [
+            "Market digest",
+            "",
+            "Major indexes moved higher according to the gathered market source.",
+            "Source: Market source — https://markets.example.com/us",
+            "This synthesized digest is based on evidence gathered during this run."
+          ].join("\n")
+        }
+      };
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(webCalls.length, 1);
+  assert.equal(calls.length, 1);
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_guidance"
+    && event.payload?.source === "tool_validation"
+    && event.payload?.required_policy_groups?.includes("external_web_read")
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "tool_call_denied"
+    && event.payload?.reason === "tool_validation_failed"
   ));
 });

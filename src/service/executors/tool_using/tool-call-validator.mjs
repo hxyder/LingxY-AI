@@ -5,6 +5,11 @@ import {
 } from "../../core/artifact-quality.mjs";
 import { SYNTHESIS_REQUIRED_OUTPUTS } from "../../core/intent/semantic-router.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import {
+  selectSuccessContractValidationSpec,
+  validateSuccessContract
+} from "../../core/policy/success-contract-validator.mjs";
+import { ACTION_OBLIGATION_GROUPS } from "../../core/policy/obligation-evaluator.mjs";
 import { isSafeSvgMarkup } from "../../capabilities/tools/svg-sanitize.mjs";
 
 function isString(value) {
@@ -66,6 +71,8 @@ const NON_USER_CONTENT_TOOL_IDS = new Set([
   "account_list_connected_accounts",
   "connector_catalog_search"
 ]);
+const ACTION_OBLIGATION_GROUP_SET = new Set(ACTION_OBLIGATION_GROUPS);
+const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty|waiting_confirmation)$/;
 
 function normalizeText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim().toLowerCase();
@@ -119,6 +126,22 @@ function validateEmailSendContentArgs(args = {}, ctx = {}) {
       : "";
   if (!body) {
     return { ok: false, error: "email_body_requires_synthesized_content" };
+  }
+
+  const gate = validateSuccessContract(
+    selectSuccessContractValidationSpec(ctx.task),
+    ctx.transcript
+  );
+  const blockingViolations = (gate.violations ?? []).filter((violation) => {
+    const kind = String(violation?.kind ?? "");
+    const match = REQUIRED_POLICY_GROUP_VIOLATION_RE.exec(kind);
+    return !(match && ACTION_OBLIGATION_GROUP_SET.has(match[1]));
+  });
+  if (blockingViolations.length > 0) {
+    return {
+      ok: false,
+      error: `email_send_blocked_until_non_action_contract_satisfied:${blockingViolations.map((v) => v.kind).join(",")}`
+    };
   }
 
   const observations = transcriptObservations(ctx.transcript);

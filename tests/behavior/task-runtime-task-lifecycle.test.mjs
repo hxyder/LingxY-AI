@@ -85,6 +85,43 @@ test("task lifecycle success finalizer writes assistant outcome, history, queue 
   assert.deepEqual(embeddingAdds[0].metadata.artifact_paths, ["E:\\out\\result.docx"]);
 });
 
+test("task lifecycle history indexing uses task summary and artifact rows before event-log fallback", () => {
+  const { runtime, embeddingAdds } = makeRuntime();
+  const { task } = submitTaskWithConversation({
+    route: baseRoute,
+    contextPacket: { source_type: "clipboard", source_app: "uca.overlay", text: "source text" },
+    userCommand: "生成报告",
+    executionMode: "interactive",
+    conversationId: "conv_success_no_event_scan",
+    runtime
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_no_event_scan",
+    task_id: task.task_id,
+    conversation_id: task.conversation_id,
+    path: "E:\\out\\structured.docx",
+    mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    kind: "document",
+    status: "ready"
+  });
+  task.status = "success";
+  task.result_summary = "结构化最终回答";
+  runtime.store.updateTask(task.task_id, task);
+  runtime.queue.markRunning(task.task_id);
+
+  const originalGetTaskEvents = runtime.store.getTaskEvents.bind(runtime.store);
+  runtime.store.getTaskEvents = (taskId) => {
+    if (taskId === task.task_id) throw new Error("event log should not be read");
+    return originalGetTaskEvents(taskId);
+  };
+
+  markTaskSucceeded(runtime, task);
+
+  assert.equal(embeddingAdds.length, 1);
+  assert.equal(embeddingAdds[0].metadata.answer_excerpt, "结构化最终回答");
+  assert.deepEqual(embeddingAdds[0].metadata.artifact_paths, ["E:\\out\\structured.docx"]);
+});
+
 test("task lifecycle failure finalizer emits failed event, system outcome, queue finish, and classified failure", () => {
   const { runtime, clearedRedactions } = makeRuntime();
   const { task } = submitTaskWithConversation({

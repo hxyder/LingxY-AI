@@ -6,7 +6,8 @@
  *   - Search input (#scheduleSearchInput) exists and is wired.
  *   - renderSchedules() partitions schedules into three groups
  *     (active / paused / completed) with collapsible headers.
- *   - Completed rows render a "Re-run" label; paused rows a "paused" pill.
+ *   - Completed rows render a "Re-run" label; paused rows use restrained status text.
+ *   - Email schedules expose recipient slots as editable schedule fields.
  *   - Calendar entries carry data-schedule-ref, expand recurring cron
  *     schedules across the visible range, and click focuses the row.
  *   - shared.css covers .sched-group, .sched-group-head, chev rotation,
@@ -28,6 +29,7 @@ const html = read("src/desktop/renderer/console.html");
 const js = read("src/desktop/renderer/console.js");
 const css = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const schedulesView = read("src/desktop/renderer/console-schedules-view.mjs");
+const scheduleRoutes = read("src/service/core/http-routes/scheduler-template-routes.mjs");
 const scheduleOccurrences = read("src/shared/schedule-occurrences.mjs");
 
 // Search input exists in schedules toolbar.
@@ -55,6 +57,12 @@ for (const key of ["active", "paused", "completed"]) {
 assert.match(schedulesView, /is-completed/, "schedule view missing .is-completed class in row");
 assert.match(schedulesView, /is-paused/, "schedule view missing .is-paused class in row");
 assert.match(schedulesView, /"Re-run"/, "schedule view missing Re-run label for completed schedules");
+assert.match(schedulesView, /sched-status-text/, "paused schedule state must use restrained status text");
+assert.doesNotMatch(schedulesView, /pill-neutral">paused</, "paused schedule state must not render an English pill");
+assert.match(js, /sched-row-edit-recipients/, "schedule edit form must expose editable email recipients");
+assert.match(js, /emailRecipients/, "schedule edit save must submit edited email recipients");
+assert.match(scheduleRoutes, /function applyScheduleEmailRecipients/, "schedule route must update typed email recipient slots");
+assert.match(scheduleRoutes, /side_effect_contract[\s\S]{0,400}email_send/, "schedule route must persist email recipients in side_effect_contract");
 
 // Calendar entries carry ref + click handler.
 assert.match(js, /data-schedule-ref="/, "console.js calendar missing data-schedule-ref");
@@ -74,6 +82,7 @@ assert.match(css, /\.sched-group-head\s*\{/, "shared.css missing .sched-group-he
 assert.match(css, /\.sched-group\[data-collapsed="true"\]/, "shared.css missing collapsed selector");
 assert.match(css, /\.sched-row\.is-completed/, "shared.css missing .sched-row.is-completed");
 assert.match(css, /\.sched-row\.is-paused/, "shared.css missing .sched-row.is-paused");
+assert.match(css, /\.sched-status-text/, "shared.css missing restrained paused status text");
 assert.match(css, /\.sched-row\.is-highlighted/, "shared.css missing .sched-row.is-highlighted");
 assert.match(css, /@keyframes schedHighlight/, "shared.css missing schedHighlight keyframes");
 assert.match(css, /\.cal-entry:hover/, "shared.css must style .cal-entry hover (click affordance)");

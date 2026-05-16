@@ -19,6 +19,27 @@ export function registerShellOpenUrlIpc({
   if (typeof readLinkOpenPreference !== "function") throw new Error("readLinkOpenPreference is required.");
   if (typeof showLinkBrowserWindow !== "function") throw new Error("showLinkBrowserWindow is required.");
 
+  function resolveLinkDialogOwner(sender) {
+    const senderWindow = BrowserWindow.fromWebContents(sender);
+    if (senderWindow && !senderWindow.isDestroyed?.() && senderWindow.isVisible?.()) {
+      try { senderWindow.show?.(); } catch { /* best effort */ }
+      try { senderWindow.focus?.(); } catch { /* best effort */ }
+      return senderWindow;
+    }
+    const focusedWindow = BrowserWindow.getFocusedWindow?.();
+    if (focusedWindow && !focusedWindow.isDestroyed?.() && focusedWindow.isVisible?.()) {
+      return focusedWindow;
+    }
+    return null;
+  }
+
+  function showLinkChoiceDialog(owner, options) {
+    if (owner) {
+      return brandIcons.showBrandedMessageBox(dialog, owner, options);
+    }
+    return brandIcons.showBrandedMessageBox(dialog, options);
+  }
+
   ipcMain.handle(IPC_CHANNELS.shellOpenUrl, async (event, payload = {}) => {
     const url = normalizeOpenableUrl(payload.url);
     if (!url) return { ok: false, error: "invalid_url" };
@@ -35,8 +56,8 @@ export function registerShellOpenUrlIpc({
     // so users who liked the in-app browser can pick it as their default again.
     let mode = explicitMode ?? readLinkOpenPreference();
     if (mode === "ask" && canOpenInLingxy) {
-      const owner = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
-      const choice = await brandIcons.showBrandedMessageBox(dialog, owner ?? undefined, {
+      const owner = resolveLinkDialogOwner(event.sender);
+      const choice = await showLinkChoiceDialog(owner, {
         type: "question",
         title: "Open link",
         message: "用什么方式打开这个链接？",

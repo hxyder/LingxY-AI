@@ -387,7 +387,22 @@ export function createSqliteStore({ dbPath }) {
     ) VALUES (
       @event_id, @task_id, @ts, @event_type, @payload_json
     )`),
-    getEventsForTask: db.prepare("SELECT event_id, task_id, ts, event_type, payload_json FROM task_events WHERE task_id = ? ORDER BY ts ASC"),
+    getEventsForTask: db.prepare("SELECT event_id, task_id, ts, event_type, payload_json FROM task_events WHERE task_id = ? ORDER BY ts ASC, event_id ASC"),
+    getEventsForTaskSince: db.prepare(`
+      WITH ordered AS (
+        SELECT event_id, task_id, ts, event_type, payload_json,
+               ROW_NUMBER() OVER (ORDER BY ts ASC, event_id ASC) AS rn
+          FROM task_events
+         WHERE task_id = @task_id
+      ),
+      marker AS (
+        SELECT rn FROM ordered WHERE event_id = @since_event_id LIMIT 1
+      )
+      SELECT event_id, task_id, ts, event_type, payload_json
+        FROM ordered
+       WHERE rn > COALESCE((SELECT rn FROM marker), 0)
+       ORDER BY rn ASC
+    `),
     insertArtifact: db.prepare(`INSERT OR REPLACE INTO artifacts (
       artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status,
       parent_artifact_id, revision_of, version_label, created_at
@@ -693,6 +708,13 @@ export function createSqliteStore({ dbPath }) {
        WHERE conversation_id = @conversation_id
          AND seq >= @since_seq
        ORDER BY seq ASC LIMIT @limit`),
+    listMessagesBefore: db.prepare(`
+      SELECT * FROM (
+        SELECT * FROM conversation_messages
+         WHERE conversation_id = @conversation_id
+           AND seq < @before_seq
+         ORDER BY seq DESC LIMIT @limit
+      ) ORDER BY seq ASC`),
     getMessageById: db.prepare(
       "SELECT * FROM conversation_messages WHERE message_id = ?"),
     countMessages: db.prepare(`
@@ -894,13 +916,13 @@ export function createSqliteStore({ dbPath }) {
       return statements.getEventsForTask.all(taskId).map(mapEvent);
     },
     getTaskEventsSince(taskId, since) {
-      const events = this.getTaskEvents(taskId);
       if (!since) {
-        return events;
+        return this.getTaskEvents(taskId);
       }
-
-      const index = events.findIndex((event) => event.event_id === since);
-      return index === -1 ? events : events.slice(index + 1);
+      return statements.getEventsForTaskSince.all({
+        task_id: taskId,
+        since_event_id: since
+      }).map(mapEvent);
     },
     appendArtifact(artifact) {
       const conversationId = artifact.conversation_id
@@ -1357,6 +1379,14 @@ export function createSqliteStore({ dbPath }) {
       const rows = statements.listMessages.all({
         conversation_id,
         since_seq: Math.max(0, sinceSeq | 0),
+        limit: Math.max(1, Math.min(limit ?? 500, 5000))
+      });
+      return rows.map(mapMessage);
+    },
+    getConversationMessagesBefore(conversation_id, { beforeSeq, limit = 500 } = {}) {
+      const rows = statements.listMessagesBefore.all({
+        conversation_id,
+        before_seq: Math.max(0, beforeSeq | 0),
         limit: Math.max(1, Math.min(limit ?? 500, 5000))
       });
       return rows.map(mapMessage);

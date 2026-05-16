@@ -5,6 +5,7 @@ import {
 import { renderHistoryMessages } from "./conversation-prompt.mjs";
 
 const PARTIAL_HISTORY_SHARE = 0.3;
+const STRUCTURED_HISTORY_TAIL_MESSAGE_LIMIT = 120;
 
 export function resolveCurrentTriggerMessage({ runtime, task }) {
   if (!task?.task_id) return null;
@@ -130,6 +131,34 @@ export function pickTurnsWithinBudget(turns, totalBudget, estimateTokens = defau
   return merged.flatMap((t) => t.messages);
 }
 
+export function loadPriorMessagesBeforeTrigger({
+  runtime,
+  conversationId,
+  trigger,
+  limit = STRUCTURED_HISTORY_TAIL_MESSAGE_LIMIT
+} = {}) {
+  const boundedLimit = Math.max(1, Math.min(limit ?? STRUCTURED_HISTORY_TAIL_MESSAGE_LIMIT, 500));
+  const beforeSeq = Number(trigger?.seq);
+  if (!conversationId || !Number.isFinite(beforeSeq)) return [];
+
+  if (typeof runtime?.store?.getConversationMessagesBefore === "function") {
+    return runtime.store.getConversationMessagesBefore(conversationId, {
+      beforeSeq,
+      limit: boundedLimit
+    }) ?? [];
+  }
+
+  if (typeof runtime?.store?.getConversationMessages === "function") {
+    const sinceSeq = Math.max(0, beforeSeq - boundedLimit);
+    return (runtime.store.getConversationMessages(conversationId, {
+      sinceSeq,
+      limit: boundedLimit
+    }) ?? []).filter((message) => Number(message?.seq) < beforeSeq);
+  }
+
+  return [];
+}
+
 export function loadStructuredHistoryFor({ runtime, task, executor, modelContextWindow, estimateTokens = defaultTokenEstimator }) {
   const trigger = resolveCurrentTriggerMessage({ runtime, task });
   if (!trigger) {
@@ -153,8 +182,11 @@ export function loadStructuredHistoryFor({ runtime, task, executor, modelContext
   }
 
   const conversationId = trigger.conversation_id ?? task.conversation_id;
-  const allMessages = runtime.store.getConversationMessages(conversationId) ?? [];
-  const priorMessages = allMessages.filter((m) => m.seq < trigger.seq);
+  const priorMessages = loadPriorMessagesBeforeTrigger({
+    runtime,
+    conversationId,
+    trigger
+  });
   const turns = groupMessagesIntoTurns(priorMessages);
 
   const budget = resolveContextBudget({ executor, modelContextWindow });

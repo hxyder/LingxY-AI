@@ -166,6 +166,36 @@
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
+.sched-row-edit-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.sched-row-edit-field span {
+  flex: 0 0 auto;
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.sched-row-edit-field input {
+  flex: 1;
+  min-width: 180px;
+  height: 30px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-xs);
+  outline: none;
+}
+.sched-row-edit-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .sched-row-edit-trigger-picker { flex: 1; min-width: 240px; }
 .sched-row-edit-hint { width: 100%; }
 
@@ -341,14 +371,20 @@
   flex-direction: column;
   gap: 8px;
 }
-.sched-row.is-completed,
-.sched-row.is-paused {
+.sched-row.is-completed {
   opacity: .62;
+  background: var(--panel-2);
+}
+.sched-row.is-paused {
   background: var(--panel-2);
 }
 .sched-row.is-completed .sched-title,
 .sched-row.is-paused .sched-title {
   color: var(--muted);
+}
+.sched-status-text {
+  color: var(--muted);
+  font-size: var(--fs-xs);
 }
 .sched-row.is-highlighted {
   animation: schedHighlight 1.4s var(--ease-standard);

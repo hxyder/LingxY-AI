@@ -4,6 +4,7 @@ import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-st
 import {
   resolveCurrentTriggerMessage,
   groupMessagesIntoTurns,
+  loadPriorMessagesBeforeTrigger,
   pickTurnsWithinBudget,
   loadStructuredHistoryFor
 } from "../src/service/executors/shared/conversation-history-loader.mjs";
@@ -249,6 +250,95 @@ it("loadStructuredHistoryFor: backfilled history does not exceed 30% of history 
   // assertion: partial-only pick respects ≤ 30% if partial would otherwise saturate.
   // For now just assert the structured mode delivers content and partial flag is honored.
   assert.ok(partialCount > 0);
+});
+
+it("loadPriorMessagesBeforeTrigger: uses bounded before-trigger store contract", () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "conv_tail" });
+  for (let i = 0; i < 20; i += 1) {
+    runtime.store.appendMessage({
+      conversation_id: "conv_tail",
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `tail-${i}`
+    });
+  }
+  const trigger = runtime.store.appendMessage({
+    conversation_id: "conv_tail",
+    role: "user",
+    content: "current"
+  });
+
+  let beforeCalls = 0;
+  let broadCalls = 0;
+  const originalBefore = runtime.store.getConversationMessagesBefore.bind(runtime.store);
+  const originalBroad = runtime.store.getConversationMessages.bind(runtime.store);
+  runtime.store.getConversationMessagesBefore = (conversationId, options) => {
+    beforeCalls += 1;
+    assert.deepEqual(options, { beforeSeq: trigger.seq, limit: 5 });
+    return originalBefore(conversationId, options);
+  };
+  runtime.store.getConversationMessages = (...args) => {
+    broadCalls += 1;
+    return originalBroad(...args);
+  };
+
+  const prior = loadPriorMessagesBeforeTrigger({
+    runtime,
+    conversationId: "conv_tail",
+    trigger,
+    limit: 5
+  });
+
+  assert.equal(beforeCalls, 1);
+  assert.equal(broadCalls, 0);
+  assert.deepEqual(prior.map((message) => message.content), [
+    "tail-15", "tail-16", "tail-17", "tail-18", "tail-19"
+  ]);
+});
+
+it("loadStructuredHistoryFor: long conversations do not use broad history scan", () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "conv_hot" });
+  for (let i = 0; i < 260; i += 1) {
+    runtime.store.appendMessage({
+      conversation_id: "conv_hot",
+      role: i % 2 === 0 ? "user" : "assistant",
+      content: `message-${i}`
+    });
+  }
+  const trigger = runtime.store.appendMessage({
+    conversation_id: "conv_hot",
+    role: "user",
+    content: "current"
+  });
+  runtime.store.linkMessageToTask(trigger.message_id, "task_hot", "triggered");
+
+  let beforeCalls = 0;
+  let broadCalls = 0;
+  const originalBefore = runtime.store.getConversationMessagesBefore.bind(runtime.store);
+  const originalBroad = runtime.store.getConversationMessages.bind(runtime.store);
+  runtime.store.getConversationMessagesBefore = (conversationId, options) => {
+    beforeCalls += 1;
+    assert.deepEqual(options, { beforeSeq: trigger.seq, limit: 120 });
+    return originalBefore(conversationId, options);
+  };
+  runtime.store.getConversationMessages = (...args) => {
+    broadCalls += 1;
+    return originalBroad(...args);
+  };
+
+  const out = loadStructuredHistoryFor({
+    runtime,
+    task: fakeTask({ task_id: "task_hot", conversation_id: "conv_hot" }),
+    executor: "tool_using",
+    modelContextWindow: 100000
+  });
+
+  assert.equal(out.mode, "structured");
+  assert.equal(beforeCalls, 1);
+  assert.equal(broadCalls, 0);
+  assert.ok(out.historyMessages.some((message) => message.content === "message-259"));
+  assert.ok(!out.historyMessages.some((message) => message.content === "message-0"));
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

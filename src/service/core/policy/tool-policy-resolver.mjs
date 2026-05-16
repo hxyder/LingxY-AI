@@ -219,7 +219,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   //
   //    Pre-E5 this returned `optional` and waited for SR to upgrade.
   //    The "wait for SR" default was wrong: when the user typed
-  //    "查一下 / search / google", they declared intent. Local-input
+  //    "查一下 / search for / google it", they declared intent. Local-input
   //    cases are the exception: "查一下我的文件" and
   //    "结合本地材料搜索外部机会"
   //    both contain local evidence, so deterministic policy stays optional

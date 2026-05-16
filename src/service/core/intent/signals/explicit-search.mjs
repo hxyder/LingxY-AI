@@ -1,7 +1,7 @@
 /**
  * UCA-077 P1-02 → P4-RQ E5: explicit search-verb detector.
  *
- * Neutral search verbs ("搜索/查一下/查询/google/bing"). One of the 6
+ * Neutral search verbs ("搜索/查一下/查询/google it/bing it"). One of the 6
  * structural hard signals both reference docs preserve as
  * deterministic regex. Post-E5 this signal escalates the resolver
  * to web=required (step 3 in the chain) — symmetry with
@@ -22,7 +22,7 @@ import { emptySignal } from "./_signal-types.mjs";
 
 const NAME = "explicit_search";
 
-const PATTERN = /(搜索|搜一下|(?:帮我|帮忙|请)?搜(?!集|身)|查找|查一下|查询|查阅|查阅一下|检索|帮我查|帮忙查|(?:帮我|帮忙|请)?找(?:到|一下)?[^。！？!?\n]{0,40}(?:链接|资料|来源|岗位|职位|工作|报告|report|评级|jobs?|sources?|links?)|google\b|\bbing\b|百度一下|百度搜|\bsearch\s+(?:for|the)\b|\bfind\s+(?:me\s+)?[^.?!\n]{0,50}\b(?:links?|sources?|jobs?|reports?)\b|look\s+(?:up|it\s+up))/i;
+const PATTERN = /(搜索|搜一下|(?:帮我|帮忙|请)?搜(?!集|身)|查找|查一下|查询|查阅|查阅一下|检索|帮我查|帮忙查|(?:帮我|帮忙|请)?找(?:到|一下)?[^。！？!?\n]{0,40}(?:链接|资料|来源|岗位|职位|工作|报告|report|评级|jobs?|sources?|links?)|\b(?:google|bing)\s+(?:it|this|that|for|the)\b|\b(?:google|bing)\s*一下|百度一下|百度搜|\bsearch\s+(?:for|the)\b|\bfind\s+(?:me\s+)?[^.?!\n]{0,50}\b(?:links?|sources?|jobs?|reports?)\b|look\s+(?:up|it\s+up))/i;
 
 /**
  * @param {string} text

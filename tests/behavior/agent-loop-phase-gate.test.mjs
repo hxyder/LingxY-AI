@@ -876,3 +876,92 @@ test("artifact-required xlsx prose trap does not synthesize a generic Content sp
     && event.payload?.recovered === true
   ));
 });
+
+test("artifact-required markdown prose trap materializes with write_file", async () => {
+  const calls = [];
+  const events = [];
+  const tools = [
+    {
+      id: "write_file",
+      name: "Write File Fixture",
+      description: "fixture",
+      risk_level: "medium",
+      requires_confirmation: false,
+      parameters: { type: "object", properties: {} },
+      async execute(args) {
+        calls.push({ tool: "write_file", args });
+        return {
+          success: true,
+          observation: `Wrote markdown to ${args.filename}.`,
+          artifact_paths: [`E:/linxiDoc/task_fixture/${args.filename}`],
+          metadata: {
+            path: `E:/linxiDoc/task_fixture/${args.filename}`,
+            artifact_paths: [`E:/linxiDoc/task_fixture/${args.filename}`],
+            content_preview: args.content
+          }
+        };
+      }
+    }
+  ];
+  const runtime = {
+    actionToolRegistry: createActionToolRegistry(tools),
+    toolContext: {},
+    toolOutputDir: null,
+    securityBroker: {
+      authorizeToolCall() {
+        return { allowed: true, reason: null };
+      }
+    },
+    store: {
+      appendAuditLog() {}
+    },
+    emitTaskEvent(eventType, payload) {
+      events.push({ eventType, payload });
+    },
+    finalAnswerComposer: async () => "# Markdown Report\n\n- evidence"
+  };
+
+  const task = makeTask({
+    title: "markdown",
+    user_command: "整理成 markdown 列表",
+    task_spec: {
+      goal: "generate_document",
+      synthesis: { expected_output: "artifact", user_goal: "generate markdown report" },
+      artifact: { required: true, kind: "md" },
+      success_contract: {
+        artifact_created: true,
+        required_policy_groups: [],
+        required_tool_names: []
+      },
+      execution_constraints: {
+        error_budget: { max_tool_failures: 5 }
+      }
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async () => ({
+      type: "final",
+      text: "# Markdown Report\n\n- evidence\n\nAccuracy check: internal reviewer note"
+    }),
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "success");
+  assert.deepEqual(calls.map((call) => call.tool), ["write_file"]);
+  assert.equal(calls[0].args.filename, "markdown.md");
+  assert.match(calls[0].args.content, /Markdown Report/);
+  assert.doesNotMatch(calls[0].args.content, /Accuracy check/u);
+  assert.ok(result.transcript.some((entry) =>
+    entry.type === "tool_result"
+    && entry.tool === "write_file"
+    && entry.artifact_paths?.[0]?.endsWith(".md")
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "tool_call_proposed"
+    && event.payload?.tool_id === "write_file"
+    && event.payload?.source === "deterministic_artifact_obligation"
+  ));
+});

@@ -34,8 +34,10 @@ assert.match(toolUsing, /async function llmPlanner\([\s\S]*signal/u,
   "tool_using planner must accept signal");
 assert.match(toolUsing, /adapter\.generate\(\{[\s\S]*signal,/u,
   "tool_using planner must pass signal to provider adapter");
-assert.match(toolUsing, /registry\.call\("generate_document"[\s\S]*signal/u,
-  "tool_using deterministic artifact recovery must pass signal to tools");
+assert.match(toolUsing, /registry\.call\(plan\.toolId,\s*plan\.args,\s*ctx\)/u,
+  "tool_using deterministic artifact recovery must call the planned artifact tool through registry.call");
+assert.match(toolUsing, /const ctx = \{[\s\S]*signal[\s\S]*\};[\s\S]*registry\.call\(plan\.toolId,\s*plan\.args,\s*ctx\)/u,
+  "tool_using deterministic artifact recovery must pass signal to planned artifact tools");
 assert.match(toolUsing, /registry\.call\(tool\.id,\s*decision\.args,[\s\S]*signal/u,
   "tool_using runtime tool calls must pass signal");
 assert.match(toolUsing, /attemptArtifactRecovery\(\{[\s\S]*signal/u,

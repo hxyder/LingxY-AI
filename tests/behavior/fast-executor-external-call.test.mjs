@@ -119,10 +119,20 @@ test("fast executor retries a transient OpenAI-compatible HTTP failure and still
       };
 
       const executor = createFastExecutorScaffold();
+      const published = [];
       const events = await collectEvents(executor.execute({
         task_id: "task_fast_retry",
         user_command: "Say hello",
-        context_packet: {}
+        context_packet: {},
+        __runtime: {
+          store: {
+            getTask: () => ({ created_at: new Date().toISOString() }),
+            appendEvent: (event) => published.push({ ...event, persisted: true })
+          },
+          eventBus: {
+            publish: (event) => published.push(event)
+          }
+        }
       }));
 
       assert.equal(calls.length, 2);
@@ -136,6 +146,10 @@ test("fast executor retries a transient OpenAI-compatible HTTP failure and still
         ["step_started", "log", "planner_request_started", "step_finished", "inline_result", "success"]
       );
       assert.equal(events.at(-1).payload.text, "Recovered answer");
+      assert.ok(published.some((event) =>
+        event.event_type === "text_delta"
+        && event.payload?.delta === "Recovered answer"
+      ), "streaming chunks must be emitted through runtime events before inline_result");
     } finally {
       globalThis.fetch = originalFetch;
     }

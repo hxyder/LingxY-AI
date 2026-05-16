@@ -158,7 +158,19 @@ it("LLM-first: fast executor emits OpenAI-compatible streaming deltas", () => {
     "utf8"
   );
   assert.match(src, /stream:\s*typeof onTextDelta === "function"/);
-  assert.match(src, /eventType:\s*"text_delta"/);
+  assert.match(src, /emitFastRuntimeEvent\(task,\s*"text_delta"/);
+});
+
+it("LLM-first: fast executor emits model-wait heartbeat without fabricating answer text", () => {
+  const src = readFileSync(
+    new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(src, /function startFastModelWaitHeartbeat/u);
+  assert.match(src, /sub_status:\s*count > 0 \? "waiting_for_model_response" : "waiting_for_model_first_output"/u);
+  assert.match(src, /eventType,\s*payload/u);
+  assert.doesNotMatch(src, /waiting_for_model_first_output[\s\S]{0,200}inline_result/u,
+    "heartbeat must be status/progress only, not a fake answer");
 });
 
 it("LLM-first: fast executor has no output-claim regex patch guard", () => {

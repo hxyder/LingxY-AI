@@ -5,6 +5,7 @@ import { normalizeTemplateDocument } from "../../templates/parser.mjs";
 import { validateTemplateDocument } from "../../templates/schema.mjs";
 import { parseRelativeTime, formatRelativeDuration } from "../../utils/time-parser.mjs";
 import { buildSideEffectContract } from "../policy/side-effect-contracts.mjs";
+import { normalizeEmailAddressList } from "../policy/email-fields.mjs";
 
 async function resumeDagExecution(runtime, executionId) {
   return resumeDagGraph({
@@ -66,6 +67,44 @@ function buildScheduleActionRequest(body = {}) {
       body: message
     }
   };
+}
+
+function applyScheduleEmailRecipients(schedule, recipients = []) {
+  const values = normalizeEmailAddressList(recipients);
+  if (values.length === 0) {
+    throw new Error("schedule_email_recipients_required");
+  }
+  schedule.action_params = {
+    ...(schedule.action_params ?? {}),
+    to: values,
+    input: {
+      ...(schedule.action_params?.input ?? {}),
+      to: values
+    }
+  };
+  schedule.metadata = {
+    ...(schedule.metadata ?? {}),
+    side_effect_contract: {
+      version: 1,
+      kind: "side_effect_contract",
+      ...(schedule.metadata?.side_effect_contract ?? {}),
+      groups: {
+        ...(schedule.metadata?.side_effect_contract?.groups ?? {}),
+        email_send: {
+          ...(schedule.metadata?.side_effect_contract?.groups?.email_send ?? {}),
+          slots: {
+            ...(schedule.metadata?.side_effect_contract?.groups?.email_send?.slots ?? {}),
+            to: {
+              entity: "email_address",
+              values,
+              mode: "preserve"
+            }
+          }
+        }
+      }
+    }
+  };
+  return values;
 }
 
 export async function tryHandleSchedulerTemplateRoute({ request, response, method, url, runtime }) {
@@ -243,6 +282,22 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
       } else if (existing.metadata?.side_effect_contract) {
         const { side_effect_contract: _removed, ...rest } = existing.metadata;
         existing.metadata = rest;
+      }
+      existing.updated_at = new Date().toISOString();
+      runtime.store.updateSchedule(scheduleId, existing);
+      schedule = existing;
+    }
+    if (body?.emailRecipients !== undefined || body?.recipients !== undefined || body?.to !== undefined) {
+      const existing = schedule ?? runtime.store.getSchedule(scheduleId);
+      if (!existing) {
+        sendJson(response, 404, { error: "schedule_not_found" });
+        return true;
+      }
+      try {
+        applyScheduleEmailRecipients(existing, body.emailRecipients ?? body.recipients ?? body.to);
+      } catch (error) {
+        sendJson(response, 400, { error: error?.message ?? "schedule_email_recipients_invalid" });
+        return true;
       }
       existing.updated_at = new Date().toISOString();
       runtime.store.updateSchedule(scheduleId, existing);

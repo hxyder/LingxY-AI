@@ -139,8 +139,24 @@ assert.equal(detailVm.canCancel, false);
 const consoleRenderer = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
 const sharedChatCss = readFileSync(new URL("../src/desktop/renderer/shared-chat.css", import.meta.url), "utf8");
 assert.match(consoleRenderer, /function appendConsoleChatProgress/);
+assert.match(consoleRenderer, /function appendConsoleChatLiveProgress/);
 assert.match(consoleRenderer, /chat-progress-card/);
 assert.match(consoleRenderer, /closeConsoleChatProgressCard/);
+assert.match(consoleRenderer, /const CONSOLE_CHAT_PROGRESS_EVENT_TYPES = new Set/);
+assert.match(consoleRenderer, /"step_started"[\s\S]{0,240}"log"/);
+assert.match(consoleRenderer, /function shouldAppendConsoleChatProgressFrame\(frame\)/);
+assert.match(consoleRenderer, /card\.open = true;/);
+assert.match(consoleRenderer, /closeConsoleChatProgressCard folds it after terminal/);
+assert.match(consoleRenderer, /frame\.event === "reasoning_delta"[\s\S]{0,220}appendConsoleChatLiveProgress\(taskId,\s*"reasoning_delta"/);
+assert.doesNotMatch(consoleRenderer, /consoleChatProgressEventIds = new Set\(\);\s*closeConsoleChatProgressCard\(\);/);
+assert.match(
+  consoleRenderer,
+  /frame\.event === "inline_result"[\s\S]{0,360}appendConsoleChatFinalText\(taskId[\s\S]{0,180}clearConsoleChatTerminalBuffers\(taskId\)/,
+  "inline_result must finalize the streaming answer before clearing buffers so it cannot render a duplicate/incomplete assistant bubble"
+);
+assert.match(consoleRenderer, /event:\s*"submission_received"[\s\S]{0,120}已收到请求，正在创建任务/u);
+assert.match(consoleRenderer, /event:\s*"task_created"[\s\S]{0,160}任务已创建，正在执行/u);
+assert.doesNotMatch(consoleRenderer, /appendConsoleChatMessage\("system",\s*"已收到请求，正在创建任务/u);
 assert.match(sharedChatCss, /\.chat-progress-card/);
 
 console.log("Console UI view-model verification passed.");

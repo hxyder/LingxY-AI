@@ -3,8 +3,10 @@ import test from "node:test";
 
 import {
   groupMessagesIntoTurns,
+  loadStructuredHistoryFor,
   pickTurnsWithinBudget
 } from "../../src/service/executors/shared/conversation-history-loader.mjs";
+import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 
 function plainTurn(triggerSeq, chars = 120) {
   return {
@@ -109,4 +111,51 @@ test("history budget keeps the newest plain turn before older high-value turns f
 
   assert.ok(seqs.includes(100) && seqs.includes(101), "newest plain context gets a retention slot");
   assert.ok(seqs.includes(3) && seqs.includes(4), "remaining budget still keeps newest high-value turn");
+});
+
+test("structured history loader reads only a bounded tail before the trigger", () => {
+  const runtime = { store: createInMemoryStoreScaffold() };
+  runtime.store.insertConversation({ conversation_id: "conv_long_loader" });
+  for (let index = 0; index < 260; index += 1) {
+    runtime.store.appendMessage({
+      conversation_id: "conv_long_loader",
+      role: index % 2 === 0 ? "user" : "assistant",
+      content: `message-${index}`
+    });
+  }
+  const trigger = runtime.store.appendMessage({
+    conversation_id: "conv_long_loader",
+    role: "user",
+    content: "current-trigger"
+  });
+  runtime.store.linkMessageToTask(trigger.message_id, "task_long_loader", "triggered");
+
+  let beforeCalls = 0;
+  let broadCalls = 0;
+  const originalBefore = runtime.store.getConversationMessagesBefore.bind(runtime.store);
+  const originalBroad = runtime.store.getConversationMessages.bind(runtime.store);
+  runtime.store.getConversationMessagesBefore = (conversationId, options) => {
+    beforeCalls += 1;
+    assert.equal(conversationId, "conv_long_loader");
+    assert.deepEqual(options, { beforeSeq: trigger.seq, limit: 120 });
+    return originalBefore(conversationId, options);
+  };
+  runtime.store.getConversationMessages = (conversationId, options) => {
+    broadCalls += 1;
+    return originalBroad(conversationId, options);
+  };
+
+  const out = loadStructuredHistoryFor({
+    runtime,
+    task: { task_id: "task_long_loader", conversation_id: "conv_long_loader" },
+    executor: "tool_using",
+    modelContextWindow: 100000
+  });
+
+  assert.equal(out.mode, "structured");
+  assert.equal(beforeCalls, 1);
+  assert.equal(broadCalls, 0, "hot path must not scan the whole conversation before model start");
+  assert.equal(out.currentMessageRendered.content, "current-trigger");
+  assert.ok(out.historyMessages.some((message) => message.content === "message-259"));
+  assert.ok(!out.historyMessages.some((message) => message.content === "message-0"));
 });

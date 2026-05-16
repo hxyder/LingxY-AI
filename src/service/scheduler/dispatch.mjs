@@ -8,6 +8,7 @@ import {
   buildScheduleActionPreview,
   createScheduleRunRecord
 } from "./store.mjs";
+import { normalizeScheduleRecordTitle } from "../core/policy/scheduled-work-policy.mjs";
 
 // Returns true (and the resolved location) when the schedule's optional
 // location_filter passes against the user's real (browser-granted)
@@ -138,6 +139,11 @@ export async function dispatchSchedule({
   const schedule = runtime.store.getSchedule(scheduleId);
   if (!schedule || (!schedule.enabled && reason !== "manual")) {
     return null;
+  }
+  const titleNormalization = normalizeScheduleRecordTitle(schedule);
+  if (titleNormalization.changed) {
+    runtime.store.updateSchedule(schedule.schedule_id, titleNormalization.schedule);
+    Object.assign(schedule, titleNormalization.schedule);
   }
 
   // Reject a concurrent dispatch for the same schedule. See IN_FLIGHT_SCHEDULES.

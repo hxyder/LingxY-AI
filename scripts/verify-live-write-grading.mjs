@@ -9,8 +9,12 @@ const runner = readFileSync("scripts/real-llm-test/run-corpus.mjs", "utf8");
 
 assert.match(corpus, /google\.gmail\.draft_confirm_send/u,
   "email live-write corpus must accept Google connector workflow confirmation");
+assert.match(corpus, /google\.gmail\.send_email/u,
+  "email live-write corpus must accept the expanded Google connector send tool");
 assert.match(corpus, /microsoft\.outlook\.draft_confirm_send/u,
   "email live-write corpus must accept Microsoft connector workflow confirmation");
+assert.match(corpus, /microsoft\.outlook\.send_email/u,
+  "email live-write corpus must accept the expanded Microsoft connector send tool");
 assert.match(corpus, /google\.calendar\.create_confirm/u,
   "calendar live-write corpus must accept Google connector workflow confirmation");
 assert.match(corpus, /microsoft\.calendar\.create_confirm/u,

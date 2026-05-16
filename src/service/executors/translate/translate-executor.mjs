@@ -33,6 +33,24 @@ export function inferTargetLanguageFromCommand(userCommand = "") {
   return null;
 }
 
+export function extractInlineTranslationText(userCommand = "") {
+  const text = String(userCommand ?? "").trim();
+  if (!text) return "";
+
+  const inlinePatterns = [
+    /^(?:请\s*)?(?:把|将)?\s*(?:这段|以下|下面|文本|内容|句子|sentence|text|content)?\s*(?:翻译|译)\s*(?:成|为|至)?\s*(?:简体中文|繁体中文|繁體中文|中文|汉语|漢語|英文|英语|日语|日文|韩语|韩文|法语|法文|德语|德文|西班牙语|俄语|俄文|阿拉伯语|zh|en|ja|ko|fr|de|es|ru|ar)?\s*[：:]\s*(.+)$/iu,
+    /^(?:please\s*)?(?:translate|render)\s*(?:this|the\s+following|text|content|sentence)?\s*(?:into|to)?\s*(?:simplified\s+chinese|traditional\s+chinese|chinese|english|japanese|korean|french|german|spanish|russian|arabic|zh|en|ja|ko|fr|de|es|ru|ar)?\s*[：:]\s*(.+)$/iu
+  ];
+
+  for (const pattern of inlinePatterns) {
+    const match = text.match(pattern);
+    const source = match?.[1]?.trim();
+    if (source) return source;
+  }
+
+  return "";
+}
+
 function pickSourceText(task) {
   const packet = task?.context_packet ?? {};
   const direct = (packet.text ?? "").trim();
@@ -48,6 +66,9 @@ function pickSourceText(task) {
   // selection metadata fallback
   const selectionText = packet.selection_metadata?.selection_text ?? packet.selection_metadata?.text ?? "";
   if (selectionText) return String(selectionText).trim();
+
+  const inlineText = extractInlineTranslationText(task?.user_command);
+  if (inlineText) return inlineText;
 
   return "";
 }

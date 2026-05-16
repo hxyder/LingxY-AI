@@ -5,7 +5,10 @@ import {
   FREE_TRANSLATOR_PROVIDERS,
   translateText
 } from "../../src/service/translation/free-translator.mjs";
-import { createTranslateExecutorScaffold } from "../../src/service/executors/translate/translate-executor.mjs";
+import {
+  createTranslateExecutorScaffold,
+  extractInlineTranslationText
+} from "../../src/service/executors/translate/translate-executor.mjs";
 
 test("free translator prefers the low-latency Google web endpoint", () => {
   assert.deepEqual(FREE_TRANSLATOR_PROVIDERS.slice(0, 2), ["google_web", "mymemory"]);
@@ -142,4 +145,66 @@ test("translate executor keeps provider details in metadata, not visible text", 
   const inline = events.find((event) => event.event_type === "inline_result");
   assert.equal(inline.payload.text, "你好");
   assert.equal(inline.payload.translation.provider, "google_web");
+});
+
+test("translate executor uses inline Chinese command text as the translation source", async () => {
+  let received = null;
+  const executor = createTranslateExecutorScaffold({
+    async translator(input) {
+      received = input;
+      return {
+        text: "A journey of a thousand miles begins with a single step.",
+        input: input.text,
+        source_language: "zh-CN",
+        target_language: input.target,
+        provider: "stub",
+        chunks: []
+      };
+    }
+  });
+
+  const events = [];
+  for await (const event of executor.execute({
+    user_command: "翻译成英文：千里之行始于足下",
+    context_packet: {}
+  })) {
+    events.push(event);
+  }
+
+  assert.equal(received.text, "千里之行始于足下");
+  assert.equal(received.target, "en");
+  assert.equal(events.find((event) => event.event_type === "inline_result").payload.text, "A journey of a thousand miles begins with a single step.");
+});
+
+test("translate executor uses inline English command text as the translation source", async () => {
+  let received = null;
+  const executor = createTranslateExecutorScaffold({
+    async translator(input) {
+      received = input;
+      return {
+        text: "你好，世界",
+        input: input.text,
+        source_language: "en",
+        target_language: input.target,
+        provider: "stub",
+        chunks: []
+      };
+    }
+  });
+
+  for await (const _event of executor.execute({
+    user_command: "translate to Chinese: Hello, world",
+    context_packet: {}
+  })) {
+    // Drain the async iterator.
+  }
+
+  assert.equal(received.text, "Hello, world");
+  assert.equal(received.target, "zh-CN");
+});
+
+test("inline translation extraction only accepts explicit source delimiters", () => {
+  assert.equal(extractInlineTranslationText("翻译这段"), "");
+  assert.equal(extractInlineTranslationText("translate to English"), "");
+  assert.equal(extractInlineTranslationText("请翻译为英文：今天发布的说明"), "今天发布的说明");
 });

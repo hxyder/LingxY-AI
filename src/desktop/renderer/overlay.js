@@ -2925,6 +2925,14 @@ async function renderInlineApproval(frame) {
   // The store already decodes proposed_params JSON for us. Fall back to the
   // raw string only when an older record shape shows up.
   let editableInput = approval?.proposed_params?.input ?? null;
+  if (!editableInput
+      && approval?.proposed_params
+      && typeof approval.proposed_params === "object"
+      && (approval.proposed_params.subject !== undefined
+        || approval.proposed_params.body !== undefined
+        || approval.proposed_params.to !== undefined)) {
+    editableInput = approval.proposed_params;
+  }
   if (!editableInput && approval?.proposed_params_json) {
     try {
       const params = typeof approval.proposed_params_json === "string"
@@ -2955,6 +2963,16 @@ async function renderInlineApproval(frame) {
     wrap.appendChild(el);
     card.appendChild(wrap);
     editFields[key] = el;
+  }
+
+  function splitEmailFieldValue(value) {
+    const text = String(value ?? "").trim();
+    if (!text) return [];
+    const matches = text.match(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g);
+    if (matches && matches.length > 0) {
+      return [...new Set(matches.map((item) => item.trim()).filter(Boolean))];
+    }
+    return text.split(/[,;\s]+/).map((item) => item.trim()).filter(Boolean);
   }
 
   if (editableInput && (editableInput.subject !== undefined || editableInput.body !== undefined || editableInput.to !== undefined)) {
@@ -3058,7 +3076,7 @@ async function renderInlineApproval(frame) {
     if (editFields.to) {
       const raw = editFields.to.value.trim();
       if (raw) {
-        overrides.to = raw.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+        overrides.to = splitEmailFieldValue(raw);
       }
     }
     if (editFields.subject) {

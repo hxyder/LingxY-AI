@@ -3,63 +3,10 @@ import { listUserAccounts, updateAccountLastUsed } from "../core/account-registr
 import { resolveAccount } from "../core/account-router.mjs";
 import { createGoogleEvent, sendGoogleEmail, uploadGoogleFile } from "../google/google-connector.mjs";
 import { createMicrosoftEvent, sendMicrosoftEmail, uploadMicrosoftFile } from "../microsoft/microsoft-connector.mjs";
-
-// Extract every plausible email address from a string. Handles
-// separators the LLM commonly produces but the old `[,;\s]+` splitter
-// missed: Chinese conjunctions (和 / 与 / 及 / 以及 / 、), ASCII "and"
-// between two addresses, and combinations. Falls back to the raw
-// string when no @ pattern is present so the validator downstream
-// reports a clear "invalid recipient" instead of silently keeping
-// the wrong text. (UCA-181 follow-up: a scheduled task with
-// "...到 a@b.com和c@d.com" was sending to a malformed single
-// recipient because `和` was not a separator.)
-// Conservative local-part charset; the permissive RFC-5322 form
-// (allowing `/`, `!`, `#`, etc.) accidentally swallowed separator
-// characters when the LLM emitted shapes like "a@x.com/b@y.com".
-const EMAIL_LIKE_REGEX = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
-
-function extractEmailAddresses(text) {
-  const matches = String(text).match(EMAIL_LIKE_REGEX) ?? [];
-  return [...new Set(matches.map((s) => s.trim()).filter(Boolean))];
-}
-
-function splitEmailString(value) {
-  const text = String(value);
-  const emails = extractEmailAddresses(text);
-  if (emails.length > 0) return emails;
-  // No @-bearing tokens — fall back to the legacy whitespace/punct
-  // split so the validator reports a typed "invalid email" error
-  // rather than treating the whole prose as one recipient.
-  return text.split(/[,;\s]+/).map((part) => part.trim()).filter(Boolean);
-}
-
-function asEmailArray(value) {
-  if (value === undefined || value === null || value === "") return [];
-  if (Array.isArray(value)) {
-    // The LLM sometimes passes an array with ONE element that itself
-    // contains multiple addresses joined by 和 / and / etc. Re-split
-    // every entry through the same extractor so a single-element
-    // array of "a@b.com和c@d.com" still resolves to two recipients.
-    const out = [];
-    for (const item of value) {
-      const trimmed = String(item ?? "").trim();
-      if (!trimmed) continue;
-      const split = splitEmailString(trimmed);
-      out.push(...(split.length > 0 ? split : [trimmed]));
-    }
-    return [...new Set(out)];
-  }
-  if (typeof value === "string") return splitEmailString(value);
-  return [String(value)];
-}
+import { normalizeEmailFieldInput } from "../../../core/policy/email-fields.mjs";
 
 function normalizeEmailArgs(args = {}) {
-  const normalized = { ...args };
-  if (normalized.to !== undefined) normalized.to = asEmailArray(normalized.to);
-  if (normalized.cc !== undefined) normalized.cc = asEmailArray(normalized.cc);
-  if (normalized.bcc !== undefined) normalized.bcc = asEmailArray(normalized.bcc);
-  if (normalized.attendees !== undefined) normalized.attendees = asEmailArray(normalized.attendees);
-  return normalized;
+  return normalizeEmailFieldInput(args);
 }
 
 function toActionResult(toolId, connectorResult, dataKey = null) {

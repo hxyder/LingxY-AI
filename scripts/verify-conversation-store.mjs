@@ -156,6 +156,32 @@ runForBoth("getConversationMessages sinceSeq returns only newer rows", (store) =
   assert.deepEqual(after2.map((m) => m.seq), [3, 4]);
 });
 
+runForBoth("getConversationMessagesBefore returns bounded ascending rows before a trigger seq", (store) => {
+  store.insertConversation({ conversation_id: "conv_before" });
+  for (let i = 0; i < 10; i++) {
+    store.appendMessage({ conversation_id: "conv_before", role: "user", content: `m${i}` });
+  }
+  const before8 = store.getConversationMessagesBefore("conv_before", { beforeSeq: 8, limit: 3 });
+  assert.deepEqual(before8.map((m) => m.seq), [5, 6, 7]);
+  assert.deepEqual(before8.map((m) => m.content), ["m5", "m6", "m7"]);
+});
+
+runForBoth("getTaskEventsSince returns only events after the cursor", (store) => {
+  for (let i = 0; i < 5; i += 1) {
+    store.appendEvent({
+      event_id: `event_${i}`,
+      task_id: "task_events_since",
+      ts: `2026-05-15T00:00:0${i}.000Z`,
+      event_type: "step",
+      payload: { index: i }
+    });
+  }
+  const afterSecond = store.getTaskEventsSince("task_events_since", "event_1");
+  assert.deepEqual(afterSecond.map((event) => event.event_id), ["event_2", "event_3", "event_4"]);
+  const unknownCursor = store.getTaskEventsSince("task_events_since", "missing_event");
+  assert.deepEqual(unknownCursor.map((event) => event.event_id), ["event_0", "event_1", "event_2", "event_3", "event_4"]);
+});
+
 runForBoth("hardDeleteConversation cascades to messages and links", (store) => {
   store.insertConversation({ conversation_id: "conv_cas" });
   const m = store.appendMessage({ conversation_id: "conv_cas", role: "user", content: "bye" });

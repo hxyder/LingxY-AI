@@ -13,77 +13,27 @@ import {
   cloneSchedule,
   createScheduleRecord
 } from "./store.mjs";
+import {
+  deriveScheduleTitle,
+  normalizeScheduleRecordTitle
+} from "../core/policy/scheduled-work-policy.mjs";
 
-// Derive a human-readable schedule name when the caller/LLM omits one.
-// The scheduler's DB column is NOT NULL, and the tool description doesn't
-// always lead the LLM to supply `name`, so crashing on missing name
-// surfaces a confusing SQL error instead of just working.
-//
-// B1 priority (lingxy_codex_ready_agent_runtime_upgrade_plan.md):
-//   1. action.params.userCommand   — most faithful to the actual action
-//      because plan-executor crafts it from the residual command, so
-//      drift-prone fields (recipient lists, counts) match what will
-//      actually run.
-//   2. input.name                   — only when userCommand is absent.
-//      Last because LLM-emitted names sometimes summarise stale planner
-//      intent (regression: title showed 2 recipients, run sent 1).
-//   3. action.target / trigger.natural_language — terse fallbacks.
-//
-// Returns { name, audit } so callers can surface the unselected
-// candidate via metadata.naming_audit for drift triage.
 function pickScheduleName(input) {
-  const candidates = collectScheduleNameCandidates(input);
-  for (const candidate of candidates) {
-    if (candidate.value) {
-      return {
-        name: candidate.format(candidate.value),
-        audit: buildNamingAudit(candidates, candidate.source)
-      };
-    }
-  }
-  return {
-    name: "Scheduled task",
-    audit: buildNamingAudit(candidates, "fallback")
-  };
-}
-
-function collectScheduleNameCandidates(input) {
-  const params = input?.action?.params ?? input?.action?.args ?? {};
-  const userCommand = readNonEmpty(params.userCommand) || readNonEmpty(params.command);
-  const direct = readNonEmpty(input?.name);
-  const target = readNonEmpty(input?.action?.target ?? input?.action?.tool);
-  const nl = readNonEmpty(input?.trigger?.natural_language);
-  return [
-    { source: "params.userCommand", value: userCommand, format: truncateName },
-    { source: "input.name", value: direct, format: truncateName },
-    { source: "action.target", value: target, format: (v) => `Scheduled ${v}` },
-    { source: "trigger.natural_language", value: nl, format: (v) => `Scheduled: ${v}` }
-  ];
-}
-
-function buildNamingAudit(candidates, selectedSource) {
-  const unselected = candidates
-    .filter((entry) => entry.value && entry.source !== selectedSource)
-    .map((entry) => ({ source: entry.source, value: entry.value }));
-  return {
-    selected_source: selectedSource,
-    unselected_candidates: unselected
-  };
-}
-
-function readNonEmpty(value) {
-  if (typeof value !== "string") return "";
-  const trimmed = value.trim();
-  return trimmed || "";
-}
-
-function truncateName(value) {
-  return value.length > 80 ? `${value.slice(0, 77)}…` : value;
+  const derived = deriveScheduleTitle(input);
+  return { name: derived.title, audit: derived.audit };
 }
 
 // Back-compat shim — older callers expect a string return.
 function deriveScheduleName(input) {
   return pickScheduleName(input).name;
+}
+
+function normalizeStoredSchedule(runtime, schedule) {
+  const normalized = normalizeScheduleRecordTitle(schedule);
+  if (normalized.changed) {
+    runtime.store.updateSchedule(schedule.schedule_id, normalized.schedule);
+  }
+  return normalized.schedule;
 }
 
 function ensureTrigger(trigger) {
@@ -213,11 +163,13 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
     },
     listSchedules() {
       recoverStaleScheduleRuns({ runtime });
-      return runtime.store.listSchedules().map(cloneSchedule);
+      return runtime.store.listSchedules()
+        .map((schedule) => normalizeStoredSchedule(runtime, schedule))
+        .map(cloneSchedule);
     },
     getSchedule(scheduleId) {
       const schedule = runtime.store.getSchedule(scheduleId);
-      return schedule ? cloneSchedule(schedule) : null;
+      return schedule ? cloneSchedule(normalizeStoredSchedule(runtime, schedule)) : null;
     },
     deleteSchedule(scheduleId) {
       const deleted = runtime.store.deleteSchedule(scheduleId);
@@ -273,6 +225,8 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
       return cloneSchedule(schedule);
     },
     async dispatch(scheduleId, reason = "manual", triggerPayload = {}) {
+      const schedule = runtime.store.getSchedule(scheduleId);
+      if (schedule) normalizeStoredSchedule(runtime, schedule);
       return dispatchSchedule({
         runtime,
         scheduleId,

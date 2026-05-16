@@ -4,6 +4,8 @@ import {
   applySideEffectContractToWorkflowInput,
   policyGroupsForConnectorWorkflow
 } from "../../../core/policy/side-effect-contracts.mjs";
+import { normalizeEmailFieldInput } from "../../../core/policy/email-fields.mjs";
+import { deriveScheduledEmailSubject } from "../../../core/policy/scheduled-work-policy.mjs";
 
 function nowMs() {
   return Date.now();
@@ -14,6 +16,18 @@ function asArray(value) {
     return [];
   }
   return Array.isArray(value) ? value : [value];
+}
+
+function normalizeWorkflowEmailInput({ workflowId, input = {}, task = null } = {}) {
+  const isEmailWorkflow = /(?:gmail|outlook|email|mail).*(?:send|draft)|draft_confirm_send|email\.draft/i.test(String(workflowId ?? ""));
+  if (!isEmailWorkflow) return input;
+  const normalized = normalizeEmailFieldInput(input);
+  const subject = deriveScheduledEmailSubject({
+    task,
+    args: normalized,
+    workflowId
+  });
+  return subject === normalized.subject ? normalized : { ...normalized, subject };
 }
 
 function isApproved(state = {}) {
@@ -391,6 +405,7 @@ export async function runConnectorWorkflow({
   if (!isApproved(state)) {
     input = applySideEffectContractToWorkflowInput(workflowId, input, { task, runtime });
   }
+  input = normalizeWorkflowEmailInput({ workflowId, input, task });
   const outputs = {
     ...(state.outputs ?? {})
   };

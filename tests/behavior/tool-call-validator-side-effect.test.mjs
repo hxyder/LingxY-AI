@@ -88,6 +88,32 @@ test("accepts a synthesized research email body with structured source evidence"
   assert.equal(result.ok, true);
 });
 
+test("blocks research email send until non-action evidence contract is satisfied", () => {
+  const task = researchEmailTask();
+  task.task_spec.research_quality = {
+    profile: "multi_source_research",
+    min_sources: 3,
+    min_distinct_domains: 2,
+    single_source_digest_satisfies: false
+  };
+  const result = validateToolCall(emailTool, {
+    to: ["reviewer@example.com"],
+    subject: "Market digest",
+    body: [
+      "Market digest",
+      "",
+      "Major indexes cannot be summarized from a single weak source, so this body must not be sent yet.",
+      "The executor should gather more independent market evidence before the email side effect."
+    ].join("\n")
+  }, {
+    task,
+    transcript: transcript()
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /email_send_blocked_until_non_action_contract_satisfied/);
+  assert.match(result.error, /external_web_read_insufficient_sources/);
+});
+
 test("rejects a single raw web observation used verbatim as the email body", () => {
   const rawObservation = "Market summary evidence from the search tool. ".repeat(8).trim();
   const result = validateToolCall(emailTool, {

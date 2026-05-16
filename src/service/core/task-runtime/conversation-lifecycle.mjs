@@ -41,9 +41,22 @@ export function attachPriorBackendMessages(contextPacket, conversationId, runtim
     return contextPacket;
   }
   try {
-    const all = runtime.store.getConversationMessages(conversationId);
+    const boundedLimit = Math.max(1, Math.min(limit, 50));
+    let all = null;
+    if (typeof runtime.store.countConversationMessages === "function") {
+      const count = Number(runtime.store.countConversationMessages(conversationId));
+      if (Number.isFinite(count) && count > boundedLimit) {
+        all = runtime.store.getConversationMessages(conversationId, {
+          sinceSeq: Math.max(0, count - boundedLimit),
+          limit: boundedLimit
+        });
+      }
+    }
+    if (!Array.isArray(all)) {
+      all = runtime.store.getConversationMessages(conversationId, { limit: boundedLimit });
+    }
     if (!Array.isArray(all) || all.length === 0) return contextPacket;
-    const tail = all.slice(-Math.max(1, Math.min(limit, 50)));
+    const tail = all.slice(-boundedLimit);
     const priorMessages = tail.map((message) => ({
       role: message.role,
       content: typeof message.content === "string" ? message.content.slice(0, contentCap) : "",

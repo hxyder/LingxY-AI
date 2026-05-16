@@ -1,4 +1,5 @@
 import { applySideEffectContractToToolArgs } from "../../core/policy/side-effect-contracts.mjs";
+import { normalizeScheduledEmailArgs } from "../../core/policy/scheduled-work-policy.mjs";
 import {
   isSideEffectTool,
   transcriptHasSuccessfulToolCall
@@ -6,7 +7,8 @@ import {
 
 export function applySideEffectContractToDecisionArgs({ decision, tool, task, runtime }) {
   if (decision?.type !== "tool_call") return decision?.args;
-  return applySideEffectContractToToolArgs(tool.id, decision.args, { task, runtime });
+  const contractedArgs = applySideEffectContractToToolArgs(tool.id, decision.args, { task, runtime });
+  return normalizeScheduledEmailArgs({ toolId: tool.id, args: contractedArgs, task });
 }
 
 export function planRedundantSideEffectGuard({

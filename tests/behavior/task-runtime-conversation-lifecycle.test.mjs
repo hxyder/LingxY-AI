@@ -206,3 +206,39 @@ test("conversation lifecycle helpers cap prior messages and keep empty ids inert
   }]);
   assert.equal(enriched.prior_messages[0].metadata, undefined);
 });
+
+test("prior message enrichment reads a bounded tail window for long conversations", () => {
+  const runtime = makeRuntime();
+  ensureConversation(runtime, { conversationId: "conv_long_prior" });
+  for (let index = 1; index <= 100; index += 1) {
+    runtime.store.appendMessage({
+      conversation_id: "conv_long_prior",
+      role: index % 2 === 0 ? "assistant" : "user",
+      content: `message-${index}`,
+      metadata: {}
+    });
+  }
+
+  const calls = [];
+  const getConversationMessages = runtime.store.getConversationMessages.bind(runtime.store);
+  runtime.store.getConversationMessages = (conversationId, options) => {
+    calls.push({ conversationId, options });
+    return getConversationMessages(conversationId, options);
+  };
+
+  const enriched = attachPriorBackendMessages(
+    { source_type: "clipboard" },
+    "conv_long_prior",
+    runtime,
+    { limit: 12, contentCap: 100 }
+  );
+
+  assert.deepEqual(calls, [{
+    conversationId: "conv_long_prior",
+    options: { sinceSeq: 88, limit: 12 }
+  }]);
+  assert.deepEqual(
+    enriched.prior_messages.map((message) => message.content),
+    Array.from({ length: 12 }, (_, index) => `message-${index + 89}`)
+  );
+});

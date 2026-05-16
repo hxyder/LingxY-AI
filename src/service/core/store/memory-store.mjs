@@ -550,6 +550,14 @@ export function createInMemoryStoreScaffold() {
         .slice(0, Math.max(1, Math.min(limit ?? 500, 5000)))
         .map((m) => ({ ...m }));
     },
+    getConversationMessagesBefore(conversation_id, { beforeSeq, limit = 500 } = {}) {
+      return this.conversationMessages
+        .filter((m) => m.conversation_id === conversation_id && m.seq < (beforeSeq | 0))
+        .sort((a, b) => b.seq - a.seq)
+        .slice(0, Math.max(1, Math.min(limit ?? 500, 5000)))
+        .sort((a, b) => a.seq - b.seq)
+        .map((m) => ({ ...m }));
+    },
     getMessage(message_id) {
       const m = this.conversationMessages.find((row) => row.message_id === message_id);
       return m ? { ...m } : null;

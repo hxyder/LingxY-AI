@@ -168,7 +168,7 @@ export function renderScheduleRow(schedule) {
   const terminalLabel = terminalOneShotLabel(schedule);
   const statePill = bucket === "completed"
     ? `<span class="pill pill-neutral">${escapeHtml(terminalLabel ?? "completed")}</span>`
-    : (bucket === "paused" ? `<span class="pill pill-neutral">paused</span>` : "");
+    : (bucket === "paused" ? `<span class="sched-status-text">已暂停</span>` : "");
   return `
     <div class="sched-row${stateClass}" data-schedule-row="${escapeHtml(schedule.schedule_id)}" style="${color ? `border-left:3px solid ${escapeHtml(color)};` : ""}">
       <label class="toggle" title="${schedule.enabled ? "Disable" : "Enable"}">

@@ -42,6 +42,28 @@ test("attached local input + explicit search can be upgraded by SemanticRouter",
   assert.ok(spec.success_contract?.required_policy_groups?.includes("external_web_read"));
 });
 
+test("provider names such as Google/Microsoft connector are not search verbs", () => {
+  const text = "分析 Google/Microsoft connector 的架构设计，给出三阶段重构计划，先不要写代码";
+  const { signals } = extractAllSignals(text, {});
+  assert.equal(signals.explicit_search?.matched, false);
+
+  const spec = createTaskSpec(text, {
+    semantic_router_decision: {
+      source_scope: "none",
+      web_policy: "forbidden",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "fast",
+      research_depth: "unknown",
+      confidence: 0.89,
+      reason: "Architecture planning over named connector providers does not require web data."
+    }
+  }, {});
+
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+  assert.ok(!spec.success_contract?.required_policy_groups?.includes("external_web_read"));
+});
+
 test("neutral search over attached files consults SR instead of deterministic source_scope lock", () => {
   const text = "结合这份材料搜索外部机会";
   const contextPacket = { file_paths: ["material.pdf"] };
