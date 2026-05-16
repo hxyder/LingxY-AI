@@ -125,6 +125,31 @@ export function planRequiredPolicyGroupGuidance({
   if ((stepGate?.violations ?? []).some((violation) => violation?.kind === "tool_repeated_failure")) {
     return null;
   }
+  const generatedScriptExecutionViolation = (stepGate?.violations ?? [])
+    .find((violation) => violation?.kind === "generated_script_file_not_executed");
+  if (generatedScriptExecutionViolation
+      && iteration < maxIterations - 1
+      && requiredPolicyGuidanceCount < limits.maxRequiredPolicyGuidance) {
+    return {
+      groups: ["run_script"],
+      transcriptEntry: {
+        type: "contract_guidance",
+        groups: ["run_script"],
+        instruction: [
+          "The task contract is not satisfied yet. Do not finalize.",
+          "The generated script file must be executed from the real artifact path or filename. Call run_script with code that runs/imports the saved file, not equivalent inline code.",
+          generatedScriptExecutionViolation.message
+        ].filter(Boolean).join("\n"),
+        action_only: false
+      },
+      eventPayload: {
+        iteration,
+        required_policy_groups: ["run_script"],
+        generated_script_execution_required: true,
+        action_only: false
+      }
+    };
+  }
   const groups = missingNonActionRequiredPolicyGroups(stepGate);
   const canInject = groups.length > 0
     && iteration < maxIterations - 1
@@ -166,7 +191,8 @@ export function planArtifactCreationGuidance({
   maxGuidance = Number.POSITIVE_INFINITY
 }) {
   const violation = (stepGate?.violations ?? [])
-    .find((entry) => entry?.kind === "artifact_required_not_created");
+    .find((entry) => entry?.kind === "artifact_required_not_created"
+      || entry?.kind === "artifact_required_kind_mismatch");
   const canInject = Boolean(violation)
     && iteration < maxIterations - 1
     && artifactGuidanceCount < maxGuidance;
@@ -175,13 +201,20 @@ export function planArtifactCreationGuidance({
   const kind = taskSpec?.artifact?.kind
     ?? taskSpec?.contract?.output_contract?.kind
     ?? "docx";
+  const requiredKinds = Array.isArray(taskSpec?.artifact?.required_kinds)
+    ? taskSpec.artifact.required_kinds.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [];
+  const requiredKindText = requiredKinds.length > 1
+    ? ` Every requested artifact kind must be created: ${requiredKinds.join(", ")}.`
+    : "";
   return {
     transcriptEntry: {
       type: "contract_guidance",
       groups: ["artifact_generation"],
       instruction: [
         "The task contract requires a real file artifact. Do not finalize with prose only.",
-        `Call generate_document now with kind="${kind}" and a structured outline, or call another artifact-producing tool if it better fits the requested output.`,
+        `Call generate_document now with kind="${kind}" and a structured outline, or call another artifact-producing tool if it better fits the requested output.${requiredKindText}`,
+        "For ad-hoc text/code files, including explicit .html filenames, call write_file once per required filename/kind instead of writing a prose summary of the files.",
         "The final answer may summarize the generated file, but the task is not complete until an artifact path exists."
       ].join("\n"),
       action_only: false
@@ -190,6 +223,7 @@ export function planArtifactCreationGuidance({
       iteration,
       required_policy_groups: ["artifact_generation"],
       artifact_kind: kind,
+      required_artifact_kinds: requiredKinds,
       action_only: false
     }
   };

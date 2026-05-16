@@ -211,6 +211,7 @@
     "verify:runtime-upgrade-guardrails": "node scripts/verify-runtime-upgrade-guardrails.mjs",
     "verify:runtime-performance-baseline": "node scripts/verify-runtime-performance-baseline.mjs",
     "verify:global-execution-latency": "node scripts/verify-global-execution-latency.mjs",
+    "verify:file-cleanup-evidence-pack": "node scripts/verify-file-cleanup-evidence-pack.mjs",
     "verify:main-process-blocking": "node scripts/verify-main-process-blocking.mjs",
     "verify:renderer-stream-batching": "node scripts/verify-renderer-stream-batching.mjs",
     "verify:context-compiler-boundary": "node scripts/verify-context-compiler-boundary.mjs",

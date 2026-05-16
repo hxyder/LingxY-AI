@@ -1,6 +1,7 @@
 const INTERNAL_RETRY_HINT_PATTERN = /(?:tool[_ -]?call|工具|plain text|纯文本|final answer|最终答复|最终回答|重试|retry)/iu;
 const INTERNAL_RETRY_ACK_PATTERN = /(?:不需要|无需|没有|未|只是|上面|之前|previous|retry|tool[_ -]?call|工具|plain text|纯文本|final answer|最终答复)/iu;
 const FINAL_ANSWER_INTRO_PATTERN = /(?:以下|下面|here is|final answer|最终答复|最终回答|纯文本).{0,32}(?:答复|回答|final answer)?\s*[:：]/iu;
+const TOOL_OUTPUT_SECTION_LABEL_PATTERN = /^(?:-+\s*)?(?:stdout|stderr)\s*(?:-+)?$/iu;
 
 function normalizeVisibleText(value) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim();
@@ -44,11 +45,37 @@ function stripBlockFinalAnswerIntro(text) {
   return candidate || null;
 }
 
+export function isToolOutputSectionLabelOnly(value) {
+  return TOOL_OUTPUT_SECTION_LABEL_PATTERN.test(normalizeVisibleText(value));
+}
+
+export function extractToolStdoutText(value) {
+  const text = normalizeVisibleText(value);
+  if (!text) return "";
+  const matches = [...text.matchAll(/---\s*stdout\s*---\s*([\s\S]*?)(?:\n---\s*stderr\s*---|$)/giu)];
+  for (let index = matches.length - 1; index >= 0; index -= 1) {
+    const content = normalizeVisibleText(matches[index]?.[1] ?? "");
+    if (content && content !== "(empty)") return content.slice(0, 4000);
+  }
+  return "";
+}
+
+function preferToolStdoutWhenTranscriptLeaked(original, candidate) {
+  const value = normalizeVisibleText(candidate);
+  if (!value) return value;
+  const stdout = extractToolStdoutText(value) || extractToolStdoutText(original);
+  if (!stdout) return value;
+  if (isToolOutputSectionLabelOnly(value) || /---\s*stdout\s*---/iu.test(value)) {
+    return stdout;
+  }
+  return value;
+}
+
 export function sanitizeUserVisibleFinalText(value) {
   const original = normalizeVisibleText(value);
   if (!original) return "";
-  return stripInlineFinalAnswerIntro(original)
+  const stripped = stripInlineFinalAnswerIntro(original)
     ?? stripBlockFinalAnswerIntro(original)
     ?? original;
+  return preferToolStdoutWhenTranscriptLeaked(original, stripped);
 }
-

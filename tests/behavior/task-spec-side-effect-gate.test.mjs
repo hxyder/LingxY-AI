@@ -95,8 +95,44 @@ test("explicit generated script files are artifact-required and cannot finish as
   assert.equal(spec.artifact.required, true);
   assert.equal(spec.artifact.kind, "mjs");
   assert.equal(spec.success_contract.artifact_created, true);
+  assert.ok(spec.success_contract.required_tool_names.includes("run_script"));
+  assert.equal(spec.success_contract.generated_script_execution_required, true);
   assert.ok(spec.required_steps.includes("generate_artifact"));
   assert.ok(spec.required_steps.includes("verify_file_exists"));
+});
+
+test("mjs artifacts satisfy JavaScript aliases introduced by Node.js wording", () => {
+  const spec = createTaskSpec("生成一个 Node.js 脚本文件，文件名 followup_exec_test.mjs，必须保存为真实文件并执行。", {}, {});
+  const missingExecution = validateSuccessContract(spec, [
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/followup_exec_test.mjs"] }
+  ]);
+  assert.equal(missingExecution.satisfied, false);
+  assert.ok(missingExecution.violations.some((violation) => violation.kind === "run_script_required_not_called"));
+
+  const inlineExecution = validateSuccessContract(spec, [
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/followup_exec_test.mjs"] },
+    {
+      type: "tool_result",
+      tool: "run_script",
+      success: true,
+      args: { language: "node", script: "console.log('ok')" },
+      observation: "run_script (node) finished with exit 0"
+    }
+  ]);
+  assert.equal(inlineExecution.satisfied, false);
+  assert.ok(inlineExecution.violations.some((violation) => violation.kind === "generated_script_file_not_executed"));
+
+  const result = validateSuccessContract(spec, [
+    { type: "tool_result", tool: "write_file", success: true, artifact_paths: ["E:/out/followup_exec_test.mjs"] },
+    {
+      type: "tool_result",
+      tool: "run_script",
+      success: true,
+      args: { language: "node", script: "await import('file:///E:/out/followup_exec_test.mjs');" },
+      observation: "run_script (node) finished with exit 0"
+    }
+  ]);
+  assert.equal(result.satisfied, true, JSON.stringify(result.violations));
 });
 
 test("explicit ad-hoc markdown/json/csv files are artifact-required without hijacking ordinary JSON questions", () => {

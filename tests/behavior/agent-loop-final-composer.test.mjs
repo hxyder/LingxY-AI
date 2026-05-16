@@ -380,6 +380,59 @@ test("agent final reviewer reject replaces unsupported candidate answer", async 
   assert.equal(completed?.payload?.visible_note_applied, true);
 });
 
+test("agent final reviewer skips artifact-only answers when typed contract is satisfied", async () => {
+  const events = [];
+  const scriptPath = "E:/out/followup_exec_test.mjs";
+  const text = await composeFinalAnswer({
+    task: {
+      user_command: "生成一个 Node.js 脚本文件并执行真实落盘文件，最终只回答 TOKEN。",
+      reviewer_loop: { enabled: true },
+      task_spec: {
+        goal: "generate_document",
+        artifact: { required: true, kind: "mjs", required_kinds: ["mjs", "js"] },
+        success_contract: {
+          artifact_created: true,
+          artifact_registered: true,
+          required_tool_names: ["run_script"],
+          generated_script_execution_required: true,
+          required_policy_groups: []
+        }
+      }
+    },
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "write_file",
+        success: true,
+        artifact_paths: [scriptPath],
+        metadata: { path: scriptPath }
+      },
+      {
+        type: "tool_result",
+        tool: "run_script",
+        success: true,
+        args: { language: "node", script: `await import('file:///E:/out/followup_exec_test.mjs');` },
+        observation: "run_script (node) finished with exit 0.\n--- stdout ---\nTOKEN\n"
+      }
+    ],
+    runtime: {
+      emitTaskEvent: (event_type, payload) => events.push({ event_type, payload }),
+      finalAnswerComposer: async () => "TOKEN",
+      finalAnswerReviewer: async () => {
+        throw new Error("reviewer should be skipped");
+      }
+    },
+    reason: "unit_test"
+  });
+
+  assert.equal(text, "TOKEN");
+  assert.ok(events.some((event) =>
+    event.event_type === "final_reviewer_skipped"
+    && event.payload?.reason === "artifact_only_contract_satisfied"
+  ));
+  assert.ok(!events.some((event) => event.event_type === "final_reviewer_completed"));
+});
+
 test("agent final reviewer degrades gracefully on reviewer failure", async () => {
   const events = [];
   const text = await composeFinalAnswer({

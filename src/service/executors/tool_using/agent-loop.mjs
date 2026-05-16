@@ -79,7 +79,11 @@ import {
   renderSkillContextForPrompt,
   shouldLoadSkillContextForTask
 } from "../shared/skill-context.mjs";
-import { sanitizeUserVisibleFinalText } from "../shared/final-answer-sanitizer.mjs";
+import {
+  extractToolStdoutText,
+  isToolOutputSectionLabelOnly,
+  sanitizeUserVisibleFinalText
+} from "../shared/final-answer-sanitizer.mjs";
 import {
   filterToolsForTask,
   isScheduledFireTask,
@@ -1015,6 +1019,10 @@ function finaliseWithUserVisibleFinalText(result, { runtime, task } = {}) {
   const key = Object.prototype.hasOwnProperty.call(result, "final_text") ? "final_text" : "finalText";
   const current = result[key] ?? "";
   let sanitized = sanitizeUserVisibleFinalText(current);
+  if (isToolOutputSectionLabelOnly(sanitized)) {
+    const stdout = latestSuccessfulToolStdout(result.transcript ?? []);
+    if (stdout) sanitized = stdout;
+  }
   const disambiguation = formatLaunchDisambiguationFallback(result.transcript ?? [], task?.user_command ?? "");
   if (disambiguation && !/(哪一个|哪个|which)/iu.test(sanitized)) {
     sanitized = disambiguation;
@@ -1035,6 +1043,16 @@ function finaliseWithUserVisibleFinalText(result, { runtime, task } = {}) {
     });
   } catch { /* audit failures must not break finalization */ }
   return { ...result, [key]: sanitized };
+}
+
+function latestSuccessfulToolStdout(transcript = []) {
+  for (let index = (transcript ?? []).length - 1; index >= 0; index -= 1) {
+    const entry = transcript[index];
+    if (entry?.type !== "tool_result" || entry.success !== true) continue;
+    const stdout = extractToolStdoutText(entry.observation);
+    if (stdout) return stdout;
+  }
+  return "";
 }
 
 function finaliseWithAnswerQuality(result, { runtime, task } = {}) {
@@ -1164,6 +1182,23 @@ function shouldRunEarlyArtifactObligation({ stepGate, transcript = [] } = {}) {
     && hasSuccessfulEvidenceToolResult(transcript);
 }
 
+function hasMultipleRequiredArtifactKinds(task = {}) {
+  const spec = selectSuccessContractValidationSpec(task)
+    ?? task?.task_spec
+    ?? task?.task_spec_initial
+    ?? {};
+  const kinds = Array.isArray(spec?.artifact?.required_kinds)
+    ? spec.artifact.required_kinds.map((kind) => String(kind ?? "").trim()).filter(Boolean)
+    : [];
+  return kinds.length > 1;
+}
+
+function shouldRunDeterministicArtifactObligation({ task, stepGate, transcript = [], guidanceCount = 0 } = {}) {
+  if (hasMultipleRequiredArtifactKinds(task)) return false;
+  return shouldRunEarlyArtifactObligation({ stepGate, transcript })
+    || (guidanceCount > 0 && hasOnlyArtifactContractViolations(stepGate));
+}
+
 // B2-a (b) deterministic artifact-required recovery hook.
 //
 // When the agent loop reports status="success" but the success-contract
@@ -1209,7 +1244,7 @@ export async function attemptArtifactRecovery({
   if (!finalText) {
     return { ok: false, reason: "no_final_text" };
   }
-  const plan = buildDeterministicArtifactPlan({ task, taskSpec, finalText });
+  const plan = buildDeterministicArtifactPlan({ task, taskSpec, finalText, transcript });
   if (!plan.ok) return plan;
 
   // Recovery is for "no usable artifact was created." A malformed proposal
@@ -1720,7 +1755,12 @@ async function _runToolAgentLoopCore({
             artifactGuidanceCount
           });
           if (artifactGuidance) {
-            if (artifactGuidanceCount > 0 && hasOnlyArtifactContractViolations(proseStepGate)) {
+            if (shouldRunDeterministicArtifactObligation({
+              task,
+              stepGate: proseStepGate,
+              transcript,
+              guidanceCount: artifactGuidanceCount
+            })) {
               const forcedArtifact = await runDeterministicArtifactObligation({
                 runtime,
                 task,
@@ -1834,7 +1874,12 @@ async function _runToolAgentLoopCore({
             artifactGuidanceCount
           });
           if (artifactGuidance) {
-            if (artifactGuidanceCount > 0 && hasOnlyArtifactContractViolations(finalStepGate)) {
+            if (shouldRunDeterministicArtifactObligation({
+              task,
+              stepGate: finalStepGate,
+              transcript,
+              guidanceCount: artifactGuidanceCount
+            })) {
               const forcedArtifact = await runDeterministicArtifactObligation({
                 runtime,
                 task,
@@ -2132,7 +2177,12 @@ async function _runToolAgentLoopCore({
             artifactGuidanceCount
           });
           if (artifactGuidance) {
-            if (artifactGuidanceCount > 0 && hasOnlyArtifactContractViolations(invalidStepGate)) {
+            if (shouldRunDeterministicArtifactObligation({
+              task,
+              stepGate: invalidStepGate,
+              transcript,
+              guidanceCount: artifactGuidanceCount
+            })) {
               const forcedArtifact = await runDeterministicArtifactObligation({
                 runtime,
                 task,
@@ -2866,10 +2916,13 @@ async function _runToolAgentLoopCore({
         artifactGuidanceCount
       });
       if (artifactGuidance) {
-        if (
-          shouldRunEarlyArtifactObligation({ stepGate, transcript })
-          || (artifactGuidanceCount > 0 && hasOnlyArtifactContractViolations(stepGate))
-        ) {
+        const runDeterministicArtifactObligationNow = shouldRunDeterministicArtifactObligation({
+          task,
+          stepGate,
+          transcript,
+          guidanceCount: artifactGuidanceCount
+        });
+        if (runDeterministicArtifactObligationNow) {
           const forcedArtifact = await runDeterministicArtifactObligation({
             runtime,
             task,

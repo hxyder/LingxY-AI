@@ -60,11 +60,17 @@ export function artifactRecoveryBlockedReason(taskSpec = {}) {
   const requiredToolNames = Array.isArray(taskSpec?.success_contract?.required_tool_names)
     ? taskSpec.success_contract.required_tool_names.map((name) => String(name ?? "").trim())
     : [];
+  const requiredKinds = Array.isArray(taskSpec?.artifact?.required_kinds)
+    ? taskSpec.artifact.required_kinds.map((kind) => String(kind ?? "").trim()).filter(Boolean)
+    : [];
   if (goal === "transform_existing_file") {
     return "goal_transform_existing_file_requires_edit_file";
   }
   if (requiredToolNames.includes("edit_file")) {
     return "required_tool_edit_file_not_called";
+  }
+  if (requiredKinds.length > 1) {
+    return "multi_artifact_required_kinds_need_explicit_tool_calls";
   }
   return null;
 }

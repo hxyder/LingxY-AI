@@ -43,6 +43,9 @@ const ownerRequiredTexts = [
   "export const RUN_SCRIPT_TOOL = {",
   "function decodeWriteFileContent",
   "const RUN_SCRIPT_LANGUAGES",
+  "const RUN_SCRIPT_LANGUAGE_ALIASES",
+  "function normalizeRunScriptLanguage",
+  "function nodeScriptExtensionForSource",
   "function clampTimeout",
   "async function spawnScript",
   "async function resolveEditableTargetForEdit",
@@ -177,6 +180,24 @@ const runNode = await registry.call("run_script", {
 assert.equal(runNode.success, true, `run_script(node) must still execute; got ${runNode.observation}`);
 assert.equal(runNode.metadata?.tool_id, "run_script", "run_script metadata tool_id changed");
 assert.match(runNode.observation, /cap5f preflight/u, "run_script stdout observation changed");
+
+const runNodeAlias = await registry.call("run_script", {
+  language: "nodejs",
+  script: "console.log('cap5f nodejs alias');",
+  timeout: 5
+}, { outputDir: toolSandbox, task: { task_id: "cap5f_preflight" } });
+assert.equal(runNodeAlias.success, true, `run_script(nodejs alias) must execute as node; got ${runNodeAlias.observation}`);
+assert.equal(runNodeAlias.metadata?.language, "node", "run_script must normalize nodejs language alias to node");
+assert.match(runNodeAlias.observation, /cap5f nodejs alias/u, "run_script nodejs alias stdout changed");
+
+const runNodeRequire = await registry.call("run_script", {
+  language: "node",
+  script: "const fs = require('fs'); console.log('require-ok', typeof fs.readFileSync);",
+  timeout: 5
+}, { outputDir: toolSandbox, task: { task_id: "cap5f_preflight" } });
+assert.equal(runNodeRequire.success, true, `run_script(node require) must execute as CommonJS when needed; got ${runNodeRequire.observation}`);
+assert.match(runNodeRequire.observation, /require-ok function/u,
+  "run_script must support CommonJS require in node scripts");
 
 const manifest = read("scripts/check-manifest.mjs");
 for (const requiredCommand of [

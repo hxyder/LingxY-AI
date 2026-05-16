@@ -68,6 +68,9 @@ for (const required of [
   "Store-owned incremental task-event reads",
   "Shared skill-context relevance gating",
   "Shared deterministic artifact planning",
+  "Final answer recovery from tool stdout",
+  "Script-file generation requests that explicitly ask to execute the script",
+  "Multi-kind artifact requests stay on explicit artifact-producing tool calls",
   "A fast verifier entry at `npm run verify:global-execution-latency`"
 ]) {
   assert(efficiencyPlan.includes(required),
@@ -127,12 +130,52 @@ assert.match(deterministicArtifactPlan, /TEXT_FILE_KINDS = new Set\(\["md", "txt
   "shared deterministic artifact plan must route ad-hoc text artifact kinds");
 assert.match(deterministicArtifactPlan, /toolId: "write_file"/u,
   "shared deterministic artifact plan must materialize text artifacts through write_file");
+assert.match(deterministicArtifactPlan, /RAW_HTML_FILE_KINDS/u,
+  "shared deterministic artifact plan must distinguish raw explicit html files from rendered html documents");
+assert.match(deterministicArtifactPlan, /resolvedOutputPathFromTranscript/u,
+  "shared deterministic artifact plan must preserve previously resolved output paths during recovery");
+assert.match(deterministicArtifactPlan, /REVIEW_REJECTION_PATTERNS/u,
+  "shared deterministic artifact plan must not write runtime reviewer rejection text into recovered artifacts");
 assert.match(deterministicArtifactPlan, /Accuracy check:/u,
   "shared deterministic artifact plan must strip runtime reviewer footers before writing artifacts");
 assert.match(toolUsing, /buildDeterministicArtifactPlan/u,
   "tool_using deterministic artifact recovery must use the shared artifact plan");
 assert.match(agentic, /buildDeterministicArtifactPlan/u,
   "agentic deterministic artifact recovery must use the shared artifact plan");
+
+const taskSpec = read("src/service/core/task-spec.mjs");
+assert.match(taskSpec, /SCRIPT_EXECUTION_REQUEST_RE/u,
+  "TaskSpec must detect explicit script execution obligations");
+assert.match(taskSpec, /required_tool_names:\s*scriptExecutionRequired\s*\?\s*\["run_script"\]/u,
+  "script file generation with execute wording must require run_script");
+assert.match(taskSpec, /generated_script_execution_required:\s*scriptExecutionRequired/u,
+  "script file generation with execute wording must require executing the generated file");
+
+const successContractValidator = read("src/service/core/policy/success-contract-validator.mjs");
+assert.match(successContractValidator, /normalized === "js" \|\| normalized === "javascript"/u,
+  "artifact kind validation must treat JavaScript module extensions as js aliases");
+assert.match(successContractValidator, /\["js", "mjs", "cjs", "jsx", "javascript"\]/u,
+  "metadata kind validation must recognize JavaScript module aliases");
+assert.match(successContractValidator, /generated_script_file_not_executed/u,
+  "success validator must reject inline script execution when the generated script file itself must run");
+
+const artifactFallbackPolicy = read("src/service/core/artifact-fallback-policy.mjs");
+assert.match(artifactFallbackPolicy, /multi_artifact_required_kinds_need_explicit_tool_calls/u,
+  "multi-kind artifact requests must not use single-file deterministic recovery");
+
+const finalAnswerSanitizer = read("src/service/executors/shared/final-answer-sanitizer.mjs");
+assert.match(finalAnswerSanitizer, /extractToolStdoutText/u,
+  "final answer sanitizer must recover useful stdout from leaked tool transcripts");
+assert.match(toolUsing, /latestSuccessfulToolStdout/u,
+  "tool_using finalization must recover latest successful tool stdout when sanitization collapses to a stream label");
+const finalReviewer = read("src/service/executors/tool_using/final-reviewer.mjs");
+assert.match(finalReviewer, /artifact_only_contract_satisfied/u,
+  "final reviewer must skip artifact-only runs once typed success contracts are already satisfied");
+const fileMutationTools = read("src/service/capabilities/tools/file-mutation-execution-tools.mjs");
+assert.match(fileMutationTools, /RUN_SCRIPT_LANGUAGE_ALIASES/u,
+  "run_script must normalize common language aliases to reduce avoidable retries");
+assert.match(fileMutationTools, /nodeScriptExtensionForSource/u,
+  "run_script must support CommonJS require snippets without a second model retry");
 
 const sqliteSchema = read("src/service/core/store/sqlite-schema.mjs");
 assert.match(sqliteSchema, /idx_task_events_task_ts/u,

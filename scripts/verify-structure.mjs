@@ -13,6 +13,7 @@ const requiredPaths = [
   "docs/architecture/electron-js-runtime-performance-plan.md",
   "docs/architecture/post-runtime-upgrade-roadmap.md",
   "docs/architecture/global-execution-efficiency-and-cleanup-plan.md",
+  "docs/architecture/file-cleanup-evidence-pack.md",
   "docs/architecture/code-ownership-map.md",
   "docs/architecture/ipc-contract-inventory.md",
   "docs/architecture/http-route-ownership-inventory.md",

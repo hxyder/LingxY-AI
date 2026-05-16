@@ -2,6 +2,10 @@ import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { resolveProviderForModelRole } from "../shared/provider-resolver.mjs";
 import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
 import { compactTranscriptForComposer } from "./finalization.mjs";
+import {
+  selectSuccessContractValidationSpec,
+  validateSuccessContract
+} from "../../core/policy/success-contract-validator.mjs";
 
 const DEFAULT_REVIEW_BUDGET = Object.freeze({
   timeoutMs: 8000,
@@ -102,6 +106,14 @@ export function buildFinalAnswerReviewRiskProfile({ task = null, transcript = []
     required: reasons.length > 0,
     reasons
   };
+}
+
+function artifactOnlyContractIsSatisfied({ task = null, transcript = [], riskProfile = {} } = {}) {
+  const reasons = Array.isArray(riskProfile?.reasons) ? riskProfile.reasons : [];
+  if (reasons.length !== 1 || reasons[0] !== "artifact_required") return false;
+  const spec = selectSuccessContractValidationSpec(task);
+  if (!spec) return false;
+  return validateSuccessContract(spec, transcript).satisfied === true;
 }
 
 function parseJsonish(value) {
@@ -301,6 +313,13 @@ export async function reviewFinalAnswer({
   if (!riskProfile.required && configInfo.raw.mode !== "always") {
     runtime?.emitTaskEvent?.("final_reviewer_skipped", {
       reason: "risk_profile_not_required",
+      risk_reasons: riskProfile.reasons
+    });
+    return { text, review: null };
+  }
+  if (configInfo.raw.mode !== "always" && artifactOnlyContractIsSatisfied({ task, transcript, riskProfile })) {
+    runtime?.emitTaskEvent?.("final_reviewer_skipped", {
+      reason: "artifact_only_contract_satisfied",
       risk_reasons: riskProfile.reasons
     });
     return { text, review: null };

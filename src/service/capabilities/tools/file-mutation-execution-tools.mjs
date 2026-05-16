@@ -196,6 +196,39 @@ const RUN_SCRIPT_LANGUAGES = Object.freeze({
   node: { interpreter: process.execPath, args: [], ext: ".mjs" },
   python: { interpreter: "python", args: [], ext: ".py" }
 });
+const RUN_SCRIPT_LANGUAGE_ALIASES = Object.freeze({
+  js: "node",
+  javascript: "node",
+  nodejs: "node",
+  "node.js": "node",
+  py: "python",
+  python3: "python",
+  ps1: "powershell",
+  pwsh: "powershell"
+});
+
+function normalizeRunScriptLanguage(value = "") {
+  const raw = String(value ?? "").toLowerCase().trim();
+  return RUN_SCRIPT_LANGUAGE_ALIASES[raw] ?? raw;
+}
+
+function nodeScriptExtensionForSource(source = "") {
+  const text = String(source ?? "");
+  if (/\brequire\s*\(/u.test(text)
+      && !/(?:^\s*import\s|^\s*export\s|\bimport\s*\()/mu.test(text)) {
+    return ".cjs";
+  }
+  return ".mjs";
+}
+
+function runScriptSpecForSource(language, source = "") {
+  const spec = RUN_SCRIPT_LANGUAGES[language];
+  if (!spec || language !== "node") return spec;
+  return {
+    ...spec,
+    ext: nodeScriptExtensionForSource(source)
+  };
+}
 
 function clampTimeout(value) {
   const n = Number(value);
@@ -249,7 +282,7 @@ export const RUN_SCRIPT_TOOL = {
   required_capabilities: ["subprocess_exec"],
   requires_confirmation: false,
   async execute(args = {}, ctx = {}) {
-    const language = String(args.language ?? "").toLowerCase().trim();
+    const language = normalizeRunScriptLanguage(args.language);
     const source = typeof args.script === "string" ? args.script
       : typeof args.code === "string" ? args.code
         : "";
@@ -268,7 +301,7 @@ export const RUN_SCRIPT_TOOL = {
       });
     }
     const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
-    const spec = RUN_SCRIPT_LANGUAGES[language];
+    const spec = runScriptSpecForSource(language, source);
     const scriptPath = path.join(outputDir, `run-script-${crypto.randomUUID().slice(0, 8)}${spec.ext}`);
     await writeFile(scriptPath, source, "utf8");
     const timeoutSeconds = clampTimeout(args.timeout);

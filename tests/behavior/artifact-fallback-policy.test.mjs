@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  artifactRecoveryBlockedReason,
   createFileGenerationAttemptState,
   recordArtifactGenerated,
   recordFileGenerationToolEvent,
@@ -114,4 +115,11 @@ test("artifact fallback policy tracks vector graphics as file generation", () =>
 
   assert.equal(fileGeneration.attempted, true);
   assert.equal(fileGeneration.succeeded, false);
+});
+
+test("artifact fallback policy blocks single-file deterministic recovery for multi-kind requests", () => {
+  assert.equal(artifactRecoveryBlockedReason({
+    artifact: { required: true, kind: "json", required_kinds: ["json", "csv", "md"] },
+    success_contract: { artifact_created: true }
+  }), "multi_artifact_required_kinds_need_explicit_tool_calls");
 });

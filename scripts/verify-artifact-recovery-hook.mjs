@@ -67,6 +67,25 @@ function createStubRegistry({ generateImpl } = {}) {
         }
         return generateImpl(args, ctx);
       }
+    },
+    {
+      id: "write_file",
+      name: "Write File",
+      description: "stub",
+      parameters: {},
+      async execute(args, ctx) {
+        const stubPath = args.path || `${ctx?.outputDir ?? "/tmp"}/${args.filename ?? "stub.txt"}`;
+        return {
+          success: true,
+          observation: `(stub) wrote file ${stubPath}`,
+          metadata: {
+            tool_id: "write_file",
+            path: stubPath,
+            content_preview: String(args.content ?? "").slice(0, 200)
+          },
+          artifact_paths: [stubPath]
+        };
+      }
     }
   ];
   return {
@@ -351,7 +370,7 @@ function makeSuccessResult(finalText, transcript = []) {
 }
 
 // ----------------------------------------------------------------------
-// 7. Unsupported rawKind ('markdown') → recovery is SKIPPED with a
+// 7. Unsupported rawKind ('rtf') → recovery is SKIPPED with a
 //    single-reason "unsupported_kind:<rawKind>" instead of silently
 //    substituting html. codex round-1: silent substitution would
 //    produce a kind-mismatch shadow downstream that confuses the user.
@@ -364,20 +383,20 @@ function makeSuccessResult(finalText, transcript = []) {
       return { success: true, observation: "(stub) ok", metadata: {}, artifact_paths: [] };
     }
   });
-  const task = makeArtifactRequiredTask({ kind: "markdown" });
+  const task = makeArtifactRequiredTask({ kind: "rtf" });
   const result = makeSuccessResult("fallback content");
   const out = await finaliseWithArtifactContract(result, { runtime, task });
   check(
-    "unsupported kind 'markdown': recovery skipped (tool not invoked)",
+    "unsupported kind 'rtf': recovery skipped (tool not invoked)",
     captured.length === 0
   );
   check(
-    "unsupported kind 'markdown': status = partial_success",
+    "unsupported kind 'rtf': status = partial_success",
     out.status === "partial_success"
   );
   check(
-    "unsupported kind 'markdown': reason = unsupported_kind:markdown",
-    out.artifact_recovery?.reason === "unsupported_kind:markdown"
+    "unsupported kind 'rtf': reason = unsupported_kind:rtf",
+    out.artifact_recovery?.reason === "unsupported_kind:rtf"
   );
 }
 

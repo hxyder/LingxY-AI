@@ -112,16 +112,17 @@ function buildAgenticArtifactContractGuidance({ taskSpec, violation } = {}) {
   const kind = artifactKindFromTaskSpec(taskSpec);
   return [
     "The task contract is not satisfied yet. Do not finalize with prose only.",
-    `A real file artifact is required (${kind}). Call an artifact-producing tool now: generate_document for document/html artifacts, or write_file for md/txt/csv/json artifacts.`,
+    `A real file artifact is required (${kind}). Call an artifact-producing tool now: generate_document for rendered document/html reports, or write_file for md/txt/csv/json and explicit .html filenames.`,
     violation?.message ? `Current violation: ${violation.message}` : null
   ].filter(Boolean).join("\n");
 }
 
-function deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText } = {}) {
+function deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText, transcript = [] } = {}) {
   const plan = buildDeterministicArtifactPlan({
     task,
     taskSpec,
     finalText,
+    transcript,
     defaultKind: "docx"
   });
   return plan.ok ? plan : null;
@@ -141,7 +142,7 @@ async function runDeterministicAgenticArtifactObligation({
     throw Object.assign(new Error("Agentic artifact obligation aborted before execution."), { code: "ABORT_ERR" });
   }
   const registry = runtime?.actionToolRegistry;
-  const plan = deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText });
+  const plan = deterministicArtifactArgsFromFinalText({ task, taskSpec, finalText, transcript });
   if (!plan) return { ok: false, reason: "unsupported_or_empty_artifact" };
   if (!registry?.get?.(plan.toolId)) return { ok: false, reason: `no_${plan.toolId}` };
   const call = {

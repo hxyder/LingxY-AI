@@ -106,6 +106,13 @@ Required cleanup evidence before deleting or archiving any tracked source file:
 - Rollback path or explicit archive location.
 - `npm run check:fast` after the cleanup.
 
+The machine-readable cleanup gate is the File Cleanup Evidence Pack:
+
+- Contract: `src/shared/file-cleanup-evidence-pack.mjs`.
+- Architecture docs: `docs/architecture/file-cleanup-evidence-pack.md`.
+- Non-destructive candidate report: `scripts/run-file-cleanup-candidates.mjs`.
+- Verifier: `npm run verify:file-cleanup-evidence-pack`.
+
 Do not delete or archive:
 
 - `node_modules/`, `dist/`, local runtime databases, user data, secrets, or
@@ -138,6 +145,23 @@ As of this plan, the PMAT-014 baseline includes:
 - Shared deterministic artifact planning for ad-hoc text artifacts.
 - Provider-wait progress heartbeats for slow first model output.
 - Final answer sanitization for internal retry preambles.
+- Final answer recovery from tool stdout when a leaked transcript would collapse
+  to a `stdout`/`stderr` section label.
+- Script-file generation requests that explicitly ask to execute the script now
+  require the `run_script` tool as a typed contract obligation, and the
+  `run_script` call must reference the generated script artifact path or
+  filename instead of equivalent inline code.
+- `run_script` normalizes common language aliases such as `nodejs` to `node`
+  and executes Node snippets containing `require()` as CommonJS, reducing
+  avoidable retry loops on routine local verification scripts.
+- Explicit `.html` filenames are treated as raw text/code artifacts for
+  deterministic recovery, preserving requested literal content and previously
+  resolved output paths through `write_file`; rendered HTML reports can still
+  use `generate_document`.
+- Artifact-only final review is skipped once typed success contracts are
+  already satisfied, avoiding redundant reviewer calls and false rejections.
+- Multi-kind artifact requests stay on explicit artifact-producing tool calls
+  instead of using single-file deterministic recovery.
 - Scheduled email/title field normalization and side-effect content contracts.
 - A fast verifier entry at `npm run verify:global-execution-latency`.
 

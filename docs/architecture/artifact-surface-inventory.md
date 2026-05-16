@@ -43,7 +43,7 @@ Status: verified against the current repository on 2026-05-09.
 
 ## Artifact Kinds In Current Surface
 
-Primary requested/generated kinds: `pptx`, `docx`, `xlsx`, `pdf`, `html`, `svg`, `png`, `txt`, `md`, `csv`, `json`.
+Primary requested/generated kinds: `pptx`, `docx`, `xlsx`, `pdf`, `html`, `svg`, `png`, `txt`, `md`, `csv`, `json`, `js`, `mjs`, `py`, `ps1`.
 
 Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 

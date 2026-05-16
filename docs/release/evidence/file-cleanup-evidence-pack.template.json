@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-16T00:00:00.000Z",
+  "commit": "template",
+  "branch": "template",
+  "candidates": [
+    {
+      "path": ".tmp/example-report.json",
+      "category": "local_generated_output",
+      "trackedSource": false,
+      "decision": "delete_ready",
+      "ownerLayer": "",
+      "reason": "example disposable local output; runner reports only and performs no deletion",
+      "replacementPath": "",
+      "splitDirection": "",
+      "evidence": {
+        "referenceSweep": { "status": "not_applicable", "command": "", "summary": "untracked local output" },
+        "packageScriptSweep": { "status": "not_applicable", "command": "", "summary": "untracked local output" },
+        "publicExportSweep": { "status": "not_applicable", "command": "", "summary": "untracked local output" },
+        "interfaceSweep": { "status": "not_applicable", "command": "", "summary": "untracked local output" },
+        "replacementVerifier": { "status": "not_applicable", "command": "", "summary": "regenerable local output" },
+        "rollbackOrArchivePath": { "status": "not_applicable", "command": "", "summary": "regenerate by rerunning the owning verifier" },
+        "checkFast": {
+          "status": "not_applicable",
+          "command": "",
+          "summary": "not a tracked source cleanup",
+          "requiredCommand": "npm run check:fast"
+        }
+      },
+      "notes": []
+    },
+    {
+      "path": "scripts/real-llm-test/report-YYYY-MM-DD.md",
+      "category": "historical_evidence",
+      "trackedSource": true,
+      "decision": "retain",
+      "ownerLayer": "release evidence",
+      "reason": "historical acceptance evidence should be retained until replacement evidence is named",
+      "replacementPath": "",
+      "splitDirection": "",
+      "evidence": {
+        "referenceSweep": { "status": "not_run", "command": "", "summary": "run before archive/delete" },
+        "packageScriptSweep": { "status": "not_applicable", "command": "", "summary": "evidence report" },
+        "publicExportSweep": { "status": "not_applicable", "command": "", "summary": "evidence report" },
+        "interfaceSweep": { "status": "not_applicable", "command": "", "summary": "evidence report" },
+        "replacementVerifier": { "status": "not_run", "command": "", "summary": "replacement evidence not selected" },
+        "rollbackOrArchivePath": { "status": "not_run", "command": "", "summary": "archive path not selected" },
+        "checkFast": {
+          "status": "not_run",
+          "command": "",
+          "summary": "required only if tracked cleanup is performed",
+          "requiredCommand": "npm run check:fast"
+        }
+      },
+      "notes": []
+    },
+    {
+      "path": "src/service/core/legacy-runtime.mjs",
+      "category": "old_reachable_implementation",
+      "trackedSource": true,
+      "decision": "blocked",
+      "ownerLayer": "service runtime",
+      "reason": "example old implementation stays blocked until replacement verifier and call-site migration are proven",
+      "replacementPath": "",
+      "splitDirection": "",
+      "evidence": {
+        "referenceSweep": { "status": "not_run", "command": "", "summary": "run before archive/delete" },
+        "packageScriptSweep": { "status": "not_run", "command": "", "summary": "run before archive/delete" },
+        "publicExportSweep": { "status": "not_run", "command": "", "summary": "run before archive/delete" },
+        "interfaceSweep": { "status": "not_run", "command": "", "summary": "run before archive/delete" },
+        "replacementVerifier": { "status": "not_run", "command": "", "summary": "replacement verifier missing" },
+        "rollbackOrArchivePath": { "status": "not_run", "command": "", "summary": "archive path not selected" },
+        "checkFast": {
+          "status": "not_run",
+          "command": "",
+          "summary": "run after cleanup",
+          "requiredCommand": "npm run check:fast"
+        }
+      },
+      "notes": []
+    },
+    {
+      "path": "src/desktop/renderer/console.js",
+      "category": "large_mixed_responsibility_file",
+      "trackedSource": true,
+      "decision": "split_required",
+      "ownerLayer": "desktop renderer",
+      "reason": "large mixed-responsibility file needs boundary-first extraction",
+      "replacementPath": "",
+      "splitDirection": "extract live progress, conversation hydration, and settings flows into owned renderer modules",
+      "evidence": {
+        "referenceSweep": { "status": "not_run", "command": "", "summary": "run before moving owners" },
+        "packageScriptSweep": { "status": "not_applicable", "command": "", "summary": "source split candidate" },
+        "publicExportSweep": { "status": "not_run", "command": "", "summary": "run before changing exports" },
+        "interfaceSweep": { "status": "not_run", "command": "", "summary": "run IPC/HTTP/tool/event/storage sweep before split" },
+        "replacementVerifier": { "status": "not_run", "command": "", "summary": "add boundary verifier before extraction" },
+        "rollbackOrArchivePath": { "status": "not_applicable", "command": "", "summary": "split candidate, not archive/delete candidate" },
+        "checkFast": {
+          "status": "not_run",
+          "command": "",
+          "summary": "run after extraction",
+          "requiredCommand": "npm run check:fast"
+        }
+      },
+      "notes": []
+    }
+  ],
+  "notes": [
+    "template only; no file cleanup was executed"
+  ]
+}

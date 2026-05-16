@@ -350,11 +350,12 @@ PMAT-014 implementation notes, 2026-05-15:
   recovery treated `md` as unsupported and then let the planner loop until an
   empty `write_file` call failed.
 - Deterministic artifact recovery is now a shared typed plan in
-  `src/service/executors/shared/deterministic-artifact-plan.mjs`: document/html
-  kinds route through `generate_document`; `md`, `txt`, `csv`, and `json` route
-  through `write_file`; runtime reviewer footers such as `Accuracy check:` are
-  stripped before file materialization. Both `tool_using` and `agentic` use the
-  shared plan.
+  `src/service/executors/shared/deterministic-artifact-plan.mjs`: rendered
+  document/html kinds route through `generate_document`; explicit raw `.html`
+  filenames plus `md`, `txt`, `csv`, and `json` route through `write_file`;
+  runtime reviewer footers such as `Accuracy check:` are stripped before file
+  materialization; resolved output paths are preserved when available. Both
+  `tool_using` and `agentic` use the shared plan.
 - After the fix, `D.npm_trends_md` passed in 15.2s with 3 LLM calls, about
   13.2k tokens, `web_search_fetch -> write_file`, and a real `.md` artifact
   without internal reviewer text
@@ -430,8 +431,11 @@ console rendering changes inside the progress surface.
 PMAT-014 file cleanup follow-up, 2026-05-16: file cleanup is now part of the
 global execution-efficiency program rather than an ad hoc deletion pass. The
 tracked execution board is
-`docs/architecture/global-execution-efficiency-and-cleanup-plan.md`. Cleanup is
-split into local generated output, historical evidence, old reachable
+`docs/architecture/global-execution-efficiency-and-cleanup-plan.md`; the
+machine-checkable cleanup contract is
+`docs/architecture/file-cleanup-evidence-pack.md` with the verifier
+`npm run verify:file-cleanup-evidence-pack`. Cleanup is split into local
+generated output, historical evidence, old reachable
 implementation paths, and large mixed-responsibility files. Tracked source files
 may be deleted or archived only after import/reference sweeps, package script
 and public export checks, IPC/HTTP/tool/artifact/provider/storage sweeps where

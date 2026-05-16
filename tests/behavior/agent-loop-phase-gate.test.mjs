@@ -4,6 +4,7 @@ import test from "node:test";
 import { createActionToolRegistry } from "../../src/service/capabilities/registry/registry.mjs";
 import { runToolAgentLoop } from "../../src/service/executors/tool_using/agent-loop.mjs";
 import {
+  planArtifactCreationGuidance,
   planContractActionHandoff,
   planRequiredPolicyGroupGuidance
 } from "../../src/service/executors/tool_using/phase-gate.mjs";
@@ -35,6 +36,52 @@ function makeWebSearchTool({ calls, outcomes }) {
     }
   };
 }
+
+test("artifact guidance covers kind mismatches and multi-kind file requests", () => {
+  const guidance = planArtifactCreationGuidance({
+    stepGate: {
+      violations: [
+        {
+          kind: "artifact_required_kind_mismatch",
+          message: "requires a csv artifact"
+        }
+      ]
+    },
+    taskSpec: {
+      artifact: { required: true, kind: "json", required_kinds: ["json", "csv", "md"] }
+    },
+    iteration: 1,
+    maxIterations: 5,
+    artifactGuidanceCount: 0
+  });
+
+  assert.ok(guidance);
+  assert.match(guidance.transcriptEntry.instruction, /json, csv, md/u);
+  assert.match(guidance.transcriptEntry.instruction, /write_file once per required filename\/kind/u);
+  assert.deepEqual(guidance.eventPayload.required_artifact_kinds, ["json", "csv", "md"]);
+});
+
+test("required policy guidance tells run_script to execute generated script artifact files", () => {
+  const guidance = planRequiredPolicyGroupGuidance({
+    stepGate: {
+      violations: [
+        {
+          kind: "generated_script_file_not_executed",
+          message: "run_script did not reference the generated script artifact path or filename."
+        }
+      ]
+    },
+    iteration: 2,
+    maxIterations: 5,
+    requiredPolicyGuidanceCount: 0
+  });
+
+  assert.ok(guidance);
+  assert.deepEqual(guidance.groups, ["run_script"]);
+  assert.match(guidance.transcriptEntry.instruction, /real artifact path or filename/u);
+  assert.match(guidance.transcriptEntry.instruction, /not equivalent inline code/u);
+  assert.equal(guidance.eventPayload.generated_script_execution_required, true);
+});
 
 function makeTask(overrides = {}) {
   return {

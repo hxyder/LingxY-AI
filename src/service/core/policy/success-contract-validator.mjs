@@ -21,6 +21,8 @@
  * created; output=conversational → no spurious file writes.
  */
 
+import path from "node:path";
+
 import { toolsInGroup } from "./policy-groups.mjs";
 import {
   ACTION_OBLIGATION_GROUPS,
@@ -810,6 +812,15 @@ export function validateSuccessContract(taskSpec, transcript = []) {
     }
   }
 
+  if (requiresGeneratedScriptExecution(taskSpec)
+      && transcriptHasArtifactCreated(transcript)
+      && !transcriptHasGeneratedScriptExecution(taskSpec, transcript)) {
+    violations.push({
+      kind: "generated_script_file_not_executed",
+      message: "success_contract.generated_script_execution_required is true, but run_script did not reference the generated script artifact path or filename. Execute the real file created on disk, not equivalent inline code."
+    });
+  }
+
   return { satisfied: violations.length === 0, violations };
 }
 
@@ -1004,7 +1015,22 @@ function artifactPathMatchesKind(filePath = "", kind = "") {
   if (normalized === "word") return lower.endsWith(".docx");
   if (normalized === "excel") return lower.endsWith(".xlsx");
   if (normalized === "ppt" || normalized === "powerpoint") return lower.endsWith(".pptx");
+  if (normalized === "js" || normalized === "javascript") {
+    return [".js", ".mjs", ".cjs", ".jsx"].some((extension) => lower.endsWith(extension));
+  }
   return lower.endsWith(`.${normalized}`);
+}
+
+function artifactKindsMatch(actualKind = "", requiredKind = "") {
+  const actual = String(actualKind ?? "").trim().toLowerCase();
+  const required = String(requiredKind ?? "").trim().toLowerCase();
+  if (!required) return true;
+  if (!actual) return false;
+  if (actual === required) return true;
+  if ((required === "js" || required === "javascript") && ["js", "mjs", "cjs", "jsx", "javascript"].includes(actual)) {
+    return true;
+  }
+  return false;
 }
 
 function entryMatchesArtifactKind(entry = {}, kind = "") {
@@ -1015,7 +1041,7 @@ function entryMatchesArtifactKind(entry = {}, kind = "") {
     ?? entry?.result?.kind
     ?? entry?.result?.artifact_kind
     ?? "").trim().toLowerCase();
-  if (metadataKind && metadataKind === normalized) return true;
+  if (metadataKind && artifactKindsMatch(metadataKind, normalized)) return true;
   return artifactPathsFromEntry(entry).some((filePath) => artifactPathMatchesKind(filePath, normalized));
 }
 
@@ -1024,6 +1050,60 @@ function transcriptHasArtifactKind(transcript = [], kind = "") {
     if (!isSuccessfulHit(entry)) return false;
     if (artifactPathsFromEntry(entry).length === 0) return false;
     return entryMatchesArtifactKind(entry, kind);
+  });
+}
+
+const SCRIPT_ARTIFACT_KINDS = new Set(["mjs", "js", "javascript", "cjs", "jsx", "py", "ps1"]);
+
+function requiresGeneratedScriptExecution(taskSpec = {}) {
+  return taskSpec?.success_contract?.generated_script_execution_required === true;
+}
+
+function scriptArtifactPathsFromTranscript(taskSpec = {}, transcript = []) {
+  const requiredKinds = [
+    artifactKindFromSpec(taskSpec),
+    ...artifactRequiredKindsFromSpec(taskSpec)
+  ].filter((kind) => SCRIPT_ARTIFACT_KINDS.has(kind));
+  const kinds = requiredKinds.length > 0 ? requiredKinds : [...SCRIPT_ARTIFACT_KINDS];
+  const paths = [];
+  for (const entry of transcript ?? []) {
+    if (!isSuccessfulHit(entry)) continue;
+    const entryPaths = artifactPathsFromEntry(entry);
+    if (entryPaths.length === 0) continue;
+    if (!kinds.some((kind) => entryMatchesArtifactKind(entry, kind))) continue;
+    paths.push(...entryPaths.filter((filePath) =>
+      kinds.some((kind) => artifactPathMatchesKind(filePath, kind))
+    ));
+  }
+  return [...new Set(paths)];
+}
+
+function normalizePathNeedle(value = "") {
+  return String(value ?? "")
+    .replace(/\\/gu, "/")
+    .toLowerCase();
+}
+
+function runScriptArgsText(entry = {}) {
+  const args = entry?.args ?? entry?.arguments ?? entry?.result?.args ?? {};
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return String(args ?? "");
+  }
+}
+
+function transcriptHasGeneratedScriptExecution(taskSpec = {}, transcript = []) {
+  const scriptPaths = scriptArtifactPathsFromTranscript(taskSpec, transcript);
+  if (scriptPaths.length === 0) return false;
+  const needles = scriptPaths.flatMap((filePath) => [
+    normalizePathNeedle(filePath),
+    normalizePathNeedle(path.basename(filePath))
+  ]).filter(Boolean);
+  return (transcript ?? []).some((entry) => {
+    if (entry?.type !== "tool_result" || entry?.tool !== "run_script" || !isSuccessfulHit(entry)) return false;
+    const haystack = normalizePathNeedle(runScriptArgsText(entry));
+    return needles.some((needle) => haystack.includes(needle));
   });
 }
 

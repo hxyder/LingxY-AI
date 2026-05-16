@@ -85,6 +85,7 @@ function isLaunchTaskText(text) {
  * @property {boolean} tool_called        - at least one tool call must appear in transcript
  * @property {string[]} required_tool_names - specific tools that must be called
  * @property {string[]} required_policy_groups - capability groups that must be satisfied
+ * @property {boolean} generated_script_execution_required - generated script artifacts must be executed from the created file path
  */
 
 /**
@@ -689,12 +690,15 @@ const FORMAT_PATTERNS = [
 
 const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html", "mjs", "js", "py", "ps1"]);
 const AD_HOC_FILE_ARTIFACT_FORMATS = new Set(["md", "json", "csv", "txt"]);
+const SCRIPT_FILE_ARTIFACT_FORMATS = new Set(["mjs", "js", "py", "ps1"]);
 const ALL_EXPLICIT_FILE_ARTIFACT_FORMATS = new Set([
   ...FILE_ARTIFACT_FORMATS,
   ...AD_HOC_FILE_ARTIFACT_FORMATS
 ]);
 const EXPLICIT_FILE_ARTIFACT_REQUEST_RE =
   /(?:生成(?!的)|创建|制作|保存|导出|写入|写成|做一个|整理成|转成|转换成).{0,48}(?:文件|文档|报告|表格|幻灯片|脚本|\.pptx|pptx|powerpoint|\bppt\b|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|纯文本)|\b(?:create|generate|save|export|write|make|turn\s+.*\s+into|convert)\b.{0,56}\b(?:file|document|report|spreadsheet|slide|deck|script|\.pptx|pptx|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|plain\s+text)\b/iu;
+const SCRIPT_EXECUTION_REQUEST_RE =
+  /(?:执行|运行|跑|用\s*node(?:\.js)?\s*执行|execute|run).{0,96}(?:脚本|script|\.mjs|\.js|\.py|\.ps1)|(?:脚本|script|\.mjs|\.js|\.py|\.ps1).{0,96}(?:执行|运行|跑|execute|run)/iu;
 
 function detectFormats(text) {
   if (isLaunchTaskText(text)) {
@@ -713,6 +717,12 @@ function explicitFileArtifactKindFromRequest(text, suggestedFormats = []) {
 function explicitFileArtifactKindsFromRequest(text, suggestedFormats = []) {
   if (!EXPLICIT_FILE_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) return [];
   return suggestedFormats.filter((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format));
+}
+
+function requiresGeneratedScriptExecution(text, artifactKinds = []) {
+  const kinds = Array.isArray(artifactKinds) ? artifactKinds : [];
+  return kinds.some((kind) => SCRIPT_FILE_ARTIFACT_FORMATS.has(kind))
+    && SCRIPT_EXECUTION_REQUEST_RE.test(String(text ?? ""));
 }
 
 function buildResearchExecutionConstraints(researchQuality) {
@@ -831,6 +841,9 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const fileArtifactKind = explicitFileArtifactKind
     ?? (goal === "transform_existing_file" ? contextArtifactKind : null)
     ?? inferredFileArtifactKind;
+  const scriptExecutionRequired = requiresGeneratedScriptExecution(text, explicitFileArtifactKinds.length > 0
+    ? explicitFileArtifactKinds
+    : [fileArtifactKind].filter(Boolean));
   const artifactRequired = goal === "launch_and_act"
     ? false
     : (noteIntent ||
@@ -1123,7 +1136,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       artifact_created: artifactRequired,
       artifact_registered: artifactRequired,
       tool_called: mustUseTools,
-      required_tool_names: [],
+      required_tool_names: scriptExecutionRequired ? ["run_script"] : [],
+      generated_script_execution_required: scriptExecutionRequired,
       // P4-00.7: group-level requirements. Validator counts any member of
       // the group as satisfying the requirement — used so the LLM can pick
       // fetch_url_content or web_search when web_search_fetch returns
