@@ -137,6 +137,7 @@ assert.equal(detailVm.canRetry, true);
 assert.equal(detailVm.canCancel, false);
 
 const consoleRenderer = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
+const consoleHtml = readFileSync(new URL("../src/desktop/renderer/console.html", import.meta.url), "utf8");
 const sharedChatCss = readFileSync(new URL("../src/desktop/renderer/shared-chat.css", import.meta.url), "utf8");
 assert.match(consoleRenderer, /function appendConsoleChatProgress/);
 assert.match(consoleRenderer, /function appendConsoleChatLiveProgress/);
@@ -162,6 +163,10 @@ assert.match(consoleRenderer, /async function writeConsoleClipboardText/);
 assert.match(consoleRenderer, /consoleShellClient\?\.writeClipboardText/);
 assert.match(consoleRenderer, /data-action="copy"[\s\S]{0,900}writeConsoleClipboardText\(content\)/);
 assert.match(consoleRenderer, /data-md-copy[\s\S]{0,900}writeConsoleClipboardText\(code\)/);
+assert.match(consoleHtml, /Review Inbox/);
+assert.match(consoleHtml, /userMemoryActivityList/);
+assert.match(consoleRenderer, /userMemoryActivityList/);
+assert.match(consoleRenderer, /activityHistory: state\.workspace\.userMemory\?\.activityHistory/);
 assert.match(
   sharedChatCss,
   /\.chat-msg-bubble \.md-code pre,[\s\S]{0,260}background:\s*transparent;[\s\S]{0,80}color:\s*#f8fafc;/,

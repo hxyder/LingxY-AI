@@ -2337,8 +2337,8 @@
           </label>
           <label class="switch-row">
             <div class="switch-copy">
-              <strong>Auto-save generated memories</strong>
-              <span class="muted">When enabled, generated task memories are saved as scoped memory automatically. Routine task history stays out of the review queue by default.</span>
+              <strong>Auto-approve high-signal memories</strong>
+              <span class="muted">Only typed durable candidates can be approved automatically. Routine task history is kept separately.</span>
             </div>
             <input id="userMemoryAutoApprove" class="switch-control" type="checkbox">
           </label>
@@ -2364,10 +2364,15 @@
           </div>
           <div id="userMemoryApprovedList" class="stack" style="gap:8px;margin-top:8px;"></div>
           <div class="row" style="align-items:center;margin-top:12px;">
-            <strong style="font-size:13px;">Memory proposals</strong>
+            <strong style="font-size:13px;">Review Inbox</strong>
             <span id="userMemoryProposalState" class="muted" style="font-size:12px;"></span>
           </div>
           <div id="userMemoryProposalList" class="stack" style="gap:8px;margin-top:8px;"></div>
+          <div class="row" style="align-items:center;margin-top:12px;">
+            <strong style="font-size:13px;">Activity history</strong>
+            <span id="userMemoryActivityState" class="muted" style="font-size:12px;"></span>
+          </div>
+          <div id="userMemoryActivityList" class="stack" style="gap:8px;margin-top:8px;"></div>
           <div class="row" style="align-items:center;margin-top:12px;">
             <strong style="font-size:13px;">Review history</strong>
             <span id="userMemoryReviewState" class="muted" style="font-size:12px;"></span>

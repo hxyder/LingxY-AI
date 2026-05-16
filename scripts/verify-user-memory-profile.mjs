@@ -28,6 +28,8 @@ const plan = read("FUNCTION_AUDIT_AND_UPGRADE_PLAN.md");
 
 assert.match(profileService, /sanitizeUserMemoryProfile/u, "user memory profile should have a sanitizer");
 assert.match(profileService, /applyUserMemoryProfileToContext/u, "user memory profile should inject via structured context helper");
+assert.match(profileService, /activityHistory/u, "user memory profile should keep routine activity separate from durable memory");
+assert.match(profileService, /classifyMemoryCandidate/u, "user memory profile should classify generated candidates before review");
 assert.match(profileService, /current user instruction override/u, "memory copy must state current user instructions win");
 assert.match(contextSubmission, /applyUserMemoryProfileToContext/u, "submitContextTask should apply editable user memory");
 assert.match(contextSubmission, /readUserMemoryProfileFromConfig/u, "submitContextTask should read memory from config");
@@ -46,14 +48,18 @@ assert.match(providerRoutes, /\/config\/user-memory/u, "local HTTP surface shoul
 assert.match(providerRoutes, /requireDesktopActor[\s\S]{0,120}desktop_console/u, "user memory save route should be desktop guarded");
 assert.match(consoleHtml, /id="userMemoryPanel"/u, "Console Settings should expose editable user memory panel");
 assert.match(consoleHtml, /id="userMemoryAutoApprove"/u, "Console Settings should expose explicit auto-save memory opt-in");
+assert.match(consoleHtml, /id="userMemoryActivityList"/u, "Console Settings should expose activity history separately from review");
 assert.match(consoleJs, /renderUserMemorySettings/u, "Console should render user memory settings");
 assert.match(consoleJs, /saveUserMemorySettings/u, "Console should save user memory settings");
+assert.match(consoleJs, /userMemoryActivityList/u, "Console should render user memory activity history");
 assert.match(consoleJs, /autoApproveGenerated/u, "Console should persist the auto-save memory opt-in");
 assert.match(behaviorTest, /background-only/u, "behavior tests should prove user memory remains background-only");
 assert.match(behaviorTest, /conversation-scoped memory injects only for the matching conversation/u,
   "behavior tests should prove conversation memory is scoped");
 assert.match(behaviorTest, /auto-approves only after explicit user opt-in/u,
   "behavior tests should prove generated memories require opt-in before auto-approval");
+assert.match(behaviorTest, /legacy pending task completion proposals migrate into activity history/u,
+  "behavior tests should prove routine task summaries do not remain approval noise");
 assert.match(
   plan,
   /FW-019[\s\S]*User\/project memory[\s\S]*PARTIAL/u,
@@ -67,6 +73,22 @@ const profile = sanitizeUserMemoryProfile({
 const context = applyUserMemoryProfileToContext({ text: "hello", selection_metadata: {} }, profile, { projectId: "proj_a" });
 assert.equal(context.selection_metadata.user_memory_injected, true);
 assert.equal(context.background_contexts.length, 2);
+
+const activityProfile = sanitizeUserMemoryProfile({
+  activityHistory: [{
+    text: "User asked: run check\nAssistant outcome: passed",
+    scope: "project",
+    projectId: "proj_a",
+    source: "task_completion_summary"
+  }]
+}, { now: "2026-05-08T00:00:00.000Z" });
+const activityContext = applyUserMemoryProfileToContext(
+  { text: "hello", selection_metadata: {} },
+  activityProfile,
+  { projectId: "proj_a" }
+);
+assert.equal(activityProfile.activityHistory.length, 1);
+assert.equal(activityContext.background_contexts?.length ?? 0, 0, "activity history must not be injected as memory");
 
 const conversationProfile = sanitizeUserMemoryProfile({
   approvedMemories: [

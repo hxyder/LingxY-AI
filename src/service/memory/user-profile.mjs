@@ -1,11 +1,13 @@
 import { appendBackgroundContext } from "../core/intent/background-contexts.mjs";
 
-export const USER_MEMORY_PROFILE_VERSION = 1;
+export const USER_MEMORY_PROFILE_VERSION = 2;
 
 const MAX_ITEMS = 40;
 const MAX_PROPOSALS = 80;
 const MAX_REVIEW_HISTORY = 120;
+const MAX_ACTIVITY_HISTORY = 160;
 const MAX_TEXT_CHARS = 600;
+const MAX_ACTIVITY_TEXT_CHARS = 520;
 const MEMORY_TYPES = new Set([
   "user_preference",
   "project_fact",
@@ -20,6 +22,12 @@ const PROPOSAL_STATUSES = new Set(["pending", "approved", "rejected"]);
 const REVIEW_ACTIONS = new Set(["approve_proposal", "reject_proposal", "delete_memory"]);
 const REVIEW_STATUSES = new Set(["applied", "undone"]);
 const GENERATED_TASK_MEMORY_MODES = new Set(["off", "review", "auto_approve"]);
+const ACTIVITY_KINDS = new Set(["task_summary", "tool_result", "artifact_event", "system_note"]);
+const QUALITY_LANES = new Set(["review_inbox", "activity_history", "reject"]);
+
+const VOLATILE_TASK_SUMMARY_RE = /\b(?:today|latest|current|weather|forecast|stock|stocks|market|news|price|flight|schedule)\b|(?:今天|最新|当前|现在|天气|预报|股市|股票|美股|新闻|价格|航班)/iu;
+const LOW_QUALITY_TASK_SUMMARY_RE = /(?:Task failed|Unknown tool requested|执行器出错|工具.*失败|run_script|stdout|stderr|mojibake|乱码|无法完成|没有完成|temporarily unavailable|network.*unavailable|search.*unavailable)/iu;
+const TASK_SUMMARY_SHAPE_RE = /^User asked:\s*[\s\S]+?\nAssistant outcome:/u;
 
 function normalizeText(value, max = MAX_TEXT_CHARS) {
   return `${value ?? ""}`
@@ -82,6 +90,84 @@ function normalizeProvenance(value = {}) {
 
 function normalizeUndoPayload(value = {}) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function normalizeQuality(value = {}, fallback = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const fallbackSource = fallback && typeof fallback === "object" && !Array.isArray(fallback) ? fallback : {};
+  const lane = QUALITY_LANES.has(source.lane) ? source.lane : (
+    QUALITY_LANES.has(fallbackSource.lane) ? fallbackSource.lane : "review_inbox"
+  );
+  const scoreValue = Number.isFinite(Number(source.score))
+    ? Number(source.score)
+    : (Number.isFinite(Number(fallbackSource.score)) ? Number(fallbackSource.score) : 0.5);
+  const reasons = Array.isArray(source.reasons)
+    ? source.reasons
+    : (Array.isArray(fallbackSource.reasons) ? fallbackSource.reasons : []);
+  return {
+    lane,
+    score: Math.max(0, Math.min(1, scoreValue)),
+    reasons: reasons
+      .map((item) => normalizeText(item, 80))
+      .filter(Boolean)
+      .slice(0, 8)
+  };
+}
+
+export function classifyMemoryCandidate({
+  type = "user_preference",
+  text = "",
+  source = "candidate_detection",
+  status = "pending"
+} = {}) {
+  const normalizedType = normalizeMemoryType(type, "user_preference");
+  const normalizedText = normalizeText(text, MAX_TEXT_CHARS);
+  const normalizedSource = normalizeText(source, 80) || "candidate_detection";
+  const reasons = [];
+
+  if (!normalizedText) {
+    return {
+      lane: "reject",
+      score: 0,
+      reasons: ["empty_text"]
+    };
+  }
+
+  if (normalizedSource === "task_completion_summary"
+      || (normalizedType === "episodic_task" && TASK_SUMMARY_SHAPE_RE.test(normalizedText))) {
+    reasons.push("routine_task_summary");
+    if (VOLATILE_TASK_SUMMARY_RE.test(normalizedText)) reasons.push("volatile_result");
+    if (LOW_QUALITY_TASK_SUMMARY_RE.test(normalizedText)) reasons.push("low_quality_or_tool_log");
+    return {
+      lane: "activity_history",
+      score: 0.2,
+      reasons,
+      status
+    };
+  }
+
+  if ([
+    "user_preference",
+    "project_fact",
+    "project_decision",
+    "workflow_rule",
+    "user_correction",
+    "rejected_assumption"
+  ].includes(normalizedType)) {
+    return {
+      lane: "review_inbox",
+      score: 0.82,
+      reasons: ["durable_memory_type"],
+      status
+    };
+  }
+
+  return {
+    lane: "review_inbox",
+    score: 0.55,
+    reasons: ["needs_review"],
+    status
+  };
 }
 
 function normalizeMemoryItems(items = [], { defaultScope = "global", projectId = null } = {}) {
@@ -155,6 +241,8 @@ function normalizeMemoryProposals(items = [], { now = nowIso() } = {}) {
     const projectId = normalizeText(raw?.projectId ?? raw?.project_id, 120) || null;
     const conversationId = normalizeText(raw?.conversationId ?? raw?.conversation_id, 120) || null;
     const artifactId = normalizeText(raw?.artifactId ?? raw?.artifact_id, 120) || null;
+    const source = normalizeText(raw?.source, 80) || "candidate_detection";
+    const quality = normalizeQuality(raw?.quality, classifyMemoryCandidate({ type, text, source, status }));
     const proposalId = normalizeId(raw?.proposalId ?? raw?.proposal_id ?? raw?.id, `proposal_${type}_${text.slice(0, 32)}`);
     out.push({
       proposalId,
@@ -165,8 +253,9 @@ function normalizeMemoryProposals(items = [], { now = nowIso() } = {}) {
       ...(projectId ? { projectId } : {}),
       ...(conversationId ? { conversationId } : {}),
       ...(artifactId ? { artifactId } : {}),
-      source: normalizeText(raw?.source, 80) || "candidate_detection",
+      source,
       provenance: normalizeProvenance(raw?.provenance),
+      quality,
       createdAt: normalizeText(raw?.createdAt ?? raw?.created_at, 40) || now,
       updatedAt: normalizeText(raw?.updatedAt ?? raw?.updated_at, 40) || now,
       reviewedAt: normalizeText(raw?.reviewedAt ?? raw?.reviewed_at, 40) || null
@@ -174,6 +263,88 @@ function normalizeMemoryProposals(items = [], { now = nowIso() } = {}) {
     if (out.length >= MAX_PROPOSALS) break;
   }
   return out;
+}
+
+function normalizeActivityHistoryItems(items = [], { now = nowIso() } = {}) {
+  const list = Array.isArray(items) ? items : [];
+  const seen = new Set();
+  const out = [];
+  for (const raw of list) {
+    const text = normalizeText(raw?.text, MAX_ACTIVITY_TEXT_CHARS);
+    if (!text) continue;
+    const kind = ACTIVITY_KINDS.has(raw?.kind) ? raw.kind : "task_summary";
+    const scope = normalizeScope(raw?.scope, raw?.projectId || raw?.project_id ? "project" : "conversation");
+    const projectId = normalizeText(raw?.projectId ?? raw?.project_id, 120) || null;
+    const conversationId = normalizeText(raw?.conversationId ?? raw?.conversation_id, 120) || null;
+    const artifactId = normalizeText(raw?.artifactId ?? raw?.artifact_id, 120) || null;
+    const provenance = normalizeProvenance(raw?.provenance);
+    const source = normalizeText(raw?.source, 80) || "task_completion_summary";
+    const quality = normalizeQuality(raw?.quality, classifyMemoryCandidate({
+      type: "episodic_task",
+      text,
+      source,
+      status: "activity"
+    }));
+    const taskId = normalizeText(provenance.task_id ?? raw?.taskId ?? raw?.task_id, 120) || null;
+    const activityId = normalizeId(
+      raw?.activityId ?? raw?.activity_id ?? raw?.id,
+      `activity_${kind}_${taskId ?? projectId ?? conversationId ?? artifactId ?? text.slice(0, 32)}`
+    );
+    const dedupeKey = [
+      kind,
+      taskId ?? "",
+      scope,
+      projectId ?? "",
+      conversationId ?? "",
+      artifactId ?? "",
+      text.toLowerCase()
+    ].join(":");
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    out.push({
+      activityId,
+      kind,
+      text,
+      scope,
+      ...(projectId ? { projectId } : {}),
+      ...(conversationId ? { conversationId } : {}),
+      ...(artifactId ? { artifactId } : {}),
+      source,
+      provenance: {
+        ...provenance,
+        ...(taskId ? { task_id: taskId } : {})
+      },
+      quality,
+      createdAt: normalizeText(raw?.createdAt ?? raw?.created_at, 40) || now,
+      updatedAt: normalizeText(raw?.updatedAt ?? raw?.updated_at, 40) || now
+    });
+    if (out.length >= MAX_ACTIVITY_HISTORY) break;
+  }
+  return out;
+}
+
+function proposalToActivityHistoryItem(proposal = {}, { now = nowIso() } = {}) {
+  return normalizeActivityHistoryItems([{
+    activityId: `activity_${proposal.proposalId ?? normalizeId(proposal.text, "proposal")}`,
+    kind: "task_summary",
+    text: proposal.text,
+    scope: proposal.scope,
+    projectId: proposal.projectId,
+    conversationId: proposal.conversationId,
+    artifactId: proposal.artifactId,
+    source: proposal.source,
+    provenance: {
+      ...(proposal.provenance ?? {}),
+      proposal_id: proposal.proposalId ?? null
+    },
+    quality: proposal.quality,
+    createdAt: proposal.createdAt,
+    updatedAt: now
+  }], { now })[0] ?? null;
+}
+
+function mergeActivityHistoryItems(items = [], { now = nowIso() } = {}) {
+  return normalizeActivityHistoryItems(items, { now }).slice(0, MAX_ACTIVITY_HISTORY);
 }
 
 function normalizeMemoryReviewHistory(items = [], { now = nowIso() } = {}) {
@@ -206,6 +377,23 @@ function normalizeMemoryReviewHistory(items = [], { now = nowIso() } = {}) {
 
 export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOString() } = {}) {
   const profile = input && typeof input === "object" ? input : {};
+  const normalizedProposals = normalizeMemoryProposals(profile.proposals ?? profile.memoryProposals ?? profile.memory_proposals ?? [], { now });
+  const proposals = [];
+  const migratedActivity = [];
+  for (const proposal of normalizedProposals) {
+    if (proposal.status === "pending" && proposal.quality?.lane === "activity_history") {
+      const activity = proposalToActivityHistoryItem(proposal, { now });
+      if (activity) migratedActivity.push(activity);
+      continue;
+    }
+    proposals.push(proposal);
+  }
+  const activityHistory = mergeActivityHistoryItems([
+    ...migratedActivity,
+    ...(Array.isArray(profile.activityHistory)
+      ? profile.activityHistory
+      : (Array.isArray(profile.activity_history) ? profile.activity_history : []))
+  ], { now });
   return {
     schemaVersion: USER_MEMORY_PROFILE_VERSION,
     enabled: profile.enabled !== false,
@@ -217,7 +405,8 @@ export function sanitizeUserMemoryProfile(input = {}, { now = new Date().toISOSt
       defaultScope: "project"
     }),
     approvedMemories: normalizeGovernedMemoryItems(profile.approvedMemories ?? profile.approved_memories ?? [], { now }),
-    proposals: normalizeMemoryProposals(profile.proposals ?? profile.memoryProposals ?? profile.memory_proposals ?? [], { now }),
+    proposals,
+    activityHistory,
     reviewHistory: normalizeMemoryReviewHistory(profile.reviewHistory ?? profile.review_history ?? [], { now })
   };
 }
@@ -288,16 +477,20 @@ export function filterMemoryGovernanceProfile(profile = {}, filters = {}) {
     .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
   const proposals = sanitized.proposals
     .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
+  const activityHistory = sanitized.activityHistory
+    .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
   const reviewHistory = sanitized.reviewHistory
     .filter((item) => matchesGovernanceFilter(item, filters, sanitized));
   return {
     ...sanitized,
     approvedMemories,
     proposals,
+    activityHistory,
     reviewHistory,
     totals: {
       approvedMemories: sanitized.approvedMemories.length,
       proposals: sanitized.proposals.length,
+      activityHistory: sanitized.activityHistory.length,
       reviewHistory: sanitized.reviewHistory.length
     }
   };
@@ -437,6 +630,88 @@ function boundedTurnSummary({ command = "", finalText = "" } = {}) {
   return normalizeText(`User asked: ${user}\nAssistant outcome: ${outcome}`, MAX_TEXT_CHARS);
 }
 
+function taskScopeIdentity(task = {}) {
+  const projectId = normalizeText(
+    task?.project_id
+      ?? task?.projectId
+      ?? task?.context_packet?.selection_metadata?.project_id
+      ?? task?.context_packet?.selectionMetadata?.project_id,
+    120
+  ) || null;
+  const conversationId = normalizeText(
+    task?.conversation_id
+      ?? task?.conversationId
+      ?? task?.context_packet?.selection_metadata?.conversation_id
+      ?? task?.context_packet?.selectionMetadata?.conversation_id,
+    120
+  ) || null;
+  const artifactId = normalizeText(
+    task?.artifact_id
+      ?? task?.artifactId
+      ?? task?.context_packet?.selection_metadata?.artifact_id
+      ?? task?.context_packet?.selectionMetadata?.artifact_id,
+    120
+  ) || null;
+  return { projectId, conversationId, artifactId };
+}
+
+function activityHistoryForTaskOutcome({ task = {}, finalText = "", now = nowIso() } = {}) {
+  const taskId = normalizeText(task?.task_id ?? task?.taskId, 120);
+  if (!taskId) return null;
+  const text = boundedTurnSummary({
+    command: task?.user_command ?? task?.userCommand,
+    finalText
+  });
+  if (!text) return null;
+  const { projectId, conversationId, artifactId } = taskScopeIdentity(task);
+  const scope = projectId ? "project" : (conversationId ? "conversation" : (artifactId ? "artifact" : "global"));
+  return normalizeActivityHistoryItems([{
+    activityId: `activity_task_summary_${taskId}`,
+    kind: "task_summary",
+    text,
+    scope,
+    projectId,
+    conversationId,
+    artifactId,
+    source: "task_completion_summary",
+    provenance: {
+      task_id: taskId,
+      conversation_id: conversationId,
+      project_id: projectId,
+      artifact_id: artifactId,
+      executor: normalizeText(task?.executor, 80) || null,
+      status: normalizeText(task?.status, 80) || null
+    },
+    createdAt: now,
+    updatedAt: now
+  }], { now })[0] ?? null;
+}
+
+function extractTaskMemoryCandidate(task = {}) {
+  const candidates = [
+    task?.memory_candidate,
+    task?.memoryCandidate,
+    task?.result?.memory_candidate,
+    task?.result?.memoryCandidate,
+    task?.outcome?.memory_candidate,
+    task?.outcome?.memoryCandidate
+  ];
+  const raw = candidates.find((item) => item && typeof item === "object" && !Array.isArray(item));
+  if (!raw) return null;
+  const text = normalizeText(raw.text ?? raw.content ?? raw.memory);
+  if (!text) return null;
+  return {
+    type: normalizeMemoryType(raw.type, "user_correction"),
+    text,
+    scope: normalizeScope(raw.scope, "global"),
+    projectId: normalizeText(raw.projectId ?? raw.project_id, 120) || null,
+    conversationId: normalizeText(raw.conversationId ?? raw.conversation_id, 120) || null,
+    artifactId: normalizeText(raw.artifactId ?? raw.artifact_id, 120) || null,
+    source: normalizeText(raw.source, 80) || "task_memory_candidate",
+    provenance: normalizeProvenance(raw.provenance)
+  };
+}
+
 export function proposeTaskCompletionMemory(profile = {}, {
   task = {},
   finalText = "",
@@ -444,52 +719,67 @@ export function proposeTaskCompletionMemory(profile = {}, {
 } = {}) {
   const sanitized = sanitizeUserMemoryProfile(profile, { now: profile.updatedAt ?? now });
   if (!sanitized.enabled) return sanitized;
-  if (sanitized.generatedTaskMemoryMode === "off") return sanitized;
-  const taskId = normalizeText(task?.task_id, 120);
+  const taskId = normalizeText(task?.task_id ?? task?.taskId, 120);
   if (!taskId) return sanitized;
-  const alreadyKnown = [
-    ...(sanitized.proposals ?? []),
-    ...(sanitized.approvedMemories ?? [])
-  ].some((item) => item?.provenance?.task_id === taskId);
-  if (alreadyKnown) return sanitized;
+  const activity = activityHistoryForTaskOutcome({ task, finalText, now });
+  const withActivity = activity && !(sanitized.activityHistory ?? []).some((item) => item?.provenance?.task_id === taskId)
+    ? sanitizeUserMemoryProfile({
+      ...sanitized,
+      updatedAt: now,
+      activityHistory: [activity, ...sanitized.activityHistory]
+    }, { now })
+    : sanitized;
+  if (withActivity.generatedTaskMemoryMode === "off") return withActivity;
 
-  const projectId = normalizeText(
-    task?.project_id
-      ?? task?.context_packet?.selection_metadata?.project_id
-      ?? task?.context_packet?.selectionMetadata?.project_id,
-    120
-  ) || null;
-  const conversationId = normalizeText(
-    task?.conversation_id
-      ?? task?.context_packet?.selection_metadata?.conversation_id
-      ?? task?.context_packet?.selectionMetadata?.conversation_id,
-    120
-  ) || null;
-  const text = boundedTurnSummary({
-    command: task?.user_command,
-    finalText
+  const { projectId, conversationId, artifactId } = taskScopeIdentity(task);
+  const candidate = extractTaskMemoryCandidate(task);
+  if (!candidate) return withActivity;
+  const candidateScope = candidate.scope !== "global"
+    ? candidate.scope
+    : (candidate.projectId || projectId
+      ? "project"
+      : (candidate.conversationId || conversationId
+        ? "conversation"
+        : (candidate.artifactId || artifactId ? "artifact" : "global")));
+  const candidateProjectId = candidate.projectId ?? projectId;
+  const candidateConversationId = candidate.conversationId ?? conversationId;
+  const candidateArtifactId = candidate.artifactId ?? artifactId;
+  const quality = classifyMemoryCandidate({
+    type: candidate.type,
+    text: candidate.text,
+    source: candidate.source,
+    status: "pending"
   });
-  if (!text) return sanitized;
+  if (quality.lane !== "review_inbox") return withActivity;
+  const alreadyKnown = [
+    ...(withActivity.proposals ?? []),
+    ...(withActivity.approvedMemories ?? [])
+  ].some((item) => item?.provenance?.task_id === taskId && item?.text === candidate.text);
+  if (alreadyKnown) return withActivity;
+
   const proposal = createMemoryProposal({
-    type: "episodic_task",
-    text,
-    scope: projectId ? "project" : (conversationId ? "conversation" : "global"),
-    projectId,
-    conversationId,
-    source: "task_completion_summary",
+    type: candidate.type,
+    text: candidate.text,
+    scope: candidateScope,
+    projectId: candidateProjectId,
+    conversationId: candidateConversationId,
+    artifactId: candidateArtifactId,
+    source: candidate.source,
     provenance: {
+      ...(candidate.provenance ?? {}),
       task_id: taskId,
-      conversation_id: conversationId,
-      project_id: projectId,
+      conversation_id: candidateConversationId,
+      project_id: candidateProjectId,
+      artifact_id: candidateArtifactId,
       executor: normalizeText(task?.executor, 80) || null,
       status: normalizeText(task?.status, 80) || null
     },
     now
   });
   const withProposal = sanitizeUserMemoryProfile({
-    ...sanitized,
+    ...withActivity,
     updatedAt: now,
-    proposals: [proposal, ...sanitized.proposals]
+    proposals: [proposal, ...withActivity.proposals]
   }, { now });
   if (withProposal.generatedTaskMemoryMode === "auto_approve") {
     return approveMemoryProposal(withProposal, proposal.proposalId, {

@@ -27,6 +27,10 @@ assert.match(profile, /proposeTaskCompletionMemory/,
   "memory profile must own generated task-completion memory policy");
 assert.match(profile, /generatedTaskMemoryMode/,
   "memory profile must separate routine task history from durable memory proposals");
+assert.match(profile, /activityHistory/, "profile must persist routine task history outside durable memory proposals");
+assert.match(profile, /classifyMemoryCandidate/, "memory profile must classify candidate quality lanes");
+assert.match(profile, /quality\?\.(?:lane) === "activity_history"/,
+  "memory sanitizer must migrate routine task-summary proposals out of the review inbox");
 assert.match(profile, /approveMemoryProposal/, "memory profile must approve proposals");
 assert.match(profile, /rejectMemoryProposal/, "memory profile must reject proposals");
 assert.match(profile, /deleteApprovedMemory/, "memory profile must delete approved memory");
@@ -46,11 +50,15 @@ assert.match(routes, /requireDesktopActor[\s\S]{0,120}desktop_console/u,
 
 assert.match(consoleHtml, /userMemoryApprovedList/, "Console Settings must show approved memory");
 assert.match(consoleHtml, /userMemoryProposalList/, "Console Settings must show memory proposals");
+assert.match(consoleHtml, /userMemoryActivityList/, "Console Settings must show activity history separately");
+assert.match(consoleHtml, /Review Inbox/, "Console Settings must label durable candidates as a review inbox");
 assert.match(consoleHtml, /userMemoryAutoApprove/, "Console Settings must expose generated-memory auto-save opt-in");
 assert.match(consoleJs, /renderGovernedMemoryList/, "Console must render governed memory");
 assert.match(consoleJs, /data-memory-approve/, "Console must support proposal approval");
 assert.match(consoleJs, /data-memory-reject/, "Console must support proposal rejection");
 assert.match(consoleJs, /data-memory-delete/, "Console must support memory deletion");
+assert.match(consoleJs, /activityHistory: state\.workspace\.userMemory\?\.activityHistory/,
+  "Console must preserve activity history when saving memory settings");
 assert.match(consoleJs, /autoApproveGenerated/i,
   "Console must expose explicit generated-memory controls");
 assert.match(lifecycle, /maybeProposeTaskCompletionMemory/,
@@ -61,8 +69,10 @@ assert.match(tests, /requires proposal review before approved memory injection/,
   "tests must prove proposals are not injected before approval");
 assert.match(tests, /routine task completion summaries do not enter memory proposals by default/,
   "tests must prove routine task memory does not become approval noise by default");
-assert.match(tests, /review bounded task completion summaries after explicit review-mode opt-in/,
-  "tests must prove generated task memory can still use proposal review after explicit opt-in");
+assert.match(tests, /legacy pending task completion proposals migrate into activity history/,
+  "tests must prove legacy task-summary proposal noise migrates out of review inbox");
+assert.match(tests, /typed generated memory candidate can enter review inbox after explicit opt-in/,
+  "tests must prove high-signal generated memory can still use proposal review after explicit opt-in");
 assert.match(tests, /auto-approves only after explicit user opt-in/,
   "tests must prove generated task memory can only auto-approve behind explicit opt-in");
 assert.match(tests, /can reject proposals and delete approved memory/,

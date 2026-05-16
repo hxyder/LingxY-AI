@@ -257,6 +257,8 @@ const userMemoryApprovedState = document.querySelector("#userMemoryApprovedState
 const userMemoryApprovedList = document.querySelector("#userMemoryApprovedList");
 const userMemoryProposalState = document.querySelector("#userMemoryProposalState");
 const userMemoryProposalList = document.querySelector("#userMemoryProposalList");
+const userMemoryActivityState = document.querySelector("#userMemoryActivityState");
+const userMemoryActivityList = document.querySelector("#userMemoryActivityList");
 const userMemoryReviewState = document.querySelector("#userMemoryReviewState");
 const userMemoryReviewList = document.querySelector("#userMemoryReviewList");
 const taskComposer = document.querySelector("#taskComposer");
@@ -4717,18 +4719,24 @@ function matchesUserMemoryFilter(item = {}, profile = {}, filter = getUserMemory
 function renderGovernedMemoryList(profile = {}) {
   const approved = Array.isArray(profile.approvedMemories) ? profile.approvedMemories : [];
   const proposals = Array.isArray(profile.proposals) ? profile.proposals : [];
+  const activityHistory = Array.isArray(profile.activityHistory) ? profile.activityHistory : [];
   const reviewHistory = Array.isArray(profile.reviewHistory) ? profile.reviewHistory : [];
   const filter = getUserMemoryFilter();
   const filteredApproved = approved.filter((item) => matchesUserMemoryFilter(item, profile, filter));
-  const filteredProposals = proposals.filter((item) => matchesUserMemoryFilter(item, profile, filter));
+  const reviewInbox = proposals.filter((item) => item?.status === "pending"
+    && item?.quality?.lane !== "activity_history"
+    && item?.source !== "task_completion_summary");
+  const filteredProposals = reviewInbox.filter((item) => matchesUserMemoryFilter(item, profile, filter));
+  const filteredActivityHistory = activityHistory.filter((item) => matchesUserMemoryFilter(item, profile, filter));
   const filteredReviewHistory = reviewHistory.filter((item) => matchesUserMemoryFilter(item, profile, filter));
-  const pending = filteredProposals.filter((item) => item?.status === "pending");
   if (userMemoryApprovedState) {
     userMemoryApprovedState.textContent = `${filteredApproved.length}/${approved.length} approved`;
   }
   if (userMemoryProposalState) {
-    const totalPending = proposals.filter((item) => item?.status === "pending").length;
-    userMemoryProposalState.textContent = `${pending.length}/${totalPending} pending`;
+    userMemoryProposalState.textContent = `${filteredProposals.length}/${reviewInbox.length} pending`;
+  }
+  if (userMemoryActivityState) {
+    userMemoryActivityState.textContent = `${filteredActivityHistory.length}/${activityHistory.length} activities`;
   }
   if (userMemoryReviewState) {
     const undoable = filteredReviewHistory.filter((item) => item?.status !== "undone").length;
@@ -4768,17 +4776,17 @@ function renderGovernedMemoryList(profile = {}) {
     }
   }
   if (userMemoryProposalList) {
-    if (pending.length === 0) {
-      renderEmpty(userMemoryProposalList, "No pending proposals.");
+    if (filteredProposals.length === 0) {
+      renderEmpty(userMemoryProposalList, "No high-signal memory candidates need review.");
     } else {
-      userMemoryProposalList.innerHTML = pending.map((item) => `
+      userMemoryProposalList.innerHTML = filteredProposals.map((item) => `
         <div class="surface" style="padding:10px 12px;">
           <div class="row">
             <strong style="font-size:13px;">${escapeHtml(item.type ?? "proposal")}</strong>
             <span class="chip warning">${escapeHtml(item.scope ?? "global")}</span>
           </div>
           <p style="margin:6px 0 0;font-size:12px;">${escapeHtml(item.text ?? "")}</p>
-          <p class="muted" style="margin:4px 0 0;font-size:11px;">${escapeHtml(item.source ?? "candidate_detection")}</p>
+          <p class="muted" style="margin:4px 0 0;font-size:11px;">${escapeHtml(item.source ?? "candidate_detection")} · ${escapeHtml((item.quality?.reasons ?? []).join(", "))}</p>
           <div class="toolbar" style="margin-top:6px;">
             <button class="btn btn-sm" data-memory-approve="${escapeHtml(item.proposalId ?? "")}">Approve</button>
             <button class="btn btn-sm btn-danger" data-memory-reject="${escapeHtml(item.proposalId ?? "")}">Reject</button>
@@ -4800,6 +4808,22 @@ function renderGovernedMemoryList(profile = {}) {
           }
         });
       }
+    }
+  }
+  if (userMemoryActivityList) {
+    if (filteredActivityHistory.length === 0) {
+      renderEmpty(userMemoryActivityList, "No activity history for this filter.");
+    } else {
+      userMemoryActivityList.innerHTML = filteredActivityHistory.slice(0, 16).map((item) => `
+        <div class="surface" style="padding:10px 12px;">
+          <div class="row">
+            <strong style="font-size:13px;">${escapeHtml(item.kind ?? "activity")}</strong>
+            <span class="chip muted">${escapeHtml(item.scope ?? "global")}</span>
+          </div>
+          <p style="margin:6px 0 0;font-size:12px;white-space:pre-wrap;">${escapeHtml(item.text ?? "")}</p>
+          <p class="muted" style="margin:4px 0 0;font-size:11px;">${escapeHtml(item.source ?? "activity")} · ${escapeHtml(item.createdAt ?? "")}</p>
+        </div>
+      `).join("");
     }
   }
   if (userMemoryReviewList) {
@@ -4880,6 +4904,7 @@ async function saveUserMemorySettings() {
       projectMemories: parseProjectMemoryLines(userMemoryProjectNotes?.value ?? ""),
       approvedMemories: state.workspace.userMemory?.approvedMemories ?? [],
       proposals: state.workspace.userMemory?.proposals ?? [],
+      activityHistory: state.workspace.userMemory?.activityHistory ?? [],
       reviewHistory: state.workspace.userMemory?.reviewHistory ?? []
     };
     const result = await consoleUserMemoryClient.saveUserMemory(payload);

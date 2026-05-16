@@ -8,6 +8,7 @@ import {
   applyUserMemoryProfileToContext,
   approveMemoryProposal,
   buildUserMemoryBackgroundEntries,
+  classifyMemoryCandidate,
   createMemoryProposal,
   deleteApprovedMemory,
   filterMemoryGovernanceProfile,
@@ -31,7 +32,7 @@ test("user memory profile sanitizes editable global and project notes", () => {
     ]
   }, { now: "2026-05-08T00:00:00.000Z" });
 
-  assert.equal(profile.schemaVersion, 1);
+  assert.equal(profile.schemaVersion, 2);
   assert.equal(profile.enabled, true);
   assert.equal(profile.preferences.length, 2);
   assert.equal(profile.projectMemories.length, 2);
@@ -209,10 +210,50 @@ test("routine task completion summaries do not enter memory proposals by default
   );
 
   assert.equal(profile.proposals.length, 0);
+  assert.equal(profile.activityHistory.length, 1);
+  assert.equal(profile.activityHistory[0].kind, "task_summary");
+  assert.equal(profile.activityHistory[0].scope, "project");
+  assert.equal(profile.activityHistory[0].projectId, "proj_auto_memory");
+  assert.equal(profile.activityHistory[0].provenance.task_id, "task_auto_memory");
+  assert.equal(profile.activityHistory[0].quality.lane, "activity_history");
   assert.equal(profile.approvedMemories.length, 0);
+  assert.equal(buildUserMemoryBackgroundEntries(profile, { projectId: "proj_auto_memory" }).length, 0);
 });
 
-test("user memory can review bounded task completion summaries after explicit review-mode opt-in", () => {
+test("memory classifier routes routine task summaries away from review inbox", () => {
+  const classification = classifyMemoryCandidate({
+    type: "episodic_task",
+    source: "task_completion_summary",
+    text: "User asked: 查一下今天的天气\nAssistant outcome: 今天下雨。"
+  });
+
+  assert.equal(classification.lane, "activity_history");
+  assert.ok(classification.reasons.includes("routine_task_summary"));
+  assert.ok(classification.reasons.includes("volatile_result"));
+});
+
+test("legacy pending task completion proposals migrate into activity history", () => {
+  const legacyProposal = createMemoryProposal({
+    type: "episodic_task",
+    source: "task_completion_summary",
+    text: "User asked: 继续做任务\nAssistant outcome: 已完成。",
+    scope: "project",
+    projectId: "proj_legacy",
+    provenance: { task_id: "task_legacy" },
+    now: "2026-05-13T12:00:00.000Z"
+  });
+  const profile = sanitizeUserMemoryProfile({
+    proposals: [legacyProposal]
+  }, { now: "2026-05-13T12:01:00.000Z" });
+
+  assert.equal(profile.proposals.length, 0);
+  assert.equal(profile.activityHistory.length, 1);
+  assert.equal(profile.activityHistory[0].source, "task_completion_summary");
+  assert.equal(profile.activityHistory[0].projectId, "proj_legacy");
+  assert.equal(profile.activityHistory[0].provenance.task_id, "task_legacy");
+});
+
+test("review-mode task completion stores routine summaries as activity history", () => {
   const profile = proposeTaskCompletionMemory(
     sanitizeUserMemoryProfile({ enabled: true, generatedTaskMemoryMode: "review" }),
     {
@@ -229,13 +270,13 @@ test("user memory can review bounded task completion summaries after explicit re
     }
   );
 
-  assert.equal(profile.proposals.length, 1);
-  assert.equal(profile.proposals[0].type, "episodic_task");
-  assert.equal(profile.proposals[0].scope, "project");
-  assert.equal(profile.proposals[0].projectId, "proj_auto_memory");
-  assert.equal(profile.proposals[0].provenance.task_id, "task_auto_memory");
-  assert.match(profile.proposals[0].text, /User asked:/);
-  assert.match(profile.proposals[0].text, /Assistant outcome:/);
+  assert.equal(profile.proposals.length, 0);
+  assert.equal(profile.activityHistory.length, 1);
+  assert.equal(profile.activityHistory[0].scope, "project");
+  assert.equal(profile.activityHistory[0].projectId, "proj_auto_memory");
+  assert.equal(profile.activityHistory[0].provenance.task_id, "task_auto_memory");
+  assert.match(profile.activityHistory[0].text, /User asked:/);
+  assert.match(profile.activityHistory[0].text, /Assistant outcome:/);
 
   const duplicate = proposeTaskCompletionMemory(profile, {
     task: {
@@ -247,7 +288,38 @@ test("user memory can review bounded task completion summaries after explicit re
     finalText: "same result",
     now: "2026-05-13T12:01:00.000Z"
   });
-  assert.equal(duplicate.proposals.length, 1);
+  assert.equal(duplicate.proposals.length, 0);
+  assert.equal(duplicate.activityHistory.length, 1);
+});
+
+test("typed generated memory candidate can enter review inbox after explicit opt-in", () => {
+  const profile = proposeTaskCompletionMemory(
+    sanitizeUserMemoryProfile({ enabled: true, generatedTaskMemoryMode: "review" }),
+    {
+      task: {
+        task_id: "task_typed_memory_candidate",
+        status: "success",
+        executor: "tool_using",
+        conversation_id: "conv_typed_memory",
+        project_id: "proj_typed_memory",
+        user_command: "记住这个项目规则",
+        memory_candidate: {
+          type: "workflow_rule",
+          text: "Run the local verifier before broad runtime rewiring.",
+          scope: "project"
+        }
+      },
+      finalText: "已记录为项目规则候选。",
+      now: "2026-05-13T12:00:00.000Z"
+    }
+  );
+
+  assert.equal(profile.activityHistory.length, 1);
+  assert.equal(profile.proposals.length, 1);
+  assert.equal(profile.proposals[0].type, "workflow_rule");
+  assert.equal(profile.proposals[0].scope, "project");
+  assert.equal(profile.proposals[0].quality.lane, "review_inbox");
+  assert.equal(profile.proposals[0].provenance.task_id, "task_typed_memory_candidate");
 });
 
 test("generated task memory auto-approves only after explicit user opt-in", () => {
@@ -259,7 +331,12 @@ test("generated task memory auto-approves only after explicit user opt-in", () =
         status: "success",
         executor: "tool_using",
         conversation_id: "conv_auto_approved",
-        user_command: "记住这个会话里的文件命名偏好"
+        user_command: "记住这个会话里的文件命名偏好",
+        memory_candidate: {
+          type: "user_preference",
+          text: "Use the Chinese job title as the exported resume filename prefix.",
+          scope: "conversation"
+        }
       },
       finalText: "后续导出的简历文件使用中文职位名作为文件名前缀。",
       now: "2026-05-14T12:00:00.000Z"
@@ -268,6 +345,7 @@ test("generated task memory auto-approves only after explicit user opt-in", () =
 
   assert.equal(profile.proposals.length, 1);
   assert.equal(profile.proposals[0].status, "approved");
+  assert.equal(profile.activityHistory.length, 1);
   assert.equal(profile.approvedMemories.length, 1);
   assert.equal(profile.approvedMemories[0].scope, "conversation");
   assert.equal(profile.approvedMemories[0].conversationId, "conv_auto_approved");
@@ -374,6 +452,22 @@ test("memory governance filters approved, proposed, and review records by scope"
   });
   const profile = sanitizeUserMemoryProfile({
     proposals: [projectProposal, otherProjectProposal, conversationProposal],
+    activityHistory: [
+      {
+        kind: "task_summary",
+        text: "User asked: 更新项目 A\nAssistant outcome: 已完成。",
+        scope: "project",
+        projectId: "proj_a",
+        source: "task_completion_summary"
+      },
+      {
+        kind: "task_summary",
+        text: "User asked: 更新项目 B\nAssistant outcome: 已完成。",
+        scope: "project",
+        projectId: "proj_b",
+        source: "task_completion_summary"
+      }
+    ],
     approvedMemories: [
       { id: "global_1", type: "user_preference", text: "Global reviewed note.", scope: "global" }
     ]
@@ -391,6 +485,7 @@ test("memory governance filters approved, proposed, and review records by scope"
   });
   assert.deepEqual(projectFiltered.approvedMemories.map((item) => item.projectId), ["proj_a"]);
   assert.deepEqual(projectFiltered.proposals.map((item) => item.projectId), ["proj_a"]);
+  assert.deepEqual(projectFiltered.activityHistory.map((item) => item.projectId), ["proj_a"]);
   assert.equal(projectFiltered.reviewHistory.length, 1);
   assert.equal(projectFiltered.reviewHistory[0].projectId, "proj_a");
 

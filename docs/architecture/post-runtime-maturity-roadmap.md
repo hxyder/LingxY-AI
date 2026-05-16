@@ -34,6 +34,7 @@ protocol in `AGENTS.md`.
 | --- | --- | --- |
 | MR-001 Memory review history and undo | complete | Memory proposal approve/reject/delete actions are reviewable and undoable typed governance records. |
 | MR-002 Memory project scope and review filters | complete | Approved/proposed memory can be filtered by scope/project/conversation without leaking unrelated scope. |
+| MR-003 Memory activity-history separation | complete | Routine task summaries are stored as bounded activity history and migrated out of the durable-memory Review Inbox. |
 | SA-003 Planner-selected delegation enablement audit | complete | Existing sub-agent contract may be enabled only for eval-proven task classes with budget and trace gates. |
 | PM-004 Marketplace management UI | complete | Skills/plugins/MCP trust, signature, archive, and governance state must be visible and actionable in Console. |
 | SH-004 OS sandbox implementation decision | complete | Convert decision records into implementation only where measured risk/benefit justifies process isolation. |
@@ -102,14 +103,46 @@ Verification:
 - `node scripts/verify-memory-scope-filters.mjs`
 - `node --test tests/behavior/user-memory-profile.test.mjs`
 
+## MR-003: Memory Activity-History Separation
+
+Status: complete as of 2026-05-16.
+
+Scope:
+
+- Upgrade user memory to schema v2 with a bounded `activityHistory` lane.
+- Classify generated candidates before review so routine task-completion
+  summaries do not become durable-memory approval noise.
+- Migrate legacy pending `task_completion_summary` proposals into
+  `activityHistory` during profile sanitization.
+- Keep typed durable candidates available for the Review Inbox and explicit
+  high-signal auto-approval.
+- Surface Review Inbox and Activity History separately in Console Settings.
+
+Acceptance:
+
+- Pending routine task summaries do not appear in the Review Inbox.
+- Activity history is scoped and filterable, but it is never injected as
+  approved memory.
+- Existing approved memory governance, review history, undo, and scoped
+  background injection keep working.
+- Saving Settings preserves activity history and review history.
+
+Verification:
+
+- `node scripts/verify-memory-governance.mjs`
+- `node scripts/verify-user-memory-profile.mjs`
+- `node scripts/verify-memory-scope-filters.mjs`
+- `node --test tests/behavior/user-memory-profile.test.mjs`
+
 ## Recommended PR Order
 
 1. MR-001: memory review history and undo.
 2. MR-002: memory scope/review filters.
-3. PM-004: marketplace management UI, because trust data already exists.
-4. DX-006: product acceptance matrix expansion.
-5. SA-003: planner-selected delegation enablement audit.
-6. SH-004: OS sandbox implementation decision if measured evidence supports it.
+3. MR-003: memory activity-history separation.
+4. PM-004: marketplace management UI, because trust data already exists.
+5. DX-006: product acceptance matrix expansion.
+6. SA-003: planner-selected delegation enablement audit.
+7. SH-004: OS sandbox implementation decision if measured evidence supports it.
 
 ## PM-004: Marketplace Management UI
 

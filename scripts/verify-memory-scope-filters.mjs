@@ -27,6 +27,7 @@ const roadmap = read("docs/architecture/post-runtime-maturity-roadmap.md");
 for (const required of [
   "filterMemoryGovernanceProfile",
   "matchesGovernanceFilter",
+  "activityHistory",
   "Boolean(normalizedProjectId) && item.projectId === normalizedProjectId",
   "scope: approved.scope",
   "projectId: approved.projectId",
@@ -75,6 +76,22 @@ const profile = sanitizeUserMemoryProfile({
     { projectId: "proj_a", text: "Project A note" },
     { projectId: "proj_b", text: "Project B note" }
   ],
+  activityHistory: [
+    {
+      kind: "task_summary",
+      text: "User asked: work on project A\nAssistant outcome: done",
+      scope: "project",
+      projectId: "proj_a",
+      source: "task_completion_summary"
+    },
+    {
+      kind: "task_summary",
+      text: "User asked: work on project B\nAssistant outcome: done",
+      scope: "project",
+      projectId: "proj_b",
+      source: "task_completion_summary"
+    }
+  ],
   proposals: [projectProposal, otherProjectProposal, conversationProposal],
   approvedMemories: [
     { id: "global_1", type: "user_preference", scope: "global", text: "Global fact" }
@@ -94,6 +111,8 @@ const projectFiltered = filterMemoryGovernanceProfile(rejected, { scope: "projec
 assert.equal(projectFiltered.approvedMemories.length, 1, "project filter should include only project A approved memory");
 assert.equal(projectFiltered.approvedMemories[0].projectId, "proj_a");
 assert.equal(projectFiltered.proposals.length, 1, "project filter should include only project A proposal");
+assert.equal(projectFiltered.activityHistory.length, 1, "project filter should include only project A activity history");
+assert.equal(projectFiltered.activityHistory[0].projectId, "proj_a");
 assert.equal(projectFiltered.reviewHistory.length, 1, "project filter should include only project A review");
 
 assert.ok(roadmap.includes("MR-002 Memory project scope and review filters | complete"), "roadmap must mark MR-002 complete");

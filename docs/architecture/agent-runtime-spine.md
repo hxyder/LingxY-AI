@@ -285,13 +285,16 @@ executes.
 ## MX-001 Acceptance
 
 - User memory has governed `approvedMemories` and `proposals` alongside legacy
-  editable preferences and project notes.
+  editable preferences, project notes, and bounded `activityHistory`.
 - Memory types include `user_correction` and `rejected_assumption`; pending
   proposals are not injected into task context until reviewed.
+- Routine task-completion summaries are classified into `activityHistory`, not
+  the durable-memory Review Inbox. Legacy pending task-summary proposals migrate
+  out of the approval queue at profile sanitize time.
 - Desktop-guarded HTTP routes can create memory proposals, approve/reject
   proposals, and delete approved memory.
-- Console Settings shows approved memory and pending proposals with approve,
-  reject, and delete controls.
+- Console Settings shows approved memory, Review Inbox candidates, activity
+  history, and review history with approve, reject, delete, and undo controls.
 - Approved governed memory carries source/provenance and is injected only as
   scoped background context, so current instructions still override memory.
 - ContextCompiler can select scoped reviewed memory through structured

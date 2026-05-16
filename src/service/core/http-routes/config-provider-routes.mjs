@@ -642,6 +642,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const incoming = body?.userMemory ?? body ?? {};
     const userMemory = sanitizeUserMemoryProfile({
       ...incoming,
+      activityHistory: incoming.activityHistory ?? current.activityHistory,
       reviewHistory: incoming.reviewHistory ?? current.reviewHistory
     });
     runtime.configStore?.patch?.({
