@@ -23,17 +23,17 @@
  * ## Privacy posture
  *
  * Hitting GitHub Releases exposes IP/User-Agent to GitHub. README and
- * the first-run consent card explicitly disclose this. There is NO
+ * the Console update control and first-click toast disclose this. There is NO
  * LingxY-hosted telemetry — `nothing routes through a LingxY-hosted
  * server` (per README). We do not add custom telemetry headers.
  *
- * ## First-run consent
+ * ## User-initiated checks
  *
- * On first launch with no recorded preference, the desktop shell shows
- * a brand popup card asking the user to choose strategy. Until that
- * choice is recorded, no network call is made (effective `off`). This
- * is the only place strategy can default-on; programmatic callers
- * MUST pass an explicit getStrategy.
+ * On a fresh install the effective strategy is `off`, so launch never
+ * calls GitHub Releases or interrupts the user with a consent popup.
+ * The Console update button is the explicit user action that records
+ * `manual` and runs "Check now". Background `notify` / `auto` checks
+ * can only happen after the user has already stored that preference.
  *
  * ## Failure handling
  *
@@ -90,9 +90,13 @@ export function createAutoUpdater({
   autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = false;
 
+  let available = null;           // last UpdateInfo reported by update-available
   let downloaded = null;          // last UpdateInfo that completed download
-  let lastCheckedAt = null;        // ISO timestamp
-  let pendingCheck = null;         // current in-flight check promise
+  let downloading = false;        // current in-flight download flag
+  let lastCheckedAt = null;       // ISO timestamp
+  let lastCheckResult = null;     // "available" | "none" | "error" | null
+  let lastCheckTrigger = null;    // "scheduled" | "user" | ...
+  let pendingCheck = null;        // current in-flight check promise
 
   function safe(fn) {
     return async (...args) => {
@@ -105,10 +109,41 @@ export function createAutoUpdater({
     };
   }
 
+  async function downloadAvailableUpdate(info, { notifyDownloading = false } = {}) {
+    const updateInfo = info ?? available;
+    if (!updateInfo) {
+      throw new Error("downloadUpdate: no update is available yet");
+    }
+    if (downloading) return { skipped: "download_in_progress" };
+    downloading = true;
+    try {
+      if (notifyDownloading) {
+        await notify({ kind: "update-available", payload: { info: updateInfo, autoDownload: true } });
+      }
+      const result = await autoUpdater.downloadUpdate();
+      return { ok: true, result };
+    } catch (error) {
+      appendDiagnostic("auto_updater_download_failed", error, { info: updateInfo });
+      await notify({ kind: "update-error", payload: { phase: "download", message: error?.message } });
+      return { ok: false, error: error?.message ?? String(error) };
+    } finally {
+      downloading = false;
+    }
+  }
+
   autoUpdater.on?.("update-available", safe(async (info) => {
+    available = info;
+    downloaded = null;
+    lastCheckResult = "available";
     const strategy = getStrategy();
-    if (strategy === "off" || strategy === "manual") {
+    if (strategy === "off") {
       // Strategy demoted between check and event — nothing to do.
+      return;
+    }
+    if (strategy === "manual") {
+      if (lastCheckTrigger === "user") {
+        await notify({ kind: "update-available", payload: { info, autoDownload: false } });
+      }
       return;
     }
     if (strategy === "notify") {
@@ -118,25 +153,26 @@ export function createAutoUpdater({
     if (strategy === "auto") {
       await notify({ kind: "update-available", payload: { info, autoDownload: true } });
       // Trigger download; the "update-downloaded" event will fire when complete.
-      try {
-        await autoUpdater.downloadUpdate();
-      } catch (error) {
-        appendDiagnostic("auto_updater_download_failed", error, { info });
-        await notify({ kind: "update-error", payload: { phase: "download", message: error?.message } });
-      }
+      await downloadAvailableUpdate(info, { notifyDownloading: false });
     }
   }));
 
   autoUpdater.on?.("update-not-available", safe(async (info) => {
+    available = null;
+    lastCheckResult = "none";
     logger.info?.("[auto-updater] no update available", info?.version);
   }));
 
   autoUpdater.on?.("update-downloaded", safe(async (info) => {
+    available = null;
     downloaded = info;
+    downloading = false;
     await notify({ kind: "update-ready", payload: { info } });
   }));
 
   autoUpdater.on?.("error", safe(async (error) => {
+    downloading = false;
+    lastCheckResult = "error";
     appendDiagnostic("auto_updater_runtime_error", error, {});
     await notify({ kind: "update-error", payload: { phase: "runtime", message: error?.message } });
   }));
@@ -156,10 +192,12 @@ export function createAutoUpdater({
     if (pendingCheck) return pendingCheck;
     pendingCheck = (async () => {
       lastCheckedAt = new Date().toISOString();
+      lastCheckTrigger = trigger;
       try {
         const result = await autoUpdater.checkForUpdates();
         return { ok: true, result };
       } catch (error) {
+        lastCheckResult = "error";
         appendDiagnostic("auto_updater_check_failed", error, { trigger });
         await notify({ kind: "update-error", payload: { phase: "check", message: error?.message } });
         return { ok: false, error: error?.message ?? String(error) };
@@ -187,13 +225,17 @@ export function createAutoUpdater({
     return {
       strategy: getStrategy(),
       lastCheckedAt,
+      lastCheckResult,
+      available: available ? { version: available.version, releaseDate: available.releaseDate ?? null } : null,
       downloaded: downloaded ? { version: downloaded.version, releaseDate: downloaded.releaseDate ?? null } : null,
+      downloading,
       pending: Boolean(pendingCheck)
     };
   }
 
   return {
     checkForUpdates,
+    downloadUpdate: () => downloadAvailableUpdate(null, { notifyDownloading: true }),
     applyUpdate,
     getStatus,
     UPDATE_STRATEGIES

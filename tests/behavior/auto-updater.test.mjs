@@ -88,6 +88,23 @@ test("strategy manual — scheduled triggers skip, user triggers run", async () 
   assert.equal(calls.checkForUpdates, 1);
 });
 
+test("manual user check surfaces update-available and status for explicit download", async () => {
+  const { fake, emitter } = makeFakeAutoUpdater();
+  const notifyCalls = [];
+  const u = createAutoUpdater({
+    autoUpdater: fake,
+    getStrategy: () => "manual",
+    notify: async (msg) => { notifyCalls.push(msg); }
+  });
+  await u.checkForUpdates({ trigger: "user" });
+  emitter.emit("update-available", { version: "1.2.3", releaseDate: "2026-05-07" });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(notifyCalls.length, 1);
+  assert.equal(notifyCalls[0].kind, "update-available");
+  assert.equal(notifyCalls[0].payload.autoDownload, false);
+  assert.equal(u.getStatus().available.version, "1.2.3");
+});
+
 test("strategy notify — scheduled check runs but downloadUpdate is NOT called on update-available", async () => {
   const { fake, calls, emitter } = makeFakeAutoUpdater();
   const notifyCalls = [];
@@ -119,6 +136,32 @@ test("strategy auto — update-available triggers downloadUpdate and notify with
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.downloadUpdate, 1, "auto strategy must auto-download");
   assert.equal(notifyCalls[0].payload.autoDownload, true);
+});
+
+test("downloadUpdate is explicit for available updates and announces download progress", async () => {
+  const { fake, calls, emitter } = makeFakeAutoUpdater();
+  const notifyCalls = [];
+  const u = createAutoUpdater({
+    autoUpdater: fake,
+    getStrategy: () => "manual",
+    notify: async (msg) => { notifyCalls.push(msg); }
+  });
+  emitter.emit("update-available", { version: "1.2.3" });
+  await new Promise(resolve => setImmediate(resolve));
+  const downloaded = await u.downloadUpdate();
+  assert.equal(downloaded.ok, true);
+  assert.equal(calls.downloadUpdate, 1);
+  assert.ok(notifyCalls.find((msg) => msg.kind === "update-available" && msg.payload.autoDownload === true));
+  assert.equal(u.getStatus().downloading, false);
+});
+
+test("downloadUpdate before update-available throws", async () => {
+  const { fake } = makeFakeAutoUpdater();
+  const u = createAutoUpdater({ autoUpdater: fake, getStrategy: () => "manual" });
+  await assert.rejects(
+    () => u.downloadUpdate(),
+    /no update is available yet/
+  );
 });
 
 test("update-downloaded fires update-ready notification", async () => {
@@ -170,7 +213,7 @@ test("applyUpdate after download routes to autoUpdater.quitAndInstall", async ()
 
 test("UPDATE_STRATEGIES is the canonical list", () => {
   assert.deepEqual(UPDATE_STRATEGIES, ["off", "manual", "notify", "auto"]);
-  assert.equal(DEFAULT_UPDATE_STRATEGY, "off", "default must be off — first-run consent flow turns it up");
+  assert.equal(DEFAULT_UPDATE_STRATEGY, "off", "default must be off — the Console update button turns it up");
 });
 
 test("two concurrent checkForUpdates calls coalesce — autoUpdater.checkForUpdates fires once", async () => {
@@ -203,7 +246,9 @@ test("getStatus returns strategy + lastCheckedAt + downloaded info", async () =>
   let status = u.getStatus();
   assert.equal(status.strategy, "manual");
   assert.equal(status.lastCheckedAt, null);
+  assert.equal(status.available, null);
   assert.equal(status.downloaded, null);
+  assert.equal(status.lastCheckResult, null);
   await u.checkForUpdates({ trigger: "user" });
   status = u.getStatus();
   assert.ok(status.lastCheckedAt, "lastCheckedAt must be set after a check");

@@ -26,7 +26,7 @@ export const IPC_CHANNELS = Object.freeze({
   shellClipboardChanged: "uca:shell-clipboard-changed",
   shellNavigateConsole: "uca:shell-navigate-console",
   rendererErrorReport: "uca:renderer-error",
-  // P0-1 auto-updater control channels (Settings UI + first-run consent).
+  // P0-1 auto-updater control channels (Console update button + popup actions).
   shellUpdaterStatus: "uca:shell-updater-status",
   shellUpdaterSetStrategy: "uca:shell-updater-set-strategy",
   shellUpdaterCheckNow: "uca:shell-updater-check-now",

@@ -996,8 +996,8 @@ export function createDesktopGuiSmokeRunner({
               title: document.getElementById("pc-title")?.textContent || "",
               body: document.getElementById("pc-body")?.textContent || "",
               labels,
-              hasSettings: labels.includes("打开设置"),
-              hasClose: labels.includes("关闭")
+              hasDownload: labels.includes("下载更新"),
+              hasLater: labels.includes("稍后")
             };
           })()`, true).catch(() => null);
           if (!snapshot?.body?.includes("9.9.9-gui-smoke")) continue;
@@ -1005,8 +1005,8 @@ export function createDesktopGuiSmokeRunner({
           updaterPopupSnapshot = snapshot;
           return snapshot.showing
             && snapshot.kind === "info"
-            && snapshot.hasSettings
-            && snapshot.hasClose;
+            && snapshot.hasDownload
+            && snapshot.hasLater;
         }
         return false;
       }, 5000);

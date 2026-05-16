@@ -1497,6 +1497,10 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
 [data-theme="dark"] .icon-btn:hover {
   background: #1f1f1f;
 }
+.icon-btn[data-busy="1"] {
+  color: var(--accent-strong);
+  cursor: progress;
+}
 .icon-btn svg { width: 16px; height: 16px; }
 .icon-btn .dot {
   position: absolute; top: 7px; right: 7px;

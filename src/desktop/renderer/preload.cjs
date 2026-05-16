@@ -174,6 +174,18 @@ contextBridge.exposeInMainWorld("ucaShell", {
   notify(payload) {
     return ipcRenderer.invoke("uca:shell-notify", payload);
   },
+  getUpdaterStatus() {
+    return ipcRenderer.invoke("uca:shell-updater-status");
+  },
+  setUpdaterStrategy(strategy) {
+    return ipcRenderer.invoke("uca:shell-updater-set-strategy", { strategy });
+  },
+  checkUpdaterNow() {
+    return ipcRenderer.invoke("uca:shell-updater-check-now");
+  },
+  applyUpdaterUpdate(payload = {}) {
+    return ipcRenderer.invoke("uca:shell-updater-apply", payload ?? {});
+  },
   navigateConsole(payload) {
     return ipcRenderer.invoke("uca:shell-navigate-console", payload ?? {});
   },

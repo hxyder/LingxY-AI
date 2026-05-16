@@ -167,18 +167,26 @@ export function createDesktopNotificationCenter({
 
   async function notifyAutoUpdater({ kind, payload } = {}) {
     if (kind === "update-available") {
+      const version = payload?.info?.version ?? "";
+      const isDownloading = payload?.autoDownload === true;
       await safeNotify({
-        title: "更新可用",
-        body: `LingxY ${payload?.info?.version ?? ""} 可下载${payload?.autoDownload ? "（正在自动下载…）" : "。打开设置查看。"}`,
+        title: isDownloading ? "正在下载更新" : "发现新版本",
+        body: isDownloading
+          ? `LingxY ${version} 正在下载。下载完成后会提示你重启更新。`
+          : `LingxY ${version} 可下载。点击下载后，完成时再选择是否重启。`,
         taskId: `updater:available:${payload?.info?.version ?? "unknown"}`,
         dedupeKey: `updater:available:${payload?.info?.version ?? "unknown"}`,
         allowContinue: false,
-        openWindow: "console",
         skipBatch: true,
-        buttons: [
-          { id: "settings", actionKey: "updater:settings", label: "打开设置", primary: true },
-          { id: "dismiss", actionKey: "dismiss", label: "关闭" }
-        ]
+        buttons: isDownloading
+          ? [
+              { id: "settings", actionKey: "updater:settings", label: "打开设置" },
+              { id: "dismiss", actionKey: "dismiss", label: "稍后" }
+            ]
+          : [
+              { id: "download", actionKey: "updater:download", label: "下载更新", primary: true },
+              { id: "dismiss", actionKey: "dismiss", label: "稍后" }
+            ]
       });
       return;
     }
@@ -189,7 +197,6 @@ export function createDesktopNotificationCenter({
         taskId: `updater:ready:${payload?.info?.version ?? "unknown"}`,
         dedupeKey: `updater:ready:${payload?.info?.version ?? "unknown"}`,
         allowContinue: false,
-        openWindow: "console",
         skipBatch: true,
         buttons: [
           { id: "apply", actionKey: "updater:apply", label: "重启更新", primary: true },

@@ -10,7 +10,8 @@
  *     forced false at construction
  *   - src/desktop/tray/electron-main.mjs: lazy-loaded electron-updater
  *     (so dev runs don't crash), notify routed through brand
- *     popup-card / safeNotify, IPC channels exposed for Settings UI
+ *     popup-card / safeNotify, IPC channels exposed for Console UI
+ *     and no launch-time first-run updater popup
  *   - .github/workflows/release-artifacts.yml: canonical-repo gate
  *     on the publish job, latest.yml asset enforced (otherwise the
  *     release ships but no updater client can find it)
@@ -61,7 +62,7 @@ assert.ok(
 );
 assert.ok(
   /DEFAULT_UPDATE_STRATEGY\s*=\s*"off"/.test(autoUpdaterSrc),
-  "auto-updater.mjs DEFAULT_UPDATE_STRATEGY must be 'off' — first-run consent flow turns it up; default-on without explicit consent is a privacy regression"
+  "auto-updater.mjs DEFAULT_UPDATE_STRATEGY must be 'off' — the Console update button turns it up on explicit user action; default-on without explicit consent is a privacy regression"
 );
 assert.ok(
   /autoUpdater\.autoDownload\s*=\s*false/.test(autoUpdaterSrc)
@@ -71,6 +72,11 @@ assert.ok(
 assert.ok(
   /requires `getStrategy` injection/.test(autoUpdaterSrc),
   "auto-updater.mjs must reject missing getStrategy (no hardcoded default — strategy must be explicit)"
+);
+assert.ok(
+  /downloadUpdate:\s*\(\)\s*=>\s*downloadAvailableUpdate/.test(autoUpdaterSrc)
+    && /lastCheckTrigger\s*===\s*"user"/.test(autoUpdaterSrc),
+  "auto-updater.mjs must expose explicit downloadUpdate and notify manual user checks when an update is available"
 );
 
 // ── 3. electron-main wiring ─────────────────────────────────────────
@@ -117,16 +123,17 @@ assert.ok(
 );
 assert.ok(
   /async function notifyAutoUpdater/.test(desktopNotificationsSrc)
-    && /actionKey:\s*"updater:settings"/.test(desktopNotificationsSrc)
+    && /actionKey:\s*"updater:download"/.test(desktopNotificationsSrc)
     && /actionKey:\s*"updater:apply"/.test(desktopNotificationsSrc),
-  "desktop-notifications.mjs updater notifications must expose real popup-card actions for settings/apply"
+  "desktop-notifications.mjs updater notifications must expose real popup-card actions for download/apply"
 );
 const popupCardSrc = read("src/desktop/renderer/popup-card.js");
 assert.ok(
   /function customActionsFromPayload/.test(popupCardSrc)
     && /payload\?\.buttons/.test(popupCardSrc)
-    && /resolveCard\(action/.test(popupCardSrc),
-  "popup-card.js must render caller-provided buttons so updater consent/action cards are usable"
+    && /resolveCard\(action/.test(popupCardSrc)
+    && /function hasExplicitDismissAction/.test(popupCardSrc),
+  "popup-card.js must render caller-provided buttons and avoid appending duplicate default dismiss actions"
 );
 // IPC handlers exist
 for (const channel of [
@@ -141,10 +148,19 @@ for (const channel of [
     `main-process IPC modules must register ipcMain.handle(IPC_CHANNELS.${channel}, ...) so Settings UI can read/control updater state`
   );
 }
-// First-run consent flow exists
 assert.ok(
   /consentRecordedAt/.test(electronMainSrc),
-  "electron-main.mjs must implement first-run consent (config.updates.consentRecordedAt) before any network call to GitHub Releases"
+  "electron-main.mjs must persist updater preference timestamps before any background checks can run"
+);
+assert.ok(
+  /card\.action\s*===\s*"updater:download"/.test(electronMainSrc)
+    && /downloadUpdate/.test(electronMainSrc),
+  "electron-main.mjs must dispatch popup-card updater:download to the auto-updater controller"
+);
+assert.doesNotMatch(
+  electronMainSrc,
+  /consentCard|自动检查更新|updater:consent|first-run updater consent/i,
+  "electron-main.mjs must not show a launch-time first-run updater popup; checks start from the Console update button"
 );
 
 // ── 4. shared manifest IPC channels ──────────────────────────────────
@@ -160,6 +176,36 @@ for (const channel of [
     `manifest.mjs IPC_CHANNELS must define '${channel}'`
   );
 }
+
+// ── 4b. Console update button + preload bridge ───────────────────────
+const consoleHtmlSrc = read("src/desktop/renderer/console.html");
+const consoleJsSrc = read("src/desktop/renderer/console.js");
+const preloadSrc = read("src/desktop/renderer/preload.cjs");
+assert.ok(
+  /id="consoleUpdateButton"/.test(consoleHtmlSrc),
+  "console.html must expose a topbar update button instead of relying on launch-time consent popups"
+);
+for (const exposed of [
+  "getUpdaterStatus",
+  "setUpdaterStrategy",
+  "checkUpdaterNow",
+  "applyUpdaterUpdate"
+]) {
+  assert.ok(
+    preloadSrc.includes(exposed),
+    `preload.cjs must expose ${exposed} to the Console renderer`
+  );
+  assert.ok(
+    consoleJsSrc.includes(exposed),
+    `console.js must use ${exposed} from the shell client`
+  );
+}
+assert.ok(
+  /showConsoleUpdateAvailableCard/.test(consoleJsSrc)
+    && /updater:download/.test(consoleJsSrc)
+    && /setUpdaterStrategy\("manual"\)/.test(consoleJsSrc),
+  "console.js update flow must record manual preference, check explicitly, and show a download popup when a version is available"
+);
 
 // ── 5. release workflow gate ─────────────────────────────────────────
 const releaseWf = read(".github/workflows/release-artifacts.yml");

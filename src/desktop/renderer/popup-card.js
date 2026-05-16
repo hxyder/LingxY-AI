@@ -241,6 +241,14 @@ function customActionsFromPayload(payload = {}) {
     .filter(Boolean);
 }
 
+function hasExplicitDismissAction(payload = {}) {
+  const specs = Array.isArray(payload?.buttons) ? payload.buttons : [];
+  return specs.some((spec) => {
+    const action = String(spec?.actionKey ?? spec?.id ?? spec?.action ?? "").trim().toLowerCase();
+    return action === "dismiss" || action === "close";
+  });
+}
+
 function taskMetaFromPayload(payload = {}, fallbackTaskId = null) {
   return {
     taskId: payload?.taskId ?? fallbackTaskId ?? null,
@@ -450,6 +458,7 @@ function applyInit(payload) {
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
   } else {
     const buttons = customActionsFromPayload(payload);
+    const hasCustomButtons = buttons.length > 0;
     const shouldOpenOverlay = payload?.openWindow === "overlay" || payload?.handoff;
     if (payload?.artifactPath) {
       buttons.push({ actionKey: "preview_artifact", label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
@@ -467,7 +476,9 @@ function applyInit(payload) {
     if (payload?.inlinePreview || payload?.artifactPath) {
       buttons.push(copyAction(payload));
     }
-    buttons.push({ actionKey: "dismiss", label: "好", variant: buttons.length ? "ghost" : "primary", onClick: () => closeCard("dismissed") });
+    if (!hasCustomButtons || !hasExplicitDismissAction(payload)) {
+      buttons.push({ actionKey: "dismiss", label: "好", variant: buttons.length ? "ghost" : "primary", onClick: () => closeCard("dismissed") });
+    }
     renderActions(buttons);
     scheduleAutoHide(payload?.autoHideMs ?? 6000);
   }

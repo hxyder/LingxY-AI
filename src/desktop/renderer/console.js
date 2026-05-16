@@ -238,6 +238,8 @@ const runtimeState = document.querySelector("#runtimeState");
 const summaryGrid = document.querySelector("#summaryGrid");
 const integrationList = document.querySelector("#integrationList");
 const refreshButton = document.querySelector("#refreshButton");
+const consoleUpdateButton = document.querySelector("#consoleUpdateButton");
+const consoleUpdateDot = document.querySelector("#consoleUpdateDot");
 const openOverlayButton = document.querySelector("#openOverlayButton");
 const locationButton = document.querySelector("#locationButton");
 const onboardingState = document.querySelector("#onboardingState");
@@ -9456,7 +9458,144 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+let consoleUpdaterStatus = null;
+let consoleUpdaterBusy = false;
+
+function updateVersionLabel(info) {
+  return info?.version ? `LingxY ${info.version}` : "新版本";
+}
+
+function setConsoleUpdaterBusy(busy) {
+  consoleUpdaterBusy = Boolean(busy);
+  if (!consoleUpdateButton) return;
+  consoleUpdateButton.disabled = consoleUpdaterBusy || consoleUpdaterStatus?.available === false;
+  consoleUpdateButton.dataset.busy = consoleUpdaterBusy ? "1" : "0";
+}
+
+function renderConsoleUpdaterStatus(status = {}) {
+  consoleUpdaterStatus = status;
+  if (!consoleUpdateButton) return;
+  if (status.available === false) {
+    consoleUpdateButton.disabled = true;
+    consoleUpdateButton.title = "当前环境不支持自动更新";
+    if (consoleUpdateDot) consoleUpdateDot.hidden = true;
+    return;
+  }
+  const downloaded = status.downloaded ?? null;
+  const available = status.available ?? null;
+  const busy = consoleUpdaterBusy || status.pending || status.downloading;
+  consoleUpdateButton.disabled = Boolean(consoleUpdaterBusy);
+  consoleUpdateButton.dataset.busy = busy ? "1" : "0";
+  if (downloaded) {
+    consoleUpdateButton.title = `${updateVersionLabel(downloaded)} 已下载，点击重启更新`;
+  } else if (status.downloading) {
+    consoleUpdateButton.title = `${updateVersionLabel(available)} 正在下载`;
+  } else if (available) {
+    consoleUpdateButton.title = `${updateVersionLabel(available)} 可下载，点击打开更新提示`;
+  } else if (status.pending) {
+    consoleUpdateButton.title = "正在检查更新";
+  } else if (status.lastCheckedAt && status.lastCheckResult === "none") {
+    consoleUpdateButton.title = "已是最新版本，点击重新检查";
+  } else {
+    consoleUpdateButton.title = "检查更新（会访问 GitHub Releases）";
+  }
+  if (consoleUpdateDot) {
+    consoleUpdateDot.hidden = !(downloaded || available || status.downloading);
+  }
+}
+
+async function refreshConsoleUpdaterStatus({ quiet = true } = {}) {
+  if (typeof consoleShellClient?.getUpdaterStatus !== "function") {
+    renderConsoleUpdaterStatus({ available: false });
+    return consoleUpdaterStatus;
+  }
+  try {
+    const status = await consoleShellClient.getUpdaterStatus();
+    renderConsoleUpdaterStatus(status ?? { available: false });
+    return consoleUpdaterStatus;
+  } catch (error) {
+    renderConsoleUpdaterStatus({ available: false });
+    if (!quiet) showConsoleToast(`更新状态读取失败：${error?.message ?? error}`, { kind: "err" });
+    return consoleUpdaterStatus;
+  }
+}
+
+async function ensureManualUpdaterPreference(status = consoleUpdaterStatus) {
+  if (status?.strategy && status.strategy !== "off") return status;
+  if (typeof consoleShellClient?.setUpdaterStrategy !== "function") return status;
+  showConsoleToast("将访问 GitHub Releases 检查新版本；LingxY 不经过自有遥测服务器。", { kind: "info" });
+  const result = await consoleShellClient.setUpdaterStrategy("manual");
+  if (result?.ok === false) {
+    throw new Error(result?.message || result?.error || "无法保存更新偏好");
+  }
+  return await refreshConsoleUpdaterStatus({ quiet: true });
+}
+
+async function showConsoleUpdateAvailableCard(status = consoleUpdaterStatus) {
+  const info = status?.available ?? null;
+  const version = updateVersionLabel(info);
+  if (typeof consoleShellClient?.showPopupCard !== "function") {
+    showConsoleToast(`${version} 可下载`, { kind: "info" });
+    return;
+  }
+  await consoleShellClient.showPopupCard({
+    kind: "info",
+    title: "发现新版本",
+    body: `${version} 可下载。点击下载后，完成时再选择是否重启。`,
+    buttons: [
+      { id: "download", actionKey: "updater:download", label: "下载更新", primary: true },
+      { id: "dismiss", actionKey: "dismiss", label: "稍后" }
+    ],
+    allowContinue: false,
+    dedupeKey: `updater:available:${info?.version ?? "unknown"}`
+  });
+}
+
+async function handleConsoleUpdateClick() {
+  if (consoleUpdaterBusy) return;
+  setConsoleUpdaterBusy(true);
+  try {
+    let status = await refreshConsoleUpdaterStatus({ quiet: true });
+    if (status?.available === false) {
+      showConsoleToast("当前环境不支持自动更新。打包后的桌面版本可检查 GitHub Releases。", { kind: "info" });
+      return;
+    }
+    if (status?.downloaded) {
+      const result = await consoleShellClient.applyUpdaterUpdate?.({ silent: false, restart: true });
+      if (result?.ok === false) throw new Error(result?.error || "重启更新失败");
+      showConsoleToast("正在重启以完成更新…", { kind: "ok" });
+      return;
+    }
+    if (status?.available) {
+      await showConsoleUpdateAvailableCard(status);
+      return;
+    }
+    status = await ensureManualUpdaterPreference(status);
+    renderConsoleUpdaterStatus({ ...(status ?? {}), pending: true });
+    const result = await consoleShellClient.checkUpdaterNow?.();
+    if (result?.ok === false) throw new Error(result?.message || result?.error || "检查更新失败");
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    status = await refreshConsoleUpdaterStatus({ quiet: true });
+    if (status?.available) {
+      await showConsoleUpdateAvailableCard(status);
+    } else if (status?.downloaded) {
+      showConsoleToast(`${updateVersionLabel(status.downloaded)} 已下载，点击更新按钮重启`, { kind: "ok" });
+    } else if (status?.lastCheckResult === "none") {
+      showConsoleToast("已是最新版本", { kind: "ok" });
+    } else {
+      showConsoleToast("检查完成，暂未发现可用更新", { kind: "info" });
+    }
+  } catch (error) {
+    showConsoleToast(`检查更新失败：${error?.message ?? error}`, { kind: "err" });
+  } finally {
+    setConsoleUpdaterBusy(false);
+    void refreshConsoleUpdaterStatus({ quiet: true });
+  }
+}
+
 refreshButton.addEventListener("click", () => void refreshWorkspace());
+consoleUpdateButton?.addEventListener("click", () => void handleConsoleUpdateClick());
+void refreshConsoleUpdaterStatus({ quiet: true });
 openOverlayButton.addEventListener("click", async () => await consoleShellClient.showWindow("overlay"));
 
 /* ── Desktop location chip ──────────────────────────────────────────────
