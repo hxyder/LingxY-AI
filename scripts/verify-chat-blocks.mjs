@@ -30,6 +30,9 @@ assert.doesNotMatch(chatBlocks, /岗位|招聘|简历|Raleigh|YouTube|Excel|Word
 const html = renderChatMessageBlocksHtml([
   "## Inline Fixture",
   "",
+  "路径：`E:\\linxiDoc\\followup_rows_mp8grv210d3co.csv`",
+  "继续编辑 E:/linxiDoc/followup_notes_mp8grv210d3co.md。",
+  "",
   "| A | B |",
   "| --- | --- |",
   "| 1 | 2 |",
@@ -45,6 +48,14 @@ assert.match(html, /class="md-h2"/);
 assert.match(html, /class="md-table"/);
 assert.match(html, /class="md-diagram md-diagram--mermaid"/);
 assert.match(html, /class="md-svg-figure"/);
+assert.match(html, /data-local-file-path="E:\\linxiDoc\\followup_rows_mp8grv210d3co\.csv"/,
+  "inline-code local file paths must render as clickable file links");
+assert.match(html, /data-local-file-path="E:\/linxiDoc\/followup_notes_mp8grv210d3co\.md"/,
+  "plain local file paths must render as clickable file links");
 assert.doesNotMatch(html, /onclick|<script/i);
+assert.match(consoleJs, /\[data-local-file-path\][\s\S]{0,500}openConversationArtifactPath/,
+  "console chat must route local file links through the file preview/open bridge");
+assert.match(overlayJs, /\[data-local-file-path\][\s\S]{0,500}openPath/,
+  "overlay chat must route local file links through the shell open bridge");
 
 console.log("Chat blocks verification passed.");

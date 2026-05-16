@@ -6240,6 +6240,13 @@ bubbleArea?.addEventListener("click", (event) => {
     }
     return;
   }
+  const localFileLink = target?.closest?.("[data-local-file-path]");
+  if (localFileLink && bubbleArea.contains(localFileLink)) {
+    event.preventDefault();
+    const filePath = localFileLink.getAttribute("data-local-file-path");
+    if (filePath) void overlayShellClient?.openPath?.(filePath);
+    return;
+  }
   const citeChip = target?.closest?.(".cite-chip[data-source-id]");
   if (!citeChip || !bubbleArea.contains(citeChip)) return;
   event.preventDefault();

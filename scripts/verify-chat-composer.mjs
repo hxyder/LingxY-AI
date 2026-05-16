@@ -65,7 +65,11 @@ assert.match(js, /function renderConsoleChatBubbleContent\(/, "console.js must r
 assert.match(js, /renderChatMessageBlocks/, "console.js must delegate markdown/link rendering to chat-blocks");
 assert.match(read("src/desktop/renderer/chat-blocks.mjs"), /renderChatMessageBlocksHtml/, "chat-blocks must own rich chat block rendering");
 assert.match(js, /consoleChatMessages\?\.addEventListener\("click"/, "console.js must delegate chat link clicks");
-assert.match(js, /window\.ucaShell\.openExternal\(href\)/, "chat link click must open external links via shell");
+assert.match(js, /function openConsoleChatExternalLink\(/, "console.js must centralize external chat link opening");
+assert.match(js, /consoleShellClient\?\.openUrl[\s\S]{0,220}consoleShellClient\?\.openExternal/,
+  "chat external links must open through the shell client");
+assert.match(js, /\[data-local-file-path\][\s\S]{0,500}openConversationArtifactPath/,
+  "chat local file links must route through the inline preview/open bridge");
 
 // Tool call helper + attachment controller + model chip updater.
 assert.match(js, /function appendConsoleChatToolCall\(/, "console.js missing appendConsoleChatToolCall");
@@ -102,7 +106,8 @@ assert.match(attachmentsJs, /chip-attach--image/, "attachment controller must re
 assert.match(attachmentsJs, /function clear\(\)/, "attachment controller must expose clear");
 assert.match(attachmentsJs, /function getFilePaths\(\)/, "attachment controller must expose getFilePaths");
 assert.match(attachmentsJs, /return \{\s*addFiles,\s*clear,\s*getFilePaths,\s*render\s*\}/, "attachment controller must expose stable public API");
-assert.match(js, /window\.ucaShell\.openOverlayVoice\(\{\s*mode:\s*"voice",\s*autoStart:\s*true\s*\}\)/, "console voice button must use shell openOverlayVoice bridge");
+assert.match(js, /consoleShellClient\.openOverlayVoice\(\{\s*mode:\s*"voice",\s*autoStart:\s*true\s*\}\)/,
+  "console voice button must use shell-client openOverlayVoice bridge");
 assert.doesNotMatch(js, /ucaBridge\?\.openOverlayInVoiceMode/, "console voice button must not depend on missing ucaBridge helper");
 
 console.log("ok verify-chat-composer");

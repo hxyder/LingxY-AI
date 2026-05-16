@@ -69,3 +69,14 @@ test("chat blocks do not pass through raw html except sanitized svg", () => {
   assert.doesNotMatch(html, /<img/i);
   assert.match(html, /&lt;img/);
 });
+
+test("chat blocks render local file paths as clickable file links", () => {
+  const html = renderChatMessageBlocksHtml([
+    "路径：`E:\\linxiDoc\\followup_rows_mp8grv210d3co.csv`",
+    "请继续编辑 E:/linxiDoc/followup_notes_mp8grv210d3co.md。"
+  ].join("\n"));
+
+  assert.match(html, /data-local-file-path="E:\\linxiDoc\\followup_rows_mp8grv210d3co\.csv"/);
+  assert.match(html, /data-local-file-path="E:\/linxiDoc\/followup_notes_mp8grv210d3co\.md"/);
+  assert.match(html, /class="[^"]*md-local-file-link/);
+});

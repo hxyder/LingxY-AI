@@ -1314,6 +1314,12 @@ consoleChatMessages?.addEventListener("click", (ev) => {
     void handoffConsoleCapabilityAction(capabilityAction);
     return;
   }
+  const localFileLink = target?.closest?.("[data-local-file-path]");
+  if (localFileLink && consoleChatMessages.contains(localFileLink)) {
+    ev.preventDefault();
+    void openConversationArtifactPath(localFileLink.getAttribute("data-local-file-path"));
+    return;
+  }
   const copyButton = target?.closest?.("[data-md-copy]");
   if (copyButton && consoleChatMessages.contains(copyButton)) {
     ev.preventDefault();

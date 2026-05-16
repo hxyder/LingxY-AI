@@ -1403,6 +1403,18 @@
   text-decoration: underline;
   text-underline-offset: 2px;
 }
+.chat-msg-bubble .md-local-file-link,
+.bubble.assistant .md-local-file-link {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.chat-msg-bubble .md-local-file-link.md-inline-code,
+.bubble.assistant .md-local-file-link.md-inline-code {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .chat-msg-bubble .md-image-link,
 .bubble.assistant .md-image-link {
   display: block;

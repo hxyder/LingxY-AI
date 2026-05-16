@@ -227,7 +227,11 @@ function renderInline(text = "") {
   };
 
   let working = String(text ?? "");
-  working = working.replace(/`([^`]+)`/g, (_m, code) => hold(`<code class="md-inline-code">${escapeHtml(code)}</code>`));
+  working = working.replace(/`([^`]+)`/g, (_m, code) => {
+    const value = String(code ?? "").trim();
+    if (isLocalFilePath(value)) return hold(renderLocalFileLink(value, { inlineCode: true }));
+    return hold(`<code class="md-inline-code">${escapeHtml(code)}</code>`);
+  });
   working = working.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (_m, alt, url) => {
     const safeUrl = sanitizeExternalUrl(url);
     if (!safeUrl) return escapeHtml(_m);
@@ -244,6 +248,11 @@ function renderInline(text = "") {
     if (!safeUrl) return `${prefix}${escapeHtml(url)}`;
     return `${prefix}${hold(`<a href="${escapeHtml(safeUrl)}" data-open-url="${escapeHtml(safeUrl)}" class="md-link">${escapeHtml(clean)}</a>`)}${escapeHtml(trailing)}`;
   });
+  working = working.replace(/(^|[\s(（:：])((?:[A-Za-z]:[\\/]|\\\\)[^\s<>"'`]+)/g, (_m, prefix, filePath) => {
+    const { clean, trailing } = splitTrailingPunctuation(filePath);
+    if (!isLocalFilePath(clean)) return `${prefix}${escapeHtml(filePath)}`;
+    return `${prefix}${hold(renderLocalFileLink(clean))}${escapeHtml(trailing)}`;
+  });
   working = working.replace(/\[([wfci]_[0-9a-f]{8})\]/g, (_m, sourceId) => {
     return hold(`<button type="button" class="cite-chip" data-source-id="${escapeHtml(sourceId)}" title="Evidence source ${escapeHtml(sourceId)}">${escapeHtml(sourceId)}</button>`);
   });
@@ -255,6 +264,19 @@ function renderInline(text = "") {
   return working.replace(new RegExp(`${INLINE_MARKER}(\\d+)\\u0000`, "g"), (_m, index) => {
     return placeholders[Number(index)] ?? "";
   });
+}
+
+function isLocalFilePath(value = "") {
+  const text = String(value ?? "").trim();
+  return /^(?:[A-Za-z]:[\\/]|\\\\)[^\r\n<>"]+/.test(text);
+}
+
+function renderLocalFileLink(filePath = "", { inlineCode = false } = {}) {
+  const safePath = escapeHtml(String(filePath ?? ""));
+  const classes = inlineCode
+    ? "md-link md-local-file-link md-inline-code"
+    : "md-link md-local-file-link";
+  return `<a href="#" data-local-file-path="${safePath}" class="${classes}" title="Open local file">${safePath}</a>`;
 }
 
 function sanitizeExternalUrl(url = "") {
