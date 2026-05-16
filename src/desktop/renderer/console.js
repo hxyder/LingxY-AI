@@ -1917,6 +1917,7 @@ function appendConsoleChatTextDelta(taskId, delta) {
     consoleChatStreamingAnswer.bubble.classList.remove("answer-placeholder");
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, consoleChatStreamingAnswer.text);
   }
+  placeConsoleChatProgressCardAtBottom();
   placeConsoleChatThinkingCardAtBottom();
   consoleChatPin.maybeScrollToBottom();
 }
@@ -1938,9 +1939,16 @@ window.__lingxyConsoleSmoke = {
     consoleChatMessages?.querySelectorAll?.(".chat-msg-bubble.streaming")?.forEach((node) => {
       node.closest(".chat-msg")?.remove?.();
     });
+    consoleChatProgressCard?.remove?.();
+    consoleChatProgressCard = null;
+    consoleChatProgressLines = [];
     consoleChatStreamingAnswer = null;
     consoleChatSuppressedTextByTaskId.delete(taskId);
     pendingConsoleChatTextDeltas.delete(taskId);
+    appendConsoleChatProgress({
+      event: "planner_request_started",
+      data: { iteration: 0 }
+    });
     for (let i = 0; i < count; i += 1) {
       queueConsoleChatTextDelta(taskId, text);
     }
@@ -1948,15 +1956,21 @@ window.__lingxyConsoleSmoke = {
     await waitForConsoleSmokeFrame();
     flushConsoleChatTextDeltas(taskId);
     const bubble = consoleChatStreamingAnswer?.bubble ?? consoleChatMessages?.querySelector?.(".chat-msg-bubble.streaming");
+    const wrapper = consoleChatStreamingAnswer?.wrapper ?? bubble?.closest?.(".chat-msg");
     const renderedText = bubble?.textContent ?? "";
+    const progressPosition = consoleChatProgressCard && wrapper
+      ? consoleChatProgressCard.compareDocumentPosition(wrapper)
+      : 0;
+    const progressBeforeStreaming = Boolean(progressPosition & Node.DOCUMENT_POSITION_FOLLOWING);
     const durationMs = Math.round(performance.now() - started);
     return {
-      ok: renderedText.length >= count * text.length,
+      ok: renderedText.length >= count * text.length && progressBeforeStreaming,
       chunks: count,
       rendered_chars: renderedText.length,
       expected_chars: count * text.length,
       duration_ms: durationMs,
-      streaming_bubbles: consoleChatMessages?.querySelectorAll?.(".chat-msg-bubble.streaming")?.length ?? 0
+      streaming_bubbles: consoleChatMessages?.querySelectorAll?.(".chat-msg-bubble.streaming")?.length ?? 0,
+      progress_before_streaming: progressBeforeStreaming
     };
   },
   async runStopButtonCancel({ taskId = "gui-smoke-console-stop-button" } = {}) {
@@ -2713,6 +2727,15 @@ function shouldAppendConsoleChatProgressFrame(frame) {
 
 function placeConsoleChatProgressCardAtBottom() {
   if (!consoleChatMessages || !consoleChatProgressCard) return;
+  const streamingWrapper = consoleChatStreamingAnswer?.wrapper;
+  if (
+    streamingWrapper
+    && streamingWrapper.parentElement === consoleChatMessages
+    && consoleChatProgressCard !== streamingWrapper
+  ) {
+    consoleChatMessages.insertBefore(consoleChatProgressCard, streamingWrapper);
+    return;
+  }
   if (consoleChatProgressCard.parentElement === consoleChatMessages) {
     consoleChatMessages.appendChild(consoleChatProgressCard);
   }

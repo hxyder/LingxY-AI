@@ -191,6 +191,27 @@ test("task lifecycle applies executor events and refreshes composite parent stat
   assert.ok(runtime.store.getTaskEvents("parent").some((event) => event.event_type === "status_changed"));
 });
 
+test("task lifecycle treats partial success as terminal completion progress", () => {
+  const { runtime } = makeRuntime();
+  const task = {
+    task_id: "task_partial",
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    status: "running",
+    sub_status: "tool_planner",
+    progress: 0.2,
+    completed_steps: [],
+    executor_history: []
+  };
+  runtime.store.insertTask(task);
+
+  applyExecutorEvent(runtime, task, { type: "partial_success", text: "Completed with warnings" });
+
+  assert.equal(task.status, "partial_success");
+  assert.equal(task.progress, 1);
+  assert.equal(task.result_summary, "Completed with warnings");
+});
+
 test("task lifecycle update and active execution registry keep compatibility helpers", () => {
   const { runtime } = makeRuntime();
   const task = {

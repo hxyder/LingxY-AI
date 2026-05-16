@@ -39,6 +39,14 @@ export function emitExecutionPhaseTiming({ runtime, taskId, phase, startedAt, pa
   });
 }
 
+export function emitExecutionPhaseFinished({ runtime, taskId, phase, step = phase, progress = null }) {
+  runtime?.emitTaskEvent?.("step_finished", {
+    step,
+    phase,
+    progress
+  });
+}
+
 export async function runExecutionPhase({
   runtime,
   taskId,
@@ -58,6 +66,7 @@ export async function runExecutionPhase({
     const result = await fn();
     const payload = typeof timingPayload === "function" ? timingPayload(result) : (timingPayload ?? {});
     emitExecutionPhaseTiming({ runtime, taskId, phase, startedAt, payload });
+    emitExecutionPhaseFinished({ runtime, taskId, phase, step, progress });
     return result;
   } catch (error) {
     emitExecutionPhaseTiming({

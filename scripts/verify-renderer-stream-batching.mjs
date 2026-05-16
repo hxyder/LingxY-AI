@@ -50,7 +50,8 @@ assertIncludes(consoleJs, "src/desktop/renderer/console.js", [
   "function queueConsoleChatThinkingDelta",
   "function flushConsoleChatThinkingDelta",
   "requestAnimationFrame",
-  "async runTextDeltaLoad"
+  "async runTextDeltaLoad",
+  "progress_before_streaming"
 ]);
 
 const consoleTextBranch = extractBranch(consoleJs, "frame.event === \"text_delta\"");

@@ -511,11 +511,32 @@ export async function awaitDeferredSemanticRouterPatchForPlanner({ task, runtime
   if (taskRequiresToolUse(task)) return false;
   if (task?.task_spec?.routing_degraded !== true && task?.context_packet?.semantic_router_decision) return false;
 
+  const waitBudgetMs = Math.max(
+    0,
+    Number.isFinite(Number(process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS))
+      ? Number(process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS)
+      : 1200
+  );
   runtime?.emitTaskEvent?.("planner_waiting_for_semantic_router", {
     iteration,
-    reason: "degraded_no_tool_contract"
+    reason: "degraded_no_tool_contract",
+    wait_budget_ms: waitBudgetMs
   });
-  const refreshedSpec = await promise;
+  const timeoutMarker = Symbol("semantic_router_patch_timeout");
+  const refreshedSpec = waitBudgetMs > 0
+    ? await Promise.race([
+        promise,
+        new Promise((resolve) => setTimeout(() => resolve(timeoutMarker), waitBudgetMs))
+      ])
+    : timeoutMarker;
+  if (refreshedSpec === timeoutMarker) {
+    runtime?.emitTaskEvent?.("planner_semantic_router_deferred", {
+      iteration,
+      reason: "wait_budget_exceeded",
+      wait_budget_ms: waitBudgetMs
+    });
+    return false;
+  }
   if (!refreshedSpec) return false;
   runtime?.emitTaskEvent?.("planner_semantic_router_ready", {
     iteration,
@@ -761,7 +782,11 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
           ? (delta) => {
               if (!delta) return;
               stopPlannerHeartbeatOnDelta(plannerHeartbeat);
-              runtime?.emitTaskEvent?.("reasoning_delta", { delta });
+              if (leanChatMode) {
+                runtime?.emitTaskEvent?.("text_delta", { delta });
+              } else {
+                runtime?.emitTaskEvent?.("reasoning_delta", { delta });
+              }
             }
           : undefined,
         shouldContinue: ({ response: attemptResponse, limitReason }) =>

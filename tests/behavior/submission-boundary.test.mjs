@@ -13,6 +13,7 @@ import { submitFileTask } from "../../src/service/core/file-submission.mjs";
 import { submitImageTask } from "../../src/service/core/image-submission.mjs";
 import { submitOfficeTask } from "../../src/service/core/office-submission.mjs";
 import { submitScreenshotTask } from "../../src/service/core/screenshot-submission.mjs";
+import { runExecutionPhase } from "../../src/service/core/runtime/execution-graph.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
 import {
   emitSubmitToTaskCreatedTiming,
@@ -372,6 +373,31 @@ test("task route timing records submit to task creation without changing task re
     && entry.payload?.phase === "submit_to_task_created"
   ), true);
   assert.equal(result.taskEvents.includes(event), true);
+});
+
+test("execution phase wrapper closes successful steps after timing", async () => {
+  const events = [];
+  const result = await runExecutionPhase({
+    runtime: {
+      emitTaskEvent(eventType, payload) {
+        events.push({ eventType, payload });
+      }
+    },
+    taskId: "task_phase",
+    phase: "semantic_router_patch",
+    step: "semantic_router_patch",
+    progress: 0.04,
+    fn: async () => ({ ok: true })
+  });
+
+  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(events.map((event) => event.eventType), [
+    "phase_started",
+    "step_started",
+    "phase_timing",
+    "step_finished"
+  ]);
+  assert.equal(events.at(-1).payload.step, "semantic_router_patch");
 });
 
 test("browser submission declares its submission kind through the central boundary", async () => {

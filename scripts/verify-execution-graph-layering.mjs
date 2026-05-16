@@ -27,6 +27,7 @@ for (const state of [
 assert.ok(graph.includes("runExecutionPhase"), "execution graph must export a phase wrapper");
 assert.ok(graph.includes('"phase_started"'), "execution graph must emit phase_started");
 assert.ok(graph.includes('"phase_timing"'), "execution graph must emit phase_timing");
+assert.ok(graph.includes('"step_finished"'), "execution graph must close successful phase steps");
 assert.ok(graph.includes('SEMANTIC_ROUTER_PATCH: "semantic_router_patch"'),
   "execution graph must distinguish deferred SemanticRouter patching from blocking preflight");
 

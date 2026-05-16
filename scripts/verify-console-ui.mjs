@@ -151,6 +151,10 @@ assert.match(consoleRenderer, /function appendConsoleChatProgress/);
 assert.match(consoleRenderer, /function appendConsoleChatLiveProgress/);
 assert.match(consoleRenderer, /chat-progress-card/);
 assert.match(consoleRenderer, /closeConsoleChatProgressCard/);
+assert.match(consoleRenderer, /function placeConsoleChatProgressCardAtBottom\(\)[\s\S]{0,360}insertBefore\(consoleChatProgressCard,\s*streamingWrapper\)/,
+  "Console chat must keep live progress above the active streaming answer so generated replies remain visible");
+assert.match(consoleRenderer, /progress_before_streaming/,
+  "Console smoke must assert that progress stays before the streaming answer");
 assert.match(consoleRenderer, /const CONSOLE_CHAT_PROGRESS_EVENT_TYPES = new Set/);
 assert.match(consoleRenderer, /"step_started"[\s\S]{0,240}"log"/);
 assert.match(consoleRenderer, /function shouldAppendConsoleChatProgressFrame\(frame\)/);

@@ -5728,19 +5728,39 @@ const projectPanel = document.querySelector("#projectPanel");
 const projectSelectorBtn = document.querySelector("#projectSelectorBtn");
 const projectDropdown = document.querySelector("#projectDropdown");
 const newProjectBtn = document.querySelector("#newProjectBtn");
+const projectTools = document.querySelector("#projectTools");
 const historyList = document.querySelector("#historyList");
+let overlayProjectPanelMode = "conversations";
+
+function projectNameForOverlayConversation(conversation = {}) {
+  const project = projectStore?.projects?.find((item) => item.id === conversation.projectId);
+  return project?.name ?? "默认项目";
+}
+
+function listOverlayPanelConversations() {
+  if (!projectStore) return [];
+  const source = overlayProjectPanelMode === "projects"
+    ? listConversationsForCurrentProject()
+    : [...(projectStore.conversations ?? [])].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  return source.filter((conversation) => conversation?.id && !conversation?.metadata?.autoSource).slice(0, 80);
+}
 
 function renderProjectPanel() {
   if (!projectStore) loadProjectStore();
+  for (const btn of projectPanel?.querySelectorAll?.("[data-overlay-project-panel-tab]") ?? []) {
+    const active = btn.dataset.overlayProjectPanelTab === overlayProjectPanelMode;
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+  if (projectTools) projectTools.hidden = overlayProjectPanelMode !== "projects";
   // Populate project dropdown
   if (projectDropdown) {
     projectDropdown.innerHTML = projectStore.projects.map((p) =>
-      `<option value="${p.id}" ${p.id === projectStore.currentProjectId ? "selected" : ""}>${projectHasUnread(p.id) ? "● " : ""}${p.name}</option>`
+      `<option value="${escapeHtml(p.id)}" ${p.id === projectStore.currentProjectId ? "selected" : ""}>${projectHasUnread(p.id) ? "● " : ""}${escapeHtml(p.name)}</option>`
     ).join("");
   }
   // Populate history list
   if (historyList) {
-    const convs = listConversationsForCurrentProject();
+    const convs = listOverlayPanelConversations();
     if (convs.length === 0) {
       historyList.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:8px 0;">暂无会话记录。</div>`;
       return;
@@ -5751,20 +5771,33 @@ function renderProjectPanel() {
       const date = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : "";
       const isActive = c.id === projectStore.currentConversationId;
       const unread = c.metadata?.unread === true;
+      const projectName = projectNameForOverlayConversation(c);
       return `
-        <div data-conv-id="${c.id}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;${isActive ? "background:var(--glass-accent-soft);" : ""}">
-          <span style="width:7px;height:7px;border-radius:999px;background:${unread ? "#ef4444" : "transparent"};flex:0 0 auto;"></span>
-          <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isActive ? "font-weight:600;" : ""}">${title}</div>
-          <span style="font-size:10px;color:var(--muted);">${turnCount} turns · ${date}</span>
-          <button data-delete-conv="${c.id}" type="button" style="font-size:10px;padding:2px 6px;border:none;background:none;color:var(--muted);cursor:pointer;" title="删除此会话">×</button>
+        <div class="overlay-history-row ${isActive ? "is-active" : ""}" data-conv-id="${escapeHtml(c.id)}" role="listitem">
+          <span style="width:7px;height:7px;border-radius:999px;background:${unread ? "#ef4444" : "transparent"};"></span>
+          <div class="overlay-history-main">
+            <div class="overlay-history-title" title="${escapeHtml(title)}" style="${isActive ? "font-weight:650;" : ""}">${escapeHtml(title)}</div>
+            <div class="overlay-history-meta">${escapeHtml(projectName)} · ${turnCount} turns${date ? ` · ${escapeHtml(date)}` : ""}</div>
+          </div>
+          <div class="overlay-history-actions">
+            <button class="overlay-history-action" data-open-project="${escapeHtml(c.projectId ?? DEFAULT_PROJECT_ID)}" type="button" title="切到项目">项目</button>
+            <button class="overlay-history-action" data-open-conv="${escapeHtml(c.id)}" type="button" title="打开会话">会话</button>
+            <button class="overlay-history-action danger" data-delete-conv="${escapeHtml(c.id)}" type="button" title="删除此会话">×</button>
+          </div>
         </div>
       `;
     }).join("");
-    for (const row of historyList.querySelectorAll("[data-conv-id]")) {
-      row.addEventListener("click", (e) => {
-        if (e.target.closest("[data-delete-conv]")) return;
-        switchConversation(row.dataset.convId);
+    for (const btn of historyList.querySelectorAll("[data-open-conv]")) {
+      btn.addEventListener("click", () => {
+        switchConversation(btn.dataset.openConv);
         setPanelOpen(projectPanel, false);
+      });
+    }
+    for (const btn of historyList.querySelectorAll("[data-open-project]")) {
+      btn.addEventListener("click", () => {
+        overlayProjectPanelMode = "projects";
+        switchProject(btn.dataset.openProject);
+        renderProjectPanel();
       });
     }
     for (const btn of historyList.querySelectorAll("[data-delete-conv]")) {
@@ -5774,6 +5807,13 @@ function renderProjectPanel() {
       });
     }
   }
+}
+
+for (const btn of projectPanel?.querySelectorAll?.("[data-overlay-project-panel-tab]") ?? []) {
+  btn.addEventListener("click", () => {
+    overlayProjectPanelMode = btn.dataset.overlayProjectPanelTab === "projects" ? "projects" : "conversations";
+    renderProjectPanel();
+  });
 }
 
 projectSelectorBtn?.addEventListener("click", () => {

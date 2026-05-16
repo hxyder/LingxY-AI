@@ -88,6 +88,54 @@ test("agent planner waits for deferred semantic-router patch before no-tool mode
   assert.ok(events.some((event) => event.event_type === "planner_semantic_router_ready"));
 });
 
+test("agent planner does not block indefinitely on slow deferred semantic-router patch", async () => {
+  const previous = process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS;
+  process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS = "5";
+  try {
+    const events = [];
+    const task = {
+      user_command: "最近有什么要上映的新电影吗",
+      context_packet: {},
+      task_spec: {
+        goal: "qa",
+        contract: { mode: "qa" },
+        routing_degraded: true,
+        tool_policy: {
+          web_search_fetch: { mode: "optional" }
+        },
+        success_contract: { required_policy_groups: [] }
+      }
+    };
+    Object.defineProperty(task, "__srPatchPromise", {
+      enumerable: false,
+      value: new Promise((resolve) => setTimeout(() => resolve({
+        ...task.task_spec,
+        routing_degraded: false,
+        tool_policy: { web_search_fetch: { mode: "required" } }
+      }), 40))
+    });
+
+    const started = Date.now();
+    const waited = await awaitDeferredSemanticRouterPatchForPlanner({
+      task,
+      iteration: 0,
+      runtime: {
+        emitTaskEvent: (event_type, payload) => events.push({ event_type, payload })
+      }
+    });
+
+    assert.equal(waited, false);
+    assert.ok(Date.now() - started < 150);
+    assert.ok(events.some((event) =>
+      event.event_type === "planner_semantic_router_deferred"
+      && event.payload?.reason === "wait_budget_exceeded"
+    ));
+  } finally {
+    if (previous === undefined) delete process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS;
+    else process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS = previous;
+  }
+});
+
 test("agent planner mode refuses lean chat when tools or attachments are required", () => {
   assert.equal(shouldUseLeanChatMode({
     context_packet: {

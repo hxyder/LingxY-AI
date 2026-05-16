@@ -15,6 +15,7 @@ const semanticRouter = readFileSync(new URL("../src/service/core/intent/semantic
 const fastExecutor = readFileSync(new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../src/service/capabilities/registry/registry.mjs", import.meta.url), "utf8");
 const actionTools = readFileSync(new URL("../src/service/action_tools/tools/index.mjs", import.meta.url), "utf8");
+const desktopLaunchTools = readFileSync(new URL("../src/service/capabilities/tools/desktop-launch-tools.mjs", import.meta.url), "utf8");
 const resourceContext = readFileSync(new URL("../src/service/executors/shared/resource-context.mjs", import.meta.url), "utf8");
 const consoleRenderer = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");
 
@@ -49,8 +50,10 @@ assert.ok(/repairSchemaArgAliases/.test(toolArgRepair) && /repaired\.query = rep
   "planner must normalize common argument aliases before executing tools");
 assert.ok(/policy_group/.test(registry) && /requires_confirmation/.test(registry),
   "registry.list() must expose tool policy/scaffold metadata");
-assert.ok(/hasKnownAppAlias/.test(actionTools) && /!hasKnownAppAlias\(appArg\)/.test(actionTools),
+assert.ok(/hasKnownAppAlias/.test(desktopLaunchTools) && /!hasKnownAppAlias\(appArg\)/.test(desktopLaunchTools),
   "launch_app must prefer exact known aliases before fuzzy launcher ambiguity");
+assert.ok(/LAUNCH_APP_TOOL/.test(actionTools),
+  "action tool index must keep launch_app reachable through the builtin aggregation surface");
 assert.ok(/normalizeDecisionArguments/.test(semanticRouter) && /normalized\[field\] === "true"/.test(semanticRouter),
   "SemanticRouter must normalize provider boolean strings before schema validation");
 assert.ok(/UNKNOWN_LOCATION/.test(resourceContext) && /Do NOT infer a city from timezone/.test(resourceContext),

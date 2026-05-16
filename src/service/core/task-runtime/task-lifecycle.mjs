@@ -192,7 +192,7 @@ export function applyExecutorEvent(runtime, task, event) {
     const patch = {
       status: "partial_success",
       sub_status: event.sub_status ?? "completed_with_warnings",
-      progress: event.progress ?? task.progress
+      progress: event.progress ?? 1
     };
     if (partialText && !task.result_summary) {
       patch.result_summary = partialText;

@@ -106,6 +106,11 @@ assert.equal(overlayHtml.includes("projectPanel"), true);
 assert.equal(overlayHtml.includes("projectDropdown"), true);
 assert.equal(overlayHtml.includes("historyList"), true);
 assert.equal(overlayHtml.includes("projectSelectorBtn"), true);
+assert.equal(overlayHtml.includes("data-overlay-project-panel-tab=\"conversations\""), true);
+assert.equal(overlayHtml.includes("data-overlay-project-panel-tab=\"projects\""), true);
+assert.equal(overlayJs.includes("overlayProjectPanelMode"), true);
+assert.equal(overlayJs.includes("data-open-project"), true);
+assert.equal(overlayJs.includes("data-open-conv"), true);
 
 const taskEventStream = await read("src/desktop/renderer/task-event-stream.js");
 assert.equal(taskEventStream.includes("formatTaskEventSummary"), true);

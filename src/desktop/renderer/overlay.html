@@ -1195,6 +1195,96 @@
         color: var(--ink);
       }
 
+      .overlay-project-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        padding: 3px;
+        margin-bottom: 8px;
+        border-radius: 10px;
+        background: rgba(91, 107, 122, 0.1);
+      }
+
+      .overlay-project-tabs button,
+      .overlay-history-action {
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .overlay-project-tabs button {
+        padding: 5px 8px;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .overlay-project-tabs button[aria-pressed="true"] {
+        background: rgba(255, 255, 255, 0.92);
+        border-color: rgba(91, 107, 122, 0.18);
+        color: var(--ink);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      }
+
+      .overlay-history-row {
+        display: grid;
+        grid-template-columns: 7px minmax(0, 1fr) auto;
+        gap: 7px;
+        align-items: center;
+        padding: 7px 8px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+
+      .overlay-history-row.is-active {
+        background: var(--glass-accent-soft);
+      }
+
+      .overlay-history-main {
+        min-width: 0;
+      }
+
+      .overlay-history-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .overlay-history-meta {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .overlay-history-actions {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .overlay-history-action {
+        padding: 3px 7px;
+        font-size: 11px;
+        background: rgba(255, 255, 255, 0.6);
+        border-color: rgba(91, 107, 122, 0.18);
+        color: var(--ink);
+      }
+
+      .overlay-history-action:hover {
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .overlay-history-action.danger {
+        width: 24px;
+        padding: 3px 0;
+        color: var(--muted);
+      }
+
       .inline-panel .panel-grid {
         display: grid;
         grid-template-columns: 88px 1fr;
@@ -2365,6 +2455,18 @@
       }
       body[data-theme="dark"] .quick-toolbar .quick-btn:hover,
       body[data-theme="dark"] .bubble-options button:hover { background: rgba(55,55,65,0.9); }
+      body[data-theme="dark"] .overlay-project-tabs {
+        background: rgba(255,255,255,0.08);
+      }
+      body[data-theme="dark"] .overlay-project-tabs button[aria-pressed="true"],
+      body[data-theme="dark"] .overlay-history-action {
+        background: rgba(255,255,255,0.1);
+        border-color: rgba(255,255,255,0.12);
+        color: #e8e8e8;
+      }
+      body[data-theme="dark"] .overlay-history-row.is-active {
+        background: rgba(255,255,255,0.08);
+      }
       body[data-theme="dark"] .quick-toolbar .quick-btn.active,
       body[data-theme="dark"] .bubble-options button.active,
       body[data-theme="dark"] .inline-panel .panel-actions button.primary,
@@ -2443,7 +2545,11 @@
     <!-- UCA-041: Project + history panel (hidden by default) -->
     <div id="projectPanel" class="inline-panel" data-open="false" role="dialog" aria-label="对话与历史" aria-modal="false">
       <div class="panel-title">对话与历史</div>
-      <div style="display:flex;gap:6px;margin-bottom:8px;">
+      <div class="overlay-project-tabs" role="group" aria-label="选择会话或项目">
+        <button type="button" data-overlay-project-panel-tab="conversations" aria-pressed="true">会话</button>
+        <button type="button" data-overlay-project-panel-tab="projects" aria-pressed="false">项目</button>
+      </div>
+      <div id="projectTools" style="display:flex;gap:6px;margin-bottom:8px;">
         <select id="projectDropdown" aria-label="选择项目或历史对话" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;background:var(--glass-accent-soft);color:var(--glass-ink);border:1px solid var(--glass-line);"></select>
         <button id="newProjectBtn" type="button" aria-label="新建项目" style="font-size:11px;padding:4px 10px;">+ 新项目</button>
       </div>

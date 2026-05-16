@@ -127,6 +127,30 @@ test("final answer quality rejects recent local event answers without concrete d
   assert.equal(violations[0]?.kind, "local_event_answer_lacks_concrete_events");
 });
 
+test("final answer quality does not treat recent movie release questions as local events", () => {
+  const violations = validateFinalAnswerQuality({
+    task: {
+      user_command: "最近有什么要上映的新电影吗",
+      task_spec: {
+        synthesis: { expected_output: "summary" },
+        research_quality: multiSource
+      }
+    },
+    transcript: [{
+      type: "tool_result",
+      tool: "web_search_fetch",
+      success: true,
+      observation: "搜索结果：2026年5月 新电影上映片单。",
+      metadata: {
+        results: [{ url: "https://example.com/movies" }]
+      }
+    }],
+    finalText: "5月15日有一部新电影上映。"
+  });
+
+  assert.deepEqual(violations, []);
+});
+
 test("final answer quality accepts recent local event answers with dated venue details", () => {
   const violations = validateFinalAnswerQuality({
     task: {

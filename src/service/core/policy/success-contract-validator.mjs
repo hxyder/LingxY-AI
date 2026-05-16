@@ -321,7 +321,8 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
   }];
 }
 
-const RECENT_EVENT_QUERY_RE = /(活动|近期|最近|本周|周末|展览|演出|音乐会|节日|赛事|events?|event\s+calendar|things\s+to\s+do|concerts?|festivals?|this\s+week(?:end)?|upcoming|nearby)/iu;
+const LOCAL_EVENT_TOPIC_QUERY_RE = /(活动|展览|演出|音乐会|节日|赛事|events?|event\s+calendar|things\s+to\s+do|concerts?|festivals?)/iu;
+const RECENT_OR_UPCOMING_QUERY_RE = /(最近|近期|本周|周末|this\s+week(?:end)?|upcoming|nearby)/iu;
 const LOCALITY_QUERY_RE = /(我的城市|我这边|附近|当地|本地|near\s+me|my\s+city|local|nearby|in\s+[A-Z][A-Za-z .'-]{2,})/u;
 const EVENT_DETAIL_RE = /(活动|展览|演出|音乐会|节日|赛事|event|concert|festival|show|market|exhibit|performance|game)/iu;
 const DAY_LEVEL_DATE_RE = /(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}\b|\b\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?\b|20\d{2}\s*年\s*\d{1,2}\s*月\s*\d{1,2}\s*日|\d{1,2}\s*月\s*\d{1,2}\s*日|周[一二三四五六日天]|星期[一二三四五六日天]|\b(?:today|tomorrow|tonight|this\s+(?:week|weekend)|Friday|Saturday|Sunday|Monday|Tuesday|Wednesday|Thursday)\b)/iu;
@@ -341,8 +342,8 @@ function eventQueryText(task = null) {
 
 function isRecentLocalEventQuery(task = null) {
   const text = eventQueryText(task);
-  if (!RECENT_EVENT_QUERY_RE.test(text)) return false;
-  return LOCALITY_QUERY_RE.test(text) || /(最近|近期|本周|周末|this\s+week(?:end)?|upcoming)/iu.test(text);
+  if (!LOCAL_EVENT_TOPIC_QUERY_RE.test(text)) return false;
+  return LOCALITY_QUERY_RE.test(text) || RECENT_OR_UPCOMING_QUERY_RE.test(text);
 }
 
 function hasExternalWebReadAttempt(transcript = []) {

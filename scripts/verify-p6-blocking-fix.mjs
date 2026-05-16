@@ -410,8 +410,10 @@ await it("Case 8 (latency): background task creation defers SemanticRouter prefl
 
 await it("Case 8b (latency): browser capture background tasks use the same deferred preflight shape", () => {
   const src = readFileSync("src/service/core/browser-submission.mjs", "utf8");
-  assert.match(src, /const\s+deferPreExecutionPlanning\s*=\s*background\s*;/,
-    "browser background submissions must defer pre-execution planning");
+  assert.match(src, /function\s+shouldDeferBrowserPreExecutionPlanning\(\{[^}]*background[^}]*capture[^}]*\}\)[\s\S]{0,140}Boolean\(background\)\s*\|\|\s*browserCaptureCarriesUserContext\(capture\)/,
+    "browser background submissions must defer pre-execution planning through the shared browser deferral policy");
+  assert.match(src, /const\s+deferPreExecutionPlanning\s*=\s*shouldDeferBrowserPreExecutionPlanning\(\{\s*background,\s*capture\s*\}\)/,
+    "browser submissions must use the browser deferral policy before persistence");
 
   const submitIndex = src.indexOf("const { task } = submitTaskWithConversation");
   const executeIndex = src.indexOf("const execute = async () =>");
@@ -423,7 +425,7 @@ await it("Case 8b (latency): browser capture background tasks use the same defer
     "browser pre-submit must use a cheap classified packet; only the non-deferred branch may await SemanticRouter");
 
   const executeBody = src.slice(executeIndex);
-  assert.match(executeBody, /if\s*\(\s*deferPreExecutionPlanning\s*&&\s*inspection\.allowed\s*\)/,
+  assert.match(executeBody, /if\s*\(\s*deferPreExecutionPlanning\s*&&\s*inspection\.allowed[\s\S]{0,140}shouldRunDeferredSemanticRouterPatch/,
     "browser execute() must contain the deferred preflight branch");
   assert.match(executeBody, /phase:\s*EXECUTION_PHASES\.SEMANTIC_ROUTER_PATCH/,
     "browser deferred worker SR must use the semantic_router_patch phase, not the blocking preflight phase");
