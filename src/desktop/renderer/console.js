@@ -795,6 +795,7 @@ function switchTab(tabId) {
   // user switches tabs, render that slice from the latest cached state without
   // waiting for the next network poll.
   void renderWorkspaceAfterFetch({ mode: "active", activeTabId: tabId });
+  if (tabId === "tasks") void refreshWorkspace({ mode: "active" });
 }
 
 tabButtons.forEach((btn) => {
@@ -6658,9 +6659,10 @@ function renderTasks() {
     );
   }
 
-  const hideRoutineCompletedTasks = filter === "all" && !search && dateFilter === "all" && sourceFilter === "all";
-  const entries = buildTaskListEntries(tasks, { hideRoutineCompleted: hideRoutineCompletedTasks });
-  taskCount.textContent = `${entries.length}`;
+  const entries = buildTaskListEntries(tasks);
+  taskCount.textContent = tasks.length === allTasks.length
+    ? `${entries.length}`
+    : `${entries.length} / ${allTasks.length}`;
   if (entries.length === 0) {
     if (allTasks.length === 0) {
       // First-run friendly empty state — give them a clear next step.
@@ -6685,20 +6687,6 @@ function renderTasks() {
       taskList.querySelector("#taskListEmptyNewBtn")?.addEventListener("click", () => {
         document.querySelector("#tasksNewBtn")?.click();
       });
-      taskList.querySelector("#taskListEmptyChatBtn")?.addEventListener("click", () => {
-        switchTab("chat");
-      });
-      state.selectedTaskId = null;
-      renderTaskDetail(null);
-    } else if (hideRoutineCompletedTasks && tasks.length > 0) {
-      taskList.innerHTML = `
-        <div class="empty-state" style="text-align:center;padding:28px 16px;">
-          <p class="muted" style="margin:0 0 12px;font-size:13px;line-height:1.55;">
-            没有需要关注的执行任务。普通聊天结果保留在 Chat 对话里。
-          </p>
-          <button type="button" class="btn btn-sm" id="taskListEmptyChatBtn">去 Chat</button>
-        </div>
-      `;
       taskList.querySelector("#taskListEmptyChatBtn")?.addEventListener("click", () => {
         switchTab("chat");
       });
@@ -9285,7 +9273,7 @@ async function refreshWorkspace(options = {}) {
       const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, capabilityInventoryP, mcpP, skillsP, pluginsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
         fetchJsonWithFallback("/health", previous.health ?? {}, "health"),
         fetchClientJsonWithFallback(() => consoleTaskClient.fetchTaskSummaries({
-          limit: activeTabId === "tasks" ? 500 : 240
+          limit: activeTabId === "tasks" ? "all" : 240
         }), { tasks: previous.tasks ?? [] }, "tasks"),
         fetchJsonWithFallback("/approvals", { approvals: previous.approvals ?? [] }, "approvals"),
         fetchJsonWithFallback("/schedules", { schedules: previous.schedules ?? [] }, "schedules"),
@@ -9388,15 +9376,28 @@ document.querySelector("#taskSearchInput")?.addEventListener("input", (event) =>
   renderTasks();
 });
 
+function syncTaskDateFilterUi() {
+  const selected = state.taskDateFilter ?? "all";
+  const select = document.querySelector("#taskTimeRangeSelect");
+  if (select && select.value !== selected) select.value = selected;
+  for (const chip of document.querySelectorAll("#taskDateFilterChips .filter-chip")) {
+    chip.setAttribute("aria-pressed", (chip.dataset.date ?? "all") === selected ? "true" : "false");
+  }
+  updateTasksAdvFilterBadge();
+}
+
+document.querySelector("#taskTimeRangeSelect")?.addEventListener("change", (event) => {
+  state.taskDateFilter = event.target?.value ?? "all";
+  syncTaskDateFilterUi();
+  renderTasks();
+});
+
 // UCA-121: date filter chips (All / Today / 7d / 30d).
 for (const chip of document.querySelectorAll("#taskDateFilterChips .filter-chip")) {
   chip.addEventListener("click", () => {
     state.taskDateFilter = chip.dataset.date ?? "all";
-    for (const other of document.querySelectorAll("#taskDateFilterChips .filter-chip")) {
-      other.setAttribute("aria-pressed", other === chip ? "true" : "false");
-    }
+    syncTaskDateFilterUi();
     renderTasks();
-    updateTasksAdvFilterBadge();
   });
 }
 // Source chips are dynamic; shared handler used for both the static "All"

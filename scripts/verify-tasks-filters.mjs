@@ -27,6 +27,10 @@ assert.ok(
   /id="taskDateFilterChips"[\s\S]{0,600}data-date="today"/.test(consoleHtml),
   "#taskDateFilterChips must exist with a data-date=\"today\" chip"
 );
+assert.ok(
+  /id="taskTimeRangeSelect"[\s\S]{0,400}<option value="all">All time<\/option>/.test(consoleHtml),
+  "#taskTimeRangeSelect must expose the visible All time date range"
+);
 for (const d of ["all", "today", "7d", "30d"]) {
   assert.ok(
     new RegExp(`data-date="${d}"`).test(consoleHtml),
@@ -41,6 +45,14 @@ assert.ok(
 // ── state keys present ──────────────────────────────────────────────
 assert.ok(/taskDateFilter:\s*"all"/.test(consoleJs), "state.taskDateFilter default must be \"all\"");
 assert.ok(/taskSourceFilter:\s*"all"/.test(consoleJs), "state.taskSourceFilter default must be \"all\"");
+assert.ok(
+  /#taskTimeRangeSelect[\s\S]{0,300}addEventListener\("change"/.test(consoleJs),
+  "#taskTimeRangeSelect must update the task date filter"
+);
+assert.ok(
+  /function syncTaskDateFilterUi\s*\(/.test(consoleJs),
+  "date filter chips and visible select must be kept in sync"
+);
 
 // ── helpers present ─────────────────────────────────────────────────
 for (const fn of ["taskMatchesDate", "taskMatchesSource", "taskSourceCandidates"]) {

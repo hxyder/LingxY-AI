@@ -891,6 +891,15 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input id="taskSearchInput" type="text" placeholder="Search execution runs, IDs, outputs…  搜索执行记录" aria-label="Search task runs" />
         </label>
+        <label class="task-time-range">
+          <span>Time</span>
+          <select id="taskTimeRangeSelect" aria-label="Task time range">
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="7d">7 days</option>
+            <option value="30d">30 days</option>
+          </select>
+        </label>
         <div class="filter-chips" id="taskFilterChips" role="group" aria-label="Task status filter">
           <button type="button" class="filter-chip" data-filter="all" aria-pressed="true">All<span class="filter-chip-count" data-count-for="all">0</span></button>
           <button type="button" class="filter-chip" data-filter="running" aria-pressed="false">Running<span class="filter-chip-count" data-count-for="running">0</span></button>

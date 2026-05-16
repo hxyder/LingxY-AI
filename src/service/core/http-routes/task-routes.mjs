@@ -162,6 +162,13 @@ function buildMixedAttachmentContextPacket(body, {
   };
 }
 
+function normalizeTaskSummaryLimit(value) {
+  if (String(value ?? "").trim().toLowerCase() === "all") return Infinity;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 80;
+  return Math.max(1, Math.min(500, numeric));
+}
+
 export function buildTaskSummaryPayload(runtime, { recentLimit = 80 } = {}) {
   const tasks = listTaskSummaries(runtime)
     .sort((left, right) =>
@@ -170,7 +177,10 @@ export function buildTaskSummaryPayload(runtime, { recentLimit = 80 } = {}) {
   const isActive = (task) => ["queued", "running", "cancelling", "starting"].includes(task.status);
   const visible = tasks.filter((task) => task.hidden !== true && task.ui_hidden !== true);
   const active = visible.filter(isActive);
-  const recent = visible.slice(0, Math.max(1, Math.min(200, Number(recentLimit) || 80)));
+  const normalizedLimit = normalizeTaskSummaryLimit(recentLimit);
+  const recent = Number.isFinite(normalizedLimit)
+    ? visible.slice(0, normalizedLimit)
+    : visible;
   return {
     active,
     recent,

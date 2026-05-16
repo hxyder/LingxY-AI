@@ -90,3 +90,25 @@ test("task summary payload does not scan event logs for first-screen usage", () 
   assert.equal(task.conversation_id, "conv_fast_summary");
   assert.equal(task.usage_summary.total_tokens, 20);
 });
+
+test("task summary payload can return all visible tasks for the Console Tasks view", () => {
+  const store = createInMemoryStoreScaffold();
+  for (let index = 0; index < 230; index += 1) {
+    const stamp = String(index).padStart(3, "0");
+    store.insertTask({
+      task_id: `task_${stamp}`,
+      created_at: `2026-05-13T12:${String(index % 60).padStart(2, "0")}:00.000Z`,
+      updated_at: `2026-05-13T12:${String(index % 60).padStart(2, "0")}:01.000Z`,
+      status: "success",
+      user_command: `task ${stamp}`,
+      context_packet: { source_type: "chat", source_app: "uca.test" }
+    });
+  }
+
+  const capped = buildTaskSummaryPayload({ store }, { recentLimit: 80 });
+  const all = buildTaskSummaryPayload({ store }, { recentLimit: "all" });
+
+  assert.equal(capped.tasks.length, 80);
+  assert.equal(all.tasks.length, 230);
+  assert.equal(all.counts.visible, 230);
+});

@@ -22,6 +22,27 @@
   margin-bottom: 14px;
 }
 .tasks-toolbar-search { width: 260px; flex: 0 0 auto; height: 32px; }
+.task-time-range {
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+.task-time-range select {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
 .tasks-toolbar-spacer { flex: 1 1 auto; }
 .tasks-toolbar .filter-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
 .tasks-toolbar .filter-chip { height: 28px; }

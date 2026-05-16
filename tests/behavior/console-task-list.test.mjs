@@ -62,6 +62,18 @@ test("task list keeps standalone tasks at top level", () => {
   ]);
 });
 
+test("task list default renders every loaded task instead of silently capping at twelve", () => {
+  const tasks = Array.from({ length: 20 }, (_, index) =>
+    task(`task_${String(index).padStart(2, "0")}`, {
+      created_at: `2026-05-05T10:${String(index).padStart(2, "0")}:00.000Z`
+    })
+  );
+
+  const entries = buildTaskListEntries(tasks);
+
+  assert.equal(entries.length, 20);
+});
+
 test("task list keeps multi-turn continuation chains under the original visible root", () => {
   const first = task("task_first", { created_at: "2026-05-05T10:00:00.000Z" });
   const second = task("task_second", {

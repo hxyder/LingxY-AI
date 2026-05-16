@@ -76,7 +76,7 @@ function compareNestedTasks(left = {}, right = {}) {
   return `${left.created_at ?? ""}`.localeCompare(`${right.created_at ?? ""}`);
 }
 
-export function buildTaskListEntries(list = [], { limit = 12, hideRoutineCompleted = false } = {}) {
+export function buildTaskListEntries(list = [], { limit = Number.POSITIVE_INFINITY, hideRoutineCompleted = false } = {}) {
   const sourceTasks = Array.isArray(list) ? list : [];
   const tasks = hideRoutineCompleted
     ? sourceTasks.filter((task) => !isRoutineCompletedConversationTask(task))
