@@ -146,9 +146,11 @@ assert.match(agentic, /buildDeterministicArtifactPlan/u,
 const taskSpec = read("src/service/core/task-spec.mjs");
 assert.match(taskSpec, /SCRIPT_EXECUTION_REQUEST_RE/u,
   "TaskSpec must detect explicit script execution obligations");
-assert.match(taskSpec, /required_tool_names:\s*scriptExecutionRequired\s*\?\s*\["run_script"\]/u,
-  "script file generation with execute wording must require run_script");
-assert.match(taskSpec, /generated_script_execution_required:\s*scriptExecutionRequired/u,
+assert.match(taskSpec, /explicitCodeExecutionRequired[\s\S]*SCRIPT_EXECUTION_REQUEST_RE\.test/u,
+  "TaskSpec must distinguish explicit code execution from generated script artifact execution");
+assert.match(taskSpec, /required_tool_names:\s*explicitCodeExecutionRequired\s*\?\s*\["run_script"\]/u,
+  "script execution wording must require run_script even when no new artifact is requested");
+assert.match(taskSpec, /generated_script_execution_required:\s*generatedScriptExecutionRequired/u,
   "script file generation with execute wording must require executing the generated file");
 
 const successContractValidator = read("src/service/core/policy/success-contract-validator.mjs");

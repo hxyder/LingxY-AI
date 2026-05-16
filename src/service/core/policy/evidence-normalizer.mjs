@@ -135,6 +135,10 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
  *                                              marker. Validator uses this to emit the more
  *                                              specific single_roundup_only violation.
  * @property {string[]} roundup_markers       - which markers matched (for trace / debug)
+ * @property {number}   dated_web_source_count - count of web results with extractable dates
+ * @property {string|null} newest_web_source_date - newest extracted source date (YYYY-MM-DD)
+ * @property {string|null} oldest_web_source_date - oldest extracted source date (YYYY-MM-DD)
+ * @property {string|null} latest_web_search_at - latest web-search fetch time, if recorded
  * @property {object[]} sources               - unified source ledger entries for web, local, indexed chunks, and images
  */
 
@@ -157,6 +161,8 @@ export function extractEvidence(transcript) {
   const indexedFileCoverageSources = new Map();
   const ledgerSources = [];
   const titles = [];   // collected for roundup detection
+  const webSourceDates = new Set();
+  const webSearchTimes = new Set();
   if (!Array.isArray(transcript)) {
     return {
       source_count: 0, distinct_domain_count: 0,
@@ -171,6 +177,8 @@ export function extractEvidence(transcript) {
       indexed_file_truncated_source_count: 0, indexed_file_truncated_sources: [],
       blended_source_count: 0, blended_origin_count: 0,
       is_single_roundup: false, roundup_markers: [],
+      dated_web_source_count: 0, newest_web_source_date: null, oldest_web_source_date: null,
+      latest_web_search_at: null,
       sources: []
     };
   }
@@ -180,6 +188,9 @@ export function extractEvidence(transcript) {
     if (entry.success === false) continue;
     if (isWebEvidenceTool(entry.tool) && !webEvidenceIsUsable(entry)) continue;
     ledgerSources.push(...normalizeSources(entry));
+    if (entry.tool === "web_search_fetch" && typeof entry.metadata?.searched_at === "string") {
+      webSearchTimes.add(entry.metadata.searched_at);
+    }
     if (entry.tool === "web_search_fetch") {
       const results = entry.metadata?.results;
       if (Array.isArray(results)) {
@@ -187,6 +198,9 @@ export function extractEvidence(transcript) {
           const u = typeof r?.url === "string" ? r.url : null;
           if (u) urls.add(u);
           if (typeof r?.title === "string") titles.push(r.title);
+          if (typeof r?.published_date === "string" && /^\d{4}-\d{2}-\d{2}$/u.test(r.published_date)) {
+            webSourceDates.add(r.published_date);
+          }
         }
       }
     } else if (entry.tool === "fetch_url_content") {
@@ -325,6 +339,10 @@ export function extractEvidence(transcript) {
     blended_origin_count: domains.size + localSources.size + indexedFileSources.size,
     is_single_roundup: isSingleRoundup,
     roundup_markers: matchedMarkers,
+    dated_web_source_count: webSourceDates.size,
+    newest_web_source_date: [...webSourceDates].sort().at(-1) ?? null,
+    oldest_web_source_date: [...webSourceDates].sort()[0] ?? null,
+    latest_web_search_at: [...webSearchTimes].sort().at(-1) ?? null,
     sources: sortEvidenceSources(dedupeEvidenceSources(ledgerSources))
   };
 }

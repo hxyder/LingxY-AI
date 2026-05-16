@@ -49,7 +49,9 @@ function makeSource({
   range = null,
   scope = null,
   truncated = false,
-  fetched_at = null
+  fetched_at = null,
+  published_date = null,
+  published_date_precision = null
 }) {
   const cleanLocator = nonEmptyString(locator);
   if (!cleanLocator) return null;
@@ -72,7 +74,9 @@ function makeSource({
     ...(cleanRange ? { range: cleanRange } : {}),
     ...(cleanScope ? { scope: cleanScope } : {}),
     ...(truncated === true ? { truncated: true } : {}),
-    ...(nonEmptyString(fetched_at) ? { fetched_at: nonEmptyString(fetched_at) } : {})
+    ...(nonEmptyString(fetched_at) ? { fetched_at: nonEmptyString(fetched_at) } : {}),
+    ...(nonEmptyString(published_date) ? { published_date: nonEmptyString(published_date) } : {}),
+    ...(nonEmptyString(published_date_precision) ? { published_date_precision: nonEmptyString(published_date_precision) } : {})
   };
 }
 
@@ -89,7 +93,9 @@ function sourcesFromWebSearch(entry) {
       title: result?.title,
       excerpt: result?.snippet ?? result?.description,
       score: numberOrNull(result?.score),
-      fetched_at: entryTimestamp(entry)
+      fetched_at: entryTimestamp(entry) ?? entry?.metadata?.searched_at,
+      published_date: result?.published_date,
+      published_date_precision: result?.published_date_precision
     }))
     .filter(Boolean);
 }

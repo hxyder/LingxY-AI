@@ -86,6 +86,15 @@ export function formatEvidenceSummaryForComposer(evidence = null) {
   const shallow = topList(evidence.local_shallow_sources);
   if (domains.length) lines.push(`web_domains: ${domains.join(", ")}`);
   if (urls.length) lines.push(`web_urls: ${urls.join(", ")}`);
+  if (evidence.newest_web_source_date || evidence.latest_web_search_at) {
+    lines.push([
+      "web_freshness:",
+      evidence.latest_web_search_at ? `searched_at=${evidence.latest_web_search_at}` : null,
+      evidence.newest_web_source_date ? `newest_dated_source=${evidence.newest_web_source_date}` : null,
+      evidence.oldest_web_source_date ? `oldest_dated_source=${evidence.oldest_web_source_date}` : null,
+      Number(evidence.dated_web_source_count ?? 0) > 0 ? `dated_sources=${Number(evidence.dated_web_source_count)}` : null
+    ].filter(Boolean).join(" "));
+  }
   if (local.length) lines.push(`fresh_local_text_sources: ${local.join(", ")}`);
   if (indexed.length) lines.push(`indexed_file_hits_locator_only: ${indexed.join(", ")}`);
   if (shallow.length) lines.push(`listed_only_local_paths_not_content: ${shallow.join(", ")}`);
@@ -181,6 +190,7 @@ export async function composeFinalAnswer({
       purpose === "side_effect_body"
         ? "You are LingxY's side-effect content composer."
         : "You are LingxY's final answer composer.",
+      `Current local date: ${new Date().toISOString().slice(0, 10)}. Interpret recency and freshness against this date.`,
       "Use only the user request, task spec, and sanitized tool transcript below.",
       "Do not call tools. Do not mention internal pipeline, retries, budgets, validators, or raw tool protocol.",
       purpose === "side_effect_body"
@@ -190,6 +200,7 @@ export async function composeFinalAnswer({
       "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
       "If the user said not to open a webpage/browser, interpret that as no visible navigation. It does not prohibit using already executed search/fetch evidence or returning source/application links.",
       "Preserve relevant source, timestamp, location, units, and uncertainty from the transcript when they matter to the answer.",
+      "For latest/current/recent questions, if web_freshness shows the newest dated source is older than the current local date, explicitly say it is the newest dated source found in this search rather than implying it is live current truth.",
       "Never output raw internal control/event JSON. If you see fields like iteration, next_action, violation_kinds, or satisfied, treat them as internal diagnostics and omit them.",
       "If a tool failed, say what could be completed and what could not, without exposing stack traces."
     ].join("\n");

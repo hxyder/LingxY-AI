@@ -73,6 +73,7 @@ export const WEB_SEARCH_FETCH_TOOL = {
     const limit = Math.max(1, Math.min(30, Number(args.limit) || 5));
     try {
       const recency = normalizeSearchRecency(args.recency, query);
+      const searchedAt = new Date().toISOString();
       const result = await searchWeb({ query, limit, recency });
 
       // Distinguish between a network/bot-detection failure and a genuine
@@ -101,18 +102,22 @@ export const WEB_SEARCH_FETCH_TOOL = {
             query,
             provider: result.provider,
             recency: result.recency,
+            searched_at: searchedAt,
             attempts: result.attempts ?? [],
             results: []
           }
         });
       }
 
-      const asText = formatResultsForAssistant(result.results, {
-        query,
-        provider: result.provider,
-        recency: result.recency,
-        maxResults: limit
-      });
+      const asText = [
+        `检索时间：${searchedAt.slice(0, 10)} ${searchedAt.slice(11, 19)} UTC`,
+        formatResultsForAssistant(result.results, {
+          query,
+          provider: result.provider,
+          recency: result.recency,
+          maxResults: limit
+        })
+      ].join("\n");
       return createActionResult({
         success: result.results.length > 0,
         observation: asText,
@@ -121,6 +126,7 @@ export const WEB_SEARCH_FETCH_TOOL = {
           query,
           provider: result.provider,
           recency: result.recency,
+          searched_at: searchedAt,
           results: result.results
         }
       });

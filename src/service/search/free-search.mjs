@@ -35,6 +35,81 @@ const RECENCY_ALIASES = Object.freeze({
   year: "y"
 });
 
+const MONTH_INDEX = Object.freeze({
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
+  may: 5,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12
+});
+
+function isoDate(year, month, day) {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  if (y < 2000 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  return date.toISOString().slice(0, 10);
+}
+
+export function extractPublishedDate(text = "") {
+  const raw = String(text ?? "");
+  const iso = raw.match(/\b(20\d{2})-(\d{1,2})-(\d{1,2})\b/u);
+  if (iso) return { date: isoDate(iso[1], iso[2], iso[3]), precision: "day" };
+
+  const cn = raw.match(/\b(20\d{2})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日\b/u);
+  if (cn) return { date: isoDate(cn[1], cn[2], cn[3]), precision: "day" };
+
+  const monthDayYear = raw.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+(\d{1,2}),\s*(20\d{2})\b/iu);
+  if (monthDayYear) {
+    return {
+      date: isoDate(monthDayYear[3], MONTH_INDEX[monthDayYear[1].toLowerCase().replace(/\.$/u, "")], monthDayYear[2]),
+      precision: "day"
+    };
+  }
+
+  const monthYear = raw.match(/\b(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\.?\s+(20\d{2})\b/iu);
+  if (monthYear) {
+    return {
+      date: isoDate(monthYear[2], MONTH_INDEX[monthYear[1].toLowerCase().replace(/\.$/u, "")], 1),
+      precision: "month"
+    };
+  }
+
+  return { date: null, precision: null };
+}
+
+function attachPublishedDate(result = {}) {
+  const extracted = extractPublishedDate([result.title, result.snippet].filter(Boolean).join(" "));
+  if (!extracted.date) return result;
+  return {
+    ...result,
+    published_date: extracted.date,
+    published_date_precision: extracted.precision
+  };
+}
+
 export function inferSearchRecency(query = "") {
   const text = String(query ?? "").toLowerCase();
   if (/(今天|今日|24\s*小时|today|breaking)/i.test(text)) return "d";
@@ -372,6 +447,9 @@ export function formatResultsForAssistant(results = [], {
   for (const [index, result] of results.slice(0, maxResults).entries()) {
     const snippet = (result.snippet ?? "").replace(/\s+/g, " ").trim().slice(0, maxSnippetChars);
     lines.push(`${index + 1}. ${result.title}`);
+    if (result.published_date) {
+      lines.push(`   日期：${result.published_date}${result.published_date_precision === "month" ? "（月份级）" : ""}`);
+    }
     if (snippet) lines.push(`   摘要：${snippet}`);
     lines.push(`   链接：${result.url}`);
     lines.push("");
@@ -579,9 +657,10 @@ export async function searchWeb({
     const result = await attempt({ q, recency: normalizedRecency, fetchImpl, signal, limit });
     attempts.push(result);
     if (result.results.length > 0) {
+      const datedResults = result.results.map(attachPublishedDate);
       return {
         query: q,
-        results: result.results,
+        results: datedResults,
         provider: result.provider,
         recency: normalizedRecency,
         fetchFailed: false,

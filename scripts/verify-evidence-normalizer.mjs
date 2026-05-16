@@ -454,8 +454,8 @@ it("lock-in: agentic planner refreshes evidence ledger before provider calls", (
     "agentic prompt builder must have an evidence ledger section");
   assert.match(planner, /renderEvidenceLedger/,
     "agentic planner must render evidence ledger from transcript sources");
-  assert.match(planner, /messages\[0\]\.content\s*=\s*buildSystemPrompt/,
-    "agentic planner must refresh the system prompt before each provider call");
+  assert.match(planner, /messages\[\d+\]\.content\s*=\s*buildSystemPrompt/,
+    "agentic planner must refresh the dynamic system prompt before each provider call");
 });
 
 it("lock-in: finalizers attach advisory citation diagnostics", () => {

@@ -5,7 +5,11 @@ import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
-import { detectRequestedOutputFormatForTask, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
+import {
+  detectRequestedOutputFormatForTask,
+  detectRequestedOutputFormatsForTask,
+  writeRequestedArtifactSet
+} from "../executors/kimi/output-format.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
@@ -36,6 +40,7 @@ import {
   EXECUTION_STATES,
   runExecutionPhase
 } from "./runtime/execution-graph.mjs";
+import { applyLateSemanticRouterMonotonicity } from "./semantic-router-late-merge.mjs";
 import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   applyExecutorEvent,
@@ -798,11 +803,86 @@ async function runKimiExecutor({ task, runtime, store, queue, artifactStore, mar
   }
 }
 
+const BUFFERED_EXECUTOR_TERMINAL_EVENTS = new Set([
+  "inline_result",
+  "success",
+  "partial_success",
+  "failed",
+  "cancelled",
+  "waiting_external_decision"
+]);
+
+function artifactPathsFromRecords(records = []) {
+  return [...new Set((records ?? [])
+    .map((record) => record?.path)
+    .filter((value) => typeof value === "string" && value.trim()))];
+}
+
+function artifactRecordMatchesRequestedFormat(record = {}, requestedFormat = {}) {
+  const extension = String(requestedFormat?.extension ?? "").toLowerCase();
+  if (!extension) return false;
+  return String(record?.path ?? "").toLowerCase().endsWith(extension);
+}
+
+function buildGeneratedArtifactFinalText({ artifactPaths = [] } = {}) {
+  const allPaths = [...new Set((artifactPaths ?? []).filter((value) => typeof value === "string" && value.trim()))];
+  const paths = allPaths.filter((filePath) => !/-preview\.(?:txt|html)$/iu.test(filePath));
+  if (paths.length === 0 && allPaths.length > 0) paths.push(...allPaths);
+  if (paths.length === 0) return "";
+  return [
+    "已生成以下文件：",
+    ...paths.map((filePath) => `- ${filePath}`),
+    "",
+    "文件已经写入本机磁盘，可以直接打开查看。"
+  ].join("\n");
+}
+
+function augmentTerminalEventsWithArtifacts(events = [], { generatedArtifacts = [], synthesizedArtifactCount = 0 } = {}) {
+  const artifactPaths = artifactPathsFromRecords(generatedArtifacts);
+  if (artifactPaths.length === 0) return events;
+  const replacementText = synthesizedArtifactCount > 0
+    ? buildGeneratedArtifactFinalText({ artifactPaths })
+    : "";
+  return events.map((event) => {
+    if (!["inline_result", "success", "partial_success"].includes(event.event_type)) return event;
+    const payload = { ...(event.payload ?? {}) };
+    payload.artifact_paths = [
+      ...new Set([
+        ...(Array.isArray(payload.artifact_paths) ? payload.artifact_paths : []),
+        ...artifactPaths
+      ])
+    ];
+    if (replacementText) {
+      payload.text = replacementText;
+      payload.summary = replacementText;
+    }
+    return { ...event, payload };
+  });
+}
+
+function emitAndApplyExecutorEvent({ runtime, task, event, executorDescriptor }) {
+  const payload = executorDescriptor
+    ? attachProviderFieldsToEvent(executorDescriptor, event.payload)
+    : event.payload;
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: event.event_type,
+    payload
+  });
+  applyExecutorEvent(runtime, task, {
+    type: event.event_type,
+    ...payload
+  });
+  return payload;
+}
+
 async function runExecutor({ runtime, task, executor }) {
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const generatedArtifacts = [];
   const artifactMetadataByPath = new Map();
   let inlineText = "";
+  const bufferedTerminalEvents = [];
   const fileGeneration = createFileGenerationAttemptState();
   const controller = new AbortController();
   registerActiveExecution(runtime, task.task_id, {
@@ -857,14 +937,6 @@ async function runExecutor({ runtime, task, executor }) {
 
   try {
     for await (const event of executor.execute(task, { signal: controller.signal })) {
-      emitTaskEvent({
-        runtime,
-        taskId: task.task_id,
-        eventType: event.event_type,
-        payload: executorDescriptor
-          ? attachProviderFieldsToEvent(executorDescriptor, event.payload)
-          : event.payload
-      });
       if (event.event_type === "inline_result" || event.event_type === "success") {
         const candidateText = event.payload?.text ?? event.payload?.summary ?? "";
         if (!isEmptyPlannerResponse(candidateText)) {
@@ -911,16 +983,32 @@ async function runExecutor({ runtime, task, executor }) {
           }
         }
       }
-      applyExecutorEvent(runtime, task, {
-        type: event.event_type,
-        ...event.payload
-      });
+      if (BUFFERED_EXECUTOR_TERMINAL_EVENTS.has(event.event_type)) {
+        bufferedTerminalEvents.push({
+          event_type: event.event_type,
+          payload: event.payload ?? {}
+        });
+        continue;
+      }
+      emitAndApplyExecutorEvent({ runtime, task, event, executorDescriptor });
     }
 
-    const requestedFormat = detectRequestedOutputFormatForTask(task);
+    const requestedFormats = detectRequestedOutputFormatsForTask(task)
+      .filter((format) => format?.id && format.id !== "conversational");
+    const terminalFailed = bufferedTerminalEvents.some((event) =>
+      ["failed", "cancelled"].includes(event.event_type)
+    );
+    const missingRequestedFormats = requestedFormats.filter((format) =>
+      !generatedArtifacts.some((artifact) => artifactRecordMatchesRequestedFormat(artifact, format))
+    );
+    const requestedFormat = missingRequestedFormats[0]
+      ?? requestedFormats[0]
+      ?? detectRequestedOutputFormatForTask(task);
     const shouldSynthesizeFallbackArtifact = shouldSynthesizeRequestedFallbackArtifact({
       requestedFormat,
-      generatedArtifacts,
+      generatedArtifacts: missingRequestedFormats.length > 0
+        ? generatedArtifacts.filter((artifact) => artifactRecordMatchesRequestedFormat(artifact, requestedFormat))
+        : generatedArtifacts,
       task,
       fileGeneration,
       fileGenerationToolCapability: hasFileGenerationToolCapability({
@@ -928,14 +1016,15 @@ async function runExecutor({ runtime, task, executor }) {
         actionToolRegistry: runtime.actionToolRegistry
       })
     });
-    if (shouldSynthesizeFallbackArtifact) {
+    let synthesizedArtifactCount = 0;
+    if (!terminalFailed && shouldSynthesizeFallbackArtifact && missingRequestedFormats.length > 0) {
       const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
-      const artifacts = await writeRequestedArtifacts({
+      const artifacts = await writeRequestedArtifactSet({
         assistantText: isEmptyPlannerResponse(inlineText)
           ? (task.context_packet?.text || task.user_command)
           : inlineText,
         outputDir,
-        requestedFormat,
+        requestedFormats: missingRequestedFormats,
         preferredFileName: task.context_packet?.source_type === "audio_note"
           ? "录音转录结构化笔记.md"
           : null
@@ -954,6 +1043,21 @@ async function runExecutor({ runtime, task, executor }) {
             mime: artifact.mime_type
           }
         });
+      }
+      synthesizedArtifactCount = artifacts.length;
+    }
+
+    const terminalEvents = augmentTerminalEventsWithArtifacts(bufferedTerminalEvents, {
+      generatedArtifacts,
+      synthesizedArtifactCount
+    });
+    for (const event of terminalEvents) {
+      const payload = emitAndApplyExecutorEvent({ runtime, task, event, executorDescriptor });
+      if (event.event_type === "inline_result" || event.event_type === "success") {
+        const candidateText = payload?.text ?? payload?.summary ?? "";
+        if (!isEmptyPlannerResponse(candidateText)) {
+          inlineText = candidateText;
+        }
       }
     }
 
@@ -1046,6 +1150,8 @@ export async function executeExistingContextTask({
         step: "semantic_router_patch",
         progress: 0.04,
         state: EXECUTION_STATES.ROUTING,
+        visibility: "diagnostic",
+        background: true,
         fn: () => applySemanticRouterPreflight({
           userCommand,
           contextPacket: routerEnrichedContext
@@ -1064,7 +1170,11 @@ export async function executeExistingContextTask({
           const mergedContext = mergeContextPacketPatch(task.context_packet ?? executionContext, srEnriched);
           executionContext = mergedContext;
           routerEnrichedContext = mergedContext;
-          const refreshedSpec = createTaskSpec(userCommand, mergedContext, route);
+          const refreshedSpec = applyLateSemanticRouterMonotonicity({
+            runtime,
+            task,
+            refreshedSpec: createTaskSpec(userCommand, mergedContext, route)
+          });
           const refreshedValidation = validateTaskSpec(refreshedSpec);
           task.context_packet = mergedContext;
           task.task_spec = refreshedSpec;
@@ -1082,7 +1192,9 @@ export async function executeExistingContextTask({
               executor_suggestion: refreshedSpec.suggested_executor ?? null,
               tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
               expected_output: refreshedSpec.synthesis?.expected_output ?? null,
-              research_quality: refreshedSpec.research_quality ?? null
+              research_quality: refreshedSpec.research_quality ?? null,
+              visibility: "diagnostic",
+              background: true
             }
           });
           return refreshedSpec;

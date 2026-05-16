@@ -175,6 +175,29 @@ function detectRequestedOutputFormat(userCommand = "") {
   return descriptorForFormat("markdown");
 }
 
+function detectRequestedOutputFormats(userCommand = "") {
+  const normalized = `${userCommand}`.toLowerCase();
+  const formats = [];
+  const add = (id) => {
+    if (!formats.some((format) => format.id === id)) {
+      formats.push(descriptorForFormat(id));
+    }
+  };
+
+  if (/(?:\.docx|docx|word\s*文档|word\s*文件|word\b|文档格式)/i.test(normalized)) add("docx");
+  if (/(?:\.html|html|网页格式|网页文件)/i.test(normalized)) add("html");
+  if (/(?:\.json|json)/i.test(normalized)) add("json");
+  if (/(?:\.csv|csv|逗号分隔)/i.test(normalized)) add("csv");
+  if (/(?:\.pdf|pdf|导出\s*pdf)/i.test(normalized)) add("pdf");
+  if (/(?:\.xlsx|xlsx|excel|电子表格|表格文件|spreadsheet)/i.test(normalized)) add("xlsx");
+  if (/(?:\.pptx|pptx|powerpoint|\bppt\b|幻灯片|演示(?:文稿|文档)?|slides?|slideshow)/i.test(normalized)) add("pptx");
+  if (/(?:\.txt|txt|纯文本|文本文件)/i.test(normalized)) add("txt");
+
+  if (formats.length > 0) return formats;
+  if (isConversationalIntent(normalized)) return [descriptorForFormat("conversational")];
+  return [descriptorForFormat("markdown")];
+}
+
 function detectRequestedOutputFormatForTask(task = {}) {
   if (task?.task_spec?.goal === "launch_and_act"
       && task?.task_spec?.artifact?.required !== true) {
@@ -201,6 +224,45 @@ function detectRequestedOutputFormatForTask(task = {}) {
   if (artifactKind === "html") return descriptorForFormat("html");
   if (artifactKind === "csv") return descriptorForFormat("csv");
   if (artifactKind === "txt") return descriptorForFormat("txt");
+  return detected;
+}
+
+function detectRequestedOutputFormatsForTask(task = {}) {
+  if (task?.task_spec?.goal === "launch_and_act"
+      && task?.task_spec?.artifact?.required !== true) {
+    return [descriptorForFormat("conversational")];
+  }
+  if (extractPureLaunchApp(task?.user_command ?? "")
+      && task?.task_spec?.artifact?.required !== true) {
+    return [descriptorForFormat("conversational")];
+  }
+
+  const detected = detectRequestedOutputFormats(task?.user_command ?? "");
+  if (detected.some((format) => format.id !== "conversational")) {
+    return detected.filter((format) => format.id !== "conversational");
+  }
+
+  const artifactKind = task?.task_spec?.artifact?.kind ?? null;
+  const requiredKinds = Array.isArray(task?.task_spec?.artifact?.required_kinds)
+    ? task.task_spec.artifact.required_kinds
+    : [];
+  const kinds = [...new Set([artifactKind, ...requiredKinds]
+    .map((kind) => String(kind ?? "").trim().toLowerCase())
+    .filter(Boolean))];
+  if (kinds.length > 0) {
+    return kinds.map((kind) => {
+      if (kind === "md") return descriptorForFormat("markdown");
+      if (kind === "word") return descriptorForFormat("docx");
+      if (kind === "excel") return descriptorForFormat("xlsx");
+      if (kind === "ppt" || kind === "powerpoint") return descriptorForFormat("pptx");
+      return descriptorForFormat(kind);
+    }).filter((format) => format.id !== "conversational");
+  }
+
+  const noteIntent = task?.context_packet?.source_type === "audio_note"
+    || task?.context_packet?.source_app === "uca.note"
+    || task?.task_spec?.intent_tags?.includes?.("note_capture");
+  if (noteIntent) return [descriptorForFormat("markdown")];
   return detected;
 }
 
@@ -451,14 +513,16 @@ export async function writeRequestedArtifacts({
   assistantText,
   outputDir,
   requestedFormat,
-  preferredFileName = null
+  preferredFileName = null,
+  fileStem = "result"
 }) {
   const artifacts = [];
   const baseText = assistantText?.trim() || "LingxY completed without returning content.";
+  const safeStem = path.basename(String(fileStem || "result")).replace(/[<>:"/\\|?*]/g, "_").trim() || "result";
 
   if (requestedFormat.id === "docx") {
-    const docxPath = path.join(outputDir, "result.docx");
-    const previewPath = path.join(outputDir, "result-preview.txt");
+    const docxPath = path.join(outputDir, `${safeStem}.docx`);
+    const previewPath = path.join(outputDir, `${safeStem}-preview.txt`);
     const previewText = stripMarkdownSyntax(baseText) || "LingxY completed without returning content.";
     await writeDocxArtifact(docxPath, previewText);
     await writeFile(previewPath, `${previewText}\n`, "utf8");
@@ -473,8 +537,8 @@ export async function writeRequestedArtifacts({
   if (requestedFormat.id === "pdf") {
     // generate HTML first, then convert to PDF via PowerShell
     const htmlContent = await coerceHtml(baseText);
-    const htmlPath = path.join(outputDir, "result.html");
-    const pdfPath = path.join(outputDir, "result.pdf");
+    const htmlPath = path.join(outputDir, `${safeStem}.html`);
+    const pdfPath = path.join(outputDir, `${safeStem}.pdf`);
     await writeFile(htmlPath, `${htmlContent}\n`, "utf8");
     await writeStructuredPreviewHtml({ kind: "pdf", outputPath: pdfPath, plainText: stripMarkdownSyntax(baseText) });
 
@@ -489,8 +553,8 @@ export async function writeRequestedArtifacts({
   }
 
   if (requestedFormat.id === "xlsx") {
-    const xlsxPath = path.join(outputDir, "result.xlsx");
-    const previewPath = path.join(outputDir, "result-preview.txt");
+    const xlsxPath = path.join(outputDir, `${safeStem}.xlsx`);
+    const previewPath = path.join(outputDir, `${safeStem}-preview.txt`);
     const previewText = stripMarkdownSyntax(baseText) || "LingxY completed without returning content.";
     await writeXlsxArtifact(xlsxPath, previewText);
     await writeFile(previewPath, `${previewText}\n`, "utf8");
@@ -503,8 +567,8 @@ export async function writeRequestedArtifacts({
   }
 
   if (requestedFormat.id === "pptx") {
-    const pptxPath = path.join(outputDir, "result.pptx");
-    const previewPath = path.join(outputDir, "result-preview.txt");
+    const pptxPath = path.join(outputDir, `${safeStem}.pptx`);
+    const previewPath = path.join(outputDir, `${safeStem}-preview.txt`);
     const outline = parsePptxOutlineFromText(baseText);
     const plainText = renderPptxOutlineToPlainText(outline);
     await writePptxArtifact(pptxPath, plainText);
@@ -521,7 +585,7 @@ export async function writeRequestedArtifacts({
     ? path.basename(preferredFileName).replace(/[<>:"/\\|?*]/g, "_").trim()
     : "";
   const fileName = safePreferredName
-    || (requestedFormat.id === "markdown" ? "report.md" : `result${requestedFormat.extension}`);
+    || (requestedFormat.id === "markdown" && safeStem === "result" ? "report.md" : `${safeStem}${requestedFormat.extension}`);
   const targetPath = path.join(outputDir, fileName);
 
   let renderedText = baseText;
@@ -544,4 +608,31 @@ export async function writeRequestedArtifacts({
   return artifacts;
 }
 
-export { detectRequestedOutputFormat, detectRequestedOutputFormatForTask };
+export async function writeRequestedArtifactSet({
+  assistantText,
+  outputDir,
+  requestedFormats,
+  preferredFileName = null
+}) {
+  const formats = (Array.isArray(requestedFormats) ? requestedFormats : [requestedFormats])
+    .filter((format) => format && format.id && format.id !== "conversational");
+  const artifacts = [];
+  for (const format of formats) {
+    const setArtifacts = await writeRequestedArtifacts({
+      assistantText,
+      outputDir,
+      requestedFormat: format,
+      preferredFileName: formats.length === 1 ? preferredFileName : null,
+      fileStem: formats.length === 1 ? "result" : `result-${format.id}`
+    });
+    artifacts.push(...setArtifacts);
+  }
+  return artifacts;
+}
+
+export {
+  detectRequestedOutputFormat,
+  detectRequestedOutputFormatForTask,
+  detectRequestedOutputFormats,
+  detectRequestedOutputFormatsForTask
+};

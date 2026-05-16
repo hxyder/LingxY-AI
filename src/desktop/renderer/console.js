@@ -2666,6 +2666,8 @@ function activateConsoleConversationShell(conversationId, summary = null) {
 
 function appendConsoleChatProgress(frame, textOverride = "") {
   if (!consoleChatMessages) return;
+  const payload = frame?.data ?? {};
+  if (payload?.background === true || payload?.visibility === "diagnostic") return;
   if (frame?.id && consoleChatProgressEventIds.has(frame.id)) return;
   if (frame?.id) consoleChatProgressEventIds.add(frame.id);
   const summary = formatTaskEventSummary(frame);
@@ -2722,6 +2724,8 @@ function appendConsoleChatLiveProgress(taskId, key, text, minIntervalMs = 1600) 
 function shouldAppendConsoleChatProgressFrame(frame) {
   const eventType = frame?.event ?? "";
   if (!eventType) return false;
+  const payload = frame?.data ?? {};
+  if (payload?.background === true || payload?.visibility === "diagnostic") return false;
   return CONSOLE_CHAT_PROGRESS_EVENT_TYPES.has(eventType);
 }
 
@@ -7547,7 +7551,10 @@ function renderTaskDetail(detail) {
   }
   wireEvidenceSourceActions(taskDetailSummary, consoleShellClient);
   renderTaskContextDebug(detail);
-  const events = detail.events ?? [];
+  const events = (detail.events ?? []).filter((ev) => {
+    const payload = ev?.payload ?? ev?.data ?? {};
+    return !(payload?.background === true || payload?.visibility === "diagnostic");
+  });
   if (events.length > 0) {
     // Walk events in order so each entry can render its derived step
     // index ("第 3/N 步") even when the backend emits no step_index.

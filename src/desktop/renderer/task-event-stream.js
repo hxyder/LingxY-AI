@@ -439,6 +439,7 @@ export function formatTaskEventSummary(rawEvent, context = {}) {
 export function applyTaskEventPatch(task, rawEvent) {
   const frame = toTaskEventFrame(rawEvent);
   const payload = frame.data ?? {};
+  const diagnosticEvent = payload?.background === true || payload?.visibility === "diagnostic";
   const nextTask = {
     ...(task ?? {})
   };
@@ -456,6 +457,7 @@ export function applyTaskEventPatch(task, rawEvent) {
       }
       break;
     case "step_started":
+      if (diagnosticEvent) break;
       nextTask.status = nextTask.status === "queued" ? "running" : nextTask.status;
       nextTask.current_step = payload.step ?? nextTask.current_step;
       nextTask.sub_status = payload.step ?? nextTask.sub_status;
@@ -464,6 +466,7 @@ export function applyTaskEventPatch(task, rawEvent) {
       }
       break;
     case "step_finished":
+      if (diagnosticEvent) break;
       if (payload.step) {
         const completed = new Set(nextTask.completed_steps ?? []);
         completed.add(payload.step);

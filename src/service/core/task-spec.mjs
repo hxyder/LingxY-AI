@@ -841,7 +841,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const fileArtifactKind = explicitFileArtifactKind
     ?? (goal === "transform_existing_file" ? contextArtifactKind : null)
     ?? inferredFileArtifactKind;
-  const scriptExecutionRequired = requiresGeneratedScriptExecution(text, explicitFileArtifactKinds.length > 0
+  const explicitCodeExecutionRequired = SCRIPT_EXECUTION_REQUEST_RE.test(text);
+  const generatedScriptExecutionRequired = requiresGeneratedScriptExecution(text, explicitFileArtifactKinds.length > 0
     ? explicitFileArtifactKinds
     : [fileArtifactKind].filter(Boolean));
   const artifactRequired = goal === "launch_and_act"
@@ -1100,7 +1101,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       : null
   };
   const executionConstraints = buildResearchExecutionConstraints(researchQuality);
-  const mustUseTools = goal !== "qa" || connectorDomainRequest || srRequiredPolicyGroups.length > 0;
+  const mustUseTools = goal !== "qa" || connectorDomainRequest || srRequiredPolicyGroups.length > 0 || explicitCodeExecutionRequired;
 
   const partialSpec = {
     goal,
@@ -1136,8 +1137,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       artifact_created: artifactRequired,
       artifact_registered: artifactRequired,
       tool_called: mustUseTools,
-      required_tool_names: scriptExecutionRequired ? ["run_script"] : [],
-      generated_script_execution_required: scriptExecutionRequired,
+      required_tool_names: explicitCodeExecutionRequired ? ["run_script"] : [],
+      generated_script_execution_required: generatedScriptExecutionRequired,
       // P4-00.7: group-level requirements. Validator counts any member of
       // the group as satisfying the requirement — used so the LLM can pick
       // fetch_url_content or web_search when web_search_fetch returns

@@ -39,6 +39,7 @@ import {
   EXECUTION_STATES,
   runExecutionPhase
 } from "./runtime/execution-graph.mjs";
+import { applyLateSemanticRouterMonotonicity } from "./semantic-router-late-merge.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -1078,6 +1079,8 @@ export async function submitBrowserTask({
         step: "semantic_router_patch",
         progress: 0.04,
         state: EXECUTION_STATES.ROUTING,
+        visibility: "diagnostic",
+        background: true,
         fn: () => applySemanticRouterPreflight({
           userCommand,
           contextPacket: routerEnrichedContext
@@ -1095,7 +1098,11 @@ export async function submitBrowserTask({
         try {
           const mergedContext = mergeBrowserContextPacketPatch(task.context_packet ?? routerEnrichedContext, srEnriched);
           routerEnrichedContext = mergedContext;
-          const refreshedSpec = createTaskSpec(userCommand, mergedContext, route);
+          const refreshedSpec = applyLateSemanticRouterMonotonicity({
+            runtime,
+            task,
+            refreshedSpec: createTaskSpec(userCommand, mergedContext, route)
+          });
           const refreshedValidation = validateTaskSpec(refreshedSpec);
           task.context_packet = mergedContext;
           task.task_spec = refreshedSpec;
@@ -1113,7 +1120,9 @@ export async function submitBrowserTask({
               executor_suggestion: refreshedSpec.suggested_executor ?? null,
               tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
               expected_output: refreshedSpec.synthesis?.expected_output ?? null,
-              research_quality: refreshedSpec.research_quality ?? null
+              research_quality: refreshedSpec.research_quality ?? null,
+              visibility: "diagnostic",
+              background: true
             }
           });
           return refreshedSpec;

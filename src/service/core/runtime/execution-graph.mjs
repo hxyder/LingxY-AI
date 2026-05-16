@@ -18,32 +18,70 @@ export const EXECUTION_PHASES = Object.freeze({
   FINAL_CHECK: "final_check"
 });
 
-export function emitExecutionPhaseStarted({ runtime, taskId, phase, step = phase, progress = null, state = null }) {
+function phaseVisibilityPayload({ visibility = "foreground", background = false } = {}) {
+  const diagnostic = background === true || visibility === "diagnostic" || visibility === "background";
+  return {
+    visibility: diagnostic ? "diagnostic" : "foreground",
+    background: diagnostic
+  };
+}
+
+export function emitExecutionPhaseStarted({
+  runtime,
+  taskId,
+  phase,
+  step = phase,
+  progress = null,
+  state = null,
+  visibility = "foreground",
+  background = false
+}) {
+  const visibilityPayload = phaseVisibilityPayload({ visibility, background });
   runtime?.emitTaskEvent?.("phase_started", {
     phase,
     state,
     step,
-    progress
+    progress,
+    ...visibilityPayload
   });
   runtime?.emitTaskEvent?.("step_started", {
     step,
-    progress
+    progress,
+    ...visibilityPayload
   });
 }
 
-export function emitExecutionPhaseTiming({ runtime, taskId, phase, startedAt, payload = {} }) {
+export function emitExecutionPhaseTiming({
+  runtime,
+  taskId,
+  phase,
+  startedAt,
+  payload = {},
+  visibility = "foreground",
+  background = false
+}) {
   runtime?.emitTaskEvent?.("phase_timing", {
     phase,
     duration_ms: Math.max(0, Date.now() - startedAt),
+    ...phaseVisibilityPayload({ visibility, background }),
     ...payload
   });
 }
 
-export function emitExecutionPhaseFinished({ runtime, taskId, phase, step = phase, progress = null }) {
+export function emitExecutionPhaseFinished({
+  runtime,
+  taskId,
+  phase,
+  step = phase,
+  progress = null,
+  visibility = "foreground",
+  background = false
+}) {
   runtime?.emitTaskEvent?.("step_finished", {
     step,
     phase,
-    progress
+    progress,
+    ...phaseVisibilityPayload({ visibility, background })
   });
 }
 
@@ -54,6 +92,8 @@ export async function runExecutionPhase({
   step = phase,
   progress = null,
   state = null,
+  visibility = "foreground",
+  background = false,
   timingPayload = null,
   fn
 }) {
@@ -61,12 +101,12 @@ export async function runExecutionPhase({
     throw new TypeError("runExecutionPhase requires fn");
   }
   const startedAt = Date.now();
-  emitExecutionPhaseStarted({ runtime, taskId, phase, step, progress, state });
+  emitExecutionPhaseStarted({ runtime, taskId, phase, step, progress, state, visibility, background });
   try {
     const result = await fn();
     const payload = typeof timingPayload === "function" ? timingPayload(result) : (timingPayload ?? {});
-    emitExecutionPhaseTiming({ runtime, taskId, phase, startedAt, payload });
-    emitExecutionPhaseFinished({ runtime, taskId, phase, step, progress });
+    emitExecutionPhaseTiming({ runtime, taskId, phase, startedAt, payload, visibility, background });
+    emitExecutionPhaseFinished({ runtime, taskId, phase, step, progress, visibility, background });
     return result;
   } catch (error) {
     emitExecutionPhaseTiming({
@@ -74,6 +114,8 @@ export async function runExecutionPhase({
       taskId,
       phase,
       startedAt,
+      visibility,
+      background,
       payload: {
         failed: true,
         error: error?.message ?? String(error)

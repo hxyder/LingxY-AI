@@ -2632,6 +2632,8 @@ function closeActiveTaskEventStream() {
 
 function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = null } = {}) {
   if (frame.id && renderedTimelineEventIds.has(frame.id)) return;
+  const payload = frame?.data ?? {};
+  if (payload?.background === true || payload?.visibility === "diagnostic") return;
   const visibleEvents = new Set([
     "task_created",
     "accepted",

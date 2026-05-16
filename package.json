@@ -210,6 +210,7 @@
     "verify:runtime-wiring": "node scripts/verify-runtime-wiring.mjs",
     "verify:runtime-upgrade-guardrails": "node scripts/verify-runtime-upgrade-guardrails.mjs",
     "verify:runtime-performance-baseline": "node scripts/verify-runtime-performance-baseline.mjs",
+    "verify:runtime-efficiency-contract": "node scripts/verify-runtime-efficiency-contract.mjs",
     "verify:global-execution-latency": "node scripts/verify-global-execution-latency.mjs",
     "verify:file-cleanup-evidence-pack": "node scripts/verify-file-cleanup-evidence-pack.mjs",
     "verify:main-process-blocking": "node scripts/verify-main-process-blocking.mjs",

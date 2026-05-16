@@ -183,4 +183,23 @@ test("format references to existing artifacts do not create a new artifact oblig
   assert.equal(spec.artifact.required, false);
   assert.equal(spec.artifact.kind, null);
   assert.equal(spec.success_contract.artifact_created, false);
+  assert.ok(spec.success_contract.required_tool_names.includes("run_script"));
+  assert.equal(spec.success_contract.generated_script_execution_required, false);
+
+  const missingExecution = validateSuccessContract(spec, [
+    { type: "tool_result", tool: "read_file_text", success: true, observation: "contains marker" }
+  ]);
+  assert.equal(missingExecution.satisfied, false);
+  assert.ok(missingExecution.violations.some((violation) => violation.kind === "run_script_required_not_called"));
+
+  const executed = validateSuccessContract(spec, [
+    {
+      type: "tool_result",
+      tool: "run_script",
+      success: true,
+      args: { language: "node", script: "console.log('OK')" },
+      observation: "run_script (node) finished with exit 0\n--- stdout ---\nOK"
+    }
+  ]);
+  assert.equal(executed.satisfied, true, JSON.stringify(executed.violations));
 });

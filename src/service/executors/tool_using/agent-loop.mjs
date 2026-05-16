@@ -493,13 +493,27 @@ async function resolveMcpCapabilitiesNote(runtime) {
 async function resolveSkillCapabilities(runtime, task = null) {
   try {
     if (!shouldLoadSkillContextForTask(task)) return { note: "", context: null };
-    const skills = await runtime?.platform?.skillRegistries?.listSkills?.({ runtime });
-    if (!Array.isArray(skills) || skills.length === 0) return { note: "", context: null };
-    const { prompt, context } = renderSkillContextForPrompt(skills, { task, limit: 20 });
-    return {
-      note: `\n\nAvailable skills (local guidance, not executable tools):\nSkill descriptors can shape tool arguments and workflows. Choose at most one overlapping skill for the task; for spreadsheet/xlsx work prefer a spreadsheet/excel skill's structured outline, pandas/openpyxl script workflow, or in-place edit guidance over prose-to-file fallback.\n${prompt}`,
-      context
-    };
+    if (task && task.__skillCapabilitiesPromise) {
+      return await task.__skillCapabilitiesPromise;
+    }
+    const promise = (async () => {
+      const skills = await runtime?.platform?.skillRegistries?.listSkills?.({ runtime });
+      if (!Array.isArray(skills) || skills.length === 0) return { note: "", context: null };
+      const { prompt, context } = renderSkillContextForPrompt(skills, { task, limit: 20 });
+      return {
+        note: `\n\nAvailable skills (local guidance, not executable tools):\nSkill descriptors can shape tool arguments and workflows. Choose at most one overlapping skill for the task; for spreadsheet/xlsx work prefer a spreadsheet/excel skill's structured outline, pandas/openpyxl script workflow, or in-place edit guidance over prose-to-file fallback.\n${prompt}`,
+        context
+      };
+    })();
+    if (task) {
+      Object.defineProperty(task, "__skillCapabilitiesPromise", {
+        value: promise,
+        enumerable: false,
+        configurable: true,
+        writable: true
+      });
+    }
+    return await promise;
   } catch {
     return { note: "", context: null };
   }
@@ -508,6 +522,7 @@ async function resolveSkillCapabilities(runtime, task = null) {
 export async function awaitDeferredSemanticRouterPatchForPlanner({ task, runtime = null, iteration = 0 } = {}) {
   const promise = task?.__srPatchPromise;
   if (!promise || task?.sr_patch_applied_at) return false;
+  if (Number(iteration) > 0) return false;
   if (taskRequiresToolUse(task)) return false;
   if (task?.task_spec?.routing_degraded !== true && task?.context_packet?.semantic_router_decision) return false;
 
@@ -515,7 +530,7 @@ export async function awaitDeferredSemanticRouterPatchForPlanner({ task, runtime
     0,
     Number.isFinite(Number(process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS))
       ? Number(process.env.LINGXY_SR_PATCH_PLANNER_WAIT_MS)
-      : 1200
+      : 650
   );
   runtime?.emitTaskEvent?.("planner_waiting_for_semantic_router", {
     iteration,
@@ -657,7 +672,14 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime, signal 
     skillCapabilitiesNotePromise
   ]);
   const skillCapabilitiesNote = skillCapabilities.note ?? "";
-  if (skillCapabilities.context?.active_count > 0 || skillCapabilities.context?.workflow_hints?.length > 0) {
+  if ((skillCapabilities.context?.active_count > 0 || skillCapabilities.context?.workflow_hints?.length > 0)
+      && task.__skillContextEmitted !== true) {
+    Object.defineProperty(task, "__skillContextEmitted", {
+      value: true,
+      enumerable: false,
+      configurable: true,
+      writable: true
+    });
     runtime?.emitTaskEvent?.("skill_context_loaded", {
       executor: "tool_using",
       iteration,
@@ -1116,7 +1138,8 @@ export async function runToolAgentLoop(opts = {}) {
   const contracted = await finaliseWithArtifactContract(result, opts);
   const sanitized = finaliseWithUserVisibleFinalText(contracted, opts);
   const qualityChecked = finaliseWithAnswerQuality(sanitized, opts);
-  return finaliseWithEvidence(qualityChecked, opts);
+  const freshnessChecked = finaliseWithFreshnessDisclosure(qualityChecked, opts);
+  return finaliseWithEvidence(freshnessChecked, opts);
 }
 
 function finaliseWithUserVisibleFinalText(result, { runtime, task } = {}) {
@@ -1187,6 +1210,54 @@ function finaliseWithAnswerQuality(result, { runtime, task } = {}) {
   };
 }
 
+const CURRENT_DATA_REQUEST_RE = /(最新|最近|当前|现在|今天|今日|今年|本月|实时|新闻|近况|畅销|销量|排名|市场份额|latest|recent|current|today|this\s+year|news|best-selling|sales|market\s+share|ranking)/iu;
+const FRESHNESS_DISCLOSURE_RE = /(检索时间|截至|我找到的最新|最新公开|可识别日期|as\s+of|latest\s+(?:dated|available|public)|found\s+in\s+this\s+search)/iu;
+
+function utcDateOnly(date = new Date()) {
+  return date.toISOString().slice(0, 10);
+}
+
+function daysBetweenDates(fromDate, toDate) {
+  const from = Date.parse(`${fromDate}T00:00:00.000Z`);
+  const to = Date.parse(`${toDate}T00:00:00.000Z`);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return 0;
+  return Math.floor((to - from) / 86400000);
+}
+
+function finalTextField(result = {}) {
+  return Object.prototype.hasOwnProperty.call(result, "final_text") ? "final_text" : "finalText";
+}
+
+function finaliseWithFreshnessDisclosure(result, { runtime, task } = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (!["success", "partial_success"].includes(result.status)) return result;
+  if (!Array.isArray(result.transcript)) return result;
+  const userCommand = String(task?.user_command ?? "");
+  if (!CURRENT_DATA_REQUEST_RE.test(userCommand)) return result;
+  const evidence = extractEvidence(result.transcript);
+  if (!evidence?.newest_web_source_date || Number(evidence.source_count ?? 0) <= 0) return result;
+  const today = utcDateOnly();
+  const newest = evidence.newest_web_source_date;
+  const ageDays = daysBetweenDates(newest, today);
+  if (ageDays <= 7) return result;
+  const key = finalTextField(result);
+  const currentText = String(result[key] ?? "").trim();
+  if (!currentText || FRESHNESS_DISCLOSURE_RE.test(currentText)) return result;
+  const searchedDate = String(evidence.latest_web_search_at ?? "").slice(0, 10) || today;
+  const note = `注：本次检索时间为 ${searchedDate}；可识别日期的最新来源是 ${newest}。如果存在更新但未被搜索源收录，应以官方或行业数据库的最新发布为准。`;
+  try {
+    runtime?.emitTaskEvent?.("final_answer_freshness_disclosed", {
+      searched_at: evidence.latest_web_search_at ?? null,
+      newest_web_source_date: newest,
+      source_age_days: ageDays
+    });
+  } catch { /* observability must not break finalization */ }
+  return {
+    ...result,
+    [key]: `${currentText}\n\n${note}`
+  };
+}
+
 function artifactContractViolations(task, transcript = []) {
   if (!task) return [];
   const spec = selectSuccessContractValidationSpec(task);
@@ -1212,6 +1283,17 @@ function countInvalidArtifactGenerationAttempts(transcript = []) {
     entry?.type === "validation_error"
     && entry?.tool === "generate_document"
   ).length;
+}
+
+function buildGeneratedArtifactFinalTextForLoop(artifactPaths = [], kind = "artifact") {
+  const allPaths = [...new Set((artifactPaths ?? []).filter((value) => typeof value === "string" && value.trim()))];
+  const paths = allPaths.filter((artifactPath) => !/-preview\.(?:txt|html)$/iu.test(artifactPath));
+  if (paths.length === 0 && allPaths.length > 0) paths.push(...allPaths);
+  if (paths.length === 0) return "已生成请求的文件。";
+  return [
+    `已生成请求的 ${kind} 文件：`,
+    ...paths.map((artifactPath) => `- ${artifactPath}`)
+  ].join("\n");
 }
 
 function nonActionPolicyGroupsFromValidationError(error = "", task = {}) {
@@ -1619,6 +1701,7 @@ export async function finaliseWithArtifactContract(result, { runtime, task, sign
         ...result,
         transcript: recoveryTranscript,
         status: result.status === "partial_success" ? "partial_success" : "success",
+        final_text: buildGeneratedArtifactFinalTextForLoop(recoveredArtifactPaths, recovery.kind),
         artifact_recovery: {
           applied: true,
           source: "deterministic",
@@ -2456,6 +2539,12 @@ async function _runToolAgentLoopCore({
       const sample = [...visibleToolIds].slice(0, 12).join(", ");
       const more = visibleToolIds.size > 12 ? `, … +${visibleToolIds.size - 12} more` : "";
       const hint = `Tool "${decision.tool}" is not available for this task. Pick one of the visible tools: ${sample}${more}.`;
+      appendAuditLog(runtime, task, "tool.call", {
+        tool_id: decision.tool,
+        args: decision.args ?? {},
+        rejected: true,
+        reason: "tool_not_available_for_task"
+      });
       runtime.emitTaskEvent?.("tool_call_denied", {
         tool_id: decision.tool,
         reason: "tool_not_available_for_task"
@@ -2496,6 +2585,12 @@ async function _runToolAgentLoopCore({
       const sample = availableIds.slice(0, 12).join(", ");
       const more = availableIds.length > 12 ? `, … +${availableIds.length - 12} more` : "";
       const hint = `Tool "${decision.tool}" is not registered. Pick one of: ${sample}${more}. If you meant to wrap a real tool with the call_tool envelope, set arguments to {"tool":"<real id>","args":{...}}.`;
+      appendAuditLog(runtime, task, "tool.call", {
+        tool_id: decision.tool ?? null,
+        args: decision.args ?? {},
+        rejected: true,
+        reason: "unknown_tool"
+      });
       runtime.emitTaskEvent?.("tool_call_denied", {
         tool_id: decision.tool ?? null,
         reason: "unknown_tool"
