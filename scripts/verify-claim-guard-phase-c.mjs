@@ -70,6 +70,24 @@ const success = (tool, extras = {}) => ({
   check("file_modify: prose advice '你可以修改 X' does not trigger",
     v.length === 0);
 }
+{
+  // Domain/version prose often says a project or model "has updated to v4".
+  // That is not a claim that LingxY edited a local file.
+  const v = detectUnbackedActionClaims(
+    [],
+    "推荐 GPT-SoVITS。版本迭代：社区已更新至 v4 版本，支持参考音频克隆。"
+  );
+  check("file_modify: version prose '已更新至 v4 版本' does not trigger",
+    !v.some((x) => x.kind === "file_modify_claim_unsupported"));
+}
+{
+  const v = detectUnbackedActionClaims(
+    [],
+    "GPT-SoVITS 已有 v4 版本，免费开源，适合本地语音克隆实验。"
+  );
+  check("file_modify: '已有 v4 版本' does not trigger",
+    v.length === 0);
+}
 
 // =====================================================================
 // app_launch

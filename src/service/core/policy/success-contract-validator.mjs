@@ -509,8 +509,10 @@ const ACTION_CLAIM_GROUPS = Object.freeze([
     // doesn't list these.
     group: "file_modify",
     claims: [
-      // 已 + 修改/更新/编辑/改/重写 + 文件名 / 完毕 / 完成
-      /已\s*(?:成功|顺利)?\s*(?:修改|更新|编辑|改写|重写|改了|改完)\s*(?:好|完|完毕|了)?(?:[\s\S]{0,40}?(?:\.md|\.txt|\.json|\.js|\.ts|\.py|\.html|\.css|\.yaml|\.yml|\.csv|文件|README|文档))?/,
+      // 已 + 修改/更新/编辑/改/重写 + explicit local-file/document anchor.
+      // The anchor is required. Bare domain prose such as "社区已更新至 v4"
+      // must not be treated as a claim that LingxY modified a local file.
+      /已\s*(?:成功|顺利)?\s*(?:修改|更新|编辑|改写|重写|改了|改完)\s*(?:好|完|完毕|了)?[\s\S]{0,40}?(?:[A-Za-z]:[\\/]|\.md\b|\.txt\b|\.json\b|\.js\b|\.ts\b|\.py\b|\.html\b|\.css\b|\.ya?ml\b|\.csv\b|文件|README|文档|代码|脚本|配置|表格)/i,
       /(?:文件|文档|README)\s*(?:已|成功)\s*(?:修改|更新|编辑|改写|重写|保存)/,
       // English
       /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)(?:modified|updated|edited|rewritten|saved|patched|changed)\s+(?:the\s+|your\s+|that\s+|this\s+|a\s+)?(?:file|README|document|config|script|code|content)\b/i,
