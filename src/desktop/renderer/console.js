@@ -4022,25 +4022,41 @@ function filterConversationsByChatScope(items = [], projectId = chatSidebarProje
   });
 }
 
-function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = null } = {}) {
-  return JSON.stringify({ limit, archived, projectId: projectId ?? null });
+function chatSidebarConversationScope(projectId = getChatSidebarConversationProjectId()) {
+  return projectId ? null : "ordinary";
 }
 
-async function fetchConversationsList({ limit = 100, archived = "false", projectId = null } = {}) {
-  return cacheFetchConversations(fetch.bind(globalThis), state.serviceBaseUrl, { limit, archived, projectId });
+function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = null, scope = null } = {}) {
+  return JSON.stringify({ limit, archived, projectId: projectId ?? null, scope: scope ?? null });
+}
+
+async function fetchConversationsList({
+  limit = 100,
+  archived = "false",
+  projectId = null,
+  scope = null
+} = {}) {
+  return cacheFetchConversations(fetch.bind(globalThis), state.serviceBaseUrl, {
+    limit,
+    archived,
+    projectId,
+    scope
+  });
 }
 
 async function searchConversationsList({
   query = "",
   limit = 50,
   archived = "false",
-  projectId = null
+  projectId = null,
+  scope = null
 } = {}) {
   return cacheSearchConversations(fetch.bind(globalThis), state.serviceBaseUrl, {
     query,
     limit,
     archived,
-    projectId
+    projectId,
+    scope
   });
 }
 
@@ -4092,9 +4108,10 @@ async function ensureConversationsCache({
   query = ""
 } = {}) {
   const searchQuery = String(query ?? "").trim();
+  const scope = chatSidebarConversationScope(projectId);
   if (chatSidebarMode === "projects" && !projectId) {
     chatSidebarItems = [];
-    chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId: "__none__" });
+    chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId: "__none__", scope: null });
     chatSidebarCacheLoaded = true;
     chatSidebarShowingServerSearch = false;
     return chatSidebarItems;
@@ -4105,10 +4122,11 @@ async function ensureConversationsCache({
         query: searchQuery,
         limit: Math.min(Math.max(Number(limit) || 50, 1), 50),
         archived,
-        projectId
+        projectId,
+        scope
       });
       chatSidebarItems = filterConversationsByChatScope(items, projectId);
-      chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId }) + `:search:${searchQuery}`;
+      chatSidebarCacheKey = chatSidebarRequestKey({ limit, archived, projectId, scope }) + `:search:${searchQuery}`;
       chatSidebarCacheLoaded = true;
       chatSidebarShowingServerSearch = true;
       return chatSidebarItems;
@@ -4116,13 +4134,13 @@ async function ensureConversationsCache({
       return chatSidebarItems;
     }
   }
-  const key = chatSidebarRequestKey({ limit, archived, projectId });
+  const key = chatSidebarRequestKey({ limit, archived, projectId, scope });
   if (!force && chatSidebarCacheLoaded && chatSidebarCacheKey === key) {
     return chatSidebarItems;
   }
   try {
     const fetchLimit = projectId ? limit : Math.min(Math.max(Number(limit) || 100, 100), 500);
-    const items = await fetchConversationsList({ limit: fetchLimit, archived, projectId });
+    const items = await fetchConversationsList({ limit: fetchLimit, archived, projectId, scope });
     chatSidebarItems = filterConversationsByChatScope(items, projectId);
     chatSidebarCacheKey = key;
     chatSidebarCacheLoaded = true;

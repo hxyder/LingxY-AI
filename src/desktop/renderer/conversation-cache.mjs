@@ -106,12 +106,18 @@ export async function fetchConversationDetail(fetchFn, baseUrl, conversationId) 
   }
 }
 
-export async function fetchConversations(fetchFn, baseUrl, { limit = 100, archived = false, projectId = null } = {}) {
+export async function fetchConversations(fetchFn, baseUrl, {
+  limit = 100,
+  archived = false,
+  projectId = null,
+  scope = null
+} = {}) {
   if (typeof fetchFn !== "function") return [];
   const params = new URLSearchParams();
   params.set("limit", String(Math.max(1, Math.min(Number(limit) || 100, 500))));
   params.set("archived", archived === true ? "true" : archived === false ? "false" : String(archived));
   if (projectId) params.set("project_id", String(projectId));
+  else if (scope) params.set("scope", String(scope));
   const res = await fetchFn(`${baseUrl ?? ""}/conversations?${params.toString()}`);
   if (!res?.ok) throw new Error(`HTTP ${res?.status ?? "unknown"}`);
   const data = await res.json();
@@ -122,7 +128,8 @@ export async function searchConversations(fetchFn, baseUrl, {
   query = "",
   limit = 50,
   archived = false,
-  projectId = null
+  projectId = null,
+  scope = null
 } = {}) {
   if (typeof fetchFn !== "function") return [];
   const q = String(query ?? "").trim();
@@ -132,6 +139,7 @@ export async function searchConversations(fetchFn, baseUrl, {
   params.set("limit", String(Math.max(1, Math.min(Number(limit) || 50, 50))));
   params.set("archived", archived === true ? "true" : archived === false ? "false" : String(archived));
   if (projectId) params.set("project_id", String(projectId));
+  else if (scope) params.set("scope", String(scope));
   const res = await fetchFn(`${baseUrl ?? ""}/conversations/search?${params.toString()}`);
   if (!res?.ok) throw new Error(`HTTP ${res?.status ?? "unknown"}`);
   const data = await res.json();

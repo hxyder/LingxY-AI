@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createSqliteStore } from "../src/service/core/store/sqlite-store.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
+import { DEFAULT_PROJECT_ID } from "../src/shared/project-store.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -145,6 +146,18 @@ runForBoth("listConversations honours archived filter and project_id filter", (s
   const archivedOnlyP1 = store.listConversations({ projectId: "p1", archived: 1 });
   assert.equal(archivedOnlyP1.length, 1);
   assert.equal(archivedOnlyP1[0].conversation_id, "c_b");
+});
+
+runForBoth("listConversations supports explicit ordinary conversation scope", (store) => {
+  store.insertConversation({ conversation_id: "c_null" });
+  store.insertConversation({ conversation_id: "c_default", project_id: DEFAULT_PROJECT_ID });
+  store.insertConversation({ conversation_id: "c_project", project_id: "p_real" });
+  const ordinary = store.listConversations({ conversationScope: "ordinary", archived: "any" });
+  assert.deepEqual(
+    new Set(ordinary.map((conversation) => conversation.conversation_id)),
+    new Set(["c_null", "c_default"]),
+    "ordinary scope must include unscoped and legacy default-project conversations only"
+  );
 });
 
 runForBoth("getConversationMessages sinceSeq returns only newer rows", (store) => {

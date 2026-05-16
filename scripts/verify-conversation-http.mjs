@@ -7,6 +7,7 @@ import { createServiceHttpServer } from "../src/service/core/http-server.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
+import { DEFAULT_PROJECT_ID } from "../src/shared/project-store.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -101,6 +102,38 @@ await it("GET /conversations: returns active conversations sorted by updated_at 
     assert.equal(r.body.conversations.length, 2);
     assert.equal(r.body.conversations[0].conversation_id, "c_new");
     assert.ok(!r.body.conversations.some((conv) => conv.conversation_id === "c_other_project"));
+  } finally { await srv.close(); }
+});
+
+await it("GET /conversations?scope=ordinary isolates ordinary/default conversations server-side", async () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "c_plain", title: "plain chat" });
+  runtime.store.insertConversation({ conversation_id: "c_default", project_id: DEFAULT_PROJECT_ID, title: "default overlay" });
+  runtime.store.insertConversation({ conversation_id: "c_project", project_id: "p_real", title: "project chat" });
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/conversations?scope=ordinary&archived=any`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.scope, "ordinary");
+    assert.deepEqual(
+      new Set(r.body.conversations.map((conversation) => conversation.conversation_id)),
+      new Set(["c_plain", "c_default"])
+    );
+  } finally { await srv.close(); }
+});
+
+await it("GET /conversations/search?scope=ordinary does not scan real project threads", async () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "c_plain", title: "plain chat" });
+  runtime.store.appendMessage({ conversation_id: "c_plain", role: "user", content: "ordinary note" });
+  runtime.store.insertConversation({ conversation_id: "c_project", project_id: "p_real", title: "project secret" });
+  runtime.store.appendMessage({ conversation_id: "c_project", role: "user", content: "needle only in project" });
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/conversations/search?scope=ordinary&q=needle`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.scope, "ordinary");
+    assert.deepEqual(r.body.results, []);
   } finally { await srv.close(); }
 });
 

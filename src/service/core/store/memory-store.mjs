@@ -8,6 +8,7 @@ import {
   normalizeArtifactMetadata,
   normalizeArtifactVersionMetadata
 } from "./artifact-metadata.mjs";
+import { DEFAULT_PROJECT_ID } from "../../../shared/project-store.mjs";
 
 function memNowIso() { return new Date().toISOString(); }
 function memNewId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
@@ -478,10 +479,14 @@ export function createInMemoryStoreScaffold() {
       const conv = this.conversations.get(id);
       return conv ? { ...conv } : null;
     },
-    listConversations({ projectId = null, limit = 50, archived = 0 } = {}) {
+    listConversations({ projectId = null, conversationScope = null, limit = 50, archived = 0 } = {}) {
       const archivedFilter = archived === "any" || archived === -1 ? null : Boolean(archived);
       let list = [...this.conversations.values()];
-      if (projectId) list = list.filter((c) => c.project_id === projectId);
+      if (projectId) {
+        list = list.filter((c) => c.project_id === projectId);
+      } else if (conversationScope === "ordinary") {
+        list = list.filter((c) => !c.project_id || c.project_id === DEFAULT_PROJECT_ID);
+      }
       if (archivedFilter !== null) list = list.filter((c) => c.archived === archivedFilter);
       list.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
       return list.slice(0, Math.max(1, Math.min(limit ?? 50, 500))).map((c) => ({ ...c }));

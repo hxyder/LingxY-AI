@@ -16,6 +16,7 @@ import {
   markRecordDeleted,
   restoreDeletedRecord
 } from "../deletion-lifecycle.mjs";
+import { DEFAULT_PROJECT_ID } from "../../../shared/project-store.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -679,6 +680,11 @@ export function createSqliteStore({ dbPath }) {
        WHERE (@project_id IS NULL OR project_id = @project_id)
          AND (@archived = -1 OR archived = @archived)
        ORDER BY updated_at DESC LIMIT @limit`),
+    listOrdinaryConversations: db.prepare(`
+      SELECT * FROM conversations
+       WHERE (project_id IS NULL OR project_id = @default_project_id)
+         AND (@archived = -1 OR archived = @archived)
+       ORDER BY updated_at DESC LIMIT @limit`),
     updateConversationFields: db.prepare(`
       UPDATE conversations
          SET title = COALESCE(@title, title),
@@ -1305,13 +1311,20 @@ export function createSqliteStore({ dbPath }) {
     getConversation(id) {
       return mapConversation(statements.getConversation.get(id));
     },
-    listConversations({ projectId = null, limit = 50, archived = 0 } = {}) {
+    listConversations({ projectId = null, conversationScope = null, limit = 50, archived = 0 } = {}) {
       const archivedFilter = archived === "any" || archived === -1 ? -1 : archived ? 1 : 0;
-      const rows = statements.listConversationsByProject.all({
-        project_id: projectId ?? null,
-        archived: archivedFilter,
-        limit: Math.max(1, Math.min(limit ?? 50, 500))
-      });
+      const boundedLimit = Math.max(1, Math.min(limit ?? 50, 500));
+      const rows = !projectId && conversationScope === "ordinary"
+        ? statements.listOrdinaryConversations.all({
+          default_project_id: DEFAULT_PROJECT_ID,
+          archived: archivedFilter,
+          limit: boundedLimit
+        })
+        : statements.listConversationsByProject.all({
+          project_id: projectId ?? null,
+          archived: archivedFilter,
+          limit: boundedLimit
+        });
       return rows.map(mapConversation);
     },
     updateConversation(id, patch = {}) {

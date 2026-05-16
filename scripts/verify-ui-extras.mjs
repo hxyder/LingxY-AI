@@ -28,6 +28,7 @@ const readDesktopTrayIpcModules = () => readdirSync(path.join(root, "src/desktop
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
+const conversationCache = read("src/desktop/renderer/conversation-cache.mjs");
 const consoleFloatingUi = read("src/desktop/renderer/console-floating-ui.mjs");
 const consoleChatAttachments = read("src/desktop/renderer/console-chat-attachments.mjs");
 const consoleMcpView = read("src/desktop/renderer/console-mcp-view.mjs");
@@ -495,6 +496,11 @@ assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /CHAT_SIDEBAR_MODE_KEY/.
   "chat projects: console must persist chat sidebar project scope");
 assert.ok(/function\s+filterConversationsByChatScope/.test(consoleJs) && /id\s*===\s*DEFAULT_PROJECT_ID/.test(consoleJs),
   "chat projects: ordinary Chat sidebar must include legacy default-project conversations while filtering out real projects");
+assert.ok(/function\s+chatSidebarConversationScope/.test(consoleJs)
+    && /scope:\s*scope/.test(consoleJs)
+    && /params\.set\(["']scope["']/.test(conversationCache)
+    && /conversationScope/.test(noteProjectConversationRoutes),
+  "chat projects: ordinary Chat list/search must request a server-side ordinary scope instead of relying on client filtering");
 assert.ok(/tabId\s*===\s*["']projects["'][\s\S]{0,260}switchTab\(["']chat["']\)/.test(consoleJs),
   "chat projects: external project navigation must route to Chat's project selector instead of a dashboard-like duplicate chat surface");
 assert.ok(/savedView\s*===\s*["']projects["'][\s\S]{0,120}savedView\s*=\s*["']chat["']/.test(consoleJs)

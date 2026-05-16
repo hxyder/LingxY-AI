@@ -12,6 +12,7 @@ import {
 import {
   renderChatSidebarListHtml
 } from "../src/desktop/renderer/console-chat-sidebar.mjs";
+import { DEFAULT_PROJECT_ID } from "../src/shared/project-store.mjs";
 
 const store = createInMemoryStoreScaffold();
 const convA = store.insertConversation({
@@ -23,6 +24,11 @@ const convB = store.insertConversation({
   conversation_id: "conv_recipe",
   project_id: "proj_home",
   title: "Dinner ideas"
+});
+const convDefault = store.insertConversation({
+  conversation_id: "conv_default_overlay",
+  project_id: DEFAULT_PROJECT_ID,
+  title: "Default overlay thread"
 });
 
 store.appendMessage({
@@ -49,6 +55,11 @@ store.appendMessage({
   role: "user",
   content: "今晚吃什么？"
 });
+store.appendMessage({
+  conversation_id: convDefault.conversation_id,
+  role: "user",
+  content: "普通 overlay 会话"
+});
 
 {
   const results = searchConversationHistory({ store, query: "Compensation Analyst", limit: 5 });
@@ -68,6 +79,16 @@ store.appendMessage({
   const results = searchConversationHistory({ store, query: "Dinner", limit: 5 });
   assert.equal(results.length, 1);
   assert.equal(results[0].conversation_id, "conv_recipe");
+}
+
+{
+  const results = searchConversationHistory({
+    store,
+    query: "analyst",
+    conversationScope: "ordinary",
+    limit: 5
+  });
+  assert.equal(results.length, 0, "ordinary search scope must not scan real project conversations");
 }
 
 {
@@ -116,6 +137,23 @@ assert.match(routeSource, /searchConversationHistory\(\{/u);
   });
   assert.match(html, /Compensation Analyst/);
   assert.match(html, /data-chat-sidebar-id="conv_analyst"/);
+}
+
+{
+  await searchConversations(async (url) => {
+    assert.match(url, /\/conversations\/search\?/);
+    assert.match(url, /scope=ordinary/);
+    assert.doesNotMatch(url, /project_id=/);
+    return {
+      ok: true,
+      async json() {
+        return { results: [] };
+      }
+    };
+  }, "http://127.0.0.1:4310", {
+    query: "overlay",
+    scope: "ordinary"
+  });
 }
 
 const consoleSource = readFileSync(new URL("../src/desktop/renderer/console.js", import.meta.url), "utf8");

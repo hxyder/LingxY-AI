@@ -138,8 +138,10 @@ await it("console.js: chat sidebar fetch plumbs projectId without polluting resu
   assert.match(consoleJs, /let\s+chatSidebarMode/);
   assert.match(consoleJs, /filterConversationsByChatScope/);
   assert.match(consoleJs, /id\s*===\s*DEFAULT_PROJECT_ID/);
-  assert.match(consoleJs, /fetchConversationsList\(\{\s*limit\s*=\s*100,\s*archived\s*=\s*["']false["'],\s*projectId\s*=\s*null/);
-  assert.match(consoleJs, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*limit,\s*archived,\s*projectId\s*\}/);
+  assert.match(consoleJs, /function\s+chatSidebarConversationScope/);
+  assert.match(consoleJs, /return\s+projectId\s*\?\s*null\s*:\s*["']ordinary["']/);
+  assert.match(consoleJs, /fetchConversationsList\(\{\s*limit\s*=\s*100,\s*archived\s*=\s*["']false["'],\s*projectId\s*=\s*null,\s*scope\s*=\s*null/);
+  assert.match(consoleJs, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*[\s\S]{0,120}projectId,\s*[\s\S]{0,40}scope\s*\}/);
   assert.match(consoleJs, /refreshChatSidebar\(\{\s*force:\s*true\s*\}\)/);
 });
 

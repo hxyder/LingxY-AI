@@ -39,6 +39,13 @@ const PROJECT_STORE_ACTORS = ["desktop_console", "desktop_overlay"];
 const PROJECT_FILE_INDEX_ACTORS = ["desktop_console"];
 const CONVERSATION_MUTATION_ACTORS = ["desktop_console"];
 
+function normalizeConversationScope(value) {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (raw === "ordinary" || raw === "chats" || raw === "default") return "ordinary";
+  if (raw === "all") return "all";
+  return null;
+}
+
 function normalizeProjectStore(store) {
   return normalizeProjectStoreBase(store, { withUpdatedAt: false });
 }
@@ -330,6 +337,7 @@ export function searchConversationHistory({
   store,
   query = "",
   projectId = null,
+  conversationScope = null,
   limit = 20,
   archived = 0,
   messageLimit = 200
@@ -341,6 +349,7 @@ export function searchConversationHistory({
   const maxConversations = Math.max(Number(limit) * 8, Number(limit) + 20, 50);
   const conversations = store.listConversations({
     projectId,
+    conversationScope,
     limit: Math.min(Math.max(maxConversations, 1), 500),
     archived
   });
@@ -643,14 +652,17 @@ export async function tryHandleNoteProjectConversationRoute({
       return true;
     }
     const projectId = url.searchParams.get("project_id") ?? null;
+    const conversationScope = projectId
+      ? null
+      : normalizeConversationScope(url.searchParams.get("scope") ?? url.searchParams.get("conversation_scope"));
     const limitParam = parseInt(url.searchParams.get("limit") ?? "50", 10);
     const limit = Number.isFinite(limitParam) ? limitParam : 50;
     const archivedParam = url.searchParams.get("archived");
     const archived = archivedParam === "any" ? "any"
       : archivedParam === "1" || archivedParam === "true" ? 1
         : 0;
-    const conversations = runtime.store.listConversations({ projectId, limit, archived });
-    sendJson(response, 200, { conversations });
+    const conversations = runtime.store.listConversations({ projectId, conversationScope, limit, archived });
+    sendJson(response, 200, { conversations, scope: conversationScope ?? (projectId ? "project" : "all") });
     return true;
   }
 
@@ -661,6 +673,9 @@ export async function tryHandleNoteProjectConversationRoute({
       return true;
     }
     const projectId = url.searchParams.get("project_id") ?? null;
+    const conversationScope = projectId
+      ? null
+      : normalizeConversationScope(url.searchParams.get("scope") ?? url.searchParams.get("conversation_scope"));
     const limitParam = parseInt(url.searchParams.get("limit") ?? "20", 10);
     const archivedParam = url.searchParams.get("archived");
     const archived = archivedParam === "any" ? "any"
@@ -671,10 +686,11 @@ export async function tryHandleNoteProjectConversationRoute({
       store: runtime.store,
       query,
       projectId,
+      conversationScope,
       archived,
       limit: Number.isFinite(limitParam) ? Math.max(1, Math.min(limitParam, 50)) : 20
     });
-    sendJson(response, 200, { query, results });
+    sendJson(response, 200, { query, results, scope: conversationScope ?? (projectId ? "project" : "all") });
     return true;
   }
 
