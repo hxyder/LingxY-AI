@@ -10,6 +10,10 @@ import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { renderEvidenceLedgerFromSummary } from "../shared/evidence-ledger.mjs";
 import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
 import {
+  generateTextWithContinuations,
+  incompleteOutputNotice
+} from "../shared/output-continuation.mjs";
+import {
   compactTranscriptForComposer,
   localFallbackFinal
 } from "./finalization.mjs";
@@ -17,6 +21,9 @@ import { reviewFinalAnswer } from "./final-reviewer.mjs";
 import { detectNetworkFailureInTranscript } from "./failure-classifier.mjs";
 
 const EVIDENCE_LIST_LIMIT = 6;
+const FINAL_COMPOSER_MAX_TOKENS = 2048;
+const FINAL_COMPOSER_CONTINUATION_MAX_TOKENS = 2048;
+const FINAL_COMPOSER_MAX_CONTINUATIONS = 2;
 const NETWORK_UNAVAILABLE_CLAIM_PATTERNS = [
   /\b(?:web|network|search|browser|browsing)\s+(?:tool|tools|access|search|fetch)\s+(?:is|are|was|were)?\s*(?:temporarily\s+)?(?:unavailable|not available|disabled|blocked|failed)/i,
   /\b(?:cannot|can't|unable to)\s+(?:browse|search|fetch|access)\s+(?:the\s+)?(?:web|internet|network|site|page)/i,
@@ -168,7 +175,6 @@ export async function composeFinalAnswer({
       return finalizeCandidate(localFallbackFinal({ task, transcript, reason }));
     }
     const adapter = createProviderAdapter(provider);
-    let text = "";
     const userCommand = task?.user_command ?? "";
     const expected = taskSpec?.synthesis?.expected_output ?? null;
     const system = [
@@ -207,34 +213,76 @@ export async function composeFinalAnswer({
         ].filter(Boolean).join("\n\n")
       }
     ];
-    const response = await adapter.generate({
+    const generation = await generateTextWithContinuations({
+      adapter,
       messages,
       tools: [],
-      maxTokens: 1024,
+      initialMaxTokens: FINAL_COMPOSER_MAX_TOKENS,
+      continuationMaxTokens: FINAL_COMPOSER_CONTINUATION_MAX_TOKENS,
+      maxContinuations: FINAL_COMPOSER_MAX_CONTINUATIONS,
       signal,
+      purpose,
       onTextDelta: adapter.supportsStreaming === true && streamToUser
-        ? (delta) => {
-            if (!delta) return;
-            text += delta;
-            runtime?.emitTaskEvent?.("text_delta", { delta });
+        ? (delta) => runtime?.emitTaskEvent?.("text_delta", { delta })
+        : null,
+      onUsage: ({ response, continuationIndex, attemptMessages, limitReason }) => {
+        emitLlmUsage({
+          runtime,
+          task,
+          callSite: "tool_using.final_composer",
+          iteration: continuationIndex,
+          usage: response?.usage,
+          provider: adapter,
+          stream: adapter.supportsStreaming === true && streamToUser,
+          promptSegments: [
+            { name: "system", content: system },
+            { name: "current", content: attemptMessages[1]?.content ?? "" },
+            ...(continuationIndex > 0
+              ? [
+                  { name: "partial_answer_tail", content: attemptMessages.at(-2)?.content ?? "" },
+                  { name: "continuation_instruction", content: attemptMessages.at(-1)?.content ?? "" }
+                ]
+              : [])
+          ],
+          extra: {
+            reason: reason || "normal",
+            finish_reason: response?.finish_reason ?? null,
+            stop_reason: response?.stop_reason ?? null,
+            output_limited: Boolean(limitReason),
+            continuation_index: continuationIndex
           }
-        : undefined
+        });
+      },
+      onOutputLimited: ({ continuationIndex, limitReason, text }) => {
+        runtime?.emitTaskEvent?.("final_composer_output_limited", {
+          finish_reason: limitReason,
+          continuation_index: continuationIndex,
+          composed_chars: text.length,
+          max_continuations: FINAL_COMPOSER_MAX_CONTINUATIONS
+        });
+      },
+      onContinuationStarted: ({ continuationIndex, previousLimitReason, text }) => {
+        runtime?.emitTaskEvent?.("final_composer_continuation_started", {
+          continuation_index: continuationIndex,
+          previous_finish_reason: previousLimitReason,
+          composed_chars: text.length
+        });
+      }
     });
-    emitLlmUsage({
-      runtime,
-      task,
-      callSite: "tool_using.final_composer",
-      usage: response?.usage,
-      provider: adapter,
-      stream: adapter.supportsStreaming === true && streamToUser,
-      promptSegments: [
-        { name: "system", content: system },
-        { name: "current", content: messages[1]?.content ?? "" }
-      ],
-      extra: { reason: reason || "normal" }
-    });
-    if (!text) text = response?.text ?? "";
-    const finalText = String(text ?? "").trim();
+    let finalText = generation.text;
+    if (generation.outputLimited) {
+      const notice = incompleteOutputNotice(task);
+      finalText += notice;
+      if (adapter.supportsStreaming === true && streamToUser) {
+        runtime?.emitTaskEvent?.("text_delta", { delta: notice });
+      }
+      runtime?.emitTaskEvent?.("final_composer_incomplete", {
+        reason: "output_limit_after_continuations",
+        finish_reason: generation.finalLimitReason,
+        composed_chars: finalText.length
+      });
+    }
+    finalText = String(finalText ?? "").trim();
     return finalizeCandidate(finalText || localFallbackFinal({ task, transcript, reason }));
   } catch (error) {
     if (error?.code === "ABORT_ERR") throw error;

@@ -145,6 +145,17 @@ it("buildSynthesisGuidance: raw_results gets the explicit raw-allowed line", () 
   assert.ok(!/Do not list raw records/.test(block));
 });
 
+it("buildSynthesisGuidance: direct_answer answers first and stays anchored", () => {
+  const block = buildSynthesisGuidance({
+    synthesis: {
+      user_goal: "answer which prior phase is riskiest",
+      expected_output: "direct_answer"
+    }
+  });
+  assert.match(block, /Answer the user's immediate question first/);
+  assert.match(block, /stay anchored to the prior plan/);
+});
+
 it("buildSynthesisGuidance: empty when synthesis is missing", () => {
   assert.equal(buildSynthesisGuidance({}), "");
   assert.equal(buildSynthesisGuidance(null), "");
@@ -276,13 +287,15 @@ await ait("agent-loop: final-text path runs validateAnswerSynthesis before retur
   const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
   const phaseGateSrc = await readFile(path.join(repoRoot, "src/service/executors/tool_using/phase-gate.mjs"), "utf8");
   // Phase 1.12 — validator scope split:
-  //   - validateSuccessContract → task_spec_initial (hard, no retro)
+  //   - validateSuccessContract → selectSuccessContractValidationSpec(task)
+  //     (hard, no retro tightening; the helper permits only forward-safe
+  //     loosening such as research-quality downgrade handling)
   //   - validateStepGate / validateAnswerSynthesis → task.task_spec
   //     (LATEST so SR's `expected_output` enrichment shapes synthesis)
   assert.match(src, /validateAnswerSynthesis\(\s*synthesisValidationSpec\s*,/);
   assert.match(src, /synthesisValidationSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
-  assert.match(phaseGateSrc, /stepGateSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
-  assert.match(src, /validationSpec\s*=\s*task\.task_spec_initial\s*\?\?\s*task\.task_spec/);
+  assert.match(phaseGateSrc, /stepGateSpec\s*=\s*selectSuccessContractValidationSpec\(task\)/);
+  assert.match(src, /validationSpec\s*=\s*selectSuccessContractValidationSpec\(task\)/);
   assert.match(src, /validateSuccessContract\(\s*validationSpec/);
   assert.match(src, /MAX_SYNTHESIS_RETRIES/);
 });

@@ -23,6 +23,9 @@ export function buildSynthesisGuidance(taskSpec) {
 
   if (expected_output === "raw_results") {
     lines.push("- The user explicitly asked for raw / unmodified results — return them as-is.");
+  } else if (expected_output === "direct_answer") {
+    lines.push("- Answer the user's immediate question first, then give only the supporting reasons needed for that answer.");
+    lines.push("- For follow-up questions, stay anchored to the prior plan/result the user referenced; do not restart the whole topic or add unrelated new branches.");
   } else if (SYNTHESIS_REQUIRED_OUTPUTS.has(expected_output)) {
     lines.push("- Tool observations are intermediate data, not the final answer.");
     lines.push("- Transform what tools returned into the requested form. Do not list raw records when the user asked for a summary, comparison, recommendation, analysis, or action items.");

@@ -1,11 +1,24 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 import {
   composeFinalAnswer,
   formatEvidenceSummaryForComposer,
   guardFinalNetworkFailureClaim
 } from "../../src/service/executors/tool_using/final-composer.mjs";
+
+function streamingOpenAIResponse(chunks = []) {
+  const body = chunks
+    .map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`)
+    .join("") + "data: [DONE]\n\n";
+  return new Response(body, {
+    status: 200,
+    headers: { "content-type": "text/event-stream" }
+  });
+}
 
 test("agent final composer uses injected composer and emits timing events", async () => {
   const events = [];
@@ -36,6 +49,88 @@ test("agent final composer uses injected composer and emits timing events", asyn
     && entry.payload?.phase === "final_composer"
     && entry.payload?.reason === "unit_test"
   ));
+});
+
+test("agent final composer continues when provider stops at output limit", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "lingxy-final-composer-"));
+  const configPath = path.join(dir, "runtime.json");
+  fs.writeFileSync(configPath, JSON.stringify({
+    ai: {
+      customProviders: [
+        {
+          id: "mock-openai",
+          name: "Mock OpenAI",
+          kind: "openai",
+          baseUrl: "https://mock.local/v1",
+          apiKey: "test-key",
+          defaultModel: "mock-model"
+        }
+      ],
+      taskRouting: {
+        chat: { providerId: "mock-openai", model: "mock-model" }
+      }
+    }
+  }));
+
+  const oldConfigPath = process.env.UCA_CONFIG_PATH;
+  const oldFetch = globalThis.fetch;
+  const calls = [];
+  const events = [];
+  process.env.UCA_CONFIG_PATH = configPath;
+  globalThis.fetch = async (_url, init) => {
+    calls.push(JSON.parse(init.body));
+    if (calls.length === 1) {
+      return streamingOpenAIResponse([
+        { choices: [{ delta: { content: "第一阶段已经写完，第二阶段开始：" }, finish_reason: null }] },
+        {
+          choices: [{ delta: {}, finish_reason: "length" }],
+          usage: { prompt_tokens: 100, completion_tokens: 1024, total_tokens: 1124 }
+        }
+      ]);
+    }
+    return streamingOpenAIResponse([
+      { choices: [{ delta: { content: "补齐 worker 契约、验收标准和回滚策略。\n\n完整结束。" }, finish_reason: null }] },
+      {
+        choices: [{ delta: {}, finish_reason: "stop" }],
+        usage: { prompt_tokens: 80, completion_tokens: 64, total_tokens: 144 }
+      }
+    ]);
+  };
+
+  try {
+    const text = await composeFinalAnswer({
+      task: {
+        user_command: "请设计三阶段重构计划，每阶段有验收标准和回滚策略。",
+        task_spec: { goal: "qa", synthesis: { expected_output: "plan" } }
+      },
+      transcript: [
+        {
+          type: "tool_result",
+          tool: "lookup_fixture",
+          success: true,
+          observation: "项目是 Electron + JavaScript agent console。"
+        }
+      ],
+      runtime: {
+        emitTaskEvent: (event_type, payload) => events.push({ event_type, payload })
+      },
+      reason: "unit_test"
+    });
+
+    assert.equal(calls.length, 2);
+    assert.match(text, /第一阶段已经写完/);
+    assert.match(text, /补齐 worker 契约/);
+    assert.match(text, /完整结束/);
+    assert.match(calls[1].messages.at(-1).content, /Continue/);
+    assert.ok(events.some((event) =>
+      event.event_type === "final_composer_output_limited"
+      && event.payload?.finish_reason === "length"
+    ));
+  } finally {
+    if (oldConfigPath === undefined) delete process.env.UCA_CONFIG_PATH;
+    else process.env.UCA_CONFIG_PATH = oldConfigPath;
+    globalThis.fetch = oldFetch;
+  }
 });
 
 test("side-effect body composer ignores pending-action wait text and skips final reviewer", async () => {

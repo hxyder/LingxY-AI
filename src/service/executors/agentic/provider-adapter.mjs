@@ -189,6 +189,33 @@ function safeJsonParse(value) {
   }
 }
 
+function normalizeTerminationReason(reason = null) {
+  const value = `${reason ?? ""}`.trim();
+  return value || null;
+}
+
+function isOutputLimitedReason(reason = null) {
+  const normalized = `${reason ?? ""}`.trim().toLowerCase();
+  return [
+    "length",
+    "max_tokens",
+    "max_output_tokens",
+    "model_length",
+    "context_length_exceeded",
+    "limit"
+  ].includes(normalized);
+}
+
+function terminationMetadata({ finishReason = null, stopReason = null } = {}) {
+  const finish = normalizeTerminationReason(finishReason ?? stopReason);
+  const stop = normalizeTerminationReason(stopReason ?? finishReason);
+  return {
+    finish_reason: finish,
+    stop_reason: stop,
+    output_limited: isOutputLimitedReason(finish ?? stop)
+  };
+}
+
 function parseAnthropicResponse(data) {
   const blocks = Array.isArray(data?.content) ? data.content : [];
   let text = "";
@@ -212,7 +239,8 @@ function parseAnthropicResponse(data) {
       output_tokens: data?.usage?.output_tokens ?? null,
       cache_creation_input_tokens: data?.usage?.cache_creation_input_tokens ?? null,
       cache_read_input_tokens: data?.usage?.cache_read_input_tokens ?? null
-    }
+    },
+    ...terminationMetadata({ stopReason: data?.stop_reason })
   };
 }
 
@@ -307,6 +335,7 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
   const toolUseBlocks = {};
   const toolCalls = [];
   const usage = {};
+  let stopReason = null;
 
   try {
     while (true) {
@@ -330,6 +359,9 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
         }
         if (ev.type === "message_delta") {
           mergeAnthropicUsage(usage, ev.usage);
+          if (ev.delta?.stop_reason) {
+            stopReason = ev.delta.stop_reason;
+          }
         }
         if (ev.type === "content_block_start" && ev.content_block?.type === "tool_use") {
           toolUseBlocks[ev.index] = { id: ev.content_block.id, name: ev.content_block.name };
@@ -364,7 +396,12 @@ async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTo
     reader.releaseLock?.();
   }
 
-  return { text: fullText, tool_calls: toolCalls, usage };
+  return {
+    text: fullText,
+    tool_calls: toolCalls,
+    usage,
+    ...terminationMetadata({ stopReason })
+  };
 }
 
 /* ------------------------------------------------------------------------ */
@@ -462,7 +499,8 @@ function parseOpenAIResponse(data) {
     tool_calls: toolCalls,
     usage: {
       ...normalizedUsage
-    }
+    },
+    ...terminationMetadata({ finishReason: choice?.finish_reason })
   };
 }
 
@@ -568,6 +606,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
   let fullReasoning = "";
   const toolCallBuilders = {};
   let usage = {};
+  let finishReason = null;
 
   try {
     while (true) {
@@ -589,7 +628,11 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
         if (chunk?.usage && typeof chunk.usage === "object") {
           usage = normalizeOpenAIUsage(chunk.usage);
         }
-        const delta = chunk?.choices?.[0]?.delta;
+        const choice = chunk?.choices?.[0];
+        if (choice?.finish_reason) {
+          finishReason = choice.finish_reason;
+        }
+        const delta = choice?.delta;
         if (!delta) continue;
         if (typeof delta.content === "string" && delta.content) {
           fullText += delta.content;
@@ -633,7 +676,8 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
     text: fullText,
     reasoning_content: fullReasoning || null,
     tool_calls: toolCalls,
-    usage
+    usage,
+    ...terminationMetadata({ finishReason })
   };
 }
 
@@ -661,7 +705,8 @@ function parseOllamaResponse(data) {
     usage: {
       input_tokens: data?.prompt_eval_count ?? null,
       output_tokens: data?.eval_count ?? null
-    }
+    },
+    ...terminationMetadata({ finishReason: data?.done_reason })
   };
 }
 
@@ -715,6 +760,7 @@ async function generateOllama(resolved, { messages, tools, signal, fetchImpl, on
   let fullText = "";
   const toolCallsByKey = new Map();
   const usage = {};
+  let finishReason = null;
 
   const consumeLine = (line) => {
     const raw = String(line ?? "").trim();
@@ -726,6 +772,9 @@ async function generateOllama(resolved, { messages, tools, signal, fetchImpl, on
       return;
     }
     mergeOllamaUsage(usage, chunk);
+    if (chunk?.done_reason) {
+      finishReason = chunk.done_reason;
+    }
     const message = chunk?.message ?? {};
     if (typeof message.content === "string" && message.content) {
       fullText += message.content;
@@ -764,7 +813,8 @@ async function generateOllama(resolved, { messages, tools, signal, fetchImpl, on
   return {
     text: fullText,
     tool_calls: Array.from(toolCallsByKey.values()),
-    usage
+    usage,
+    ...terminationMetadata({ finishReason })
   };
 }
 

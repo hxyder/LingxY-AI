@@ -215,6 +215,25 @@ const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "
 const workspaceRenderSignatures = new Map();
 const consoleShellClient = createRendererShellClient();
 
+async function writeConsoleClipboardText(text) {
+  const value = String(text ?? "");
+  if (typeof consoleShellClient?.writeClipboardText === "function") {
+    await consoleShellClient.writeClipboardText(value);
+    return true;
+  }
+  if (typeof navigator?.clipboard?.writeText === "function") {
+    await navigator.clipboard.writeText(value);
+    return true;
+  }
+  return false;
+}
+
+function showCopyButtonResult(button, ok) {
+  if (!button) return;
+  button.textContent = ok ? "已复制" : "复制失败";
+  setTimeout(() => { button.textContent = "复制"; }, 1200);
+}
+
 const runtimeState = document.querySelector("#runtimeState");
 const summaryGrid = document.querySelector("#summaryGrid");
 const integrationList = document.querySelector("#integrationList");
@@ -1297,9 +1316,9 @@ consoleChatMessages?.addEventListener("click", (ev) => {
     ev.preventDefault();
     const codeEl = copyButton.parentElement?.querySelector("pre code");
     const code = codeEl?.textContent ?? "";
-    try { navigator.clipboard?.writeText?.(code); } catch { /* ignore */ }
-    copyButton.textContent = "已复制";
-    setTimeout(() => { copyButton.textContent = "复制"; }, 1200);
+    void writeConsoleClipboardText(code)
+      .then((ok) => showCopyButtonResult(copyButton, ok))
+      .catch(() => showCopyButtonResult(copyButton, false));
     return;
   }
   const anchor = target?.closest?.("a[href]");
@@ -1662,9 +1681,9 @@ function appendConsoleChatMessage(role, text, options = {}) {
       ev.stopPropagation();
       const content = bubble.dataset.rawText || bubble.textContent || "";
       if (btn.dataset.action === "copy") {
-        try { navigator.clipboard?.writeText?.(content); } catch { /* ignore */ }
-        btn.textContent = "已复制";
-        setTimeout(() => { btn.textContent = "复制"; }, 1200);
+        void writeConsoleClipboardText(content)
+          .then((ok) => showCopyButtonResult(btn, ok))
+          .catch(() => showCopyButtonResult(btn, false));
       } else if (btn.dataset.action === "note") {
         openNoteTargetPicker(content, btn);
       } else if (btn.dataset.action === "regen") {
@@ -14479,9 +14498,7 @@ function initQuickNotes() {
   }
 
   function copyToClipboard(text) {
-    try {
-      navigator.clipboard?.writeText?.(text);
-    } catch { /* ignore */ }
+    void writeConsoleClipboardText(text).catch(() => {});
   }
   function downloadFile(content, name, mime) {
     const blob = new Blob([content], { type: mime });

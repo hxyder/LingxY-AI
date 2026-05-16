@@ -1444,6 +1444,10 @@
   padding: 24px 12px 10px;
   max-height: 300px;
   overflow-x: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #f8fafc;
   font-family: "SF Mono", "Consolas", monospace;
   font-size: 12px;
   line-height: 1.5;

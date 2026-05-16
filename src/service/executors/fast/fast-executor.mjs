@@ -10,6 +10,10 @@ import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { cacheableSystemMessage } from "../shared/prompt-cache.mjs";
+import {
+  generateTextWithContinuations,
+  incompleteOutputNotice
+} from "../shared/output-continuation.mjs";
 import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
 import { fetchExternal, fetchExternalResponse } from "../../core/external-call.mjs";
 import { emitTaskEvent as emitRuntimeTaskEvent } from "../../core/task-runtime.mjs";
@@ -23,6 +27,9 @@ const FAST_CACHEABLE_SYSTEM_PREFIX = [
 ].join("\n");
 const FAST_MODEL_WAIT_HEARTBEAT_DELAY_MS = 1800;
 const FAST_MODEL_WAIT_HEARTBEAT_INTERVAL_MS = 2500;
+const FAST_MAX_TOKENS = 2048;
+const FAST_CONTINUATION_MAX_TOKENS = 2048;
+const FAST_MAX_CONTINUATIONS = 2;
 
 function withFastCacheablePrefix(messages = []) {
   return [cacheableSystemMessage(FAST_CACHEABLE_SYSTEM_PREFIX), ...messages];
@@ -310,28 +317,71 @@ export function createFastExecutorScaffold() {
       const providerMessages = withFastCacheablePrefix(messages);
       try {
         stopModelWaitHeartbeat = startFastModelWaitHeartbeat(task);
-        const result = await adapter.generate({
+        const result = await generateTextWithContinuations({
+          adapter,
           messages: providerMessages,
           tools: [],
-          maxTokens: 2048,
+          initialMaxTokens: FAST_MAX_TOKENS,
+          continuationMaxTokens: FAST_CONTINUATION_MAX_TOKENS,
+          maxContinuations: FAST_MAX_CONTINUATIONS,
           signal,
           fetchImpl: fetchWithFastRetry,
-          onTextDelta: adapter.supportsStreaming === true ? emitTextDelta : undefined
+          onTextDelta: adapter.supportsStreaming === true ? emitTextDelta : null,
+          onUsage: ({ response, continuationIndex, attemptMessages, limitReason }) => {
+            emitLlmUsage({
+              runtime: task.__runtime,
+              task,
+              callSite: "fast.executor",
+              iteration: continuationIndex,
+              usage: response?.usage,
+              provider: adapter,
+              stream: adapter.supportsStreaming === true,
+              promptSegments: [
+                { name: "cacheable_system", content: FAST_CACHEABLE_SYSTEM_PREFIX },
+                { name: "dynamic_system", content: messages.filter((m) => m.role === "system") },
+                { name: "conversation", content: messages.filter((m) => m.role !== "system") },
+                ...(continuationIndex > 0
+                  ? [
+                      { name: "partial_answer_tail", content: attemptMessages.at(-2)?.content ?? "" },
+                      { name: "continuation_instruction", content: attemptMessages.at(-1)?.content ?? "" }
+                    ]
+                  : [])
+              ],
+              extra: {
+                finish_reason: response?.finish_reason ?? null,
+                stop_reason: response?.stop_reason ?? null,
+                output_limited: Boolean(limitReason),
+                continuation_index: continuationIndex
+              }
+            });
+          },
+          onOutputLimited: ({ continuationIndex, limitReason, text }) => {
+            emitFastRuntimeEvent(task, "fast_output_limited", {
+              finish_reason: limitReason,
+              continuation_index: continuationIndex,
+              composed_chars: text.length,
+              max_continuations: FAST_MAX_CONTINUATIONS
+            });
+          },
+          onContinuationStarted: ({ continuationIndex, previousLimitReason, text }) => {
+            emitFastRuntimeEvent(task, "fast_continuation_started", {
+              continuation_index: continuationIndex,
+              previous_finish_reason: previousLimitReason,
+              composed_chars: text.length
+            });
+          }
         });
-        emitLlmUsage({
-          runtime: task.__runtime,
-          task,
-          callSite: "fast.executor",
-          usage: result?.usage,
-          provider: adapter,
-          stream: adapter.supportsStreaming === true,
-          promptSegments: [
-            { name: "cacheable_system", content: FAST_CACHEABLE_SYSTEM_PREFIX },
-            { name: "dynamic_system", content: messages.filter((m) => m.role === "system") },
-            { name: "conversation", content: messages.filter((m) => m.role !== "system") }
-          ]
-        });
-        resultText = result?.text?.trim() || "";
+        resultText = result.text || "";
+        if (result.outputLimited) {
+          const notice = incompleteOutputNotice(task);
+          resultText = `${resultText}${notice}`.trim();
+          emitTextDelta(notice);
+          emitFastRuntimeEvent(task, "fast_incomplete", {
+            reason: "output_limit_after_continuations",
+            finish_reason: result.finalLimitReason,
+            composed_chars: resultText.length
+          });
+        }
       } catch (error) {
         if (error.code === "ABORT_ERR" || error.name === "AbortError") {
           throw Object.assign(new Error("Fast executor cancelled during API call."), { code: "ABORT_ERR" });

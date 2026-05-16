@@ -2,6 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  awaitDeferredSemanticRouterPatchForPlanner
+} from "../../src/service/executors/tool_using/agent-loop.mjs";
+import {
   buildLeanChatSystemPrompt,
   renderRequiredContractForPlanner,
   shouldRetryProseTrap,
@@ -33,6 +36,56 @@ test("agent planner mode uses lean chat only for no-tool QA turns", () => {
 
   assert.equal(taskRequiresToolUse(leanTask), false);
   assert.equal(shouldUseLeanChatMode(leanTask), true);
+});
+
+test("agent planner waits for deferred semantic-router patch before no-tool mode selection", async () => {
+  const events = [];
+  const task = {
+    user_command: "重新说一遍",
+    context_packet: {},
+    task_spec: {
+      goal: "qa",
+      contract: { mode: "qa" },
+      routing_degraded: true,
+      tool_policy: {
+        web_search_fetch: { mode: "optional" }
+      },
+      success_contract: { required_policy_groups: [] }
+    }
+  };
+  Object.defineProperty(task, "__srPatchPromise", {
+    enumerable: false,
+    value: Promise.resolve().then(() => {
+      task.context_packet.semantic_router_decision = {
+        needs_tool_use: false,
+        artifact_required: false,
+        web_policy: "forbidden",
+        source_mode: "provided_context",
+        primary_intent: "qa",
+        needed_capabilities: ["none"]
+      };
+      task.task_spec = {
+        ...task.task_spec,
+        routing_degraded: false,
+        tool_policy: { web_search_fetch: { mode: "forbidden" } }
+      };
+      task.sr_patch_applied_at = new Date().toISOString();
+      return task.task_spec;
+    })
+  });
+
+  assert.equal(shouldUseLeanChatMode(task), false);
+  const waited = await awaitDeferredSemanticRouterPatchForPlanner({
+    task,
+    iteration: 0,
+    runtime: {
+      emitTaskEvent: (event_type, payload) => events.push({ event_type, payload })
+    }
+  });
+  assert.equal(waited, true);
+  assert.equal(shouldUseLeanChatMode(task), true);
+  assert.ok(events.some((event) => event.event_type === "planner_waiting_for_semantic_router"));
+  assert.ok(events.some((event) => event.event_type === "planner_semantic_router_ready"));
 });
 
 test("agent planner mode refuses lean chat when tools or attachments are required", () => {

@@ -9,6 +9,7 @@ const read = (path) => readFileSync(path, "utf8");
 const fast = read("src/service/executors/fast/fast-executor.mjs");
 const toolUsing = read("src/service/executors/tool_using/agent-loop.mjs");
 const toolFinalComposer = read("src/service/executors/tool_using/final-composer.mjs");
+const outputContinuation = read("src/service/executors/shared/output-continuation.mjs");
 const agenticExecutor = read("src/service/executors/agentic/executor.mjs");
 const agenticPlanner = read("src/service/executors/agentic/planner.mjs");
 const agenticToolExecution = read("src/service/executors/agentic/tool-execution.mjs");
@@ -32,8 +33,8 @@ assert.match(fast, /callOllama\([\s\S]*signal/u,
 
 assert.match(toolUsing, /async function llmPlanner\([\s\S]*signal/u,
   "tool_using planner must accept signal");
-assert.match(toolUsing, /adapter\.generate\(\{[\s\S]*signal,/u,
-  "tool_using planner must pass signal to provider adapter");
+assert.match(toolUsing, /generateTextWithContinuations\(\{[\s\S]*signal,/u,
+  "tool_using planner must pass signal through the shared output-continuation path");
 assert.match(toolUsing, /registry\.call\(plan\.toolId,\s*plan\.args,\s*ctx\)/u,
   "tool_using deterministic artifact recovery must call the planned artifact tool through registry.call");
 assert.match(toolUsing, /const ctx = \{[\s\S]*signal[\s\S]*\};[\s\S]*registry\.call\(plan\.toolId,\s*plan\.args,\s*ctx\)/u,
@@ -42,8 +43,10 @@ assert.match(toolUsing, /registry\.call\(tool\.id,\s*decision\.args,[\s\S]*signa
   "tool_using runtime tool calls must pass signal");
 assert.match(toolUsing, /attemptArtifactRecovery\(\{[\s\S]*signal/u,
   "tool_using final artifact recovery must preserve signal");
-assert.match(toolFinalComposer, /adapter\.generate\(\{[\s\S]*signal,/u,
-  "tool_using final composer must pass signal to provider adapter");
+assert.match(toolFinalComposer, /generateTextWithContinuations\(\{[\s\S]*signal,/u,
+  "tool_using final composer must pass signal through the shared output-continuation path");
+assert.match(outputContinuation, /adapter\.generate\(\{[\s\S]*signal,/u,
+  "shared output-continuation helper must pass signal to provider adapter");
 
 assert.match(agenticExecutor, /runAgenticPlanner\(\{[\s\S]*signal,/u,
   "agentic executor must pass signal to planner");

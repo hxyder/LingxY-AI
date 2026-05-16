@@ -158,5 +158,14 @@ assert.match(consoleRenderer, /event:\s*"submission_received"[\s\S]{0,120}已收
 assert.match(consoleRenderer, /event:\s*"task_created"[\s\S]{0,160}任务已创建，正在执行/u);
 assert.doesNotMatch(consoleRenderer, /appendConsoleChatMessage\("system",\s*"已收到请求，正在创建任务/u);
 assert.match(sharedChatCss, /\.chat-progress-card/);
+assert.match(consoleRenderer, /async function writeConsoleClipboardText/);
+assert.match(consoleRenderer, /consoleShellClient\?\.writeClipboardText/);
+assert.match(consoleRenderer, /data-action="copy"[\s\S]{0,900}writeConsoleClipboardText\(content\)/);
+assert.match(consoleRenderer, /data-md-copy[\s\S]{0,900}writeConsoleClipboardText\(code\)/);
+assert.match(
+  sharedChatCss,
+  /\.chat-msg-bubble \.md-code pre,[\s\S]{0,260}background:\s*transparent;[\s\S]{0,80}color:\s*#f8fafc;/,
+  "fenced code blocks must not inherit the light-mode generic pre background and white-on-white text"
+);
 
 console.log("Console UI view-model verification passed.");

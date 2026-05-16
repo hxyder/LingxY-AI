@@ -16,6 +16,10 @@ import { resolveProviderForModelRole } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import {
+  generateTextWithContinuations,
+  incompleteOutputNotice
+} from "../shared/output-continuation.mjs";
+import {
   validateAnswerSynthesis,
   validateFinalAnswerQuality
 } from "../../core/policy/success-contract-validator.mjs";
@@ -98,7 +102,8 @@ import {
   buildLeanChatSystemPrompt,
   renderRequiredContractForPlanner,
   shouldRetryProseTrap,
-  shouldUseLeanChatMode
+  shouldUseLeanChatMode,
+  taskRequiresToolUse
 } from "./planner-mode.mjs";
 import { buildConversationMessages } from "./conversation-messages.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
@@ -150,6 +155,10 @@ export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
 const PLANNER_MODEL_WAIT_HEARTBEAT_DELAY_MS = 1800;
 const PLANNER_MODEL_WAIT_HEARTBEAT_INTERVAL_MS = 2500;
+const TOOL_PLANNER_MAX_TOKENS = 1024;
+const LEAN_CHAT_MAX_TOKENS = 2048;
+const PLANNER_DIRECT_FINAL_CONTINUATION_MAX_TOKENS = 2048;
+const PLANNER_DIRECT_FINAL_MAX_CONTINUATIONS = 2;
 
 function nowIso() {
   return new Date().toISOString();
@@ -496,10 +505,32 @@ async function resolveSkillCapabilities(runtime, task = null) {
   }
 }
 
+export async function awaitDeferredSemanticRouterPatchForPlanner({ task, runtime = null, iteration = 0 } = {}) {
+  const promise = task?.__srPatchPromise;
+  if (!promise || task?.sr_patch_applied_at) return false;
+  if (taskRequiresToolUse(task)) return false;
+  if (task?.task_spec?.routing_degraded !== true && task?.context_packet?.semantic_router_decision) return false;
+
+  runtime?.emitTaskEvent?.("planner_waiting_for_semantic_router", {
+    iteration,
+    reason: "degraded_no_tool_contract"
+  });
+  const refreshedSpec = await promise;
+  if (!refreshedSpec) return false;
+  runtime?.emitTaskEvent?.("planner_semantic_router_ready", {
+    iteration,
+    executor_suggestion: refreshedSpec.suggested_executor ?? null,
+    tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
+    expected_output: refreshedSpec.synthesis?.expected_output ?? null
+  });
+  return true;
+}
+
 async function llmPlanner({ task, transcript, tools, iteration, runtime, signal }) {
   if (signal?.aborted) {
     throw Object.assign(new Error("Tool planner aborted before provider call."), { code: "ABORT_ERR" });
   }
+  await awaitDeferredSemanticRouterPatchForPlanner({ task, runtime, iteration });
   const provider = resolveProviderForModelRole("planner", "chat", process.env, {
     task,
     store: runtime?.store ?? task.__runtime?.store
@@ -714,16 +745,18 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       stop: startPlannerModelWaitHeartbeat(runtime, { iteration, emitImmediately: true })
     };
     let response;
+    const allowDirectFinalContinuation = !taskRequiresToolUse(task);
     try {
-      response = await adapter.generate({
+      const generation = await generateTextWithContinuations({
+        adapter,
         messages,
         tools: toolSchemas,
-        maxTokens: 1024,
+        continuationTools: [],
+        initialMaxTokens: leanChatMode ? LEAN_CHAT_MAX_TOKENS : TOOL_PLANNER_MAX_TOKENS,
+        continuationMaxTokens: PLANNER_DIRECT_FINAL_CONTINUATION_MAX_TOKENS,
+        maxContinuations: allowDirectFinalContinuation ? PLANNER_DIRECT_FINAL_MAX_CONTINUATIONS : 0,
         signal,
-        // Planner text is not user-facing output. Some providers stream natural
-        // language planning or fallback JSON protocol before native tool calls
-        // are resolved; keep that on the reasoning channel so only final
-        // composer text reaches the assistant bubble.
+        purpose: "planner_direct_final",
         onTextDelta: adapter.supportsStreaming === true
           ? (delta) => {
               if (!delta) return;
@@ -731,6 +764,59 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
               runtime?.emitTaskEvent?.("reasoning_delta", { delta });
             }
           : undefined,
+        shouldContinue: ({ response: attemptResponse, limitReason }) =>
+          Boolean(limitReason)
+          && allowDirectFinalContinuation
+          && (!Array.isArray(attemptResponse?.tool_calls) || attemptResponse.tool_calls.length === 0),
+        onUsage: ({ response: attemptResponse, continuationIndex, attemptMessages, limitReason }) => {
+          emitLlmUsage({
+            runtime,
+            task,
+            callSite: "tool_using.planner",
+            iteration,
+            usage: attemptResponse?.usage,
+            provider: adapter,
+            stream: adapter.supportsStreaming === true,
+            promptSegments: [
+              { name: "cacheable_system", content: TOOL_USING_CACHEABLE_SYSTEM_PREFIX },
+              { name: "dynamic_system", content: systemPrompt },
+              { name: "history", content: promptHistoryMessages },
+              { name: "current", content: promptCurrentContent },
+              { name: "tool_transcript", content: transcriptMessages },
+              { name: "tool_schemas", content: continuationIndex === 0 ? toolSchemas : [] },
+              ...(continuationIndex > 0
+                ? [
+                    { name: "partial_answer_tail", content: attemptMessages.at(-2)?.content ?? "" },
+                    { name: "continuation_instruction", content: attemptMessages.at(-1)?.content ?? "" }
+                  ]
+                : [])
+            ],
+            extra: {
+              finish_reason: attemptResponse?.finish_reason ?? null,
+              stop_reason: attemptResponse?.stop_reason ?? null,
+              output_limited: Boolean(limitReason),
+              continuation_index: continuationIndex,
+              planner_mode: leanChatMode ? "lean_chat" : "tool_planner"
+            }
+          });
+        },
+        onOutputLimited: ({ continuationIndex, limitReason, text }) => {
+          runtime?.emitTaskEvent?.("planner_output_limited", {
+            iteration,
+            finish_reason: limitReason,
+            continuation_index: continuationIndex,
+            composed_chars: text.length,
+            max_continuations: allowDirectFinalContinuation ? PLANNER_DIRECT_FINAL_MAX_CONTINUATIONS : 0
+          });
+        },
+        onContinuationStarted: ({ continuationIndex, previousLimitReason, text }) => {
+          runtime?.emitTaskEvent?.("planner_continuation_started", {
+            iteration,
+            continuation_index: continuationIndex,
+            previous_finish_reason: previousLimitReason,
+            composed_chars: text.length
+          });
+        },
         onToolInputDelta: (toolName, partialJson) => {
           if (!isStreamableArtifactTool(toolName)) return;
           stopPlannerHeartbeatOnDelta(plannerHeartbeat);
@@ -745,27 +831,22 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
           runtime?.emitTaskEvent?.("reasoning_delta", { delta });
         }
       });
+      response = generation.firstResponse ?? {};
+      resultText = generation.text;
+      if (generation.outputLimited) {
+        const notice = incompleteOutputNotice(task);
+        resultText = `${resultText}${notice}`.trim();
+        runtime?.emitTaskEvent?.("planner_incomplete", {
+          iteration,
+          reason: "output_limit_after_continuations",
+          finish_reason: generation.finalLimitReason,
+          composed_chars: resultText.length
+        });
+      }
     } finally {
       stopPlannerHeartbeatOnDelta(plannerHeartbeat);
     }
-    emitLlmUsage({
-      runtime,
-      task,
-      callSite: "tool_using.planner",
-      iteration,
-      usage: response?.usage,
-      provider: adapter,
-      stream: adapter.supportsStreaming === true,
-      promptSegments: [
-        { name: "cacheable_system", content: TOOL_USING_CACHEABLE_SYSTEM_PREFIX },
-        { name: "dynamic_system", content: systemPrompt },
-        { name: "history", content: promptHistoryMessages },
-        { name: "current", content: promptCurrentContent },
-        { name: "tool_transcript", content: transcriptMessages },
-        { name: "tool_schemas", content: toolSchemas }
-      ]
-    });
-    resultText = response?.text ?? "";
+    if (!resultText) resultText = response?.text ?? "";
 
     if (Array.isArray(response?.tool_calls) && response.tool_calls.length > 0) {
       const call = response.tool_calls[0];
