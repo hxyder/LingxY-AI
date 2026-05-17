@@ -85,15 +85,16 @@ export function createShortcutRouter({
         setCaptureInFlight(true);
         const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
         const capturePromise = captureActiveWindowContext({
+          includeSelection: true,
+          activeWindowEnabled: false,
           allowClipboardFallback: false,
-          clipboardBaseline: hotKeyClipboardSnapshot,
-          preferLastExternal: true
+          clipboardBaseline: hotKeyClipboardSnapshot
         });
         showWindow("overlay");
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
-        capturePromise.then((ctx) => {
+        capturePromise.then(async (ctx) => {
           if (!ctx.selectedText) {
             const postClipboard = clipboard.readText() ?? "";
             const postTrimmed = postClipboard.trim();
@@ -105,12 +106,28 @@ export function createShortcutRouter({
 
           const hasFiles = ctx.filePaths.length > 0;
           const hasText = Boolean(ctx.selectedText);
-          const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
 
-          if (hasFiles || hasText || hasActiveWindow) {
+          if (hasFiles || hasText) {
             const shellPayload = buildShellContextPayload({
               context: ctx,
               sourceApp: ctx.processName ?? ctx.activeWindow?.process ?? "unknown",
+              captureMode: "hotkey_capture"
+            });
+            enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
+            return;
+          }
+
+          const windowCtx = await captureActiveWindowContext({
+            includeSelection: false,
+            activeWindowEnabled: true,
+            allowClipboardFallback: false,
+            preferLastExternal: true
+          });
+          const hasActiveWindow = Boolean(windowCtx.activeWindow && !windowCtx.activeWindow.blocked);
+          if (hasActiveWindow) {
+            const shellPayload = buildShellContextPayload({
+              context: windowCtx,
+              sourceApp: windowCtx.processName ?? windowCtx.activeWindow?.process ?? "unknown",
               captureMode: "hotkey_capture"
             });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);

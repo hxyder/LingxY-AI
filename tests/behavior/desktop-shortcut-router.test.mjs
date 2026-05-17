@@ -5,6 +5,7 @@ import { createShortcutRouter } from "../../src/desktop/shell/desktop-shortcut-r
 
 test("capture-and-ask starts capture before showing overlay and hydrates context asynchronously", async () => {
   const events = [];
+  const captureOptions = [];
   let captureInFlight = false;
   let resolveCapture;
   const windowMessages = [];
@@ -23,7 +24,8 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
     showWindow(windowId) {
       events.push(`show:${windowId}`);
     },
-    captureActiveWindowContext() {
+    captureActiveWindowContext(options) {
+      captureOptions.push(options);
       events.push("capture:start");
       return new Promise((resolve) => {
         resolveCapture = () => {
@@ -86,5 +88,113 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
   assert.ok(events.includes("enqueue:overlay:uca:shell-context-received"));
   assert.equal(events.at(-1), "inFlight:false");
   assert.equal(captureInFlight, false);
+  assert.equal(captureOptions[0]?.activeWindowEnabled, false);
   assert.equal(windowMessages.filter((message) => message.channel === "uca:shortcut-triggered").length, 1);
+});
+
+test("capture-and-ask sends selected files without waiting for active-window fallback", async () => {
+  const calls = [];
+  const enqueued = [];
+  let captureInFlight = false;
+  const windows = new Map([
+    ["overlay", { webContents: { send() {} } }]
+  ]);
+
+  const router = createShortcutRouter({
+    showWindow() {},
+    async captureActiveWindowContext(options) {
+      calls.push(options);
+      return {
+        processName: "explorer",
+        windowTitle: "Documents",
+        filePaths: ["E:\\docs\\resume.docx"],
+        selectedText: null,
+        activeWindow: null
+      };
+    },
+    buildShellContextPayload({ context }) {
+      return { targetWindow: "overlay", file_paths: context.filePaths };
+    },
+    getCaptureInFlight: () => captureInFlight,
+    setCaptureInFlight(value) { captureInFlight = value; },
+    clipboard: { readText: () => "" },
+    enqueueWindowMessage(windowId, channel, payload) {
+      enqueued.push({ windowId, channel, payload });
+    },
+    IPC_CHANNELS: {
+      shortcutTriggered: "uca:shortcut-triggered",
+      shellContextReceived: "uca:shell-context-received"
+    },
+    windows
+  });
+
+  router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0]?.activeWindowEnabled, false);
+  assert.deepEqual(enqueued[0]?.payload?.file_paths, ["E:\\docs\\resume.docx"]);
+});
+
+test("capture-and-ask falls back to active window only when no selection exists", async () => {
+  const calls = [];
+  const enqueued = [];
+  let captureInFlight = false;
+  const windows = new Map([
+    ["overlay", { webContents: { send() {} } }]
+  ]);
+
+  const router = createShortcutRouter({
+    showWindow() {},
+    async captureActiveWindowContext(options) {
+      calls.push(options);
+      if (calls.length === 1) {
+        return {
+          processName: null,
+          windowTitle: null,
+          filePaths: [],
+          selectedText: null,
+          activeWindow: null
+        };
+      }
+      return {
+        processName: "winword",
+        windowTitle: "Resume.docx - Word",
+        filePaths: [],
+        selectedText: null,
+        activeWindow: {
+          process: "winword",
+          title: "Resume.docx - Word",
+          detectedKind: "file_path",
+          filePath: "E:\\docs\\resume.docx",
+          blocked: false,
+          extra: {}
+        }
+      };
+    },
+    buildShellContextPayload({ context }) {
+      return { targetWindow: "overlay", active_window: context.activeWindow };
+    },
+    getCaptureInFlight: () => captureInFlight,
+    setCaptureInFlight(value) { captureInFlight = value; },
+    clipboard: { readText: () => "" },
+    enqueueWindowMessage(windowId, channel, payload) {
+      enqueued.push({ windowId, channel, payload });
+    },
+    IPC_CHANNELS: {
+      shortcutTriggered: "uca:shortcut-triggered",
+      shellContextReceived: "uca:shell-context-received"
+    },
+    windows
+  });
+
+  router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0]?.activeWindowEnabled, false);
+  assert.equal(calls[1]?.includeSelection, false);
+  assert.equal(calls[1]?.activeWindowEnabled, true);
+  assert.equal(enqueued[0]?.payload?.active_window?.process, "winword");
 });

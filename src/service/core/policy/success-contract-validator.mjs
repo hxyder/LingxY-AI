@@ -372,6 +372,51 @@ function concreteEventDetailCount(finalText = "") {
 const ARTIFACT_DOWNLOAD_URL_RE = /https?:\/\/[^\s)\]]+\.(?:docx|pptx|xlsx|pdf|html?|md|txt|csv|json|mjs|js|py|ps1)(?:[?#][^\s)\]]*)?/iu;
 const GENERATED_ARTIFACT_CLAIM_RE = /(?:已|已经|成功|为你|给你).{0,24}(?:生成|创建|制作|保存|导出).{0,32}(?:文件|文档|表格|幻灯片|报告|artifact)|(?:下载地址|下载链接|点击下载|download link)/iu;
 
+export function detectIncompleteFinalAnswerStructure(text = "") {
+  const final = String(text ?? "").trim();
+  if (!final) return null;
+  const fenceCount = (final.match(/```/g) ?? []).length;
+  if (fenceCount % 2 === 1) {
+    return {
+      kind: "final_answer_unclosed_code_fence",
+      message: "The final answer ended with an unclosed Markdown code fence, so it is structurally incomplete."
+    };
+  }
+  const lines = final.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const last = lines.at(-1) ?? "";
+  if (/^#{1,6}\s*$/.test(last)) {
+    return {
+      kind: "final_answer_dangling_markdown_heading",
+      message: "The final answer ended with a dangling Markdown heading marker, so it is structurally incomplete."
+    };
+  }
+  if (/^#{1,6}\s+\S+/.test(last)) {
+    return {
+      kind: "final_answer_heading_without_body",
+      message: "The final answer ended immediately after a Markdown heading, so it is structurally incomplete."
+    };
+  }
+  if (/^(?:[-*+]|\d+[.)、])\s*$/.test(last)) {
+    return {
+      kind: "final_answer_dangling_list_marker",
+      message: "The final answer ended with a dangling list marker, so it is structurally incomplete."
+    };
+  }
+  if (isTableDelimiter(last)) {
+    return {
+      kind: "final_answer_dangling_table_delimiter",
+      message: "The final answer ended with a Markdown table delimiter, so it is structurally incomplete."
+    };
+  }
+  return null;
+}
+
+function isTableDelimiter(line = "") {
+  const trimmed = String(line ?? "").trim().replace(/^\|/, "").replace(/\|$/, "");
+  const cells = trimmed.split("|").map((cell) => cell.trim()).filter(Boolean);
+  return cells.length >= 2 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
 /**
  * Final-answer quality gates that need task context, not just TaskSpec.
  * These are deterministic "must not call this success" checks. They do not
@@ -383,6 +428,9 @@ export function validateFinalAnswerQuality({ task = null, transcript = [], final
   const final = String(finalText ?? "").trim();
   if (!final) return violations;
   const taskSpec = task?.task_spec ?? task?.task_spec_initial ?? task ?? {};
+
+  const incompleteStructure = detectIncompleteFinalAnswerStructure(final);
+  if (incompleteStructure) violations.push(incompleteStructure);
 
   if ((requiresArtifactCreated(taskSpec) || GENERATED_ARTIFACT_CLAIM_RE.test(final))
       && ARTIFACT_DOWNLOAD_URL_RE.test(final)
@@ -1142,6 +1190,53 @@ function isLooserResearchQuality(candidate, base) {
     && candidateThresholds.minDomains <= baseThresholds.minDomains;
 }
 
+function uniqueStrings(values = []) {
+  return [...new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean))];
+}
+
+function mergeSuccessContractForValidation(base = {}, current = {}) {
+  return {
+    ...(base ?? {}),
+    ...(current ?? {}),
+    artifact_created: Boolean(base?.artifact_created || current?.artifact_created),
+    artifact_registered: Boolean(base?.artifact_registered || current?.artifact_registered),
+    tool_called: Boolean(base?.tool_called || current?.tool_called),
+    generated_script_execution_required: Boolean(
+      base?.generated_script_execution_required || current?.generated_script_execution_required
+    ),
+    required_tool_names: uniqueStrings([
+      ...(base?.required_tool_names ?? []),
+      ...(current?.required_tool_names ?? [])
+    ]),
+    required_policy_groups: uniqueStrings([
+      ...(base?.required_policy_groups ?? []),
+      ...(current?.required_policy_groups ?? [])
+    ])
+  };
+}
+
+function mergeArtifactSpecForValidation(base = {}, current = {}) {
+  return {
+    ...(base ?? {}),
+    ...(current ?? {}),
+    required: Boolean(base?.required || current?.required),
+    kind: current?.kind ?? base?.kind ?? null,
+    required_kinds: uniqueStrings([
+      ...(base?.required_kinds ?? []),
+      ...(current?.required_kinds ?? [])
+    ])
+  };
+}
+
+function mergeOutputContractForValidation(base = {}, current = {}) {
+  return {
+    ...(base ?? {}),
+    ...(current ?? {}),
+    artifact_required: Boolean(base?.artifact_required || current?.artifact_required),
+    kind: current?.kind ?? base?.kind ?? null
+  };
+}
+
 export function selectSuccessContractValidationSpec(task) {
   const initial = task?.task_spec_initial ?? null;
   const current = task?.task_spec ?? null;
@@ -1149,6 +1244,20 @@ export function selectSuccessContractValidationSpec(task) {
   if (!base || !current || current === base) return base;
 
   const next = { ...base };
+  if (current.goal) next.goal = current.goal;
+  next.success_contract = mergeSuccessContractForValidation(
+    base.success_contract,
+    current.success_contract
+  );
+  next.artifact = mergeArtifactSpecForValidation(base.artifact, current.artifact);
+  next.contract = {
+    ...(base.contract ?? {}),
+    ...(current.contract ?? {}),
+    output_contract: mergeOutputContractForValidation(
+      base.contract?.output_contract,
+      current.contract?.output_contract
+    )
+  };
   if (isLooserResearchQuality(current.research_quality, base.research_quality)) {
     next.research_quality = current.research_quality;
   }

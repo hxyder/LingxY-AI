@@ -19,8 +19,8 @@
  *   - probe-failed                → activeWindow === null
  *
  * Also covers the `capture-context.ps1` merge path: file_paths and
- * selectedText from the capture probe surface cleanly alongside the active
- * window hint.
+ * selectedText from the capture probe dominate active-window hints, while
+ * active-window preview is only emitted when there is no selected resource.
  *
  * Parser-level unit tests on parseActiveWindowProbeOutput + buildShellContextPayload
  * round out the script so we don't need to spawn a subprocess for every
@@ -189,6 +189,8 @@ async function runScenario(scenario, options = {}) {
 
 assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(mainWithShortcutRouterSource),
   "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
+assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2400}activeWindowEnabled:\s*false[\s\S]{0,1400}includeSelection:\s*false[\s\S]{0,220}activeWindowEnabled:\s*true/.test(mainWithShortcutRouterSource),
+  "capture-and-ask must first capture selected files/text without active-window preview, then fall back to active-window only when there is no selection");
 assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*120/,
   "capture-context.ps1 must wait briefly before copying so the hotkey modifier can be released");
 assert.match(captureContextPs1Source, /keybd_event\(0x10,\s*0,\s*2[\s\S]{0,260}keybd_event\(0xA1,\s*0,\s*2/,
@@ -204,10 +206,10 @@ assert.match(captureContextPs1Source, /Start-Sleep -Milliseconds \$PreCopyDelayM
   assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && captureIndex > guardIndex && showIndex > captureIndex,
     "capture-and-ask must guard re-entrance, start capture before focusing LingxY, then reveal overlay immediately while capture hydrates asynchronously");
 }
-assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\s\S]{0,220}clipboardBaseline\s*=\s*null/.test(electronMainSource)
-  && /runCaptureActiveWindowContext\(\{[\s\S]{0,520}clipboardBaseline/.test(electronMainSource)
-  && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,520}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(mainWithIpcSource),
-  "electron-main + shell-local-ipc must forward clipboardBaseline through every active-window capture path");
+assert.ok(/async function captureActiveWindowContext\s*\(\{[\s\S]{0,180}activeWindowEnabled\s*=\s*true[\s\S]{0,180}clipboardBaseline\s*=\s*null/.test(electronMainSource)
+  && /runCaptureActiveWindowContext\(\{[\s\S]{0,420}activeWindowEnabled:\s*activeWindowEnabled\s*&&\s*activeWindowProbeEnabledCache[\s\S]{0,220}clipboardBaseline/.test(electronMainSource)
+  && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,420}activeWindowEnabled:\s*options\?\.activeWindowEnabled\s*!==\s*false[\s\S]{0,220}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(mainWithIpcSource),
+  "electron-main + shell-local-ipc must forward clipboardBaseline and activeWindowEnabled through every active-window capture path");
 {
   const wrapperStart = electronMainSource.indexOf("async function captureActiveWindowContext");
   const wrapper = electronMainSource.slice(wrapperStart, electronMainSource.indexOf("const {\n    startActiveWindowMemoryPoll", wrapperStart));
@@ -279,9 +281,7 @@ assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\
   };
   const payload = buildShellContextPayload({ context, sourceApp: "msedge" });
   assert.equal(payload.targetWindow, "overlay");
-  assert.equal(payload.active_window.detected_kind, "web_url");
-  assert.equal(payload.active_window.url, "https://claude.ai/chat/test");
-  assert.equal(payload.active_window.blocked, false);
+  assert.equal(payload.active_window, undefined, "selected text must dominate active-window preview/tracking");
   assert.equal(payload.capture.sourceType, "text_selection");
   assert.equal(payload.capture.url, "https://claude.ai/chat/test", "selection url should be auto-filled from active window");
 }

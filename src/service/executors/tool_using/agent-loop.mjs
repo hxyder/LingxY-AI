@@ -1014,11 +1014,10 @@ export function createToolUsingExecutorScaffold() {
         if (result.status === "success") {
           // Phase 1.12 — validator scope split. validateSuccessContract
           // is the HARD gate ("did you call the required tools?"). It
-          // reads `task_spec_initial` so SR can't retroactively make a
-          // task fail by tightening required_tool_names after the loop
-          // already finished. The other two validators (step_gate,
-          // answer_synthesis) read the LATEST spec because they're
-          // forward / quality concerns, not retroactive correctness.
+          // validates against the merged initial/current contract: initial
+          // requirements cannot be loosened, and framework-discovered hard
+          // requirements such as transform_existing_file -> edit_file cannot
+          // be bypassed by artifact fallback.
           const validationSpec = selectSuccessContractValidationSpec(task);
           const { satisfied, violations } = validateSuccessContract(validationSpec, result.transcript ?? []);
           if (!satisfied) {
@@ -1262,9 +1261,12 @@ function artifactContractViolations(task, transcript = []) {
   if (!task) return [];
   const spec = selectSuccessContractValidationSpec(task);
   const validation = validateSuccessContract(spec, transcript);
+  const requiresEditFile = spec?.goal === "transform_existing_file"
+    || spec?.success_contract?.required_tool_names?.includes?.("edit_file");
   return (validation.violations ?? []).filter((violation) =>
     violation?.kind === "artifact_required_not_created"
     || violation?.kind === "artifact_required_kind_mismatch"
+    || (requiresEditFile && /^edit_file_required_(?:not_called|all_failed)$/.test(violation?.kind ?? ""))
   );
 }
 
@@ -1383,6 +1385,11 @@ function hasMultipleRequiredArtifactKinds(task = {}) {
 
 function shouldRunDeterministicArtifactObligation({ task, stepGate, transcript = [], guidanceCount = 0 } = {}) {
   if (hasMultipleRequiredArtifactKinds(task)) return false;
+  const spec = selectSuccessContractValidationSpec(task)
+    ?? task?.task_spec
+    ?? task?.task_spec_initial
+    ?? {};
+  if (artifactRecoveryBlockedReason(spec)) return false;
   return shouldRunEarlyArtifactObligation({ stepGate, transcript })
     || (guidanceCount > 0 && hasOnlyArtifactContractViolations(stepGate));
 }

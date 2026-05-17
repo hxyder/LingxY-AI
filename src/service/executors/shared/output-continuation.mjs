@@ -104,25 +104,34 @@ export async function generateTextWithContinuations({
       outputLimited: Boolean(limitReason)
     });
 
-    const continueAllowed = typeof shouldContinue === "function"
+    const continuationDecision = typeof shouldContinue === "function"
       ? shouldContinue({ response, continuationIndex, limitReason, text })
       : Boolean(limitReason);
-    if (!limitReason || !continueAllowed) {
+    const continuationReason = typeof continuationDecision === "string"
+      ? continuationDecision
+      : (continuationDecision && typeof continuationDecision === "object"
+          ? continuationDecision.reason
+          : null);
+    const continueAllowed = typeof shouldContinue === "function"
+      ? Boolean(continuationDecision)
+      : Boolean(limitReason);
+    const effectiveLimitReason = limitReason ?? continuationReason ?? null;
+    if (!continueAllowed || !effectiveLimitReason) {
       finalLimitReason = null;
       break;
     }
 
-    finalLimitReason = limitReason;
+    finalLimitReason = effectiveLimitReason;
     onOutputLimited?.({
       response,
       continuationIndex,
-      limitReason,
+      limitReason: effectiveLimitReason,
       text
     });
     if (continuationIndex < maxContinuations) {
       onContinuationStarted?.({
         continuationIndex: continuationIndex + 1,
-        previousLimitReason: limitReason,
+        previousLimitReason: effectiveLimitReason,
         text
       });
     }

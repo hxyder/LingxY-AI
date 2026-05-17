@@ -27,6 +27,7 @@ const root = path.resolve(__dirname, "..");
 const CASES = [
   "把这两个附件发给 user-b@example.com",
   "发给 alice@gmail.com",
+  "给hanxy308@163.com 发个邮件，问好。",
   "send these two PDFs to sophie@gmail.com",
   "forward this to bob@outlook.com",
   "帮我把这个文件上传到 onedrive",
@@ -47,6 +48,36 @@ for (const input of CASES) {
   assert.ok(
     spec.suggested_executor === "tool_using" || spec.suggested_executor === "agentic",
     `${JSON.stringify(input)} must land on a tools-capable executor (got ${spec.suggested_executor})`
+  );
+}
+
+const EMAIL_SEND_CASES = [
+  "把这两个附件发给 user-b@example.com",
+  "给hanxy308@163.com 发个邮件，问好。",
+  "send these two PDFs to sophie@gmail.com",
+  "forward this to bob@outlook.com"
+];
+for (const input of EMAIL_SEND_CASES) {
+  const spec = createTaskSpec(input, {
+    semantic_router_decision: {
+      source_scope: "current_context",
+      web_policy: "forbidden",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      primary_intent: "email_calendar_action",
+      domain: "email",
+      expected_output: "execution",
+      needs_tool_use: true,
+      needed_capabilities: ["email_calendar_action"],
+      required_policy_groups: [],
+      confidence: 0.86,
+      reason: "email send fixture"
+    }
+  }, {});
+  assert.ok(
+    spec.success_contract.required_policy_groups.includes("email_send"),
+    `${JSON.stringify(input)} must infer success_contract.required_policy_groups[email_send]`
   );
 }
 

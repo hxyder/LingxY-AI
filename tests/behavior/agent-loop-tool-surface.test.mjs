@@ -22,6 +22,7 @@ const tools = [
   { id: "reveal_in_explorer" },
   { id: "launch_app" },
   { id: "create_scheduled_task" },
+  { id: "compose_email" },
   { id: "account_send_email" },
   { id: "connector_workflow_run" },
   { id: "connector_plugin_manage" },
@@ -301,10 +302,33 @@ test("agent tool surface keeps web research available for scheduled research ema
   assert.ok(visible.includes("fetch_url_content"));
   assert.ok(visible.includes("account_send_email"));
   assert.ok(visible.includes("connector_workflow_run"));
+  assert.ok(!visible.includes("compose_email"));
   assert.ok(!visible.includes("create_scheduled_task"));
   assert.ok(!visible.includes("vision_analyze"));
   assert.ok(!visible.includes("file_op"));
   assert.ok(!visible.includes("run_script"));
+});
+
+test("agent tool surface hides draft-only email tools when real email_send is required", () => {
+  const task = {
+    user_command: "给hanxy308@163.com 发个邮件，问好。",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["email_calendar_action"]
+      }
+    },
+    task_spec: {
+      success_contract: {
+        required_policy_groups: ["email_send"]
+      }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("account_send_email"));
+  assert.ok(visible.includes("connector_workflow_run"));
+  assert.ok(!visible.includes("compose_email"));
 });
 
 test("agent tool surface hides run_script unless code execution is explicitly required", () => {

@@ -218,17 +218,6 @@ export function buildShellContextPayload({ context, sourceApp, captureMode = "ho
     base.file_paths = context.filePaths;
     return base;
   }
-  if (context.activeWindow) {
-    base.active_window = {
-      process: context.activeWindow.process,
-      title: context.activeWindow.title,
-      detected_kind: context.activeWindow.detectedKind,
-      url: context.activeWindow.url ?? null,
-      file_path: context.activeWindow.filePath ?? null,
-      blocked: Boolean(context.activeWindow.blocked),
-      extra: context.activeWindow.extra ?? {}
-    };
-  }
   if (context.selectedText) {
     const selectedUrl = parseHttpUrl(context.selectedText);
     if (selectedUrl) {
@@ -249,6 +238,17 @@ export function buildShellContextPayload({ context, sourceApp, captureMode = "ho
       processName: context.processName ?? null
     };
     return base;
+  }
+  if (context.activeWindow) {
+    base.active_window = {
+      process: context.activeWindow.process,
+      title: context.activeWindow.title,
+      detected_kind: context.activeWindow.detectedKind,
+      url: context.activeWindow.url ?? null,
+      file_path: context.activeWindow.filePath ?? null,
+      blocked: Boolean(context.activeWindow.blocked),
+      extra: context.activeWindow.extra ?? {}
+    };
   }
   // No files or text — still send the base payload so overlay can show the
   // active-window preview card and offer quick actions.

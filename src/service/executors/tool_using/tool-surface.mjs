@@ -91,6 +91,11 @@ const SIDE_EFFECT_REQUIRED_GROUPS = new Set([
   "calendar_create",
   "file_upload"
 ]);
+const DRAFT_ONLY_TOOLS_BY_REQUIRED_GROUP = Object.freeze({
+  email_send: Object.freeze([
+    "compose_email"
+  ])
+});
 
 const OPEN_URL_VERB_RE = /(打开|访问|进入|跳转|浏览|前往|登录到|登录上)|\bopen\b|\bvisit\b|\bnavigate\b|\bgo\s+to\b|\bload\s+(this\s+page|that\s+page|the\s+url)\b/iu;
 
@@ -318,6 +323,19 @@ function toolSatisfiesRequiredPolicyGroup(tool, groups = []) {
   );
 }
 
+function filterDraftOnlySideEffectTools(list = [], task) {
+  const requiredGroups = requiredPolicyGroupsOf(task);
+  if (requiredGroups.length === 0) return list;
+  const blocked = new Set();
+  for (const group of requiredGroups) {
+    for (const toolId of DRAFT_ONLY_TOOLS_BY_REQUIRED_GROUP[group] ?? []) {
+      blocked.add(toolId);
+    }
+  }
+  if (blocked.size === 0) return list;
+  return list.filter((tool) => !blocked.has(tool?.id));
+}
+
 function requiredToolNamesOf(task) {
   const names = [];
   for (const spec of [task?.task_spec, task?.task_spec_initial]) {
@@ -479,7 +497,8 @@ export function filterToolsForTask(tools = [], task) {
     const withoutOpenUrl = filterOpenUrl(withoutDirectOpen, task);
     const withoutConnectorScopedWeb = filterConnectorScopedWebTools(withoutOpenUrl, task);
     const withoutWebSearchPage = filterWebSearchPage(withoutConnectorScopedWeb, task);
-    const withoutSkillInstall = filterSkillInstall(withoutWebSearchPage, task);
+    const withoutDraftOnlySideEffects = filterDraftOnlySideEffectTools(withoutWebSearchPage, task);
+    const withoutSkillInstall = filterSkillInstall(withoutDraftOnlySideEffects, task);
     return insideScheduledFire
       ? withoutSkillInstall.filter((tool) => !isScheduleRegistryTool(tool))
       : withoutSkillInstall;

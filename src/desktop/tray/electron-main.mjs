@@ -371,6 +371,7 @@ export function createElectronShellRuntime({
 
   async function captureActiveWindowContext({
     includeSelection = true,
+    activeWindowEnabled = true,
     allowClipboardFallback = true,
     clipboardBaseline = null,
     preferLastExternal = false,
@@ -380,7 +381,7 @@ export function createElectronShellRuntime({
       runPowerShell: runPowerShellScript,
       clipboardFallback: () => clipboard.readText() ?? "",
       timeoutMs: 3000,
-      activeWindowEnabled: activeWindowProbeEnabledCache,
+      activeWindowEnabled: activeWindowEnabled && activeWindowProbeEnabledCache,
       includeSelection,
       allowClipboardFallback,
       clipboardBaseline

@@ -63,6 +63,24 @@ test("SR-claimed email_send IS kept when user text has an email recipient", () =
     `email_send should survive when an email entity exists, got groups=${JSON.stringify(groups)}`);
 });
 
+test("Chinese recipient-first email command infers a real email_send contract", () => {
+  const spec = specWithSrDecision("给hanxy308@163.com 发个邮件，问好。", {
+    web_policy: "forbidden",
+    source_scope: "current_context",
+    primary_intent: "email_calendar_action",
+    domain: "email",
+    expected_output: "execution",
+    needs_external_info: false,
+    needs_current_information: false,
+    needed_capabilities: ["email_calendar_action"],
+    required_policy_groups: []
+  });
+  const groups = spec.success_contract.required_policy_groups;
+  assert.ok(groups.includes("email_send"),
+    `recipient-first Chinese email command must require email_send, got groups=${JSON.stringify(groups)}`);
+  assert.equal(spec.success_contract.tool_called, true);
+});
+
 test("SR-claimed calendar_create is dropped without attendee/time evidence", () => {
   const spec = specWithSrDecision("帮我看下市场动态", {
     required_policy_groups: ["external_web_read", "calendar_create"],

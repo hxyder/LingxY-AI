@@ -53,3 +53,41 @@ test("output continuation continues from partial text without restarting", async
   assert.equal(usage.length, 2);
   assert.equal(limited.length, 1);
 });
+
+test("output continuation can continue structurally incomplete normal-stop text", async () => {
+  const calls = [];
+  const adapter = {
+    async generate(body) {
+      calls.push(body);
+      if (calls.length === 1) {
+        body.onTextDelta?.("### 下一步\n\n##");
+        return {
+          text: "### 下一步\n\n##",
+          finish_reason: "stop",
+          usage: { input_tokens: 10, output_tokens: 4 }
+        };
+      }
+      body.onTextDelta?.(" 申请策略\n补完整段内容。");
+      return {
+        text: " 申请策略\n补完整段内容。",
+        finish_reason: "stop",
+        usage: { input_tokens: 8, output_tokens: 5 }
+      };
+    }
+  };
+  const limited = [];
+  const result = await generateTextWithContinuations({
+    adapter,
+    messages: [{ role: "user", content: "写一个完整计划" }],
+    maxContinuations: 2,
+    shouldContinue: ({ limitReason, text }) =>
+      limitReason || (/^#{1,6}\s*$/m.test(String(text).split(/\r?\n/).at(-1) ?? "")
+        ? { reason: "final_answer_dangling_markdown_heading" }
+        : false),
+    onOutputLimited: (entry) => limited.push(entry)
+  });
+
+  assert.equal(result.text, "### 下一步\n\n## 申请策略\n补完整段内容。");
+  assert.equal(calls.length, 2);
+  assert.equal(limited[0]?.limitReason, "final_answer_dangling_markdown_heading");
+});

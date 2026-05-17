@@ -9,6 +9,7 @@ const CALENDAR_WORKFLOW_PATTERN = /(?:calendar|caldav|event).*(?:create|add)|cre
 const FILE_UPLOAD_WORKFLOW_PATTERN = /(?:drive|onedrive|file).*(?:upload|save)|upload_file/i;
 
 const EMAIL_SEND_INTENT_PATTERNS = [
+  /(?:给|向|to)\s*[^\s，。；;,]{0,80}@[\w.-]+.{0,40}(?:发|发送|寄|send).{0,12}(?:邮件|邮箱|email|mail|信)?/i,
   /(?:发送|发出|发一封|发封|寄|转发|send|email|mail|forward).{0,40}(?:邮件|邮箱|email|mail|@)/i,
   /(?:邮件|邮箱|email|mail).{0,40}(?:发送|发出|寄出|send|to\b)/i,
   /(?:发送给|发给|寄给|转发给|send\s+(?:it|this|them|.+?)\s+to|forward\s+(?:it|this|them|.+?)\s+to).{0,80}@/i

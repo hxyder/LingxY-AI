@@ -521,6 +521,76 @@ test("typed artifact contract exposes document generation without relying on art
   ));
 });
 
+test("deterministic artifact recovery does not turn final prose into a docx when edit_file is required by patched spec", async () => {
+  const generatedCalls = [];
+  const generateDocument = {
+    ...makeGenerateDocumentTool(),
+    async execute(args = {}) {
+      generatedCalls.push(args);
+      return {
+        success: true,
+        observation: `generated:${args.kind}`,
+        artifact_paths: [`E:\\linxiDoc\\bad-fallback.${args.kind}`]
+      };
+    }
+  };
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeReadFileTextTool(), generateDocument]),
+    finalAnswerComposer: async () => [
+      "好的，我已经整理好了优化后的 Word 版本。",
+      "以下是内容，您可以复制到 Word 文档中。"
+    ].join("\n")
+  });
+  const task = {
+    task_id: "task_existing_docx_edit_required",
+    user_command: "结合你发现的简历问题，给我整理一下，做一个优化后的word版本",
+    execution_mode: "interactive",
+    task_spec_initial: {
+      goal: "qa",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "revise previous resume advice into Word" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: false,
+        tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    },
+    task_spec: {
+      goal: "transform_existing_file",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "update the existing resume document in place" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: false,
+        tool_called: true,
+        required_tool_names: ["edit_file"],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0) {
+        return { type: "tool_call", tool: "read_file_text", args: { path: "E:\\linxiDoc\\resume.docx" } };
+      }
+      return { type: "final", text: "Here is the revised document text, but no file was edited." };
+    },
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "partial_success");
+  assert.deepEqual(generatedCalls, []);
+  assert.ok(result.contract_violations.some((violation) => violation.kind === "edit_file_required_not_called"));
+  assert.ok(!events.some((event) => event.eventType === "deterministic_artifact_obligation"));
+});
+
 test("artifact-required tasks cannot finalize before creating a file", async () => {
   const { runtime, events } = makeRuntime({
     actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),

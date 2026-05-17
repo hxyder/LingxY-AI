@@ -19,6 +19,7 @@ import {
 } from "./finalization.mjs";
 import { reviewFinalAnswer } from "./final-reviewer.mjs";
 import { detectNetworkFailureInTranscript } from "./failure-classifier.mjs";
+import { detectIncompleteFinalAnswerStructure } from "../../core/policy/success-contract-validator.mjs";
 
 const EVIDENCE_LIST_LIMIT = 6;
 const FINAL_COMPOSER_MAX_TOKENS = 2048;
@@ -319,6 +320,12 @@ export async function composeFinalAnswer({
           previous_finish_reason: previousLimitReason,
           composed_chars: text.length
         });
+      },
+      shouldContinue: ({ limitReason, continuationIndex, text }) => {
+        if (limitReason) return true;
+        if (continuationIndex >= FINAL_COMPOSER_MAX_CONTINUATIONS) return false;
+        const incomplete = detectIncompleteFinalAnswerStructure(text);
+        return incomplete ? { reason: incomplete.kind } : false;
       }
     });
     let finalText = generation.text;

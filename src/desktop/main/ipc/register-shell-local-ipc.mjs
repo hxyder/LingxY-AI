@@ -78,6 +78,7 @@ export function registerShellLocalIpc({
     try {
       let context = await captureActiveWindowContext({
         includeSelection: options?.includeSelection !== false,
+        activeWindowEnabled: options?.activeWindowEnabled !== false,
         allowClipboardFallback: options?.allowClipboardFallback !== false,
         clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null
       });
@@ -90,6 +91,7 @@ export function registerShellLocalIpc({
             await wait(160);
             context = await captureActiveWindowContext({
               includeSelection: options?.includeSelection !== false,
+              activeWindowEnabled: options?.activeWindowEnabled !== false,
               allowClipboardFallback: options?.allowClipboardFallback !== false,
               clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null
             });

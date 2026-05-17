@@ -71,6 +71,40 @@ test("success-contract validation rejects SR research-quality tightening", () =>
   assert.equal(selected.research_quality.profile, "multi_source_research");
 });
 
+test("success-contract validation preserves current edit-file requirements from patched task spec", () => {
+  const selected = selectSuccessContractValidationSpec({
+    task_spec_initial: {
+      goal: "qa",
+      artifact: { required: true, kind: "docx" },
+      success_contract: {
+        artifact_created: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    },
+    task_spec: {
+      goal: "transform_existing_file",
+      artifact: { required: true, kind: "docx" },
+      success_contract: {
+        artifact_created: true,
+        required_tool_names: ["edit_file"],
+        required_policy_groups: []
+      }
+    }
+  });
+
+  assert.equal(selected.goal, "transform_existing_file");
+  assert.equal(selected.artifact.required, true);
+  assert.equal(selected.artifact.kind, "docx");
+  assert.ok(selected.success_contract.required_tool_names.includes("edit_file"));
+
+  const out = validateSuccessContract(selected, [
+    { type: "tool_result", tool: "generate_document", success: true, artifact_paths: ["E:/out/result.docx"] }
+  ]);
+  assert.equal(out.satisfied, false);
+  assert.ok(out.violations.some((violation) => violation.kind === "edit_file_required_not_called"));
+});
+
 test("synthesis validation rejects two-record connector lists for summary output", () => {
   const violations = validateAnswerSynthesis(
     { synthesis: { expected_output: "summary" } },
@@ -149,6 +183,16 @@ test("final answer quality does not treat recent movie release questions as loca
   });
 
   assert.deepEqual(violations, []);
+});
+
+test("final answer quality rejects structurally incomplete markdown endings", () => {
+  const violations = validateFinalAnswerQuality({
+    task: { task_spec: { synthesis: { expected_output: "summary" } } },
+    transcript: [],
+    finalText: "这里是分析内容。\n\n##"
+  });
+
+  assert.equal(violations[0]?.kind, "final_answer_dangling_markdown_heading");
 });
 
 test("final answer quality accepts recent local event answers with dated venue details", () => {
