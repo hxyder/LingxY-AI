@@ -24,6 +24,8 @@ const EVIDENCE_LIST_LIMIT = 6;
 const FINAL_COMPOSER_MAX_TOKENS = 2048;
 const FINAL_COMPOSER_CONTINUATION_MAX_TOKENS = 2048;
 const FINAL_COMPOSER_MAX_CONTINUATIONS = 2;
+const COMPOSER_DRAFT_CHAR_LIMIT = 8000;
+const COMPOSER_PRIOR_DRAFT_LIMIT = 3;
 const NETWORK_UNAVAILABLE_CLAIM_PATTERNS = [
   /\b(?:web|network|search|browser|browsing)\s+(?:tool|tools|access|search|fetch)\s+(?:is|are|was|were)?\s*(?:temporarily\s+)?(?:unavailable|not available|disabled|blocked|failed)/i,
   /\b(?:cannot|can't|unable to)\s+(?:browse|search|fetch|access)\s+(?:the\s+)?(?:web|internet|network|site|page)/i,
@@ -114,6 +116,36 @@ export function formatEvidenceSummaryForComposer(evidence = null) {
   return lines.join("\n");
 }
 
+function normalizeComposerDraft(text = "", limit = COMPOSER_DRAFT_CHAR_LIMIT) {
+  const raw = String(text ?? "").replace(/\r\n/g, "\n").trim();
+  if (!raw) return "";
+  return raw.length > limit ? `${raw.slice(0, limit)}\n[Draft truncated]` : raw;
+}
+
+export function formatPriorDraftsForComposer(transcript = [], {
+  limit = COMPOSER_PRIOR_DRAFT_LIMIT
+} = {}) {
+  const drafts = [];
+  for (const entry of [...(transcript ?? [])].reverse()) {
+    if (entry?.type !== "synthesis_retry") continue;
+    const draft = normalizeComposerDraft(entry.assistantDraft, 3000);
+    if (!draft) continue;
+    const violations = Array.isArray(entry.violations)
+      ? entry.violations
+        .map((violation) => violation?.kind || violation?.message)
+        .filter(Boolean)
+        .slice(0, 4)
+        .join(", ")
+      : "";
+    drafts.push([
+      `Draft ${drafts.length + 1}${violations ? `; quality feedback: ${violations}` : ""}:`,
+      draft
+    ].join("\n"));
+    if (drafts.length >= limit) break;
+  }
+  return drafts.reverse().join("\n\n");
+}
+
 export async function composeFinalAnswer({
   task,
   transcript,
@@ -121,7 +153,8 @@ export async function composeFinalAnswer({
   reason = "",
   signal = null,
   streamToUser = true,
-  purpose = "final_answer"
+  purpose = "final_answer",
+  draftText = null
 }) {
   runtime?.emitTaskEvent?.("final_composer_started", { reason });
   const started = Date.now();
@@ -134,6 +167,8 @@ export async function composeFinalAnswer({
     const taskSpec = task?.task_spec ?? {};
     const evidenceSummary = extractEvidence(transcript);
     const evidenceBlock = formatEvidenceSummaryForComposer(evidenceSummary);
+    const draftBlock = normalizeComposerDraft(draftText);
+    const priorDraftsBlock = formatPriorDraftsForComposer(transcript);
     const finalizeCandidate = async (candidateText) => {
       const guardedText = guardFinalNetworkFailureClaim({ task, transcript, candidateText });
       if (guardedText !== String(candidateText ?? "").trim()) {
@@ -171,7 +206,9 @@ export async function composeFinalAnswer({
         task,
         transcript,
         reason,
-        evidence_summary: evidenceSummary
+        evidence_summary: evidenceSummary,
+        draft_text: draftBlock,
+        prior_drafts: priorDraftsBlock
       });
       const text = String(composed ?? "").trim();
       if (text) return finalizeCandidate(text);
@@ -196,6 +233,8 @@ export async function composeFinalAnswer({
       purpose === "side_effect_body"
         ? "Write only the content body that should be sent through the pending side-effect tool, in the user's language. Do not claim the message was sent or completed."
         : "Turn tool observations into the final answer the user asked for, in the user's language.",
+      "If a planner draft or prior answer draft is provided, treat it as a draft answer rather than hidden reasoning: preserve useful concrete recommendations, examples, caveats, and structure unless the tool transcript contradicts them.",
+      "Do not expose private chain-of-thought or step-by-step internal deliberation. Convert useful draft analysis into concise user-facing conclusions and actions.",
       "When tool metadata marks `result_kind=record_list` and the expected output is summary, comparison, recommendation, or analysis, produce collection-level synthesis: counts, groups, priorities, implications, or next steps. Do not merely restate each record as a list.",
       "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
       "If the user said not to open a webpage/browser, interpret that as no visible navigation. It does not prohibit using already executed search/fetch evidence or returning source/application links.",
@@ -219,6 +258,8 @@ export async function composeFinalAnswer({
             research_quality: taskSpec.research_quality
           })}`,
           `[Stop reason]\n${reason || "normal"}`,
+          draftBlock ? `[Planner draft]\n${draftBlock}` : null,
+          priorDraftsBlock ? `[Prior answer drafts and quality feedback]\n${priorDraftsBlock}` : null,
           evidenceBlock ? `[Evidence summary]\n${evidenceBlock}` : null,
           `[Tool transcript]\n${compactTranscriptForComposer(transcript) || "(no tool transcript)"}`
         ].filter(Boolean).join("\n\n")

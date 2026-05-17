@@ -2187,7 +2187,8 @@ async function _runToolAgentLoopCore({
           transcript,
           runtime,
           reason: decision?.type === "final" ? "planner_final_after_tools" : "no_planner_decision",
-          signal
+          signal,
+          draftText: decision?.type === "final" ? candidateFinal : null
         });
       }
       if (!candidateFinal) {

@@ -369,6 +369,9 @@ function concreteEventDetailCount(finalText = "") {
   return count;
 }
 
+const ARTIFACT_DOWNLOAD_URL_RE = /https?:\/\/[^\s)\]]+\.(?:docx|pptx|xlsx|pdf|html?|md|txt|csv|json|mjs|js|py|ps1)(?:[?#][^\s)\]]*)?/iu;
+const GENERATED_ARTIFACT_CLAIM_RE = /(?:已|已经|成功|为你|给你).{0,24}(?:生成|创建|制作|保存|导出).{0,32}(?:文件|文档|表格|幻灯片|报告|artifact)|(?:下载地址|下载链接|点击下载|download link)/iu;
+
 /**
  * Final-answer quality gates that need task context, not just TaskSpec.
  * These are deterministic "must not call this success" checks. They do not
@@ -379,6 +382,16 @@ export function validateFinalAnswerQuality({ task = null, transcript = [], final
   const violations = [];
   const final = String(finalText ?? "").trim();
   if (!final) return violations;
+  const taskSpec = task?.task_spec ?? task?.task_spec_initial ?? task ?? {};
+
+  if ((requiresArtifactCreated(taskSpec) || GENERATED_ARTIFACT_CLAIM_RE.test(final))
+      && ARTIFACT_DOWNLOAD_URL_RE.test(final)
+      && !transcriptHasArtifactCreated(transcript)) {
+    violations.push({
+      kind: "unsupported_artifact_download_link",
+      message: "The final answer claimed or linked a downloadable artifact, but the transcript contains no created/registered artifact path. The executor must create/register the file or report partial success without a fake download URL."
+    });
+  }
 
   if (isRecentLocalEventQuery(task) && hasExternalWebReadAttempt(transcript)) {
     const concreteCount = concreteEventDetailCount(final);

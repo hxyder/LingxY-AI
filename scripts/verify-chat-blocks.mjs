@@ -15,6 +15,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const consoleJs = read("src/desktop/renderer/console.js");
 const overlayJs = read("src/desktop/renderer/overlay.js");
+const windowLifecycle = read("src/desktop/shell/desktop-window-lifecycle.mjs");
 const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const chatBlocks = read("src/desktop/renderer/chat-blocks.mjs");
 
@@ -57,5 +58,13 @@ assert.match(consoleJs, /\[data-local-file-path\][\s\S]{0,500}openConversationAr
   "console chat must route local file links through the file preview/open bridge");
 assert.match(overlayJs, /\[data-local-file-path\][\s\S]{0,500}openPath/,
   "overlay chat must route local file links through the shell open bridge");
+assert.match(overlayJs, /\[data-open-url\], a\[href\]:not\(\[data-local-file-path\]\)[\s\S]{0,500}openUrl/,
+  "overlay chat must delegate external links through the shell open-url bridge without stealing local file links");
+assert.doesNotMatch(overlayJs, /window\.open\(url,\s*["_']_blank/,
+  "overlay chat links must not fall back to direct renderer window.open navigation");
+assert.match(windowLifecycle, /setWindowOpenHandler[\s\S]{0,240}action:\s*["']deny["']/,
+  "desktop shell windows must deny renderer-created windows");
+assert.match(windowLifecycle, /will-navigate[\s\S]{0,520}protocol === ["']file:["'][\s\S]{0,520}event\.preventDefault/,
+  "desktop shell windows must block non-renderer navigation");
 
 console.log("Chat blocks verification passed.");

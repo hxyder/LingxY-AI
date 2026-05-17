@@ -48,6 +48,7 @@ const mockFixturePath = path.join(repoRoot, "tests", "fixtures", "mock-active-wi
 const electronMainSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "electron-main.mjs"), "utf8");
 const shellLocalIpcSource = readFileSync(path.join(repoRoot, "src", "desktop", "main", "ipc", "register-shell-local-ipc.mjs"), "utf8");
 const shortcutRouterSource = readFileSync(path.join(repoRoot, "src", "desktop", "shell", "desktop-shortcut-router.mjs"), "utf8");
+const captureContextPs1Source = readFileSync(path.join(repoRoot, "scripts", "capture-context.ps1"), "utf8");
 const mainWithIpcSource = `${electronMainSource}\n${shellLocalIpcSource}`;
 const mainWithShortcutRouterSource = `${electronMainSource}\n${shortcutRouterSource}`;
 
@@ -188,6 +189,12 @@ async function runScenario(scenario, options = {}) {
 
 assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(mainWithShortcutRouterSource),
   "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
+assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*120/,
+  "capture-context.ps1 must wait briefly before copying so the hotkey modifier can be released");
+assert.match(captureContextPs1Source, /keybd_event\(0x10,\s*0,\s*2[\s\S]{0,260}keybd_event\(0xA1,\s*0,\s*2/,
+  "capture-context.ps1 must release Shift modifiers before simulating Ctrl+C");
+assert.match(captureContextPs1Source, /Start-Sleep -Milliseconds \$PreCopyDelayMs[\s\S]{0,180}\[UcaCapture\]::SimulateCopy\(\)/,
+  "capture-context.ps1 must apply the pre-copy delay immediately before simulated copy");
 {
   const captureBlockStart = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
   const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);

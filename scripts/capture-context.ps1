@@ -1,5 +1,6 @@
 param(
-  [switch]$SimulateCopy
+  [switch]$SimulateCopy,
+  [int]$PreCopyDelayMs = 120
 )
 
 Set-StrictMode -Version Latest
@@ -47,6 +48,12 @@ public class UcaCapture {
     }
 
     public static void SimulateCopy() {
+        keybd_event(0x10, 0, 2, UIntPtr.Zero);  // Shift up
+        keybd_event(0xA0, 0, 2, UIntPtr.Zero);  // Left Shift up
+        keybd_event(0xA1, 0, 2, UIntPtr.Zero);  // Right Shift up
+        keybd_event(0x12, 0, 2, UIntPtr.Zero);  // Alt up
+        keybd_event(0x5B, 0, 2, UIntPtr.Zero);  // Left Win up
+        keybd_event(0x5C, 0, 2, UIntPtr.Zero);  // Right Win up
         keybd_event(0x11, 0, 0, UIntPtr.Zero);  // Ctrl down
         keybd_event(0x43, 0, 0, UIntPtr.Zero);  // C down
         keybd_event(0x43, 0, 2, UIntPtr.Zero);  // C up
@@ -114,6 +121,9 @@ if ($procName -eq "explorer") {
 
 # Simulate Ctrl+C if requested
 if ($SimulateCopy) {
+    if ($PreCopyDelayMs -gt 0) {
+        Start-Sleep -Milliseconds $PreCopyDelayMs
+    }
     [UcaCapture]::SimulateCopy()
     Start-Sleep -Milliseconds 350
 }

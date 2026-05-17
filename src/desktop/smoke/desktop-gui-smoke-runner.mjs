@@ -175,6 +175,10 @@ export function createDesktopGuiSmokeRunner({
       const registeredAccelerators = DESKTOP_SHELL_MANIFEST.shortcuts
         .filter((shortcut) => globalShortcut.isRegistered?.(shortcut.accelerator))
         .map((shortcut) => shortcut.id);
+      const missingRegisteredAccelerators = shortcutIds.filter((id) => !registeredAccelerators.includes(id));
+      if (missingRegisteredAccelerators.length > 0) {
+        throw new Error(`global_shortcuts_not_registered:${missingRegisteredAccelerators.join(",")}`);
+      }
       pass("global_shortcuts_registration_observed", {
         registered: registeredAccelerators.length,
         total: shortcutIds.length

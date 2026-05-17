@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
-import { validateSuccessContract } from "../../src/service/core/policy/success-contract-validator.mjs";
+import {
+  validateFinalAnswerQuality,
+  validateSuccessContract
+} from "../../src/service/core/policy/success-contract-validator.mjs";
 
 // Regression: task_c7f592f0 (2026-05-03). SR LLM (deepseek-v4-flash) emitted
 // `required_policy_groups: ["email_send"]` for a "美股今天行情" research query
@@ -155,6 +158,78 @@ test("explicit ad-hoc markdown/json/csv files are artifact-required without hija
   const ordinaryQuestion = createTaskSpec("JSON 是什么？请直接解释。", {}, {});
   assert.equal(ordinaryQuestion.artifact.required, false);
   assert.equal(ordinaryQuestion.artifact.kind, null);
+});
+
+test("typed SR artifact intent with a file format becomes a real artifact success contract", () => {
+  const spec = createTaskSpec("基于你的建议，给我来一份word版本的", {
+    semantic_router_decision: {
+      web_policy: "forbidden",
+      source_scope: "current_context",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      research_depth: "unknown",
+      file_read_depth: "focused",
+      primary_intent: "artifact_generation",
+      domain: "career",
+      user_goal: "基于之前建议生成 Word 简历",
+      expected_output: "artifact",
+      needs_external_info: false,
+      needs_current_information: false,
+      needs_user_files: false,
+      needs_tool_use: true,
+      needed_capabilities: ["artifact_generation"],
+      required_policy_groups: [],
+      source_mode: "provided_context",
+      complexity: "medium",
+      risk_level: "low",
+      confidence: 0.9,
+      rationale_summary: "typed artifact intent",
+      reason: "typed artifact intent"
+    }
+  }, {});
+  assert.equal(spec.artifact.required, true);
+  assert.equal(spec.artifact.kind, "docx");
+  assert.equal(spec.success_contract.artifact_created, true);
+  assert.equal(spec.success_contract.tool_called, true);
+  assert.ok(spec.required_steps.includes("generate_artifact"));
+  assert.ok(spec.required_steps.includes("verify_file_exists"));
+});
+
+test("fake downloadable artifact links cannot be treated as a successful final answer", () => {
+  const spec = createTaskSpec("基于你的建议，给我来一份word版本的", {
+    semantic_router_decision: {
+      web_policy: "forbidden",
+      source_scope: "current_context",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      research_depth: "unknown",
+      file_read_depth: "focused",
+      primary_intent: "artifact_generation",
+      domain: "career",
+      user_goal: "基于之前建议生成 Word 简历",
+      expected_output: "artifact",
+      needs_external_info: false,
+      needs_current_information: false,
+      needs_user_files: false,
+      needs_tool_use: true,
+      needed_capabilities: ["artifact_generation"],
+      required_policy_groups: [],
+      source_mode: "provided_context",
+      complexity: "medium",
+      risk_level: "low",
+      confidence: 0.9,
+      rationale_summary: "typed artifact intent",
+      reason: "typed artifact intent"
+    }
+  }, {});
+  const violations = validateFinalAnswerQuality({
+    task: { task_spec: spec },
+    transcript: [],
+    finalText: "已生成 Word 文档，下载地址：[点击下载](https://example.invalid/resume.docx)"
+  });
+  assert.ok(violations.some((violation) => violation.kind === "unsupported_artifact_download_link"));
 });
 
 test("multi-format generated file requests require every requested artifact kind", () => {

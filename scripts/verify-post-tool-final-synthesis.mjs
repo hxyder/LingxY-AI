@@ -23,6 +23,10 @@ import { buildSynthesisGuidance } from "../src/service/executors/shared/synthesi
 import { validateAnswerSynthesis } from "../src/service/core/policy/success-contract-validator.mjs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 import { runToolAgentLoop } from "../src/service/executors/tool_using/agent-loop.mjs";
+import {
+  composeFinalAnswer,
+  formatPriorDraftsForComposer
+} from "../src/service/executors/tool_using/final-composer.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -257,6 +261,57 @@ it("validateAnswerSynthesis: failed tool results are ignored", () => {
     obs.repeat(3)
   );
   assert.equal(violations.length, 0);
+});
+
+it("final composer exposes prior rejected drafts as bounded draft-answer context", () => {
+  const block = formatPriorDraftsForComposer([
+    {
+      type: "synthesis_retry",
+      assistantDraft: "第一版：直接把邮件逐条列出。",
+      violations: [{ kind: "answer_not_synthesized" }]
+    },
+    {
+      type: "synthesis_retry",
+      assistantDraft: "第二版：按主题和优先级总结。",
+      violations: [{ kind: "too_short" }]
+    }
+  ]);
+  assert.match(block, /第一版/);
+  assert.match(block, /第二版/);
+  assert.match(block, /answer_not_synthesized/);
+});
+
+await ait("final composer passes planner draft and prior drafts through the runtime override", async () => {
+  const calls = [];
+  const runtime = {
+    emitTaskEvent() {},
+    finalAnswerComposer: async (input) => {
+      calls.push(input);
+      return "整理后的最终答复";
+    }
+  };
+  const text = await composeFinalAnswer({
+    task: {
+      task_id: "task_draft_context",
+      user_command: "只基于刚才的计划回答",
+      task_spec: {
+        synthesis: { expected_output: "analysis", user_goal: "回答追问" },
+        tool_policy: { web_search_fetch: { mode: "forbidden" } }
+      }
+    },
+    transcript: [{
+      type: "synthesis_retry",
+      assistantDraft: "草稿里有具体分层和风险解释。",
+      violations: [{ kind: "answer_not_synthesized" }]
+    }],
+    runtime,
+    reason: "planner_final_after_tools",
+    draftText: "planner 草稿：第二阶段最容易破坏现有功能，因为调用边界和 worker 通信都会改变。"
+  });
+  assert.equal(text, "整理后的最终答复");
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].draft_text, /第二阶段最容易破坏/);
+  assert.match(calls[0].prior_drafts, /草稿里有具体分层/);
 });
 
 await ait("agent-loop: imports buildSynthesisGuidance and validateAnswerSynthesis", async () => {

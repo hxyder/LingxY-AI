@@ -1456,8 +1456,7 @@ function addBubble(role, content, options) {
           const url = anchor.dataset.openUrl;
           if (url) {
             overlayShellClient?.openUrl?.(url, { ask: true, source: "overlay_chat" })
-              ?? overlayShellClient?.openExternal?.(url)
-              ?? window.open(url, "_blank");
+              ?? overlayShellClient?.openExternal?.(url);
           }
         });
       }
@@ -6277,8 +6276,17 @@ bubbleArea?.addEventListener("click", (event) => {
     const url = contextUrl.getAttribute("data-context-open-url");
     if (url) {
       overlayShellClient?.openUrl?.(url, { ask: true, source: "overlay_chat_context" })
-        ?? overlayShellClient?.openExternal?.(url)
-        ?? window.open(url, "_blank");
+        ?? overlayShellClient?.openExternal?.(url);
+    }
+    return;
+  }
+  const externalLink = target?.closest?.("[data-open-url], a[href]:not([data-local-file-path])");
+  if (externalLink && bubbleArea.contains(externalLink)) {
+    event.preventDefault();
+    const url = externalLink.getAttribute("data-open-url") || externalLink.getAttribute("href");
+    if (url && /^https?:\/\//i.test(url)) {
+      overlayShellClient?.openUrl?.(url, { ask: true, source: "overlay_chat" })
+        ?? overlayShellClient?.openExternal?.(url);
     }
     return;
   }

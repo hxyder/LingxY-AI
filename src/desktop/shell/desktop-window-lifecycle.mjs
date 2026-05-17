@@ -110,6 +110,23 @@ export function installWindowLifecycleHandlers({
     });
   }
 
+  browserWindow.webContents.setWindowOpenHandler?.(({ url }) => {
+    safeWarn?.(`[LingxY] Blocked renderer window-open from "${windowDef.id}": ${url}`);
+    return { action: "deny" };
+  });
+
+  browserWindow.webContents.on("will-navigate", (event, url) => {
+    let protocol = "";
+    try {
+      protocol = new URL(url).protocol;
+    } catch {
+      protocol = "";
+    }
+    if (protocol === "file:") return;
+    event.preventDefault?.();
+    safeWarn?.(`[LingxY] Blocked renderer navigation from "${windowDef.id}": ${url}`);
+  });
+
   if (windowDef.id === DOCK_WINDOW_ID) {
     browserWindow.webContents.on("dom-ready", () => {
       installDockHudScrollLock(browserWindow);

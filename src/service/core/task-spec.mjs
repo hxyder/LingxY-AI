@@ -803,6 +803,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const artifactEditIntent = hasArtifactRefinementIntent(text, contextPacket);
 
   const baseGoal = classifyGoal(text, signals);
+  const srDecision = enrichedContext?.semantic_router_decision;
+  const srRejection = enrichedContext?.semantic_router_rejection;
   let goal = baseGoal;
   let goalReason = "Goal classified from text patterns + signals.";
   if (noteIntent) {
@@ -829,6 +831,15 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
 
   const suggestedFormats = detectFormats(text);
   const contextArtifactKind = detectArtifactKindFromContext(contextPacket);
+  const semanticArtifactIntent = Boolean(
+    srDecision?.artifact_required === true
+    || srDecision?.primary_intent === "artifact_generation"
+    || srDecision?.expected_output === "artifact"
+    || (Array.isArray(srDecision?.needed_capabilities) && srDecision.needed_capabilities.includes("artifact_generation"))
+  );
+  const semanticFileArtifactKind = semanticArtifactIntent
+    ? (suggestedFormats.find((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format)) ?? null)
+    : null;
   const explicitFileArtifactKinds = noteIntent
     ? (suggestedFormats.includes("md") ? ["md"] : [])
     : explicitFileArtifactKindsFromRequest(text, suggestedFormats);
@@ -840,6 +851,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     : null;
   const fileArtifactKind = explicitFileArtifactKind
     ?? (goal === "transform_existing_file" ? contextArtifactKind : null)
+    ?? semanticFileArtifactKind
     ?? inferredFileArtifactKind;
   const explicitCodeExecutionRequired = SCRIPT_EXECUTION_REQUEST_RE.test(text);
   const generatedScriptExecutionRequired = requiresGeneratedScriptExecution(text, explicitFileArtifactKinds.length > 0
@@ -848,14 +860,13 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const artifactRequired = goal === "launch_and_act"
     ? false
     : (noteIntent ||
+      (semanticArtifactIntent && Boolean(fileArtifactKind)) ||
       FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
       AD_HOC_FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
       goal === "generate_document" ||
       goal === "analyze_and_report" ||
       goal === "transform_existing_file");
 
-  const srDecision = enrichedContext?.semantic_router_decision;
-  const srRejection = enrichedContext?.semantic_router_rejection;
   const pureLaunchApp = extractPureLaunchApp(text);
   const connectorDomainRequest = (!pureLaunchApp && isConnectorDomainRequest(text))
     || intentRouteNeedsConnector(srDecision);
@@ -1101,7 +1112,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       : null
   };
   const executionConstraints = buildResearchExecutionConstraints(researchQuality);
-  const mustUseTools = goal !== "qa" || connectorDomainRequest || srRequiredPolicyGroups.length > 0 || explicitCodeExecutionRequired;
+  const mustUseTools = artifactRequired || goal !== "qa" || connectorDomainRequest || srRequiredPolicyGroups.length > 0 || explicitCodeExecutionRequired;
 
   const partialSpec = {
     goal,
