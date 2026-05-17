@@ -12,6 +12,15 @@ test("pure app launch stays launch_and_act without artifact output", () => {
   assert.equal(spec.artifact.kind, null);
 });
 
+test("embedded run/open verbs in informational questions are not app launches", () => {
+  const command = "所以我直接能调用它的模型，不用下载到桌面？但是不是还是需要GPU来运行模型吗？这些都是免费的吗？";
+  const spec = createTaskSpec(command);
+
+  assert.equal(classifyGoal(command), "qa");
+  assert.equal(spec.goal, "qa");
+  assert.deepEqual(spec.success_contract.required_tool_names, []);
+});
+
 test("Chinese file-open phrasing routes to file action, not app launch", () => {
   for (const command of ["打开这个文件", "显示所在位置", "打开上次生成的ppt"]) {
     const spec = createTaskSpec(command);

@@ -220,6 +220,67 @@ test("agent loop carries tool_result into the next planner turn and final compos
   assert.ok(events.some((event) => event.eventType === "tool_call_completed" && event.payload?.success === true));
 });
 
+test("synthesis violations after action tools recover through final composer instead of hidden planner retries", async () => {
+  let composerCalls = 0;
+  const launchTool = makeNoopTool("launch_app", {
+    async execute(args = {}) {
+      return {
+        success: true,
+        observation: `Launched ${args.app}. Pricing page details include API access, hosted models, cloud execution, no desktop model download requirement, GPU handled by provider infrastructure, and paid usage after any included credits.`
+      };
+    }
+  });
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([launchTool]),
+    finalAnswerComposer: async ({ reason, draft_text, prior_drafts }) => {
+      composerCalls += 1;
+      assert.equal(reason, "synthesis_recovery_after_planner_final");
+      assert.match(draft_text, /Launched/);
+      assert.match(prior_drafts, /answer_not_synthesized/);
+      return "总结：可以直接调用云端模型 API，不需要把模型下载到桌面；运行推理所需 GPU 由服务商基础设施承担，但 API 通常按量计费，是否免费取决于账户赠送额度或具体套餐。";
+    }
+  });
+  const task = {
+    task_id: "task_synthesis_recovery_after_action",
+    user_command: "所以我直接能调用它的模型，不用下载到桌面？但是不是还是需要GPU来运行模型吗？这些都是免费的吗？",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "launch_and_act",
+      synthesis: { expected_output: "summary", user_goal: "answer cloud model pricing and GPU requirements" },
+      tool_policy: { web_search_fetch: { mode: "optional" } },
+      success_contract: {
+        tool_called: true,
+        required_tool_names: ["launch_app"],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0) {
+        return { type: "tool_call", tool: "launch_app", args: { app: "https://developers.openai.com/api/docs/pricing" } };
+      }
+      return { type: "final", text: "I opened the pricing page." };
+    },
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(composerCalls, 1);
+  assert.match(result.final_text, /总结/);
+  assert.ok(events.some((event) =>
+    event.eventType === "synthesis_retry"
+    && event.payload?.recovery === "final_composer"
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "final_composer_started"
+    && event.payload?.reason === "synthesis_recovery_after_planner_final"
+  ));
+});
+
 test("preauthorized action-only handoff sends once without another planner turn", async () => {
   const sent = [];
   const webTool = makeNoopTool("web_search_fetch", {

@@ -67,6 +67,7 @@ import {
   finalFallbackText,
   formatLaunchDisambiguationFallback,
   hasActionAttempts,
+  hasToolTranscript,
   hasUnresolvedActionFailure,
   localFallbackFinal,
   needsFinalComposer
@@ -1833,6 +1834,7 @@ async function _runToolAgentLoopCore({
   let proseTrapAttemptsUsed = 0;
   const PROSE_TRAP_MAX_ATTEMPTS = 1;
   let synthesisRetriesUsed = 0;
+  let synthesisComposerRecoveryUsed = false;
   const MAX_SYNTHESIS_RETRIES = 2;
 
   // P4-EB wire-up: aggregate error budget for this task. Catches the
@@ -2284,6 +2286,50 @@ async function _runToolAgentLoopCore({
       // deterministic spec applies.
       const synthesisValidationSpec = task.task_spec ?? task.task_spec_initial;
       const synthesisViolations = validateAnswerSynthesis(synthesisValidationSpec, transcript, candidateFinal);
+      if (synthesisViolations.length > 0
+          && !synthesisComposerRecoveryUsed
+          && hasToolTranscript(transcript)
+          && !needsFinalComposer(task, transcript)
+          && !hasUnresolvedActionFailure(transcript)) {
+        synthesisComposerRecoveryUsed = true;
+        transcript.push({
+          type: "synthesis_retry",
+          assistantDraft: candidateFinal,
+          violations: synthesisViolations,
+          recovery: "compose_final_after_synthesis_violation"
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed + 1,
+          reason: synthesisViolations[0]?.kind,
+          recovery: "final_composer"
+        });
+        appendAuditLog(runtime, task, "tool_loop.synthesis_recovery", {
+          iteration,
+          reason: synthesisViolations[0]?.kind ?? "synthesis_violation",
+          recovery: "final_composer"
+        });
+        const recoveredFinalText = await composeFinalAnswer({
+          task,
+          transcript,
+          runtime,
+          reason: "synthesis_recovery_after_planner_final",
+          signal,
+          draftText: candidateFinal
+        });
+        const recoveredSynthesisViolations = validateAnswerSynthesis(
+          synthesisValidationSpec,
+          transcript,
+          recoveredFinalText
+        );
+        return {
+          status: recoveredSynthesisViolations.length > 0 ? "partial_success" : "success",
+          final_text: recoveredFinalText,
+          transcript,
+          synthesis_violations: recoveredSynthesisViolations.length > 0
+            ? recoveredSynthesisViolations
+            : undefined
+        };
+      }
       if (synthesisViolations.length > 0
           && synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
         synthesisRetriesUsed += 1;
