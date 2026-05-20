@@ -16,12 +16,39 @@ const emailTool = {
   }
 };
 
+const connectorWorkflowTool = {
+  id: "connector_workflow_run",
+  parameters: {
+    type: "object",
+    required: ["workflowId"],
+    properties: {
+      workflowId: { type: "string" },
+      input: { type: "object" },
+      state: { type: "object" }
+    }
+  }
+};
+
 function researchEmailTask() {
   return {
     task_spec: {
       synthesis: { expected_output: "summary" },
       research_quality: { profile: "multi_source_research" },
       success_contract: { required_policy_groups: ["external_web_read", "email_send"] }
+    }
+  };
+}
+
+function artifactEmailTask() {
+  return {
+    task_spec: {
+      artifact: { required: true, kind: "docx" },
+      synthesis: { expected_output: "execution" },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        required_policy_groups: ["email_send"]
+      }
     }
   };
 }
@@ -156,6 +183,71 @@ test("blocks research email send until non-action evidence contract is satisfied
   assert.equal(result.ok, false);
   assert.match(result.error, /email_send_blocked_until_non_action_contract_satisfied/);
   assert.match(result.error, /external_web_read_insufficient_sources/);
+});
+
+test("blocks connector email workflow until required document artifact is generated", () => {
+  const result = validateToolCall(connectorWorkflowTool, {
+    workflowId: "google.gmail.draft_confirm_send",
+    input: {
+      to: ["reviewer@example.com"],
+      subject: "Report",
+      body: "请查收附件。"
+    }
+  }, {
+    task: artifactEmailTask(),
+    transcript: []
+  });
+  assert.equal(result.ok, false);
+  assert.match(result.error, /email_send_blocked_until_non_action_contract_satisfied/);
+  assert.match(result.error, /artifact_required_not_created/);
+});
+
+test("blocks generated document email when attachmentPaths omits the artifact path", () => {
+  const transcriptWithArtifact = [{
+    type: "tool_result",
+    tool: "generate_document",
+    success: true,
+    observation: "Generated document.",
+    artifact_paths: ["E:\\out\\report.docx"],
+    metadata: { path: "E:\\out\\report.docx", kind: "docx" }
+  }];
+  const result = validateToolCall(connectorWorkflowTool, {
+    workflowId: "google.gmail.draft_confirm_send",
+    input: {
+      to: ["reviewer@example.com"],
+      subject: "Report",
+      body: "请查收附件。"
+    }
+  }, {
+    task: artifactEmailTask(),
+    transcript: transcriptWithArtifact
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "email_send_requires_generated_artifact_attachment_paths");
+});
+
+test("accepts connector email workflow when it attaches the generated artifact", () => {
+  const transcriptWithArtifact = [{
+    type: "tool_result",
+    tool: "generate_document",
+    success: true,
+    observation: "Generated document.",
+    artifact_paths: ["E:\\out\\report.docx"],
+    metadata: { path: "E:\\out\\report.docx", kind: "docx" }
+  }];
+  const result = validateToolCall(connectorWorkflowTool, {
+    workflowId: "google.gmail.draft_confirm_send",
+    input: {
+      to: ["reviewer@example.com"],
+      subject: "Report",
+      body: "请查收附件。",
+      attachmentPaths: ["E:\\out\\report.docx"]
+    }
+  }, {
+    task: artifactEmailTask(),
+    transcript: transcriptWithArtifact
+  });
+  assert.equal(result.ok, true);
 });
 
 test("rejects a single raw web observation used verbatim as the email body", () => {

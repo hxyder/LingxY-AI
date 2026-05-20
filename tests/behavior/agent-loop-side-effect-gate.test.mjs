@@ -60,6 +60,34 @@ function makeWebSearchTool({ calls }) {
   };
 }
 
+function makeGenerateDocumentTool({ calls }) {
+  return {
+    id: "generate_document",
+    name: "Generate Document",
+    description: "Behavior-test fixture for artifact prerequisite flows.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["kind", "outline"],
+      properties: {
+        kind: { type: "string" },
+        outline: { type: "object" }
+      }
+    },
+    async execute(args) {
+      const artifactPath = "E:\\out\\artifact-email-report.docx";
+      calls.push(args);
+      return {
+        success: true,
+        observation: "generated document",
+        metadata: { path: artifactPath, kind: args.kind },
+        artifact_paths: [artifactPath]
+      };
+    }
+  };
+}
+
 function makeTask(overrides = {}) {
   return {
     task_id: "task_agent_loop_side_effect_gate",
@@ -87,12 +115,14 @@ function makeTask(overrides = {}) {
 function makeRuntime(overrides = {}) {
   const calls = [];
   const webCalls = [];
+  const documentCalls = [];
   const events = [];
   const auditLog = [];
   const runtime = {
     actionToolRegistry: createActionToolRegistry([
       makeEmailTool({ calls }),
-      makeWebSearchTool({ calls: webCalls })
+      makeWebSearchTool({ calls: webCalls }),
+      makeGenerateDocumentTool({ calls: documentCalls })
     ]),
     toolContext: {},
     toolOutputDir: null,
@@ -118,7 +148,7 @@ function makeRuntime(overrides = {}) {
     },
     ...overrides
   };
-  return { runtime, calls, webCalls, events, auditLog };
+  return { runtime, calls, webCalls, documentCalls, events, auditLog };
 }
 
 test("side-effect gate applies contract slots before tool schema validation", async () => {
@@ -283,6 +313,93 @@ test("email validation guardrail injects recoverable evidence guidance before re
     event.eventType === "contract_guidance"
     && event.payload?.source === "tool_validation"
     && event.payload?.required_policy_groups?.includes("external_web_read")
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "tool_call_denied"
+    && event.payload?.reason === "tool_validation_failed"
+  ));
+});
+
+test("email validation guardrail injects artifact generation guidance before retrying send", async () => {
+  const { runtime, calls, documentCalls, events } = makeRuntime();
+  const artifactPath = "E:\\out\\artifact-email-report.docx";
+  const task = makeTask({
+    task_id: "task_agent_loop_email_artifact_recovery_guidance",
+    user_command: "整理成一份文档，然后发给 reviewer@example.com",
+    task_spec: {
+      goal: "generate_document",
+      artifact: { required: true, kind: "docx" },
+      synthesis: { expected_output: "execution", user_goal: "send generated document" },
+      tool_policy: {
+        policy_groups: {
+          email_send: { mode: "required" },
+          artifact_generation: { mode: "required" }
+        }
+      },
+      success_contract: {
+        artifact_created: true,
+        required_policy_groups: ["email_send"],
+        required_tool_names: []
+      },
+      execution_constraints: {
+        error_budget: { max_tool_failures: 5 }
+      }
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration, transcript }) => {
+      if (iteration === 0) {
+        return {
+          type: "tool_call",
+          tool: "account_send_email",
+          args: {
+            to: ["reviewer@example.com"],
+            body: "请查收附件。"
+          }
+        };
+      }
+      if (iteration === 1) {
+        assert.ok(transcript.some((entry) =>
+          entry.type === "contract_guidance"
+          && entry.source === "tool_validation"
+          && entry.groups?.includes("artifact_generation")
+        ));
+        return {
+          type: "tool_call",
+          tool: "generate_document",
+          args: {
+            kind: "docx",
+            outline: {
+              title: "Report",
+              sections: [{ heading: "Summary", bullets: ["Prepared report content."] }]
+            }
+          }
+        };
+      }
+      return {
+        type: "tool_call",
+        tool: "account_send_email",
+        args: {
+          to: ["reviewer@example.com"],
+          body: "请查收附件。",
+          attachmentPaths: [artifactPath]
+        }
+      };
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(documentCalls.length, 1);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].attachmentPaths, [artifactPath]);
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_guidance"
+    && event.payload?.source === "tool_validation"
+    && event.payload?.required_policy_groups?.includes("artifact_generation")
   ));
   assert.ok(events.some((event) =>
     event.eventType === "tool_call_denied"

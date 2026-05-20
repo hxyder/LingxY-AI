@@ -30,7 +30,7 @@
 
 import { describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { runCodeCliChat } from "./code-cli-bridge.mjs";
-import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
+import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody, detectProviderFamily } from "../../../shared/provider-catalog.mjs";
 
 function isAborted(signal) {
   return Boolean(signal?.aborted);
@@ -420,6 +420,25 @@ function buildOpenAITools(tools) {
   }));
 }
 
+function applyOpenAICompatProviderAdjustments(body = {}, resolved = {}) {
+  const providerFamily = detectProviderFamily(resolved);
+  const forcedToolChoice = body?.tool_choice
+    && body.tool_choice !== "auto"
+    && body.tool_choice !== "none";
+  if (providerFamily === "deepseek"
+      && forcedToolChoice
+      && body?.thinking?.type === "enabled") {
+    // DeepSeek V4 thinking mode supports tool use, but the API rejects
+    // forced tool_choice with the compatibility alias error
+    // "deepseek-reasoner does not support this tool_choice". For structured
+    // router/tool-selection calls, determinism is more important than
+    // reasoning traces, so only this request is downgraded to non-thinking.
+    body.thinking = { type: "disabled" };
+    return ["deepseek_forced_tool_choice_thinking_disabled"];
+  }
+  return [];
+}
+
 function convertMessagesForOpenAI(messages) {
   const converted = [];
   for (const msg of messages) {
@@ -554,6 +573,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
   }
 
   applyReasoningSelectionToBody(body, resolved, resolved.model, resolved.reasoningEffort);
+  const providerRequestAdjustments = applyOpenAICompatProviderAdjustments(body, resolved);
 
   const buildRequestInit = () => ({
     method: "POST",
@@ -575,7 +595,10 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
     } catch {
       throw new Error(`OpenAI-compat returned non-JSON response: ${bodyText.slice(0, 200)}`);
     }
-    return parseOpenAIResponse(data);
+    return {
+      ...parseOpenAIResponse(data),
+      provider_request_adjustments: providerRequestAdjustments
+    };
   }
 
   // Streaming path — parse OpenAI SSE
@@ -677,6 +700,7 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
     reasoning_content: fullReasoning || null,
     tool_calls: toolCalls,
     usage,
+    provider_request_adjustments: providerRequestAdjustments,
     ...terminationMetadata({ finishReason })
   };
 }

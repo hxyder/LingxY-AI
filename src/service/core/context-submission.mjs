@@ -681,7 +681,8 @@ function attachProviderFieldsToEvent(descriptor, payload) {
     provider_kind: descriptor.provider_kind ?? null,
     provider_name: descriptor.provider_name ?? null,
     model: descriptor.model ?? null,
-    transport: descriptor.transport ?? null
+    transport: descriptor.transport ?? null,
+    reasoning_effort: descriptor.reasoning_effort ?? null
   };
 }
 

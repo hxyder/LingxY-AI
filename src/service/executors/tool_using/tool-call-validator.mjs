@@ -66,6 +66,8 @@ const EMAIL_SEND_TOOL_IDS = new Set([
   "google.gmail.send_email",
   "microsoft.outlook.send_email"
 ]);
+const CONNECTOR_WORKFLOW_RUN_TOOL_ID = "connector_workflow_run";
+const EMAIL_WORKFLOW_PATTERN = /(?:gmail|outlook|email|mail).*(?:send|draft)|draft_confirm_send|email\.draft/i;
 
 const NON_USER_CONTENT_TOOL_IDS = new Set([
   "account_list_connected_accounts",
@@ -192,7 +194,90 @@ function hasEmailEnvelopeHeadersInBody(body = "") {
     .some((line) => EMAIL_BODY_ENVELOPE_HEADER_RE.test(line));
 }
 
+function emailArgsForValidation(toolId = "", args = {}) {
+  if (EMAIL_SEND_TOOL_IDS.has(toolId)) return args;
+  if (toolId !== CONNECTOR_WORKFLOW_RUN_TOOL_ID) return null;
+  const workflowId = String(args?.workflowId ?? args?.workflow_id ?? args?.id ?? "");
+  if (!EMAIL_WORKFLOW_PATTERN.test(workflowId)) return null;
+  return args?.input && typeof args.input === "object" ? args.input : {};
+}
+
+function taskSpecRequiresArtifactCreated(spec = {}) {
+  return spec?.success_contract?.artifact_created === true
+    || spec?.artifact?.required === true
+    || spec?.contract?.output_contract?.artifact_required === true;
+}
+
+function taskRequiresArtifactEmailAttachment(task = null) {
+  const specs = [task?.task_spec, task?.task_spec_initial].filter(Boolean);
+  return specs.some((spec) =>
+    taskSpecRequiresArtifactCreated(spec)
+    && Array.isArray(spec?.success_contract?.required_policy_groups)
+    && spec.success_contract.required_policy_groups.includes("email_send")
+  );
+}
+
+function artifactPathsFromTranscript(transcript = []) {
+  const paths = [];
+  for (const entry of Array.isArray(transcript) ? transcript : []) {
+    for (const artifactPath of entry?.artifact_paths ?? []) {
+      if (typeof artifactPath === "string" && artifactPath.trim()) paths.push(artifactPath.trim());
+    }
+    const metadataPath = entry?.metadata?.path ?? entry?.result?.metadata?.path;
+    if (typeof metadataPath === "string" && metadataPath.trim()) paths.push(metadataPath.trim());
+  }
+  return [...new Set(paths)];
+}
+
+function normalizeAttachmentPaths(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(/[,;\r\n]+/u).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function normalizeComparablePath(value = "") {
+  return path.normalize(String(value ?? "").trim()).toLowerCase();
+}
+
+function validateEmailArtifactAttachmentArgs(args = {}, ctx = {}) {
+  if (!taskRequiresArtifactEmailAttachment(ctx.task)) return { ok: true };
+  const gate = validateSuccessContract(
+    selectSuccessContractValidationSpec(ctx.task),
+    ctx.transcript
+  );
+  const artifactViolations = (gate.violations ?? []).filter((violation) =>
+    String(violation?.kind ?? "").startsWith("artifact_required_")
+  );
+  if (artifactViolations.length > 0) {
+    return {
+      ok: false,
+      error: `email_send_blocked_until_non_action_contract_satisfied:${artifactViolations.map((v) => v.kind).join(",")}`
+    };
+  }
+
+  const generatedArtifactPaths = artifactPathsFromTranscript(ctx.transcript);
+  const attachmentPaths = normalizeAttachmentPaths(args.attachmentPaths);
+  if (attachmentPaths.length === 0) {
+    return { ok: false, error: "email_send_requires_generated_artifact_attachment_paths" };
+  }
+  const generatedSet = new Set(generatedArtifactPaths.map(normalizeComparablePath));
+  const includesGeneratedArtifact = attachmentPaths
+    .map(normalizeComparablePath)
+    .some((attachmentPath) => generatedSet.has(attachmentPath));
+  if (generatedSet.size > 0 && !includesGeneratedArtifact) {
+    return { ok: false, error: "email_send_attachment_paths_must_include_generated_artifact" };
+  }
+  return { ok: true };
+}
+
 function validateEmailSendContentArgs(args = {}, ctx = {}) {
+  const attachmentResult = validateEmailArtifactAttachmentArgs(args, ctx);
+  if (!attachmentResult.ok) return attachmentResult;
+
   if (!taskRequiresSynthesizedSideEffectBody(ctx.task)) return { ok: true };
   const body = typeof args.body === "string" ? args.body.trim()
     : typeof args.text === "string" ? args.text.trim()
@@ -381,8 +466,9 @@ export function validateToolCall(tool, args, ctx = {}) {
     };
   }
 
-  if (EMAIL_SEND_TOOL_IDS.has(tool.id)) {
-    const emailResult = validateEmailSendContentArgs(args, ctx);
+  const emailArgs = emailArgsForValidation(tool.id, args);
+  if (emailArgs) {
+    const emailResult = validateEmailSendContentArgs(emailArgs, ctx);
     if (!emailResult.ok) return emailResult;
   }
 

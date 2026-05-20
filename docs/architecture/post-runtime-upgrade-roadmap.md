@@ -1540,6 +1540,41 @@ Verification:
 - `node --test tests/behavior/agent-loop-sequencing.test.mjs`
 - `node scripts/verify-tool-surface-heuristic-governance.mjs`
 
+### OQ-005: Compound Artifact Side-Effect Planning
+
+Status: active as of 2026-05-20.
+
+Trigger:
+
+- A user asked to turn prior context into a document and send it by email.
+- The runtime planned a connector email workflow directly, put the document
+  content into the email body, and approved/sent without any generated artifact
+  or `attachmentPaths`.
+
+Framework rule:
+
+- Compound tasks must preserve each typed goal. A connector/email axis cannot
+  collapse an artifact-generation goal into prose.
+- Irreversible side effects such as email send, upload, or share must wait
+  until non-action prerequisites are satisfied.
+- If an artifact is a prerequisite for the side effect, the side-effect tool or
+  workflow must receive the generated artifact path through its typed attachment
+  slot, not through body text that merely says "see attachment".
+
+Scope:
+
+- Generic "make/organize/export as document/report then send" language compiles
+  to artifact-required TaskSpec plus the relevant side-effect policy group.
+- Email workflow validation blocks approval/send until the generated artifact
+  exists and is included in `attachmentPaths`.
+- This rule is language-neutral and task-id-neutral; it is not a patch for one
+  prompt, mailbox, or provider.
+
+Verification:
+
+- `node --test tests/behavior/task-spec-side-effect-gate.test.mjs`
+- `node --test tests/behavior/tool-call-validator-side-effect.test.mjs`
+
 ## Recommended PR Order
 
 1. PX-001: tracked roadmap/status hygiene.
@@ -1569,6 +1604,7 @@ Verification:
 25. OQ-002: span taxonomy and optional OTEL export.
 26. OQ-003: user-visible planner boundary and current-events quality gate.
 27. OQ-004: typed artifact contract tool surface.
+28. OQ-005: compound artifact side-effect planning.
 
 This order intentionally completes desktop state and observability before true
 sub-agents and multi-model collaboration. Sub-agents multiply failures if window

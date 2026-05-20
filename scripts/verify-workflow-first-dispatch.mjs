@@ -130,7 +130,11 @@ function makeTask(command) {
     !connectorWorkflowCalls.some((c) => c.workflowId === "google.gmail.draft_confirm_send"),
     "no-LLM planner must NOT dispatch workflow when subject/body are missing"
   );
-  assert.equal(result.status, "success", "loop should finish via fallback path");
+  assert.equal(result.status, "partial_success", "loop must not claim success when the email side effect stayed unsatisfied");
+  assert.ok(
+    (result.contract_violations ?? []).some((violation) => violation.kind === "email_send_required_not_called"),
+    "fallback path should surface the unsatisfied email_send contract"
+  );
 }
 
 // 4. The LLM planner receives the workflow catalog as part of its prompt so it

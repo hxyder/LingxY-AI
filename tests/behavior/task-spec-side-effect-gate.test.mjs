@@ -81,6 +81,34 @@ test("Chinese recipient-first email command infers a real email_send contract", 
   assert.equal(spec.success_contract.tool_called, true);
 });
 
+test("compound document plus email request keeps artifact generation as a prerequisite", () => {
+  const spec = createTaskSpec("把上面的内容整理成一份文档，然后发给 reviewer@example.com", {}, {});
+  assert.equal(spec.goal, "generate_document");
+  assert.equal(spec.artifact.required, true);
+  assert.equal(spec.artifact.kind, "docx");
+  assert.equal(spec.success_contract.artifact_created, true);
+  assert.ok(spec.success_contract.required_policy_groups.includes("email_send"),
+    `email_send should be required, got ${JSON.stringify(spec.success_contract.required_policy_groups)}`);
+  assert.ok(spec.required_steps.includes("generate_artifact"));
+  assert.ok(spec.required_steps.includes("verify_file_exists"));
+  assert.equal(spec.constraints.can_split, false);
+});
+
+test("generic report plus email request defaults to a document artifact without needing an extension", () => {
+  const spec = createTaskSpec("整理成报告发到 analyst@example.com", {}, {});
+  assert.equal(spec.goal, "generate_document");
+  assert.equal(spec.artifact.required, true);
+  assert.equal(spec.artifact.kind, "docx");
+  assert.ok(spec.success_contract.required_policy_groups.includes("email_send"));
+});
+
+test("plain email requests do not gain a phantom artifact obligation", () => {
+  const spec = createTaskSpec("发邮件给 reviewer@example.com 说你好", {}, {});
+  assert.equal(spec.artifact.required, false);
+  assert.equal(spec.artifact.kind, null);
+  assert.ok(spec.success_contract.required_policy_groups.includes("email_send"));
+});
+
 test("SR-claimed calendar_create is dropped without attendee/time evidence", () => {
   const spec = specWithSrDecision("帮我看下市场动态", {
     required_policy_groups: ["external_web_read", "calendar_create"],

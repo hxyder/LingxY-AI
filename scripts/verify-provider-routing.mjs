@@ -100,7 +100,8 @@ await writeConfig({
     provider_kind: "openai",
     provider_name: "DeepSeek",
     model: "deepseek-v4-flash",
-    transport: "https"
+    transport: "https",
+    reasoning_effort: null
   });
 
   // code_cli fallback must be null — user chose an API provider.
@@ -198,7 +199,8 @@ await writeConfig({
     provider_kind: "code_cli",
     provider_name: "Kimi CLI",
     model: "kimi-k2.6",
-    transport: "subprocess"
+    transport: "subprocess",
+    reasoning_effort: null
   });
 
   // code_cli path must produce a runtime object with the user's command.

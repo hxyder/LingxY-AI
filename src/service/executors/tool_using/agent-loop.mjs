@@ -1486,6 +1486,14 @@ function nonActionPolicyGroupsFromValidationError(error = "", task = {}) {
       groups.push(group);
     }
   }
+  if (kinds.some((kind) => kind.startsWith("artifact_required_"))) {
+    const spec = selectSuccessContractValidationSpec(task);
+    if (spec?.success_contract?.artifact_created === true
+        || spec?.artifact?.required === true
+        || spec?.contract?.output_contract?.artifact_required === true) {
+      groups.push("artifact_generation");
+    }
+  }
   return [...new Set(groups)];
 }
 

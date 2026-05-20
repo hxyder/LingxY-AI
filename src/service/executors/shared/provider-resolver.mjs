@@ -485,7 +485,7 @@ export function resolveKimiRuntimeForTask(taskType, fallbackRuntime = null, opti
  * Build a descriptor for task events and UI display from a resolved provider
  * or a code_cli runtime. Returns null when neither is available.
  *
- * Shape: { provider_id, provider_kind, provider_name, model, transport }.
+ * Shape: { provider_id, provider_kind, provider_name, model, transport, reasoning_effort }.
  * - provider_id:   the user-defined custom provider id ("deepseek"), or the
  *                  kind fallback when no custom id exists.
  * - provider_kind: the adapter family ("anthropic" | "openai" | "ollama" | "code_cli").
@@ -500,7 +500,8 @@ export function describeResolvedProvider(resolved) {
     provider_kind: kind,
     provider_name: resolved.providerName || resolved.provider_name || null,
     model: resolved.model || null,
-    transport: isCodeCli ? "subprocess" : "https"
+    transport: isCodeCli ? "subprocess" : "https",
+    reasoning_effort: resolved.reasoningEffort || null
   };
   if (resolved.modelRoleRoutingEnabled === true || resolved.modelRole) {
     descriptor.model_role = resolved.modelRole ?? null;
@@ -524,7 +525,8 @@ export function describeCodeCliRuntime(runtime, { providerName = null, configId 
     provider_kind: "code_cli",
     provider_name: runtime.providerName || providerName || null,
     model: runtime.model || null,
-    transport: "subprocess"
+    transport: "subprocess",
+    reasoning_effort: runtime.reasoningEffort || null
   };
 }
 

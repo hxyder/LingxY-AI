@@ -10,9 +10,11 @@ const FILE_UPLOAD_WORKFLOW_PATTERN = /(?:drive|onedrive|file).*(?:upload|save)|u
 
 const EMAIL_SEND_INTENT_PATTERNS = [
   /(?:给|向|to)\s*[^\s，。；;,]{0,80}@[\w.-]+.{0,40}(?:发|发送|寄|send).{0,12}(?:邮件|邮箱|email|mail|信)?/i,
+  /(?:发给|发到|发送给|发送到|寄给|寄到|转发给|转发到).{0,80}@[\w.-]+/i,
+  /(?:发|发送|寄|转发).{0,20}(?:邮件|邮箱|email|mail|信).{0,40}(?:给|到|to)\s*[^\s，。；;,]{0,80}@[\w.-]+/i,
   /(?:发送|发出|发一封|发封|寄|转发|send|email|mail|forward).{0,40}(?:邮件|邮箱|email|mail|@)/i,
   /(?:邮件|邮箱|email|mail).{0,40}(?:发送|发出|寄出|send|to\b)/i,
-  /(?:发送给|发给|寄给|转发给|send\s+(?:it|this|them|.+?)\s+to|forward\s+(?:it|this|them|.+?)\s+to).{0,80}@/i
+  /(?:发送给|发送到|发给|发到|寄给|寄到|转发给|转发到|send\s+(?:it|this|them|.+?)\s+to|forward\s+(?:it|this|them|.+?)\s+to).{0,80}@/i
 ];
 
 const CALENDAR_CREATE_INTENT_PATTERNS = [

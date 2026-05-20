@@ -26,6 +26,8 @@ import {
   applyReasoningSelectionToBody,
   sanitizeTaskRouteForProvider
 } from "../src/shared/provider-catalog.mjs";
+import { createProviderAdapter } from "../src/service/executors/agentic/provider-adapter.mjs";
+import { describeResolvedProvider } from "../src/service/executors/shared/provider-resolver.mjs";
 
 const provider = {
   id: "deepseek", name: "DeepSeek", kind: "openai",
@@ -121,6 +123,75 @@ assert.equal(catalogDefaultModelForProvider(provider, "chat"), "deepseek-v4-flas
   assert.deepEqual(body4, { temperature: 0.3, thinking: { type: "disabled" } });
   const body4b = applyReasoningSelectionToBody({ temperature: 0.3 }, provider, "deepseek-chat", "");
   assert.deepEqual(body4b, { temperature: 0.3 });
+}
+
+// --- 7. non-secret telemetry carries the user's thinking selection ---
+{
+  const descriptor = describeResolvedProvider({
+    kind: "openai",
+    configId: "openai.deepseek.test",
+    providerName: "deepseek",
+    model: "deepseek-v4-flash",
+    reasoningEffort: "thinking:enabled"
+  });
+  assert.equal(descriptor.reasoning_effort, "thinking:enabled",
+    "provider_resolved / llm_usage descriptors must expose the active thinking selection");
+}
+
+// --- 8. forced tool_choice downgrades only that DeepSeek request -----
+{
+  let capturedBody = null;
+  const adapter = createProviderAdapter({
+    kind: "openai",
+    configId: "openai.deepseek.test",
+    providerName: "deepseek",
+    apiKey: "test",
+    baseUrl: "https://api.deepseek.com/v1",
+    model: "deepseek-v4-flash",
+    reasoningEffort: "thinking:enabled"
+  });
+  const result = await adapter.generate({
+    messages: [{ role: "user", content: "Call emit_marker." }],
+    tools: [{
+      name: "emit_marker",
+      description: "test",
+      input_schema: {
+        type: "object",
+        properties: { marker: { type: "string" } },
+        required: ["marker"]
+      }
+    }],
+    tool_choice: { type: "tool", name: "emit_marker" },
+    fetchImpl: async (_url, init) => {
+      capturedBody = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            choices: [{
+              finish_reason: "tool_calls",
+              message: {
+                content: "",
+                tool_calls: [{
+                  id: "call_1",
+                  type: "function",
+                  function: {
+                    name: "emit_marker",
+                    arguments: "{\"marker\":\"ok\"}"
+                  }
+                }]
+              }
+            }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }
+          });
+        }
+      };
+    }
+  });
+  assert.deepEqual(capturedBody.thinking, { type: "disabled" },
+    "DeepSeek forced tool_choice calls must disable thinking for this request");
+  assert.deepEqual(capturedBody.tool_choice, { type: "function", function: { name: "emit_marker" } });
+  assert.deepEqual(result.provider_request_adjustments, ["deepseek_forced_tool_choice_thinking_disabled"]);
 }
 
 console.log("ok verify-deepseek-v4");

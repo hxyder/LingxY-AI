@@ -180,10 +180,10 @@ const GOAL_RULES = [
   {
     goal: "generate_document",
     patterns: [
-      /(生成|创建|制作|写|create|generate|make|write).{0,30}(pptx?|powerpoint|幻灯片|演示文稿|演示文档|slides?)/i,
-      /(生成|创建|制作|写|create|generate|make|write).{0,30}(docx?|word\s*文档|word\s*文件|\bword\b|文档)/i,
-      /(生成|创建|制作|写|create|generate|make|write).{0,30}(xlsx?|excel|电子表格|表格)/i,
-      /(生成|创建|制作|写|create|generate|make|write).{0,30}(pdf|报告|report)/i
+      /(生成|创建|制作|写|做成|整理成|输出成|保存成|导出成|转成|转换成|create|generate|make|write|turn\s+.*\s+into|convert).{0,30}(pptx?|powerpoint|幻灯片|演示文稿|演示文档|slides?)/i,
+      /(生成|创建|制作|写|做成|整理成|输出成|保存成|导出成|转成|转换成|create|generate|make|write|turn\s+.*\s+into|convert).{0,30}(docx?|word\s*文档|word\s*文件|\bword\b|文档|document)/i,
+      /(生成|创建|制作|写|做成|整理成|输出成|保存成|导出成|转成|转换成|create|generate|make|write|turn\s+.*\s+into|convert).{0,30}(xlsx?|excel|电子表格|表格)/i,
+      /(生成|创建|制作|写|做成|整理成|输出成|保存成|导出成|转成|转换成|create|generate|make|write|turn\s+.*\s+into|convert).{0,30}(pdf|报告|report)/i
     ]
   },
   // analyze + report (has content to analyze, output is a file)
@@ -276,14 +276,19 @@ export function classifyGoal(text, signals = null) {
   if (isLaunchTaskText(raw)) {
     return "launch_and_act";
   }
-  if (isConnectorDomainRequest(raw)) {
-    return "search_and_answer";
-  }
   for (const rule of GOAL_RULES) {
     if (rule.goal === "schedule_or_notify") continue;
     if (rule.goal === "open_or_reveal_file") continue;
+    if (rule.goal === "search_and_answer") continue;
     if (!goalRuleMatches(rule, raw, signals)) continue;
     return rule.goal;
+  }
+  if (isConnectorDomainRequest(raw)) {
+    return "search_and_answer";
+  }
+  const searchRule = GOAL_RULES.find((rule) => rule.goal === "search_and_answer");
+  if (goalRuleMatches(searchRule, raw, signals)) {
+    return "search_and_answer";
   }
 
   // P4-RQ G1: SR-driven goal escalation bypasses the legacy
@@ -418,6 +423,8 @@ const REGEX_CONFIRMED_SIDE_EFFECT_GROUPS = new Set([
 
 const SIDE_EFFECT_ACTION_INTENT_PATTERNS = Object.freeze({
   email_send: [
+    /(?:发给|发到|发送给|发送到|寄给|寄到|转发给|转发到).{0,80}@[\w.-]+/i,
+    /(?:发|发送|寄|转发).{0,20}(?:邮件|邮箱|email|mail|信).{0,40}(?:给|到|to)\s*[^\s，。；;,]{0,80}@[\w.-]+/i,
     /(?:发送|发出|发一封|发封|寄|转发|send|email|mail).{0,40}(?:邮件|邮箱|email|mail|过去|给|to\b|it|this|them)/i,
     /(?:邮件|邮箱|email|mail).{0,40}(?:发送|发出|寄出|补发|追加|转发|send|发过去)/i,
     /(?:发过去|发给(?:他|她|对方|他们|她们)|send\s+(?:it|this|them))/i
@@ -727,6 +734,8 @@ const ALL_EXPLICIT_FILE_ARTIFACT_FORMATS = new Set([
 ]);
 const EXPLICIT_FILE_ARTIFACT_REQUEST_RE =
   /(?:生成(?!的)|创建|制作|保存|下载|导出|写入|写成|做一个|整理成|转成|转换成).{0,48}(?:文件|文档|报告|表格|幻灯片|脚本|图片|照片|图像|壁纸|\.pptx|pptx|powerpoint|\bppt\b|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|纯文本|\.png|\.jpe?g|\.webp|\.gif|\.bmp|\.svg)|\b(?:create|generate|save|download|export|write|make|turn\s+.*\s+into|convert)\b.{0,56}\b(?:file|document|report|spreadsheet|slide|deck|script|image|photo|picture|wallpaper|\.pptx|pptx|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|plain\s+text|\.png|\.jpe?g|\.webp|\.gif|\.bmp|\.svg)\b/iu;
+const GENERIC_DOCUMENT_ARTIFACT_REQUEST_RE =
+  /(?:生成(?!的)|创建|制作|保存|导出|写入|写成|做一个|做成|整理成|输出成|保存成|导出成|转成|转换成).{0,48}(?:文档|报告)|\b(?:create|generate|save|export|write|make|turn\s+.*\s+into|convert)\b.{0,56}\b(?:document|report)\b/iu;
 const SCRIPT_EXECUTION_REQUEST_RE =
   /(?:执行|运行|跑|用\s*node(?:\.js)?\s*执行|execute|run).{0,96}(?:脚本|script|\.mjs|\.js|\.py|\.ps1)|(?:脚本|script|\.mjs|\.js|\.py|\.ps1).{0,96}(?:执行|运行|跑|execute|run)/iu;
 
@@ -741,12 +750,17 @@ function detectFormats(text) {
 
 function explicitFileArtifactKindFromRequest(text, suggestedFormats = []) {
   if (!EXPLICIT_FILE_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) return null;
-  return suggestedFormats.find((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format)) ?? null;
+  return suggestedFormats.find((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format))
+    ?? (GENERIC_DOCUMENT_ARTIFACT_REQUEST_RE.test(String(text ?? "")) ? "docx" : null);
 }
 
 function explicitFileArtifactKindsFromRequest(text, suggestedFormats = []) {
   if (!EXPLICIT_FILE_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) return [];
-  return suggestedFormats.filter((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format));
+  const kinds = suggestedFormats.filter((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format));
+  if (kinds.length === 0 && GENERIC_DOCUMENT_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) {
+    return ["docx"];
+  }
+  return kinds;
 }
 
 function artifactKindFromSemanticOutputKind(outputKind = "") {

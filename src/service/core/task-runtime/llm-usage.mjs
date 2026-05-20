@@ -104,6 +104,7 @@ export function buildLlmUsagePayload({
     provider_name: descriptor?.provider_name ?? descriptor?.name ?? null,
     model: descriptor?.model ?? provider?.model ?? null,
     transport: descriptor?.transport ?? provider?.transport ?? null,
+    reasoning_effort: descriptor?.reasoning_effort ?? provider?.reasoningEffort ?? null,
     model_role: descriptor?.model_role ?? provider?.modelRole ?? null,
     model_role_routing_enabled: descriptor?.model_role_routing_enabled ?? provider?.modelRoleRoutingEnabled ?? false,
     model_role_task_type: descriptor?.model_role_task_type ?? provider?.modelRoleTaskType ?? null,
