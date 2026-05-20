@@ -166,6 +166,37 @@ test("phase gate does not enter action-only handoff while non-action policy grou
   assert.match(guidance?.transcriptEntry?.instruction ?? "", /web_search_fetch|fetch_url_content/);
 });
 
+test("phase gate blocks action-only handoff while external web evidence is irrelevant", () => {
+  const stepGate = {
+    satisfied: false,
+    next_action: "continue",
+    violations: [
+      { kind: "email_send_required_not_called" },
+      { kind: "external_web_read_required_irrelevant_results" }
+    ]
+  };
+
+  const handoff = planContractActionHandoff({
+    stepGate,
+    transcript: [],
+    iteration: 1,
+    maxIterations: 6,
+    contractActionGuidanceCount: 0,
+    terminalContractActionGuidanceCount: 0
+  });
+  assert.equal(handoff, null);
+
+  const guidance = planRequiredPolicyGroupGuidance({
+    stepGate,
+    iteration: 1,
+    maxIterations: 6,
+    requiredPolicyGuidanceCount: 0
+  });
+  assert.deepEqual(guidance?.groups, ["external_web_read"]);
+  assert.match(guidance?.transcriptEntry?.instruction ?? "", /did not match the task topic/);
+  assert.match(guidance?.transcriptEntry?.instruction ?? "", /web_search_fetch|fetch_url_content/);
+});
+
 function makeFileReadRuntime() {
   const calls = [];
   const events = [];

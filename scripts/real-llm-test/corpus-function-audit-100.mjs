@@ -13,7 +13,7 @@ const fixture = (name) => path.join(__dirname, "fixtures", name);
 const OK = ["success"];
 const SOFT_OK = ["success", "partial_success"];
 const ANY_TERMINAL = ["success", "partial_success", "failed"];
-const NO_WEB = ["web_search_fetch", "fetch_url_content", "web_search"];
+const NO_WEB = ["web_search_fetch", "fetch_url_content", "web_search", "download_file"];
 const WEB_GROUP = "external_web_read";
 const FILE_READ_ONE_OF = ["read_file_text", "read_folder_text", "search_file_content"];
 

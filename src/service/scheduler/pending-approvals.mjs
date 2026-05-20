@@ -355,7 +355,9 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
         })
       }) ?? approval;
 
-      if (executionResult?.same_task_resume !== true) {
+      const sameTaskResume = executionResult?.same_task_resume === true
+        || executionResult?.resumed_same_task === true;
+      if (!sameTaskResume) {
         // UCA-181 follow-up: bridge the new task's outcome back to the
         // ORIGINATING task. Without this, a task that suspended on
         // `waiting_external_decision` stays at that sub_status forever

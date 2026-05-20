@@ -5,14 +5,14 @@ import { RECALL_MEMORY_TOOL, LIST_RECENT_TASKS_TOOL, GET_TASK_DETAIL_TOOL, LIST_
 // CAP-1 memory-tools runtime preflight. All four tools tested with
 // stubbed runtime store. No physical move.
 
-function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
+function makeRuntime({ tasks = [], artifacts = [], searchHits = [], eventsByTaskId = {} } = {}) {
   return {
     store: {
       listTasks: () => tasks,
       getTask: (id) => tasks.find(t => t.task_id === id) ?? null,
       getArtifactsForTask: (_taskId) => artifacts,
       getArtifactsForConversation: (_convId, _opts) => artifacts,
-      getTaskEvents: (_taskId) => [],
+      getTaskEvents: (taskId) => eventsByTaskId[taskId] ?? [],
     },
     platform: {
       embeddingStore: {
@@ -107,7 +107,39 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
   const runtime = makeRuntime({
     tasks: [
       { task_id: "detail-1", status: "success", user_command: "deep dive", created_at: new Date().toISOString(), intent: "research", artifacts: [{ path: "/out/notes.txt" }] }
-    ]
+    ],
+    eventsByTaskId: {
+      "detail-1": [
+        {
+          event_type: "tool_call_proposed",
+          ts: "2026-05-19T00:00:00.000Z",
+          payload: {
+            tool_id: "connector_workflow_run",
+            args: {
+              workflowId: "google.gmail.draft_confirm_send",
+              input: {
+                to: ["sophie@example.com"],
+                subject: "Charlotte plan",
+                body: "Festa Italiana needs tickets.\nJohn Legend needs tickets."
+              }
+            }
+          }
+        },
+        {
+          event_type: "tool_call_completed",
+          ts: "2026-05-19T00:00:01.000Z",
+          payload: {
+            tool_id: "google.gmail.send_email",
+            success: true,
+            observation: "sent"
+          }
+        },
+        {
+          event_type: "success",
+          payload: { text: "Gmail Draft Confirm Send completed.", workflow_id: "google.gmail.draft_confirm_send" }
+        }
+      ]
+    }
   });
   const result = await GET_TASK_DETAIL_TOOL.execute(
     { task_id: "detail-1" },
@@ -118,6 +150,14 @@ function makeRuntime({ tasks = [], artifacts = [], searchHits = [] } = {}) {
   assert(result.observation.includes("deep dive"), "detail result must include user command");
   assert(result.metadata?.artifact_paths?.includes("/out/notes.txt"),
     "detail result metadata must include artifact paths");
+  assert(result.observation.includes("side_effects:"), "detail result must surface prior side effects");
+  assert(result.observation.includes("status=sent"), "email side effect must be marked sent after send_email success");
+  assert(result.observation.includes("sophie@example.com"), "email side effect must include recipient");
+  assert(result.observation.includes("Festa Italiana needs tickets"), "email side effect must include the sent body for grounded follow-ups");
+  assert.equal(result.metadata?.side_effects?.[0]?.group, "email_send",
+    "detail metadata must carry structured side-effect group");
+  assert.equal(result.metadata?.side_effects?.[0]?.status, "sent",
+    "detail metadata must carry structured side-effect status");
 }
 
 // ── 7. get_task_detail: not found ──

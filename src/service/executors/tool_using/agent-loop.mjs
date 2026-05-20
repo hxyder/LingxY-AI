@@ -49,7 +49,8 @@ import {
   evaluateActionObligations,
   findWaitingActionApproval,
   findWaitingActionApprovalInTranscript,
-  formatWaitingActionFinal
+  formatWaitingActionFinal,
+  workflowMatchesActionGroup
 } from "../../core/policy/obligation-evaluator.mjs";
 import {
   renderSideEffectContractPrompt
@@ -149,7 +150,10 @@ import {
 } from "./side-effect-gate.mjs";
 import { planScheduledFireRegistryGuard } from "./scheduled-fire-gate.mjs";
 import { planSaturationHint } from "./saturation-gate.mjs";
-import { deriveScheduledEmailSubject } from "../../core/policy/scheduled-work-policy.mjs";
+import {
+  deriveScheduledEmailSubject,
+  normalizeEmailBodyPlainText
+} from "../../core/policy/scheduled-work-policy.mjs";
 import { shouldPromptForToolApproval } from "../../../shared/permission-mode-model.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
@@ -184,29 +188,53 @@ function clipLine(value = "", max = 360) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function buildDeterministicActionBody({ task, transcript = [] }) {
+function formatUtcTimestamp(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) return new Date().toISOString().slice(0, 16).replace("T", " ");
+  return date.toISOString().slice(0, 16).replace("T", " ");
+}
+
+function buildDeterministicActionBody({ task, transcript = [], subject = "" }) {
   const evidence = extractEvidence(transcript);
   const sources = Array.isArray(evidence.sources) ? evidence.sources.slice(0, 8) : [];
   if (sources.length === 0) return "";
   const cjk = commandLooksCjk(task?.user_command);
+  const fallbackTitle = cjk ? "任务结果简报" : "Task Digest";
+  const title = clipLine(subject || fallbackTitle, 120);
   const lines = [
+    title,
+    cjk ? `生成时间：${formatUtcTimestamp()} UTC` : `Generated: ${formatUtcTimestamp()} UTC`,
+    "",
+    cjk ? "【摘要】" : "Summary",
     cjk
-      ? "以下是 LingxY 根据本次已抓取证据整理的任务结果："
-      : "LingxY prepared the result below from the evidence gathered during this run:",
+      ? "- 以下内容基于本次任务已抓取并通过契约校验的来源整理。"
+      : "- The notes below are based on source evidence gathered and validated during this run.",
+    "",
+    cjk ? "【要点】" : "Key Points",
     ""
   ];
+  sources.forEach((source) => {
+    const titleText = clipLine(source.title ?? source.locator ?? "", 120);
+    const excerpt = clipLine(source.excerpt ?? "", 420);
+    if (excerpt) {
+      lines.push(`- ${excerpt}`);
+      return;
+    }
+    if (titleText) lines.push(`- ${titleText}`);
+  });
+  lines.push(
+    ""
+  );
+  lines.push(cjk ? "【来源】" : "Sources");
   sources.forEach((source, index) => {
     const title = clipLine(source.title ?? source.locator ?? `Source ${index + 1}`, 120);
-    const excerpt = clipLine(source.excerpt ?? "", 360);
     const locator = clipLine(source.locator ?? "", 240);
-    lines.push(`${index + 1}. ${title}`);
-    if (excerpt) lines.push(`   ${excerpt}`);
-    if (locator) lines.push(`   ${locator}`);
+    lines.push(`${index + 1}. ${title}${locator ? ` - ${locator}` : ""}`);
   });
   lines.push("");
   lines.push(cjk
-    ? "说明：这是基于工具返回的结构化来源整理的自动发送内容；未包含账号、连接器或调试日志。"
-    : "Note: this automatically sent content is based on structured tool evidence and excludes account, connector, and debug logs.");
+    ? "说明：此邮件正文已排除账号、连接器和调试日志；如来源不足或不相关，系统应停止发送并标记为部分完成。"
+    : "Note: this email body excludes account, connector, and debug logs; if sources are insufficient or irrelevant, the task should stop as partial success.");
   return lines.join("\n").slice(0, 8000);
 }
 
@@ -226,6 +254,19 @@ function hasUnsatisfiedNonActionRequiredPolicyGroups({ task, transcript = [] }) 
   return (gate.violations ?? []).some((violation) => !isActionOnlyContractViolation(violation));
 }
 
+function actionFallbackTextSources(task = {}) {
+  const metadata = task?.context_packet?.selection_metadata ?? {};
+  return [
+    task?.user_command,
+    task?.task_spec?.user_goal_text,
+    task?.task_spec_initial?.user_goal_text,
+    task?.context_packet?.text,
+    metadata.schedule_action_target,
+    metadata.schedule_description,
+    metadata.schedule_name
+  ].filter((value) => typeof value === "string" && value.trim());
+}
+
 function preauthorizedActionGroups(task = {}) {
   const auth = task?.context_packet?.selection_metadata?.side_effect_authorization;
   if (auth?.decision !== "preauthorized" || !Array.isArray(auth.groups)) return [];
@@ -238,6 +279,58 @@ const EMAIL_SEND_FALLBACK_TOOL_PREFERENCE = Object.freeze([
   "google.gmail.send_email",
   "microsoft.outlook.send_email"
 ]);
+const CONNECTOR_WORKFLOW_RUN_TOOL_ID = "connector_workflow_run";
+const EXPLICIT_WORKFLOW_ID_RE = /\b[a-z][a-z0-9_-]*(?:\.[a-z0-9_-]+){2,}\b/giu;
+
+function explicitWorkflowIdForActionGroup({ task = {}, group = "", runtime = null } = {}) {
+  const text = actionFallbackTextSources(task).join("\n");
+  if (!text.trim()) return null;
+  const candidates = [...new Set(
+    [...text.matchAll(EXPLICIT_WORKFLOW_ID_RE)]
+      .map((match) => String(match[0] ?? "").trim())
+      .filter(Boolean)
+  )];
+  if (candidates.length === 0) return null;
+  const catalog = runtime?.connectorCatalog ?? null;
+  for (const workflowId of candidates) {
+    if (!workflowMatchesActionGroup(group, {
+      tool: CONNECTOR_WORKFLOW_RUN_TOOL_ID,
+      args: { workflowId },
+      metadata: { workflow_id: workflowId }
+    })) {
+      continue;
+    }
+    if (catalog && typeof catalog.getWorkflow === "function" && !catalog.getWorkflow(workflowId)) {
+      continue;
+    }
+    return workflowId;
+  }
+  return null;
+}
+
+function looksLikeRawToolTranscriptBody(value = "") {
+  const text = String(value ?? "");
+  if (!text.trim()) return false;
+  const hasDivider = /\n\s*---\s*\n/u.test(text);
+  if (hasDivider
+      && /(?:^|\n)\s*(?:检索时间|搜索结果|来源|source)\s*[:：]/iu.test(text)
+      && /(?:https?:\/\/|[{[]\s*")/iu.test(text)) {
+    return true;
+  }
+  if (/(?:^|\n)\s*(?:来源|source)\s*[:：]\s*https?:\/\/[\s\S]{0,600}[{[]\s*"/iu.test(text)) return true;
+  if (/"(?:current_condition|nearest_area|hourly|weatherDesc|request)"\s*:/iu.test(text)) return true;
+  if (/\b(?:tool_call_completed|tool_call_proposed|metadata|stdout|stderr)\b/iu.test(text)) return true;
+  return false;
+}
+
+function chooseSideEffectBody({ bodyOverride = null, deterministicBody = "" } = {}) {
+  const override = typeof bodyOverride === "string"
+    ? normalizeEmailBodyPlainText(bodyOverride)
+    : "";
+  const deterministic = String(deterministicBody ?? "").trim();
+  if (override && !looksLikeRawToolTranscriptBody(override)) return override;
+  return deterministic || override;
+}
 
 const TOOL_USING_CACHEABLE_SYSTEM_PREFIX = [
   "LingxY stable tool-planner contract v1.",
@@ -257,7 +350,13 @@ const TOOL_USING_CACHEABLE_SYSTEM_PREFIX = [
 //     with a fully-specified slot contract in the scheduler. Calendar /
 //     file_upload can be wired later once their slot specs land.
 //   - Picks the highest-trust tool the planner is allowed to call.
-export function synthesiseDeterministicActionFallback({ task, transcript = [], allowed = [], bodyOverride = null }) {
+export function synthesiseDeterministicActionFallback({
+  task,
+  transcript = [],
+  allowed = [],
+  bodyOverride = null,
+  runtime = null
+}) {
   const auth = task?.context_packet?.selection_metadata?.side_effect_authorization;
   if (auth?.decision !== "preauthorized") return null;
   if (!Array.isArray(auth.groups) || !auth.groups.includes("email_send")) return null;
@@ -267,18 +366,39 @@ export function synthesiseDeterministicActionFallback({ task, transcript = [], a
   const recipients = contract?.groups?.email_send?.slots?.to?.values;
   if (!Array.isArray(recipients) || recipients.length === 0) return null;
   const allowedSet = new Set(allowed);
-  const tool = EMAIL_SEND_FALLBACK_TOOL_PREFERENCE.find((id) => allowedSet.has(id));
+  const workflowId = allowedSet.has(CONNECTOR_WORKFLOW_RUN_TOOL_ID)
+    ? explicitWorkflowIdForActionGroup({ task, group: "email_send", runtime })
+    : null;
+  const tool = workflowId
+    ? CONNECTOR_WORKFLOW_RUN_TOOL_ID
+    : EMAIL_SEND_FALLBACK_TOOL_PREFERENCE.find((id) => allowedSet.has(id));
   if (!tool) return null;
   const userCommand = String(task?.user_command ?? "").trim();
   const subject = deriveScheduledEmailSubject({
     task,
-    args: { subject: (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80) }
+    args: { subject: (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80) },
+    workflowId: workflowId ?? ""
   });
-  const overrideBody = typeof bodyOverride === "string" ? bodyOverride.trim() : "";
-  const evidenceBody = overrideBody || buildDeterministicActionBody({ task, transcript });
+  const deterministicBody = buildDeterministicActionBody({ task, transcript, subject });
+  const evidenceBody = chooseSideEffectBody({ bodyOverride, deterministicBody });
   if (task?.task_spec?.routing_degraded === true && !evidenceBody.trim()) return null;
   const body = evidenceBody
     || `LingxY 已完成调度任务（${userCommand.slice(0, 200)}）但未能整理出文本内容。`;
+  if (workflowId) {
+    return {
+      type: "tool_call",
+      tool,
+      args: {
+        workflowId,
+        input: {
+          to: recipients,
+          subject,
+          body
+        }
+      },
+      __deterministic_fallback: true
+    };
+  }
   return {
     type: "tool_call",
     tool,
@@ -316,15 +436,15 @@ async function synthesisePreauthorizedActionOnlyDecision({
     streamToUser: false,
     purpose: "side_effect_body"
   });
-  const deterministicBody = buildDeterministicActionBody({ task, transcript });
-  const bodyOverride = String(body ?? "").trim().length >= 80 || !deterministicBody
+  const bodyOverride = String(body ?? "").trim().length >= 80
     ? body
-    : deterministicBody;
+    : null;
   return synthesiseDeterministicActionFallback({
     task,
     transcript,
     allowed,
-    bodyOverride
+    bodyOverride,
+    runtime
   });
 }
 
@@ -703,6 +823,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Use known absolute paths directly.** If the resources / history already include absolute local file paths, pass them verbatim to attachmentPaths / localPath / file tool arguments. Do NOT call list_files / glob_files / find_recent_files just to rediscover a path you already have.
 - **Edit existing artifacts in place.** If the user asks to revise/refine a previously generated file, first locate the target path from attachments/resources/history (or get_latest_artifact if needed), then call edit_file with the SAME path. Do not create a fresh sibling file unless the user explicitly asks for a new copy.
 - **XLSX artifacts must be real spreadsheets.** For new Excel files, call generate_document only with a native tabular outline such as { headers, rows } or { sheets }. For formulas, formatting, reading, or changing an existing workbook, use run_script with pandas/openpyxl or edit_file on the existing absolute path. Never dump narrative prose, markdown download text, or sandbox links into a generic Content column.
+- **Downloaded artifacts use \`download_file\`.** When the user asks to download/save an image, PDF, or other file from the web, use \`web_search_fetch\` to find candidates when needed, then call \`download_file\` on a direct http(s) file URL. \`fetch_url_content\` is for readable page text, not binary artifacts.
 - **Future-time requests schedule, not execute now.** If the user says "in N minutes/hours" or "tomorrow at X" or "tonight at Y" about WHEN to run the action (as opposed to event start time being an argument), call create_scheduled_task with action.type="task" and params.userCommand carrying the full instruction. The scheduler will wake you up at trigger time to execute.
 - **Fan out enumerations.** When the user says "all / every / each <something>", start with an enumeration tool (list_files / glob_files / account_list_emails / account_list_files), read the result, then call the per-item action for each result in subsequent iterations. Do not guess counts or filenames.
 - **Connector workflows over raw tools.** Gmail/Outlook/Calendar/Drive operations should use connector_workflow_run when a matching workflow exists (see the workflow list above). The workflow shows the user a draft with 确认/拒绝 buttons; you do NOT need to ask in chat.
@@ -1136,7 +1257,8 @@ function appendAuditLog(runtime, task, subtype, payload) {
 export async function runToolAgentLoop(opts = {}) {
   const result = await _runToolAgentLoopCore(opts);
   const contracted = await finaliseWithArtifactContract(result, opts);
-  const sanitized = finaliseWithUserVisibleFinalText(contracted, opts);
+  const successContracted = finaliseWithSuccessContract(contracted, opts);
+  const sanitized = finaliseWithUserVisibleFinalText(successContracted, opts);
   const qualityChecked = finaliseWithAnswerQuality(sanitized, opts);
   const freshnessChecked = finaliseWithFreshnessDisclosure(qualityChecked, opts);
   return finaliseWithEvidence(freshnessChecked, opts);
@@ -1268,7 +1390,55 @@ function artifactContractViolations(task, transcript = []) {
     violation?.kind === "artifact_required_not_created"
     || violation?.kind === "artifact_required_kind_mismatch"
     || (requiresEditFile && /^edit_file_required_(?:not_called|all_failed)$/.test(violation?.kind ?? ""))
-  );
+    );
+}
+
+function finaliseWithSuccessContract(result, { runtime, task } = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (result.status !== "success") return result;
+  const spec = selectSuccessContractValidationSpec(task);
+  if (!spec) return result;
+  const validation = validateSuccessContract(spec, result.transcript ?? []);
+  if (validation.satisfied) return result;
+
+  const violations = validation.violations ?? [];
+  const violationKinds = violations.map((violation) => violation.kind).filter(Boolean);
+  const reason = violations
+    .map((violation) => violation.message || violation.kind)
+    .filter(Boolean)
+    .join(" ");
+  runtime?.emitTaskEvent?.("contract_finalization_blocked", {
+    reason: "success_contract_unsatisfied",
+    violation_kinds: violationKinds
+  });
+  if (runtime?.store && task?.task_id) {
+    appendAuditLog(runtime, task, "tool_loop.contract_finalization_blocked", {
+      reason: "success_contract_unsatisfied",
+      violation_kinds: violationKinds
+    });
+  }
+
+  const key = finalTextField(result);
+  const currentText = String(result[key] ?? "").trim();
+  const warningText = reason
+    ? `注意：这次执行没有完全满足任务要求：${reason}`
+    : "注意：这次执行没有完全满足任务要求。";
+  const finalText = currentText
+    ? `${currentText}\n\n${warningText}`
+    : localFallbackFinal({ task, transcript: result.transcript ?? [], reason: warningText });
+
+  return {
+    ...result,
+    status: "partial_success",
+    [key]: finalText,
+    phase_gate: result.phase_gate ?? {
+      next_action: "abort",
+      iteration: null,
+      violations,
+      runbook_suggested: null
+    },
+    contract_violations: violations
+  };
 }
 
 function hasOnlyArtifactContractViolations(stepGate) {
@@ -2552,7 +2722,7 @@ async function _runToolAgentLoopCore({
       // do this for explicitly preauthorized scheduled fires so user-typed
       // chat tasks never surprise-send anything.
       const fallbackDecision = synthesiseDeterministicActionFallback({
-        task, transcript, allowed
+        task, transcript, allowed, runtime
       });
       // Codex review: even though synthesiseDeterministicActionFallback
       // already gates on preauthorization + group + recipients, double-
@@ -2570,6 +2740,7 @@ async function _runToolAgentLoopCore({
         return true;
       })();
       if (fallbackDecision && fallbackInvariantOk) {
+        fallbackDecision.__deterministic_action_only_finalizer = true;
         transcript.push({
           type: "deterministic_action_fallback",
           tool: fallbackDecision.tool,
@@ -3008,9 +3179,13 @@ async function _runToolAgentLoopCore({
           "abandoned_with_reason"
         ]);
         if (pending.length === 0 && terminal.length === 0) {
+          const deterministicFinalText = decision?.args?.body
+            ?? decision?.args?.input?.body
+            ?? result.observation
+            ?? "";
           return {
             status: "success",
-            final_text: String(decision?.args?.body ?? result.observation ?? "").trim(),
+            final_text: String(deterministicFinalText).trim(),
             transcript,
             obligations: actionObligations,
             artifacts: collectArtifactPathsFromTranscript(transcript)

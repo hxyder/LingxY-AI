@@ -80,7 +80,8 @@ assertIncludes(overlayJs, "src/desktop/renderer/overlay.js", [
   "function queueOverlayThinkingDelta",
   "function flushOverlayThinkingDelta",
   "function scheduleOverlayFrame",
-  "async runTextDeltaLoad"
+  "async runTextDeltaLoad",
+  "bindTaskToConversationId(taskConversationMap, taskId, visibleConversationId)"
 ]);
 
 const overlayTextBranch = extractBranch(overlayJs, "frame.event === \"text_delta\"");

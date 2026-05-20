@@ -4,6 +4,13 @@ function isNonEmptyString(value) {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function isPresent(value) {
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "string") return value.trim().length > 0;
+  if (value && typeof value === "object") return Object.keys(value).length > 0;
+  return value !== null && value !== undefined && value !== false;
+}
+
 function isEmail(value) {
   return typeof value === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
@@ -67,17 +74,21 @@ export function validateConnectorValue(kind, value, options = {}) {
   return false;
 }
 
-export function validateConnectorObject(target = {}, rules = []) {
+export function validateConnectorObject(target = {}, rules = [], context = {}) {
   const failures = [];
   for (const rule of rules ?? []) {
     const pathExpression = rule.path ?? rule.field ?? "";
     const value = readPath(target, pathExpression);
-    const ok = validateConnectorValue(rule.kind ?? rule.type, value, rule);
+    const kind = rule.kind ?? rule.type;
+    const ok = kind === "present_when_input_present"
+      ? (!isPresent(readPath(context.input ?? {}, rule.inputPath ?? ""))
+        || isPresent(value))
+      : validateConnectorValue(kind, value, rule);
     if (!ok) {
       failures.push({
         path: pathExpression,
-        kind: rule.kind ?? rule.type,
-        message: rule.message ?? `${pathExpression || "value"} failed ${rule.kind ?? rule.type}`
+        kind,
+        message: rule.message ?? `${pathExpression || "value"} failed ${kind}`
       });
     }
   }

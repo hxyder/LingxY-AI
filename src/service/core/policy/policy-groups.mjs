@@ -27,7 +27,8 @@ export const POLICY_GROUPS = Object.freeze({
   external_web_read: Object.freeze([
     "web_search",
     "web_search_fetch",
-    "fetch_url_content"
+    "fetch_url_content",
+    "download_file"
   ]),
 
   /**

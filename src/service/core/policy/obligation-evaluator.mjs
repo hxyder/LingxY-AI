@@ -139,7 +139,7 @@ export function actionGroupHitSatisfies(group, entry = {}) {
     if (!workflowMatchesActionGroup(group, entry)) return false;
     const connectorStatus = entry?.metadata?.connector_status ?? null;
     if (connectorStatus) return connectorStatus === "success";
-    return entry.success !== false;
+    return false;
   }
   return true;
 }

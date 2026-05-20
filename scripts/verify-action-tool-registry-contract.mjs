@@ -70,6 +70,7 @@ const expectedIds = [
   "translate_text",
   "web_search_fetch",
   "fetch_url_content",
+  "download_file",
   "write_file",
   "edit_file",
   "run_script",
@@ -128,7 +129,7 @@ const expectedConfirmationIds = [
 
 assert.deepEqual(BUILTIN_ACTION_TOOLS.map((tool) => tool.id), expectedIds,
   "built-in action tool id order must remain stable");
-assert.equal(BUILTIN_ACTION_TOOLS.length, 61, "built-in action tool count must remain 61");
+assert.equal(BUILTIN_ACTION_TOOLS.length, 62, "built-in action tool count must remain 62");
 assert(Object.isFrozen(BUILTIN_ACTION_TOOLS), "BUILTIN_ACTION_TOOLS must remain frozen");
 assert.deepEqual(
   BUILTIN_ACTION_TOOLS.filter((tool) => tool.requires_confirmation).map((tool) => tool.id).sort(),
@@ -154,7 +155,7 @@ assert.deepEqual(
 const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
 assert.equal(registry.get("web_search")?.id, "web_search", "registry.get must return tools by id");
 assert.equal(registry.get("missing_tool"), null, "registry.get must return null for missing tools");
-assert.equal(registry.list().length, 61, "registry.list must expose 61 descriptors");
+assert.equal(registry.list().length, 62, "registry.list must expose 62 descriptors");
 assert(!("execute" in registry.list()[0]), "registry.list must not expose execute functions");
 assert.throws(() => registry.evaluate("missing_tool", {}, {}), /Unknown tool/u,
   "registry.evaluate must reject unknown tools");

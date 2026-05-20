@@ -87,7 +87,27 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 4. Successful account_send_email satisfies the email_send claim.
+// 4. Workflow envelope success without connector_status must not count.
+// ---------------------------------------------------------------------
+{
+  const finalText = "邮件已发送至 boss@example.com。";
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "connector_workflow_run",
+      success: true,
+      metadata: { workflow_id: "google.gmail.draft_confirm_send" }
+    }
+  ];
+  const violations = detectUnbackedActionClaims(transcript, finalText);
+  check(
+    "blocked: connector_workflow_run without connector_status does NOT satisfy email_send",
+    violations.length === 1 && violations[0].kind === "email_send_claim_unsupported"
+  );
+}
+
+// ---------------------------------------------------------------------
+// 5. Successful account_send_email satisfies the email_send claim.
 // ---------------------------------------------------------------------
 {
   const finalText = "I have sent the email to advisor@example.com.";
@@ -107,7 +127,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 5. Workflow that returned waiting_external_decision must NOT count.
+// 6. Workflow that returned waiting_external_decision must NOT count.
 // ---------------------------------------------------------------------
 {
   const finalText = "邮件已发送至 boss@example.com。";
@@ -127,7 +147,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 6. No claim, no tool — the guard must stay silent.
+// 7. No claim, no tool — the guard must stay silent.
 // ---------------------------------------------------------------------
 {
   const finalText = "今天市场情况：纳斯达克下跌1.2%，能源板块走强。";
@@ -140,7 +160,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 7. Calendar create claim without successful event tool → flagged.
+// 8. Calendar create claim without successful event tool → flagged.
 // ---------------------------------------------------------------------
 {
   const finalText = "已创建日程：明天 10:00 与团队评审。";
@@ -152,7 +172,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 8. File upload claim without successful upload tool → flagged.
+// 9. File upload claim without successful upload tool → flagged.
 // ---------------------------------------------------------------------
 {
   const finalText = "File has been uploaded successfully.";
@@ -164,7 +184,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 9. Failed email tool must not satisfy the claim.
+// 10. Failed email tool must not satisfy the claim.
 // ---------------------------------------------------------------------
 {
   const finalText = "邮件已成功发送。";
@@ -184,7 +204,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 10. Empty final text → no violations (avoid false positives).
+// 11. Empty final text → no violations (avoid false positives).
 // ---------------------------------------------------------------------
 {
   const violations = detectUnbackedActionClaims([], "");

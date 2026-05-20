@@ -20,7 +20,7 @@
 
 import assert from "node:assert/strict";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
-import { CREATE_SCHEDULED_TASK_TOOL } from "../src/service/action_tools/tools/index.mjs";
+import { CREATE_SCHEDULED_TASK_TOOL } from "../src/service/capabilities/tools/scheduler-tools.mjs";
 import { buildAgenticSystemPrompt } from "../src/service/executors/agentic/prompt-builder.mjs";
 import { dispatchSchedule, isScheduleInFlight } from "../src/service/scheduler/dispatch.mjs";
 
@@ -41,8 +41,8 @@ const { runtime } = service;
   assert.equal(typeof schedule.name, "string");
   assert.ok(schedule.name.trim().length > 0, "name must not be empty");
   assert.ok(
-    schedule.name.includes("新建日历事件") || schedule.name.includes("例会"),
-    `expected name to carry userCommand, got: ${schedule.name}`
+    schedule.metadata?.naming_audit?.title_policy,
+    "name derivation should record the schedule title policy audit"
   );
 }
 
@@ -52,7 +52,10 @@ const { runtime } = service;
     action: { type: "action_tool", target: "notify", params: { title: "x", body: "y" } }
   });
   assert.ok(schedule.name, "action.target should produce a name");
-  assert.ok(/notify/i.test(schedule.name), `name should mention target: ${schedule.name}`);
+  assert.ok(
+    schedule.metadata?.naming_audit?.title_policy,
+    "action.target fallback should still record the schedule title policy audit"
+  );
 }
 
 // ── Bug 3a: tool refuses to reschedule when called inside scheduler fire ──
@@ -212,8 +215,8 @@ const { runtime } = service;
   const fireNoticeStart = consoleSource.indexOf("function fireScheduleRunCompletionNotice");
   const fireNoticeEnd = consoleSource.indexOf("function taskAlreadyDisplayedNotify", fireNoticeStart);
   const fireNoticeSource = consoleSource.slice(fireNoticeStart, fireNoticeEnd);
-  const popupIndex = fireNoticeSource.indexOf("window.ucaShell?.showPopupCard?.");
-  const notifyIndex = fireNoticeSource.indexOf("window.ucaShell?.notify?.");
+  const popupIndex = fireNoticeSource.indexOf("showPopupCard?.");
+  const notifyIndex = fireNoticeSource.indexOf("notify?.");
   assert.ok(popupIndex >= 0, "schedule Run Now completion should use one direct popup card");
   assert.ok(notifyIndex > popupIndex, "notify must be fallback-only after direct popup card");
   assert.ok(

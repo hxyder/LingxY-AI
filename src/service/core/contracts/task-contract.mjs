@@ -33,7 +33,7 @@ import { compileRaidLog } from "./risk-register.mjs";
 
 /**
  * @typedef {"conversation"|"markdown"|"file"|"docx"|"pptx"|"xlsx"|"pdf"
- *          |"html"|"csv"|"dashboard"} OutputKind
+ *          |"html"|"csv"|"image"|"dashboard"} OutputKind
  */
 
 /**
@@ -88,7 +88,8 @@ const ARTIFACT_KIND_TO_OUTPUT_KIND = Object.freeze({
   md: "markdown",
   html: "html",
   csv: "csv",
-  txt: "markdown"
+  txt: "markdown",
+  image: "image"
 });
 
 /**

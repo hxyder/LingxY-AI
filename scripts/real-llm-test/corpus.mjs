@@ -60,7 +60,7 @@ function buildCorpus() {
   for (const [id, q, mustInclude] of basics) {
     items.push(mkItem(id, q, {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "web_search"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "web_search", "download_file"],
       textMustInclude: mustInclude,
       behavior: "stable factual Q&A; should answer directly without web tools"
     }));
@@ -101,7 +101,7 @@ function buildCorpus() {
   for (const [id, q, must] of locals) {
     items.push(mkItem(id, q, {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "web_search"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "web_search", "download_file"],
       textMustInclude: must,
       behavior: "user explicitly forbade web; web tools must not fire"
     }));
@@ -259,7 +259,7 @@ function buildCorpus() {
   for (const [id, q, must] of concurrents) {
     items.push(mkItem(id, q, {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "download_file"],
       textMustInclude: must,
       behavior: "parallel-batch sanity; ensure no cross-task answer mixing",
       runInParallelBatch: true
@@ -332,7 +332,7 @@ function buildCorpus() {
   for (const [id, q, clip, must] of clipItems) {
     items.push(mkItem(id, q, {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "download_file"],
       textMustInclude: must,
       behavior: "clipboard capture; must use the attached text, no web"
     }, { sourceType: "clipboard", contextText: clip }));
@@ -364,7 +364,7 @@ function buildCorpus() {
   for (const [id, q, page, must] of browserItems) {
     items.push(mkItem(id, q, {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "download_file"],
       textMustInclude: must,
       behavior: "browser capture; treat the attached page as the source"
     }, { sourceType: "browser", pageText: page }));
@@ -423,7 +423,7 @@ function buildCorpus() {
   for (const [id, q, must] of translatePairs) {
     items.push(mkItem(id, q, {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "create_scheduled_task"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "download_file", "create_scheduled_task"],
       textMustInclude: must,
       behavior: "translation; fast path, no tools"
     }));
@@ -481,7 +481,7 @@ function buildCorpus() {
   for (let i = 0; i < cjk2.length; i += 1) {
     items.push(mkItem(`O.cjk2_${i + 1}`, cjk2[i], {
       terminal: TERMINAL_OK,
-      toolMustNotInclude: ["web_search_fetch", "fetch_url_content"],
+      toolMustNotInclude: ["web_search_fetch", "fetch_url_content", "download_file"],
       behavior: "2-char Chinese keyword; must answer cleanly without web"
     }));
   }

@@ -3,6 +3,15 @@ import { createActionResult } from "../registry/types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
+import { access, mkdir, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import path from "node:path";
+import {
+  configuredWritableArtifactRoots,
+  ensureOutputDir,
+  resolveOutputDirForTool,
+  resolveSandboxedTarget
+} from "../../core/artifact-path-helper.mjs";
 
 // Real implementations for the most common tools
 export const OPEN_URL_TOOL = {
@@ -134,6 +143,270 @@ export const WEB_SEARCH_FETCH_TOOL = {
       return createActionResult({
         success: false,
         observation: `Web search failed: ${error.message}`
+      });
+    }
+  }
+};
+
+const DOWNLOAD_FILE_DEFAULT_MAX_BYTES = 15 * 1024 * 1024;
+const DOWNLOAD_FILE_HARD_MAX_BYTES = 25 * 1024 * 1024;
+const DOWNLOAD_MIME_EXTENSIONS = Object.freeze({
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/bmp": ".bmp",
+  "image/svg+xml": ".svg",
+  "application/pdf": ".pdf",
+  "application/msword": ".doc",
+  "application/vnd.ms-excel": ".xls",
+  "application/vnd.ms-powerpoint": ".ppt",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  "application/rtf": ".rtf",
+  "application/zip": ".zip",
+  "application/x-zip-compressed": ".zip",
+  "application/gzip": ".gz",
+  "application/x-7z-compressed": ".7z",
+  "application/x-tar": ".tar",
+  "text/html": ".html",
+  "text/plain": ".txt",
+  "text/markdown": ".md",
+  "text/csv": ".csv",
+  "application/json": ".json",
+  "application/javascript": ".js",
+  "text/javascript": ".js",
+  "application/x-python-code": ".py",
+  "text/x-python": ".py",
+  "application/xml": ".xml",
+  "text/xml": ".xml"
+});
+
+function clampDownloadMaxBytes(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DOWNLOAD_FILE_DEFAULT_MAX_BYTES;
+  return Math.max(1, Math.min(DOWNLOAD_FILE_HARD_MAX_BYTES, Math.floor(parsed)));
+}
+
+function safeBasename(value = "") {
+  return String(value ?? "")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]+/gu, "-")
+    .replace(/\s+/gu, " ")
+    .slice(0, 120)
+    .replace(/^\.+/u, "")
+    .trim();
+}
+
+function extensionFromContentType(contentType = "") {
+  const normalized = String(contentType ?? "").split(";")[0].trim().toLowerCase();
+  return DOWNLOAD_MIME_EXTENSIONS[normalized] ?? "";
+}
+
+function extensionForKind(kind = "") {
+  const normalized = String(kind ?? "").trim().toLowerCase();
+  if (normalized === "image") return ".jpg";
+  if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(normalized)) {
+    return normalized === "jpg" ? ".jpg" : `.${normalized}`;
+  }
+  if (normalized === "docx" || normalized === "word") return ".docx";
+  if (normalized === "xlsx" || normalized === "excel") return ".xlsx";
+  if (normalized === "pptx" || normalized === "ppt" || normalized === "powerpoint") return ".pptx";
+  if (normalized === "pdf") return ".pdf";
+  if (normalized === "html") return ".html";
+  if (normalized === "csv") return ".csv";
+  if (normalized === "json") return ".json";
+  if (normalized === "md" || normalized === "markdown") return ".md";
+  if (normalized === "txt" || normalized === "text") return ".txt";
+  if (normalized === "mjs") return ".mjs";
+  if (normalized === "js" || normalized === "javascript") return ".js";
+  if (normalized === "py" || normalized === "python") return ".py";
+  if (normalized === "ps1" || normalized === "powershell") return ".ps1";
+  if (normalized === "zip") return ".zip";
+  return "";
+}
+
+function extensionFromUrl(url = "") {
+  try {
+    const ext = path.extname(new URL(url).pathname).toLowerCase();
+    if (ext && /^[.][a-z0-9]{1,12}$/u.test(ext)) return ext;
+  } catch { /* best-effort filename inference */ }
+  return "";
+}
+
+function filenameFromUrl(url = "") {
+  try {
+    return safeBasename(decodeURIComponent(path.basename(new URL(url).pathname)));
+  } catch {
+    return "";
+  }
+}
+
+function filenameFromContentDisposition(contentDisposition = "") {
+  const raw = String(contentDisposition ?? "");
+  if (!raw.trim()) return "";
+  const utf8Match = raw.match(/filename\*\s*=\s*UTF-8''([^;]+)/iu);
+  if (utf8Match?.[1]) {
+    try {
+      return safeBasename(decodeURIComponent(utf8Match[1].trim().replace(/^"|"$/gu, "")));
+    } catch {
+      return safeBasename(utf8Match[1]);
+    }
+  }
+  const asciiMatch = raw.match(/filename\s*=\s*("[^"]+"|[^;]+)/iu);
+  if (!asciiMatch?.[1]) return "";
+  return safeBasename(asciiMatch[1].trim().replace(/^"|"$/gu, ""));
+}
+
+function artifactKindFromDownload({ filePath = "", contentType = "", explicitKind = "" } = {}) {
+  const normalized = String(explicitKind ?? "").trim().toLowerCase();
+  if (["png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(normalized)) return "image";
+  if (normalized === "markdown") return "md";
+  if (normalized === "word") return "docx";
+  if (normalized === "excel") return "xlsx";
+  if (normalized === "ppt" || normalized === "powerpoint") return "pptx";
+  if (normalized) return normalized;
+  const mime = String(contentType ?? "").split(";")[0].trim().toLowerCase();
+  if (mime.startsWith("image/")) return "image";
+  const ext = path.extname(filePath).toLowerCase();
+  if ([".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"].includes(ext)) return "image";
+  return ext ? ext.slice(1) : "file";
+}
+
+function resolveDownloadTargetArg({ args = {}, url = "", contentType = "", contentDisposition = "" } = {}) {
+  const pathArg = typeof args.path === "string" ? args.path.trim() : "";
+  if (pathArg) return pathArg;
+  const requested = safeBasename(args.filename);
+  const fromDisposition = filenameFromContentDisposition(contentDisposition);
+  const fromUrl = filenameFromUrl(url);
+  const nameSource = requested || fromDisposition || fromUrl;
+  const ext = path.extname(nameSource)
+    || extensionFromUrl(url)
+    || extensionFromContentType(contentType)
+    || extensionForKind(args.kind)
+    || ".bin";
+  const stem = safeBasename(path.basename(nameSource || "downloaded-file", path.extname(nameSource)))
+    || "downloaded-file";
+  return `${stem}${ext}`;
+}
+
+export const DOWNLOAD_FILE_TOOL = {
+  id: "download_file",
+  name: "Download File",
+  description: "Download a public http(s) URL directly into the task workspace and return the saved artifact path. Use this for image/PDF/file downloads when a real file artifact is required; use fetch_url_content for readable page text instead.",
+  parameters: ACTION_TOOL_SCHEMAS.download_file,
+  risk_level: "medium",
+  required_capabilities: ["network", "file_write"],
+  policy_group: "external_web_read",
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const url = String(args.url ?? "").trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return createActionResult({ success: false, observation: "url required (must start with http:// or https://)" });
+    }
+
+    const maxBytes = clampDownloadMaxBytes(args.max_bytes);
+    const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": [
+            "application/octet-stream",
+            "application/pdf",
+            "application/zip",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "image/*",
+            "text/*",
+            "*/*;q=0.8"
+          ].join(","),
+          "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8"
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(15000)
+      });
+      if (!response.ok) {
+        return createActionResult({
+          success: false,
+          observation: `Download failed: HTTP ${response.status} ${response.statusText} for ${url}`
+        });
+      }
+
+      const contentLength = Number(response.headers.get("content-length") ?? "");
+      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+        return createActionResult({
+          success: false,
+          observation: `Download refused: content-length ${contentLength} bytes exceeds max_bytes ${maxBytes}.`
+        });
+      }
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const contentDisposition = response.headers.get("content-disposition") ?? "";
+      const targetArg = resolveDownloadTargetArg({
+        args,
+        url: response.url || url,
+        contentType,
+        contentDisposition
+      });
+      const absTarget = await resolveSandboxedTarget(outputDir, targetArg, {
+        allowedRoots: configuredWritableArtifactRoots(ctx)
+      });
+      if (!args.overwrite) {
+        try {
+          await access(absTarget, fsConstants.F_OK);
+          return createActionResult({
+            success: false,
+            observation: `File already exists at ${path.relative(outputDir, absTarget)}; pass overwrite:true to replace it.`,
+            metadata: { tool_id: "download_file", path: absTarget, url }
+          });
+        } catch (error) {
+          if (error?.code !== "ENOENT") throw error;
+        }
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length === 0) {
+        return createActionResult({
+          success: false,
+          observation: `Download failed: empty response body for ${url}`
+        });
+      }
+      if (buffer.length > maxBytes) {
+        return createActionResult({
+          success: false,
+          observation: `Download refused: ${buffer.length} bytes exceeds max_bytes ${maxBytes}.`
+        });
+      }
+
+      await mkdir(path.dirname(absTarget), { recursive: true });
+      await writeFile(absTarget, buffer);
+      const kind = artifactKindFromDownload({
+        filePath: absTarget,
+        contentType,
+        explicitKind: args.kind
+      });
+      return createActionResult({
+        success: true,
+        observation: `Downloaded ${kind} artifact (${buffer.length} bytes): ${absTarget}`,
+        artifactPaths: [absTarget],
+        metadata: {
+          tool_id: "download_file",
+          url: response.url || url,
+          requested_url: url,
+          path: absTarget,
+          kind,
+          bytes: buffer.length,
+          content_type: contentType
+        }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `Download error for ${url}: ${error.message}`,
+        metadata: { tool_id: "download_file", url }
       });
     }
   }

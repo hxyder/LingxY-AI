@@ -667,7 +667,7 @@ async function gradeResult(item, taskRecord) {
   // toolGroup (v2) / mustCallToolGroup (legacy).
   const toolGroup = expected.toolGroup ?? expected.mustCallToolGroup;
   if (toolGroup === "external_web_read") {
-    const webTools = ["web_search_fetch", "fetch_url_content", "web_search"];
+    const webTools = ["web_search_fetch", "fetch_url_content", "web_search", "download_file"];
     if (![...calledIds].some((id) => webTools.includes(id))) {
       grade.reasons.push("missing_external_web_read_call");
     }

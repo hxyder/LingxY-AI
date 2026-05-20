@@ -81,6 +81,47 @@ for (const input of EMAIL_SEND_CASES) {
   );
 }
 
+const deicticFollowup = createTaskSpec("顺带把邮件里面提到的活动，需要订票的也做成链接发过去", {
+  semantic_router_decision: {
+    source_scope: "current_context",
+    web_policy: "required",
+    output_kind: "conversation",
+    artifact_required: false,
+    executor: "tool_using",
+    primary_intent: "email_calendar_action",
+    domain: "email",
+    expected_output: "execution",
+    needs_tool_use: true,
+    needed_capabilities: ["external_web_read", "email_calendar_action"],
+    required_policy_groups: ["email_send"],
+    confidence: 0.88,
+    reason: "deictic email follow-up fixture"
+  }
+}, {});
+assert.ok(
+  deicticFollowup.success_contract.required_policy_groups.includes("email_send"),
+  "deictic follow-up with executable send intent must preserve SR email_send instead of requiring a recipient in the same sentence"
+);
+assert.ok(
+  !createTaskSpec("美国股市今天怎么样", {
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      primary_intent: "research",
+      expected_output: "summary",
+      needs_tool_use: true,
+      needed_capabilities: ["external_web_read"],
+      required_policy_groups: ["email_send"],
+      confidence: 0.88,
+      reason: "bad SR fixture"
+    }
+  }, {}).success_contract.required_policy_groups.includes("email_send"),
+  "SR-only email_send must still be rejected for non-send research text"
+);
+
 // 2) Pure launches still short-circuit and keep their own goal. ─────────
 assert.equal(classifyGoal("打开word"), "launch_and_act",
   "pure launch must still be launch_and_act");

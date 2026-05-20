@@ -155,7 +155,15 @@ export const ACCOUNT_CREATE_EVENT_TOOL = createWriteTool({
       attendees: {},
       description: { type: "string" },
       location: { type: "string" },
-      timeZone: { type: "string" }
+      timeZone: { type: "string" },
+      recurrence: {
+        oneOf: [
+          { type: "array", items: { type: "string" } },
+          { type: "string" },
+          { type: "object" }
+        ],
+        description: "Recurring event rule. Google accepts RRULE strings/arrays; Microsoft accepts a Graph recurrence object or a supported RRULE that can be converted."
+      }
     }
   },
   requiredCapability: "calendarWrite",

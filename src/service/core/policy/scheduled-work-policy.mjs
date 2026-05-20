@@ -9,6 +9,8 @@ const MARKET_PATTERN = /(?:stock|market|finance|nasdaq|dow|s&p|sp500|marketwatch
 const NEWS_PATTERN = /(?:news|digest|brief|summary|roundup|新闻|简报|汇总|摘要)/iu;
 const EMAIL_SEND_PATTERN = /(?:send|email|mail|gmail|outlook|发送|发邮件|邮件|邮箱|收件人|@)/iu;
 const REMINDER_PATTERN = /(?:remind|reminder|notify|alert|提醒|待办|通知)/iu;
+const EMAIL_BODY_ENVELOPE_HEADER_RE = /^\s*(?:#{1,6}\s*)?(?:[*_`]{0,2})\s*(?:subject|to|cc|bcc|from|主题|收件人|抄送|密送|发件人)\s*(?:[*_`]{0,2})\s*[:：]/iu;
+const PLACEHOLDER_SIGNATURE_RE = /^\s*\[(?:您的助手|你的助手|your assistant|assistant|name|姓名)[^\]]*\]\s*$/ium;
 
 function compactText(value) {
   return String(value ?? "").replace(/\s+/g, " ").trim();
@@ -209,6 +211,29 @@ export function deriveScheduledEmailSubject({ task = null, args = {}, workflowId
   return "LingxY 定时任务";
 }
 
+export function normalizeEmailBodyPlainText(value = "") {
+  const text = String(value ?? "").replace(/\r\n/g, "\n").trim();
+  if (!text) return "";
+
+  const lines = [];
+  for (const [index, line] of text.split("\n").entries()) {
+    if (index < 12 && EMAIL_BODY_ENVELOPE_HEADER_RE.test(line)) continue;
+    lines.push(line);
+  }
+
+  return lines.join("\n")
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/giu, "$1 ($2)")
+    .replace(/^\s*#{1,6}\s+/gmu, "")
+    .replace(/^\s*>\s?/gmu, "")
+    .replace(/^\s*[-*_]{3,}\s*$/gmu, "----------------")
+    .replace(/\*\*([^*\n]+)\*\*/gu, "$1")
+    .replace(/__([^_\n]+)__/gu, "$1")
+    .replace(/`([^`\n]+)`/gu, "$1")
+    .replace(PLACEHOLDER_SIGNATURE_RE, "LingxY")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+}
+
 export function normalizeScheduledEmailArgs({ toolId, args = {}, task = null } = {}) {
   if (!args || typeof args !== "object") return args;
   const metadata = task?.context_packet?.selection_metadata ?? {};
@@ -220,7 +245,8 @@ export function normalizeScheduledEmailArgs({ toolId, args = {}, task = null } =
       ...args,
       input: {
         ...input,
-        subject: deriveScheduledEmailSubject({ task, args: input, workflowId })
+        subject: deriveScheduledEmailSubject({ task, args: input, workflowId }),
+        body: normalizeEmailBodyPlainText(input.body)
       }
     };
   }
@@ -228,7 +254,8 @@ export function normalizeScheduledEmailArgs({ toolId, args = {}, task = null } =
     const normalized = normalizeEmailFieldInput(args);
     return {
       ...normalized,
-      subject: deriveScheduledEmailSubject({ task, args: normalized })
+      subject: deriveScheduledEmailSubject({ task, args: normalized }),
+      body: normalizeEmailBodyPlainText(normalized.body)
     };
   }
   return args;

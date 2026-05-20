@@ -1,4 +1,4 @@
-const EXTERNAL_WEB_READ_TOOL_IDS = new Set(["web_search", "web_search_fetch", "fetch_url_content"]);
+const EXTERNAL_WEB_READ_TOOL_IDS = new Set(["web_search", "web_search_fetch", "fetch_url_content", "download_file"]);
 
 function eventToolId(event = {}) {
   const payload = event?.payload ?? event?.data ?? {};

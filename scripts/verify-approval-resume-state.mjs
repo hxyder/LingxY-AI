@@ -25,8 +25,8 @@ assert.match(stateModule, /resume_token/u, "resume state must expose a stable to
 assert.match(approvals, /attachApprovalResumeMetadata/u, "pending approvals must attach resume metadata at create time");
 assert.match(approvals, /resolveApprovalResumeMetadata/u, "pending approvals must resolve resume metadata on decisions");
 assert.match(approvals, /approval_resume:\s*approval\.metadata\?\.approval_resume/u, "terminal bridge events must carry resume metadata");
-assert.match(approvals, /executionResult\?\.same_task_resume !== true/u,
-  "generic same-task approval resumes must skip compatibility bridge terminalization");
+assert.match(approvals, /sameTaskResume[\s\S]{0,120}executionResult\?\.resumed_same_task === true/u,
+  "generic and connector same-task approval resumes must skip compatibility bridge terminalization");
 assert.match(runtimeServices, /resumeAgentToolApprovalInOriginalTask/u,
   "generic agent tool approvals must route through same-task graph resume");
 assert.match(graphResume, /export async function resumeAgentToolApprovalInOriginalTask/u,

@@ -20,11 +20,15 @@ function makePreauthorizedTask({
   recipients = ["reviewer@example.com"],
   authorizedGroups = ["email_send"],
   decision = "preauthorized",
-  requiredPolicyGroups = []
+  requiredPolicyGroups = [],
+  userCommand = "整理今天美股新闻发送邮件到 reviewer@example.com",
+  scheduleActionTarget = "整理今天美股新闻发送邮件到 reviewer@example.com",
+  scheduleDescription = "每日邮件"
 } = {}) {
   return {
-    user_command: "整理今天美股新闻发送邮件到 reviewer@example.com",
+    user_command: userCommand,
     task_spec: {
+      user_goal_text: userCommand,
       success_contract: {
         required_policy_groups: requiredPolicyGroups,
         required_tool_names: []
@@ -49,7 +53,9 @@ function makePreauthorizedTask({
               }
             }
           }
-        }
+        },
+        schedule_action_target: scheduleActionTarget,
+        schedule_description: scheduleDescription
       }
     }
   };
@@ -92,6 +98,9 @@ test("returns a tool_call when preauthorized + recipients + allowed email tool",
   assert.ok(decision.args.subject && decision.args.subject.length > 0, "subject is filled in");
   assert.ok(decision.args.body && decision.args.body.length > 0, "body is filled in");
   assert.match(decision.args.body, /Dow Jones up 0\.6%/, "body includes transcript observations");
+  assert.match(decision.args.body, /【摘要】/u, "body includes a summary section");
+  assert.match(decision.args.body, /【要点】/u, "body includes a key-points section");
+  assert.match(decision.args.body, /【来源】/u, "body includes a sources section");
   assert.doesNotMatch(decision.args.body, /Connected accounts:/, "body excludes connector/account logs");
   assert.doesNotMatch(decision.args.body, /\n---\n/, "body is not a raw transcript join");
   assert.equal(decision.__deterministic_fallback, true);
@@ -185,6 +194,23 @@ test("falls back to send_email_smtp when account_send_email is not allowed", () 
   assert.equal(decision?.tool, "send_email_smtp");
 });
 
+test("uses an explicitly requested connector workflow before raw email tools", () => {
+  const task = makePreauthorizedTask({
+    userCommand: "请使用 connector_workflow_run 调用 google.gmail.draft_confirm_send，把天气简报发送到 reviewer@example.com",
+    scheduleActionTarget: "connector_workflow_run google.gmail.draft_confirm_send"
+  });
+  const decision = synthesiseDeterministicActionFallback({
+    task,
+    transcript: makeTranscript({ observation: "Raleigh weather is sunny, high 82F, low 70F." }),
+    allowed: ["account_send_email", "connector_workflow_run"]
+  });
+  assert.equal(decision?.tool, "connector_workflow_run");
+  assert.equal(decision?.args?.workflowId, "google.gmail.draft_confirm_send");
+  assert.deepEqual(decision?.args?.input?.to, ["reviewer@example.com"]);
+  assert.ok(decision?.args?.input?.subject);
+  assert.match(decision?.args?.input?.body ?? "", /Raleigh weather is sunny/);
+});
+
 test("body falls back to a placeholder when the transcript has no observations", () => {
   const decision = synthesiseDeterministicActionFallback({
     task: makePreauthorizedTask(),
@@ -253,4 +279,59 @@ test("uses a composed side-effect body instead of raw transcript evidence when p
   });
   assert.equal(decision?.args?.body, "Polished user-facing email body.");
   assert.doesNotMatch(decision?.args?.body ?? "", /Raw market transcript/);
+});
+
+test("strips email envelope headers from composed side-effect bodies", () => {
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask(),
+    transcript: makeTranscript({ observation: "Dow Jones up 0.6%, Nasdaq up 0.4%." }),
+    allowed: ["account_send_email"],
+    bodyOverride: [
+      "**Subject:** Market digest",
+      "",
+      "**收件人:** reviewer@example.com",
+      "",
+      "您好，",
+      "",
+      "以下是整理后的市场简报正文。"
+    ].join("\n")
+  });
+  assert.equal(decision?.tool, "account_send_email");
+  assert.doesNotMatch(decision?.args?.body ?? "", /Subject|收件人/u);
+  assert.match(decision?.args?.body ?? "", /市场简报正文/u);
+});
+
+test("uses a composed side-effect body with markdown dividers", () => {
+  const body = [
+    "Market digest",
+    "",
+    "---",
+    "",
+    "Major indexes were mixed based on the gathered evidence.",
+    "This is synthesized email content, not a raw transcript dump."
+  ].join("\n");
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask(),
+    transcript: makeTranscript({ observation: "Raw market transcript." }),
+    allowed: ["account_send_email"],
+    bodyOverride: body
+  });
+  assert.equal(decision?.args?.body, [
+    "Market digest",
+    "----------------",
+    "Major indexes were mixed based on the gathered evidence.",
+    "This is synthesized email content, not a raw transcript dump."
+  ].join("\n"));
+});
+
+test("ignores raw transcript-shaped composed bodies when structured evidence is available", () => {
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask(),
+    transcript: makeTranscript({ observation: "Raleigh weather is sunny, high 82F, low 70F." }),
+    allowed: ["account_send_email"],
+    bodyOverride: "来源：https://wttr.in/Raleigh,NC?format=j1\n---\n{\"current_condition\":[{\"temp_F\":\"74\"}]}"
+  });
+  assert.equal(decision?.tool, "account_send_email");
+  assert.doesNotMatch(decision?.args?.body ?? "", /\n---\n/);
+  assert.match(decision?.args?.body ?? "", /Raleigh weather is sunny/);
 });

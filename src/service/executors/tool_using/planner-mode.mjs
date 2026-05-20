@@ -113,7 +113,9 @@ export function renderRequiredContractForPlanner(task) {
     lines.push(`- artifact_kind: ${kind}`);
     const artifactTools = spec.goal === "transform_existing_file"
       ? "edit_file (update the existing artifact path in place), register_artifact"
-      : "generate_document, write_file, register_artifact";
+      : kind === "image"
+        ? "download_file (direct web file URL), render_svg/write_file (generated local image), register_artifact"
+        : "generate_document, write_file, register_artifact";
     lines.push(`- artifact_tools: ${artifactTools}`);
     lines.push(`- artifact_verify_tool: verify_file_exists (verifier, not a producer)`);
     lines.push(`- must_verify_artifact: ${spec.constraints?.must_verify_artifact === false ? "false" : "true"}`);

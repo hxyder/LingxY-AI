@@ -41,7 +41,7 @@ export function buildRequiredActionGuidance(groups = [], { actionOnly = false } 
     base,
     "",
     "Action-only handoff: stop research/tool exploration now.",
-    "Only call a tool/workflow that satisfies the pending action obligation. Do not call web_search, web_search_fetch, fetch_url_content, or any other research tool again in this turn.",
+    "Only call a tool/workflow that satisfies the pending action obligation. Do not call web_search, web_search_fetch, fetch_url_content, download_file, or any other research/download tool again in this turn.",
     "Use the best information already collected in the transcript as the action body/content. If a required action argument is truly missing, ask one concise clarifying question."
   ].join("\n");
 }

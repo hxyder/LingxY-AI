@@ -544,6 +544,23 @@ function normalizeAttendees(value) {
   return [];
 }
 
+function normalizeGoogleRecurrence(value) {
+  if (value === undefined || value === null || value === "") {
+    return { recurrence: [] };
+  }
+  if (Array.isArray(value)) {
+    return {
+      recurrence: value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    };
+  }
+  if (typeof value === "string") {
+    return { recurrence: value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean) };
+  }
+  return {
+    error: "Google Calendar recurrence must be an RRULE/EXRULE/RDATE/EXDATE string or string array."
+  };
+}
+
 export async function createGoogleEvent(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
@@ -557,6 +574,16 @@ export async function createGoogleEvent(runtime, account, input = {}, { fetchImp
   const tz = input.timeZone || input.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const startInput = input.start ?? input.startTime ?? input.start_time;
   const endInput = input.end ?? input.endTime ?? input.end_time;
+  const recurrence = normalizeGoogleRecurrence(input.recurrence);
+  if (recurrence.error) {
+    return {
+      status: "error",
+      errorCode: "UNSUPPORTED_RECURRENCE",
+      message: recurrence.error,
+      accountId: account.id,
+      provider: account.provider
+    };
+  }
   const body = {
     summary: input.title ?? input.summary ?? "Untitled event",
     description: input.description ?? "",
@@ -565,6 +592,9 @@ export async function createGoogleEvent(runtime, account, input = {}, { fetchImp
     end: normalizeGoogleCalendarDateTime(endInput, tz),
     attendees: normalizeAttendees(input.attendees).map((email) => ({ email }))
   };
+  if (recurrence.recurrence.length > 0) {
+    body.recurrence = recurrence.recurrence;
+  }
   const response = await fetchImpl("https://www.googleapis.com/calendar/v3/calendars/primary/events", {
     method: "POST",
     headers: {
@@ -584,5 +614,18 @@ export async function createGoogleEvent(runtime, account, input = {}, { fetchImp
     };
   }
   const payload = await response.json();
-  return { status: "success", provider: "google", accountId: account.id, data: { event: { id: payload.id, title: payload.summary, url: payload.htmlLink } } };
+  const returnedRecurrence = payload.recurrence ?? body.recurrence;
+  return {
+    status: "success",
+    provider: "google",
+    accountId: account.id,
+    data: {
+      event: {
+        id: payload.id,
+        title: payload.summary,
+        url: payload.htmlLink,
+        ...(returnedRecurrence ? { recurrence: returnedRecurrence } : {})
+      }
+    }
+  };
 }

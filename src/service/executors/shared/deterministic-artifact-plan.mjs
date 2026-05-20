@@ -45,7 +45,7 @@ function requestTextFromTask(task = {}, taskSpec = {}) {
 
 function stripRuntimeReviewFooter(value = "") {
   return String(value ?? "")
-    .replace(/\n+\s*Accuracy check:[\s\S]*$/u, "")
+    .replace(/\n+\s*(?:Accuracy check:|Quality check:|质量检查：)[\s\S]*$/u, "")
     .trim();
 }
 

@@ -64,11 +64,24 @@
           },
           "description": { "type": "string" },
           "location": { "type": "string" },
-          "timeZone": { "type": "string" }
+          "timeZone": { "type": "string" },
+          "recurrence": {
+            "oneOf": [
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "string" }
+            ],
+            "description": "Google Calendar recurrence rules such as RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR."
+          }
         }
       },
       "outputValidators": [
-        { "path": "event.id", "kind": "nonempty_string" }
+        { "path": "event.id", "kind": "nonempty_string" },
+        {
+          "path": "event.recurrence",
+          "kind": "present_when_input_present",
+          "inputPath": "recurrence",
+          "message": "recurrence must be preserved when requested"
+        }
       ],
       "timeline": {
         "label": "Google Calendar create event",

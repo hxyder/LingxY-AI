@@ -214,6 +214,41 @@ test("typed SR artifact intent with a file format becomes a real artifact succes
   assert.ok(spec.required_steps.includes("verify_file_exists"));
 });
 
+test("image artifact requests compile to a real image success contract", () => {
+  const explicit = createTaskSpec("给我下载一张风景壁纸图片", {}, {});
+  assert.equal(explicit.artifact.required, true);
+  assert.equal(explicit.artifact.kind, "image");
+  assert.equal(explicit.contract.output_contract.kind, "image");
+  assert.equal(explicit.success_contract.artifact_created, true);
+
+  const semantic = specWithSrDecision("save a landscape wallpaper", {
+    output_kind: "image",
+    artifact_required: true,
+    primary_intent: "artifact_generation",
+    expected_output: "artifact",
+    needed_capabilities: ["external_web_read", "artifact_generation"],
+    required_policy_groups: ["external_web_read"]
+  });
+  assert.equal(semantic.artifact.required, true);
+  assert.equal(semantic.artifact.kind, "image");
+  assert.equal(semantic.contract.output_contract.kind, "image");
+  assert.equal(semantic.success_contract.artifact_created, true);
+});
+
+test("image artifact success contract accepts common image extensions", () => {
+  const spec = createTaskSpec("保存一张图片到本地", {}, {});
+  const result = validateSuccessContract(spec, [
+    {
+      type: "tool_result",
+      tool: "download_file",
+      success: true,
+      artifact_paths: ["E:/out/landscape-wallpaper.jpg"],
+      metadata: { kind: "image" }
+    }
+  ]);
+  assert.equal(result.satisfied, true, JSON.stringify(result.violations));
+});
+
 test("fake downloadable artifact links cannot be treated as a successful final answer", () => {
   const spec = createTaskSpec("基于你的建议，给我来一份word版本的", {
     semantic_router_decision: {

@@ -22,6 +22,7 @@ const requiredOwnerPaths = [
   "src/service/preview/registry.mjs",
   "src/service/core/http-routes/preview-file-routes.mjs",
   "src/service/capabilities/tools/file-reversibility.mjs",
+  "src/service/capabilities/tools/browser-web-tools.mjs",
   "src/service/capabilities/tools/file-content-tools.mjs",
   "src/service/capabilities/tools/file-mutation-execution-tools.mjs",
   "src/service/capabilities/tools/document-artifact-helpers.mjs",
@@ -31,6 +32,7 @@ const requiredOwnerPaths = [
 
 const artifactToolIds = [
   "account_download_file",
+  "download_file",
   "edit_file",
   "generate_document",
   "register_artifact",
@@ -41,7 +43,7 @@ const artifactToolIds = [
 ];
 
 const expectedOutlineKinds = ["pptx", "docx", "xlsx", "pdf", "html"];
-const documentedKinds = ["pptx", "docx", "xlsx", "pdf", "html", "svg", "png", "txt", "md", "csv", "json"];
+const documentedKinds = ["pptx", "docx", "xlsx", "pdf", "html", "image", "svg", "png", "jpg", "webp", "txt", "md", "csv", "json"];
 
 function fail(message) {
   console.error(`[artifact-surface] ${message}`);

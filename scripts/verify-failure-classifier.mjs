@@ -142,7 +142,7 @@ function check(label, condition) {
 // ---------------------------------------------------------------------
 {
   for (const id of [
-    "web_search_fetch", "fetch_url_content", "open_url", "send_email_smtp",
+    "web_search_fetch", "fetch_url_content", "download_file", "open_url", "send_email_smtp",
     "account_send_email", "account_list_emails", "account_search_drive",
     "connector_workflow_run",
     "google.gmail.send_email", "microsoft.outlook.send_email"

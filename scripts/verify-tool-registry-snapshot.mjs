@@ -26,6 +26,7 @@ const expectedIds = [
   "translate_text",
   "web_search_fetch",
   "fetch_url_content",
+  "download_file",
   "write_file",
   "edit_file",
   "run_script",
@@ -105,11 +106,11 @@ assert(
   "confirmation-gated tool id snapshot changed; update inventory intentionally."
 );
 
-assert(BUILTIN_ACTION_TOOLS.length === 61, "BUILTIN_ACTION_TOOLS count must remain 61");
+assert(BUILTIN_ACTION_TOOLS.length === 62, "BUILTIN_ACTION_TOOLS count must remain 62");
 assert(Object.isFrozen(BUILTIN_ACTION_TOOLS), "BUILTIN_ACTION_TOOLS must remain frozen");
 
 const doc = existsSync(docPath) ? readFileSync(docPath, "utf8") : "";
-assert(doc.includes("Built-in tool count: 61"), "tool registry inventory missing tool count");
+assert(doc.includes("Built-in tool count: 62"), "tool registry inventory missing tool count");
 for (const id of expectedIds) assert(doc.includes(id), `tool registry inventory missing ${id}`);
 for (const id of expectedConfirmationIds) assert(doc.includes(id), `tool registry inventory missing confirmation id ${id}`);
 

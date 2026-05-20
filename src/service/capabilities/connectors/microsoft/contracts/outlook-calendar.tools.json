@@ -64,11 +64,25 @@
           },
           "description": { "type": "string" },
           "location": { "type": "string" },
-          "timeZone": { "type": "string" }
+          "timeZone": { "type": "string" },
+          "recurrence": {
+            "oneOf": [
+              { "type": "object" },
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "string" }
+            ],
+            "description": "Microsoft Graph recurrence object, or a supported RRULE that can be converted into Graph recurrence."
+          }
         }
       },
       "outputValidators": [
-        { "path": "event.id", "kind": "nonempty_string" }
+        { "path": "event.id", "kind": "nonempty_string" },
+        {
+          "path": "event.recurrence",
+          "kind": "present_when_input_present",
+          "inputPath": "recurrence",
+          "message": "recurrence must be preserved when requested"
+        }
       ],
       "timeline": {
         "label": "Outlook Calendar create event",

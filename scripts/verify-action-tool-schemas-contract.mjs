@@ -31,7 +31,7 @@ assert(!/(?:\bfetch\(|\b(?:spawn|execFile|writeFile|mkdir|rm|unlink)\s*\()/u.tes
 
 const schemaIds = Object.keys(ACTION_TOOL_SCHEMAS).sort();
 const toolIds = BUILTIN_ACTION_TOOLS.map((tool) => tool.id).sort();
-assert.equal(schemaIds.length, 61, "schema count changed");
+assert.equal(schemaIds.length, 62, "schema count changed");
 assert.deepEqual(schemaIds, toolIds, "ACTION_TOOL_SCHEMAS keys must match BUILTIN_ACTION_TOOLS ids");
 
 for (const id of [
@@ -58,7 +58,7 @@ for (const requiredText of [
   "Action Tool Schemas Boundary",
   "`src/service/capabilities/schemas/index.mjs`",
   "moved from `src/service/action_tools/schemas/index.mjs`",
-  "Current schema count: 61",
+  "Current schema count: 62",
   "No-Touch Areas",
   "Do not add compatibility barrels"
 ]) {

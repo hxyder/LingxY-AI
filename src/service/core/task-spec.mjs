@@ -74,7 +74,7 @@ function isLaunchTaskText(text) {
 /**
  * @typedef {Object} ArtifactSpec
  * @property {boolean} required
- * @property {"pptx"|"docx"|"xlsx"|"pdf"|"html"|"csv"|"md"|"txt"|"json"|"mjs"|"js"|"py"|"ps1"|null} kind
+ * @property {"pptx"|"docx"|"xlsx"|"pdf"|"html"|"csv"|"md"|"txt"|"json"|"mjs"|"js"|"py"|"ps1"|"image"|null} kind
  * @property {"draft"|"formal"} quality
  */
 
@@ -416,6 +416,25 @@ const REGEX_CONFIRMED_SIDE_EFFECT_GROUPS = new Set([
   "file_upload"
 ]);
 
+const SIDE_EFFECT_ACTION_INTENT_PATTERNS = Object.freeze({
+  email_send: [
+    /(?:发送|发出|发一封|发封|寄|转发|send|email|mail).{0,40}(?:邮件|邮箱|email|mail|过去|给|to\b|it|this|them)/i,
+    /(?:邮件|邮箱|email|mail).{0,40}(?:发送|发出|寄出|补发|追加|转发|send|发过去)/i,
+    /(?:发过去|发给(?:他|她|对方|他们|她们)|send\s+(?:it|this|them))/i
+  ],
+  file_upload: [
+    /(?:上传|上载|传到|保存到|放到|同步到|分享到|upload|save|sync|share).{0,60}(?:这个|这份|附件|文件|drive|onedrive|网盘|云端|云盘|folder|file)/i
+  ]
+});
+
+function sideEffectActionIntentMatches(group, text = "") {
+  const patterns = SIDE_EFFECT_ACTION_INTENT_PATTERNS[group] ?? [];
+  if (patterns.length === 0) return false;
+  const raw = String(text ?? "");
+  if (!raw.trim()) return false;
+  return patterns.some((pattern) => pattern.test(raw));
+}
+
 function resolveRequiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null, signals = null } = {}) {
   const decisionGroups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
     ? decision.required_policy_groups
@@ -439,10 +458,12 @@ function resolveRequiredPolicyGroupsFromIntentRoute(decision = null, { text = ""
   const sideEffectRejected = [];
   const sideEffectAccepted = [];
   for (const group of normalizedDecisionGroups.groups) {
-    if (REGEX_CONFIRMED_SIDE_EFFECT_GROUPS.has(group) && !inferredSet.has(group)) {
+    if (REGEX_CONFIRMED_SIDE_EFFECT_GROUPS.has(group)
+        && !inferredSet.has(group)
+        && !sideEffectActionIntentMatches(group, text)) {
       sideEffectRejected.push({
         candidate: group,
-        reason: `${group} requires concrete entity evidence (recipient/attendees/file path) extracted from the user text; SR LLM proposed the group but the regex side-effect layer found no entity.`
+        reason: `${group} requires a concrete entity evidence or an executable side-effect action intent in the user text; SR LLM proposed the group but the side-effect gate found neither.`
       });
       continue;
     }
@@ -475,11 +496,18 @@ function expectedOutputFromIntentRoute(decision = null, requiredPolicyGroups = [
   return expected;
 }
 
-function shouldRelaxConnectorWebPolicy({ connectorDomainRequest, srDecision, signals }) {
+const CONCRETE_LINK_DELIVERY_RE = /(申请链接|原文链接|资料链接|来源链接|职位链接|岗位链接|报告链接|订票链接|购票链接|报名链接|预约链接|做成链接|把.*链接.*列|列出.*链接|给出.*链接|给.*链接|链接.{0,24}(?:发|发送|列出|整理)|links?\s+(?:for|to|with|listed|only)|application\s+links?|source\s+links?|original\s+links?|ticket\s+links?)/i;
+
+function isConcreteLinkDeliveryRequest(text = "") {
+  return CONCRETE_LINK_DELIVERY_RE.test(String(text ?? ""));
+}
+
+function shouldRelaxConnectorWebPolicy({ connectorDomainRequest, srDecision, signals, text = "" }) {
   if (!connectorDomainRequest) return false;
   if (srDecision && typeof srDecision === "object") return false;
   if (signals?.explicit_external?.matched) return false;
   if (signals?.explicit_single_url?.matched) return false;
+  if (isConcreteLinkDeliveryRequest(text)) return false;
   return true;
 }
 
@@ -568,6 +596,7 @@ function artifactKindFromPath(filePath = "") {
   if (normalized.endsWith(".js")) return "js";
   if (normalized.endsWith(".py")) return "py";
   if (normalized.endsWith(".ps1")) return "ps1";
+  if (/\.(?:png|jpe?g|webp|gif|bmp|svg)$/i.test(normalized)) return "image";
   return null;
 }
 
@@ -685,10 +714,11 @@ const FORMAT_PATTERNS = [
   { format: "mjs",  pattern: /\.mjs\b/i },
   { format: "js",   pattern: /\.js\b/i },
   { format: "py",   pattern: /\.py\b/i },
-  { format: "ps1",  pattern: /\.ps1\b/i }
+  { format: "ps1",  pattern: /\.ps1\b/i },
+  { format: "image", pattern: /(\.png|\.jpe?g|\.webp|\.gif|\.bmp|\.svg|图片|照片|图像|壁纸|\bimage\b|\bphoto\b|\bpicture\b|\bwallpaper\b)/i }
 ];
 
-const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html", "mjs", "js", "py", "ps1"]);
+const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html", "mjs", "js", "py", "ps1", "image"]);
 const AD_HOC_FILE_ARTIFACT_FORMATS = new Set(["md", "json", "csv", "txt"]);
 const SCRIPT_FILE_ARTIFACT_FORMATS = new Set(["mjs", "js", "py", "ps1"]);
 const ALL_EXPLICIT_FILE_ARTIFACT_FORMATS = new Set([
@@ -696,7 +726,7 @@ const ALL_EXPLICIT_FILE_ARTIFACT_FORMATS = new Set([
   ...AD_HOC_FILE_ARTIFACT_FORMATS
 ]);
 const EXPLICIT_FILE_ARTIFACT_REQUEST_RE =
-  /(?:生成(?!的)|创建|制作|保存|导出|写入|写成|做一个|整理成|转成|转换成).{0,48}(?:文件|文档|报告|表格|幻灯片|脚本|\.pptx|pptx|powerpoint|\bppt\b|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|纯文本)|\b(?:create|generate|save|export|write|make|turn\s+.*\s+into|convert)\b.{0,56}\b(?:file|document|report|spreadsheet|slide|deck|script|\.pptx|pptx|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|plain\s+text)\b/iu;
+  /(?:生成(?!的)|创建|制作|保存|下载|导出|写入|写成|做一个|整理成|转成|转换成).{0,48}(?:文件|文档|报告|表格|幻灯片|脚本|图片|照片|图像|壁纸|\.pptx|pptx|powerpoint|\bppt\b|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|纯文本|\.png|\.jpe?g|\.webp|\.gif|\.bmp|\.svg)|\b(?:create|generate|save|download|export|write|make|turn\s+.*\s+into|convert)\b.{0,56}\b(?:file|document|report|spreadsheet|slide|deck|script|image|photo|picture|wallpaper|\.pptx|pptx|\.docx|docx|word|\.xlsx|xlsx|excel|\.pdf|pdf|\.html|html|\.mjs|\.js|\.py|\.ps1|\.md|markdown|\.json|json|\.csv|csv|\.txt|plain\s+text|\.png|\.jpe?g|\.webp|\.gif|\.bmp|\.svg)\b/iu;
 const SCRIPT_EXECUTION_REQUEST_RE =
   /(?:执行|运行|跑|用\s*node(?:\.js)?\s*执行|execute|run).{0,96}(?:脚本|script|\.mjs|\.js|\.py|\.ps1)|(?:脚本|script|\.mjs|\.js|\.py|\.ps1).{0,96}(?:执行|运行|跑|execute|run)/iu;
 
@@ -717,6 +747,12 @@ function explicitFileArtifactKindFromRequest(text, suggestedFormats = []) {
 function explicitFileArtifactKindsFromRequest(text, suggestedFormats = []) {
   if (!EXPLICIT_FILE_ARTIFACT_REQUEST_RE.test(String(text ?? ""))) return [];
   return suggestedFormats.filter((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format));
+}
+
+function artifactKindFromSemanticOutputKind(outputKind = "") {
+  const normalized = String(outputKind ?? "").trim().toLowerCase();
+  if (normalized === "markdown") return "md";
+  return ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(normalized) ? normalized : null;
 }
 
 function requiresGeneratedScriptExecution(text, artifactKinds = []) {
@@ -837,8 +873,10 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     || srDecision?.expected_output === "artifact"
     || (Array.isArray(srDecision?.needed_capabilities) && srDecision.needed_capabilities.includes("artifact_generation"))
   );
-  const semanticFileArtifactKind = semanticArtifactIntent
-    ? (suggestedFormats.find((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format)) ?? null)
+  const semanticArtifactKind = semanticArtifactIntent
+    ? (artifactKindFromSemanticOutputKind(srDecision?.output_kind)
+      ?? suggestedFormats.find((format) => ALL_EXPLICIT_FILE_ARTIFACT_FORMATS.has(format))
+      ?? null)
     : null;
   const explicitFileArtifactKinds = noteIntent
     ? (suggestedFormats.includes("md") ? ["md"] : [])
@@ -851,7 +889,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     : null;
   const fileArtifactKind = explicitFileArtifactKind
     ?? (goal === "transform_existing_file" ? contextArtifactKind : null)
-    ?? semanticFileArtifactKind
+    ?? semanticArtifactKind
     ?? inferredFileArtifactKind;
   const explicitCodeExecutionRequired = SCRIPT_EXECUTION_REQUEST_RE.test(text);
   const generatedScriptExecutionRequired = requiresGeneratedScriptExecution(text, explicitFileArtifactKinds.length > 0
@@ -877,7 +915,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // decide the web axis, while connector_domain only keeps connector tools
   // in the executor's planning surface.
   const resolvedPolicy = resolveToolPolicy({ signals, contextPacket: enrichedContext, text });
-  const rawPolicy = shouldRelaxConnectorWebPolicy({ connectorDomainRequest, srDecision, signals })
+  const rawPolicy = shouldRelaxConnectorWebPolicy({ connectorDomainRequest, srDecision, signals, text })
     ? relaxConnectorWebPolicy(resolvedPolicy)
     : resolvedPolicy;
   // P4-00.6: enforce the policy_groups ↔ per-toolId invariant. Today

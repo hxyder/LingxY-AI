@@ -275,6 +275,22 @@ const account = types.normalizeConnectedAccount({
 assert.equal(account.provider, "google", "normalizeConnectedAccount provider changed");
 assert.equal(account.email, "demo@example.com", "normalizeConnectedAccount email changed");
 
+for (const rel of [
+  "src/service/capabilities/connectors/google/contracts/calendar.tools.json",
+  "src/service/capabilities/connectors/microsoft/contracts/outlook-calendar.tools.json"
+]) {
+  const contract = JSON.parse(read(rel));
+  const createTool = contract.tools.find((tool) => /calendar\.create_event$/.test(tool.id));
+  assert(createTool, `${rel} must include a create_event tool`);
+  assert(Object.hasOwn(createTool.inputSchema?.properties ?? {}, "recurrence"),
+    `${rel} create_event input schema must expose recurrence`);
+  assert((createTool.outputValidators ?? []).some((rule) =>
+    rule.kind === "present_when_input_present"
+    && rule.path === "event.recurrence"
+    && rule.inputPath === "recurrence"
+  ), `${rel} create_event must validate recurrence preservation when recurrence is requested`);
+}
+
 // Connector owners must stay service/runtime code. They must not reach into
 // desktop, Electron, renderer, or preload modules.
 for (const file of walk(ownerDir)) {

@@ -204,7 +204,7 @@ async function buildCases() {
         terminal: ["success", "partial_success"],
         mustHaveArtifact: true,
         artifactKind: "docx",
-        mustCallOneOf: ["web_search_fetch", "fetch_url_content", "web_search"]
+        mustCallOneOf: ["web_search_fetch", "fetch_url_content", "web_search", "download_file"]
       }
     },
     {
@@ -213,7 +213,7 @@ async function buildCases() {
       userCommand: "把 https://www.sqlite.org/index.html 当作纯文本返回，不要打开、访问或读取页面。",
       expect: {
         terminal: ["success", "partial_success", "failed"],
-        mustNotCall: ["open_url", "fetch_url_content", "web_search_fetch", "web_search"]
+        mustNotCall: ["open_url", "fetch_url_content", "web_search_fetch", "web_search", "download_file"]
       }
     },
     {
@@ -241,7 +241,7 @@ async function buildCases() {
       userCommand: "查找当前 SQLite 最新稳定版本号，用一句话回答并给来源。",
       expect: {
         terminal: ["success", "partial_success"],
-        mustCallOneOf: ["web_search_fetch", "fetch_url_content", "web_search"],
+        mustCallOneOf: ["web_search_fetch", "fetch_url_content", "web_search", "download_file"],
         textIncludesAny: ["SQLite", "版本", "version"]
       }
     },
@@ -262,7 +262,7 @@ async function buildCases() {
       userCommand: "用三句话解释为什么 CRDT 的最终一致性适合离线协作。",
       expect: {
         terminal: ["success"],
-        mustNotCall: ["web_search_fetch", "fetch_url_content", "web_search", "open_url"],
+        mustNotCall: ["web_search_fetch", "fetch_url_content", "web_search", "download_file", "open_url"],
         textIncludesAny: ["CRDT", "离线", "一致"]
       }
     }

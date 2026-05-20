@@ -32,6 +32,8 @@ import { extractLaunchAppCandidates, extractPureLaunchApp } from "../router/fast
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
 const PRIMARY_GROUP = "external_web_read";
 const SR_OPERATIONAL_FAILURE_CODES = new Set(["timeout", "no_provider", "exception", "schema_invalid"]);
+const URL_RE = /https?:\/\/\S+/i;
+const CONCRETE_LINK_DELIVERY_RE = /(申请链接|原文链接|资料链接|来源链接|职位链接|岗位链接|报告链接|订票链接|购票链接|报名链接|预约链接|做成链接|把.*链接.*列|列出.*链接|给出.*链接|给.*链接|链接.{0,24}(?:发|发送|列出|整理)|links?\s+(?:for|to|with|listed|only)|application\s+links?|source\s+links?|original\s+links?|ticket\s+links?)/i;
 
 /**
  * @typedef {Object} ToolPolicy
@@ -181,6 +183,18 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
+  // 2a.1. Concrete link delivery. If the user asks us to turn local/prior
+  // context into actual source/ticket/application links and no URL is already
+  // present, the runtime must authorize background web reads. Otherwise
+  // local-context fallback can forbid search and the agent fabricates links.
+  if (requiresConcreteLinkLookup({ text, contextPacket })) {
+    return webSearchPolicy(
+      "required",
+      "User asked for concrete links that are not already present in context; background web read is required to ground the URLs.",
+      [{ type: "user_text", source: "concrete_link_delivery", reason: "requested concrete links" }]
+    );
+  }
+
   // 2b. Local input fallback. Local evidence is not a hard no-web
   // constraint, but when the user did not ask to search, browse, or fetch a
   // URL, the deterministic fallback remains local. When a neutral search
@@ -267,7 +281,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
  */
 function hasInlineUrl(text) {
   if (typeof text !== "string" || text.length === 0) return false;
-  return /https?:\/\/\S+/i.test(text);
+  return URL_RE.test(text);
 }
 
 function hasProvidedUrlContext(contextPacket = {}) {
@@ -289,6 +303,26 @@ function requiresExactUrlContextRead(contextPacket = {}) {
   if (sourceType === "link") return true;
   const text = String(contextPacket.text ?? contextPacket.selection_text ?? contextPacket.selectionText ?? "").trim();
   return isBareUrlString(text);
+}
+
+function contextHasInlineUrl(contextPacket = {}) {
+  if (!contextPacket || typeof contextPacket !== "object") return false;
+  if (Array.isArray(contextPacket.urls) && contextPacket.urls.some((url) => hasInlineUrl(url))) return true;
+  const values = [
+    contextPacket.url,
+    contextPacket.text,
+    contextPacket.selection_text,
+    contextPacket.selectionText,
+    contextPacket.clipboard_text,
+    contextPacket.selection_metadata?.selection_text
+  ];
+  return values.some((value) => hasInlineUrl(String(value ?? "")));
+}
+
+function requiresConcreteLinkLookup({ text = "", contextPacket = {} } = {}) {
+  const raw = String(text ?? "");
+  if (!CONCRETE_LINK_DELIVERY_RE.test(raw)) return false;
+  return !hasInlineUrl(raw) && !contextHasInlineUrl(contextPacket);
 }
 
 function isBareUrlString(value) {

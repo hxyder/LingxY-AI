@@ -21,7 +21,7 @@ export const DEFAULT_PHASE_GATE_GUIDANCE_LIMITS = Object.freeze({
 });
 
 const ACTION_GROUP_SET = new Set(ACTION_OBLIGATION_GROUPS);
-const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty)$/;
+const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty|irrelevant_results)$/;
 
 export function evaluatePhaseGate({ task, transcript, iteration, maxIterations }) {
   const stepGateSpec = selectSuccessContractValidationSpec(task);
@@ -156,9 +156,13 @@ export function planRequiredPolicyGroupGuidance({
     && requiredPolicyGuidanceCount < limits.maxRequiredPolicyGuidance;
   if (!canInject) return null;
 
+  const violationKinds = new Set((stepGate?.violations ?? []).map((violation) => String(violation?.kind ?? "")));
   const groupLines = groups.map((group) => {
     const members = toolsInGroup(group);
     const memberText = members.length > 0 ? members.join(", ") : "a registered tool in this policy group";
+    if (violationKinds.has(`${group}_required_irrelevant_results`)) {
+      return `- ${group}: the previous result did not match the task topic. Retry with a more specific query/source, or fetch a known authoritative URL using one of ${memberText}.`;
+    }
     return `- ${group}: call at least one of ${memberText} before finalizing.`;
   });
 
@@ -213,7 +217,7 @@ export function planArtifactCreationGuidance({
       groups: ["artifact_generation"],
       instruction: [
         "The task contract requires a real file artifact. Do not finalize with prose only.",
-        `Call generate_document now with kind="${kind}" and a structured outline, or call another artifact-producing tool if it better fits the requested output.${requiredKindText}`,
+        `Call generate_document now with kind="${kind}" and a structured outline, call download_file for a direct web file/image URL, or call another artifact-producing tool if it better fits the requested output.${requiredKindText}`,
         "For ad-hoc text/code files, including explicit .html filenames, call write_file once per required filename/kind instead of writing a prose summary of the files.",
         "The final answer may summarize the generated file, but the task is not complete until an artifact path exists."
       ].join("\n"),

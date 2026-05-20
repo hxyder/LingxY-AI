@@ -322,7 +322,7 @@ export function createDesktopGuiSmokeRunner({
         true
       );
       if (!streamLoad?.ok) {
-        throw new Error("overlay_stream_delta_load_failed");
+        throw new Error(`overlay_stream_delta_load_failed:${JSON.stringify(streamLoad ?? null)}`);
       }
       if (Number(streamLoad.duration_ms) > 3000) {
         throw new Error(`overlay_stream_delta_load_slow:${streamLoad.duration_ms}`);

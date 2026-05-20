@@ -294,28 +294,165 @@ export async function uploadMicrosoftFile(runtime, account, input = {}, { fetchI
   return { status: "success", provider: "microsoft", accountId: account.id, data: { file: { id: payload.id, name: payload.name, url: payload.webUrl } } };
 }
 
+const MICROSOFT_WEEKDAYS = Object.freeze({
+  SU: "sunday",
+  MO: "monday",
+  TU: "tuesday",
+  WE: "wednesday",
+  TH: "thursday",
+  FR: "friday",
+  SA: "saturday"
+});
+
+function dateOnly(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  const compact = text.match(/^(\d{4})(\d{2})(\d{2})(?:T.*)?$/);
+  if (compact) return `${compact[1]}-${compact[2]}-${compact[3]}`;
+  const direct = text.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (direct) return direct[1];
+  const parsed = new Date(text);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString().slice(0, 10) : null;
+}
+
+function weekdayFromDate(value) {
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return null;
+  return ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"][parsed.getUTCDay()];
+}
+
+function parseRRuleParts(value) {
+  const ruleText = String(value ?? "").trim().replace(/^RRULE:/i, "");
+  if (!ruleText) return null;
+  const parts = {};
+  for (const chunk of ruleText.split(";")) {
+    const [rawKey, ...rest] = chunk.split("=");
+    const key = rawKey?.trim().toUpperCase();
+    const rawValue = rest.join("=").trim();
+    if (key && rawValue) parts[key] = rawValue;
+  }
+  return Object.keys(parts).length > 0 ? parts : null;
+}
+
+function rruleToMicrosoftRecurrence(rrule, { startTime, timeZone } = {}) {
+  const parts = parseRRuleParts(rrule);
+  if (!parts?.FREQ) {
+    return { error: "Microsoft Calendar recurrence requires an RRULE with FREQ." };
+  }
+  const interval = Math.max(1, Number.parseInt(parts.INTERVAL ?? "1", 10) || 1);
+  const byDay = String(parts.BYDAY ?? "")
+    .split(",")
+    .map((day) => MICROSOFT_WEEKDAYS[day.trim().slice(-2).toUpperCase()])
+    .filter(Boolean);
+  const startDate = dateOnly(startTime) ?? dateOnly(new Date().toISOString());
+  const endDate = dateOnly(parts.UNTIL);
+  let pattern;
+
+  if (parts.FREQ === "WEEKLY" || (parts.FREQ === "DAILY" && byDay.length > 0)) {
+    const daysOfWeek = byDay.length > 0
+      ? byDay
+      : [weekdayFromDate(startTime)].filter(Boolean);
+    if (daysOfWeek.length === 0) {
+      return { error: "Microsoft Calendar weekly recurrence requires daysOfWeek or a parseable startTime." };
+    }
+    pattern = { type: "weekly", interval, daysOfWeek };
+  } else if (parts.FREQ === "DAILY") {
+    pattern = { type: "daily", interval };
+  } else if (parts.FREQ === "MONTHLY" && parts.BYMONTHDAY) {
+    pattern = {
+      type: "absoluteMonthly",
+      interval,
+      dayOfMonth: Number.parseInt(parts.BYMONTHDAY, 10)
+    };
+  } else {
+    return {
+      error: `Microsoft Calendar recurrence does not support RRULE FREQ=${parts.FREQ} yet.`
+    };
+  }
+
+  return {
+    recurrence: {
+      pattern,
+      range: {
+        type: endDate ? "endDate" : "noEnd",
+        startDate,
+        ...(endDate ? { endDate } : {}),
+        ...(timeZone ? { recurrenceTimeZone: timeZone } : {})
+      }
+    }
+  };
+}
+
+function normalizeMicrosoftRecurrence(value, { startTime, timeZone } = {}) {
+  if (value === undefined || value === null || value === "") {
+    return { recurrence: null };
+  }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return { recurrence: value };
+  }
+  const rules = Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter(Boolean)
+    : [String(value ?? "").trim()].filter(Boolean);
+  const rrules = rules.filter((item) => /^RRULE:/i.test(item) || /(^|;)FREQ=/i.test(item));
+  if (rrules.length !== 1 || rrules.length !== rules.length) {
+    return {
+      error: "Microsoft Calendar recurrence supports one RRULE or a Microsoft Graph recurrence object."
+    };
+  }
+  return rruleToMicrosoftRecurrence(rrules[0], { startTime, timeZone });
+}
+
 export async function createMicrosoftEvent(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
+  const timeZone = input.timeZone ?? "UTC";
+  const recurrence = normalizeMicrosoftRecurrence(input.recurrence, {
+    startTime: input.startTime,
+    timeZone
+  });
+  if (recurrence.error) {
+    return {
+      status: "error",
+      errorCode: "UNSUPPORTED_RECURRENCE",
+      message: recurrence.error,
+      accountId: account.id,
+      provider: account.provider
+    };
+  }
+  const body = {
+    subject: input.title,
+    body: { contentType: "Text", content: input.description ?? "" },
+    start: { dateTime: input.startTime, timeZone },
+    end: { dateTime: input.endTime, timeZone },
+    location: { displayName: input.location ?? "" },
+    attendees: asEmailList(input.attendees).map((address) => ({
+      emailAddress: { address },
+      type: "required"
+    })),
+    ...(recurrence.recurrence ? { recurrence: recurrence.recurrence } : {})
+  };
   const response = await fetchImpl("https://graph.microsoft.com/v1.0/me/events", {
     method: "POST",
     headers: {
       ...headers(accessToken),
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      subject: input.title,
-      body: { contentType: "Text", content: input.description ?? "" },
-      start: { dateTime: input.startTime, timeZone: input.timeZone ?? "UTC" },
-      end: { dateTime: input.endTime, timeZone: input.timeZone ?? "UTC" },
-      location: { displayName: input.location ?? "" },
-      attendees: (input.attendees ?? []).map((address) => ({
-        emailAddress: { address },
-        type: "required"
-      }))
-    })
+    body: JSON.stringify(body)
   });
   if (!response.ok) return { status: "error", errorCode: `graph_create_event_error:${response.status}` };
   const payload = await response.json();
-  return { status: "success", provider: "microsoft", accountId: account.id, data: { event: { id: payload.id, title: payload.subject, url: payload.webLink } } };
+  const returnedRecurrence = payload.recurrence ?? body.recurrence;
+  return {
+    status: "success",
+    provider: "microsoft",
+    accountId: account.id,
+    data: {
+      event: {
+        id: payload.id,
+        title: payload.subject,
+        url: payload.webLink,
+        ...(returnedRecurrence ? { recurrence: returnedRecurrence } : {})
+      }
+    }
+  };
 }

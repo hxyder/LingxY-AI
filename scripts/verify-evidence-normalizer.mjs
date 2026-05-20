@@ -12,7 +12,7 @@
  *   4. www. and trailing-slash variations → normalised to the same
  *      domain.
  *   5. Tool entries with success: false are excluded from counts.
- *   6. fetch_url_content's metadata.url is also picked up.
+ *   6. fetch_url_content / download_file metadata.url are also picked up.
  *   7. registrableDomain handles known second-level public suffixes
  *      (.co.uk, .com.cn, .com.au).
  *   8. registrableDomain returns null for malformed URLs.
@@ -178,6 +178,21 @@ it("extract: fetch_url_content metadata.url picked up", () => {
   const ev = extractEvidence(transcript);
   assert.equal(ev.source_count, 2);
   assert.equal(ev.distinct_domain_count, 2);
+});
+
+it("extract: download_file metadata.url picked up as web evidence", () => {
+  const transcript = [
+    { type: "tool_result", tool: "download_file", success: true, metadata: {
+      url: "https://images.example.com/wallpaper.png",
+      path: "E:\\out\\wallpaper.png",
+      kind: "image"
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.source_count, 1);
+  assert.equal(ev.distinct_domain_count, 1);
+  assert.deepEqual(ev.domains, ["example.com"]);
+  assert.equal(ev.sources[0]?.kind, "web");
 });
 
 it("extract: mixed web_search_fetch + fetch_url_content cross-tool dedupe", () => {

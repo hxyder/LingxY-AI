@@ -81,6 +81,9 @@ import {
 } from "../../shared/llm-usage-summary.mjs";
 import { describePermissionModeContract } from "../../shared/permission-mode-model.mjs";
 import {
+  selectPartialSuccessTaskMessage
+} from "../../shared/partial-success-text.mjs";
+import {
   buildOverlayProjectStore,
   ensureDefaultProjectInStore,
   ensureSystemProjectInStore,
@@ -103,6 +106,7 @@ import {
 } from "./overlay-auto-tasks.mjs";
 import {
   bindTaskToConversationId,
+  resolveOverlayTaskEventVisibility,
   taskOwnerConversationId
 } from "./overlay-task-routing.mjs";
 import {
@@ -429,6 +433,7 @@ const taskConversationMap = new Map(); // taskId -> conversationId
 // tasks belonging to other conversations so their results still land in the
 // right place even if the user never switches back before completion.
 const backgroundTaskStreams = new Map(); // taskId -> dispose function
+let overlayViewGeneration = 0;
 let renderedTimelineEventIds = new Set();
 let streamingBubble = null;
 let streamingBubbleRawText = "";
@@ -449,6 +454,47 @@ let taskListFilter = "all";
 let lastTaskSummaryRefresh = 0;
 let compositeHeaderTaskId = null;
 const AUTO_TASK_SURFACED_KEY = "uca.overlay.autoTaskResults.v1";
+
+function normalizeOverlayTaskId(taskId) {
+  if (taskId === null || taskId === undefined) return null;
+  const key = `${taskId}`.trim();
+  return key.length > 0 ? key : null;
+}
+
+function sameOverlayTaskId(left, right) {
+  const leftKey = normalizeOverlayTaskId(left);
+  const rightKey = normalizeOverlayTaskId(right);
+  return Boolean(leftKey && rightKey && leftKey === rightKey);
+}
+
+function advanceOverlayViewGeneration() {
+  overlayViewGeneration += 1;
+  return overlayViewGeneration;
+}
+
+function isOverlayViewGenerationCurrent(viewGeneration) {
+  return viewGeneration === overlayViewGeneration;
+}
+
+function taskFrameVisibilityForCurrentOverlay(taskId, { viewGeneration = overlayViewGeneration } = {}) {
+  if (!isOverlayViewGenerationCurrent(viewGeneration)) {
+    return { render: false, ownerConversationId: null, reason: "stale_overlay_view_generation" };
+  }
+  return resolveOverlayTaskEventVisibility(taskConversationMap, {
+    taskId,
+    activeTaskId,
+    currentConversationId: conversationState?.id ?? null
+  });
+}
+
+function shouldRenderTaskFrameInCurrentOverlay(taskId, viewGeneration = overlayViewGeneration) {
+  return taskFrameVisibilityForCurrentOverlay(taskId, { viewGeneration }).render;
+}
+
+function isActiveTaskRefreshCurrent(taskId, viewGeneration) {
+  return sameOverlayTaskId(activeTaskId, taskId)
+    && shouldRenderTaskFrameInCurrentOverlay(taskId, viewGeneration);
+}
 
 function bindWindowDeltaHandle(element, mode = "move") {
   if (!element) return;
@@ -682,6 +728,7 @@ function switchConversation(convId) {
   // longer looking at it. Without this, switching away from a running task
   // drops every event after the switch point.
   demoteActiveStreamToBackground();
+  advanceOverlayViewGeneration();
 
   conversationState = conv;
   if (conversationState.metadata?.unread) {
@@ -709,7 +756,16 @@ function switchProject(projectId) {
   if (!projectStore) return;
   projectStore.currentProjectId = projectId;
   const convs = projectStore.conversations.filter((c) => c.projectId === projectId).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-  if (convs.length) { switchConversation(convs[0].id); } else { conversationState = null; projectStore.currentConversationId = null; saveProjectStore(); clearBubbles(); showWelcome(); }
+  if (convs.length) {
+    switchConversation(convs[0].id);
+  } else {
+    advanceOverlayViewGeneration();
+    conversationState = null;
+    projectStore.currentConversationId = null;
+    saveProjectStore();
+    clearBubbles();
+    showWelcome();
+  }
 }
 
 function createProject(name, color) {
@@ -739,7 +795,13 @@ function deleteConversation(convId) {
   if (projectStore.currentConversationId === convId) {
     conversationState = null; projectStore.currentConversationId = null;
     const fallback = projectStore.conversations.filter((c) => c.projectId === projectStore.currentProjectId).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
-    if (fallback) switchConversation(fallback.id); else { clearBubbles(); showWelcome(); }
+    if (fallback) {
+      switchConversation(fallback.id);
+    } else {
+      advanceOverlayViewGeneration();
+      clearBubbles();
+      showWelcome();
+    }
   }
   saveProjectStore();
 }
@@ -765,6 +827,7 @@ function ensureConversation(seedCapture = null, seedCommand = null) {
     projectStore.conversations.push(conv);
     projectStore.currentConversationId = conv.id;
     conversationState = conv;
+    advanceOverlayViewGeneration();
   } else {
     if (!conversationState.seedCapture && seedCapture) conversationState.seedCapture = { ...seedCapture };
     if (!conversationState.seedCommand && seedCommand) conversationState.seedCommand = seedCommand;
@@ -827,9 +890,16 @@ function appendTurn(role, content, opts = {}) {
 function appendTurnForTask(taskId, role, content) {
   if (!content || typeof content !== "string") return;
   const ownerConvId = taskOwnerConversationId(taskConversationMap, taskId);
-  if (!ownerConvId || !projectStore) {
-    // Unknown owner — fall back to current conversation semantics.
-    appendTurn(role, content);
+  if (!ownerConvId) {
+    if (shouldRenderTaskFrameInCurrentOverlay(taskId)) {
+      appendTurn(role, content);
+    }
+    return;
+  }
+  if (!projectStore) {
+    if (ownerConvId === conversationState?.id) {
+      appendTurn(role, content);
+    }
     return;
   }
   if (ownerConvId === conversationState?.id) {
@@ -838,7 +908,6 @@ function appendTurnForTask(taskId, role, content) {
   }
   const owner = projectStore.conversations.find((c) => c.id === ownerConvId);
   if (!owner) {
-    appendTurn(role, content);
     return;
   }
   owner.turns = Array.isArray(owner.turns) ? owner.turns : [];
@@ -1090,6 +1159,7 @@ function renderConversationFromState() {
 function startNewConversation({ preservePendingInputContext = false } = {}) {
   const preservedPendingFileSelection = preservePendingInputContext ? pendingFileSelection : null;
   const preservedPendingCapture = preservePendingInputContext ? pendingCapture : null;
+  advanceOverlayViewGeneration();
   demoteActiveStreamToBackground();
   window.livePreview?.close?.();
   activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
@@ -1117,6 +1187,11 @@ function startNewConversation({ preservePendingInputContext = false } = {}) {
   // a deliberate "new conversation" should sweep everything.)
   streamingBubble = null;
   streamingBubbleRawText = "";
+  pendingOverlayTextDeltaTaskId = null;
+  pendingOverlayTextDeltaText = "";
+  pendingOverlayThinkingDeltaText = "";
+  activeThinkingEl = null;
+  activeThinkingText = "";
   clearBubbles();
   commandInput.value = "";
   autoSizeInput();
@@ -2293,12 +2368,6 @@ function showWelcome() {
   }
 }
 
-function formatPartialSuccessText(message = "") {
-  const raw = String(message ?? "").trim() || "see task for details";
-  const normalized = raw.replace(/^Task partially succeeded:?\s*/i, "").trim() || "see task for details";
-  return `Task partially succeeded: ${normalized}`;
-}
-
 function showContextReceivedBubble() {
   if (pendingFileSelection?.filePaths?.length) {
     const count = pendingFileSelection.filePaths.length;
@@ -3106,6 +3175,7 @@ async function renderInlineApproval(frame) {
       const resumeTaskId = resp?.executionResult?.task?.task_id
         ?? resp?.approval?.resulting_task_id
         ?? null;
+      const owningTaskId = frame.taskId ?? frame.task_id ?? data.task_id ?? activeTaskId ?? null;
       if (resumeTaskId && conversationState?.id) {
         bindTaskToConversationId(taskConversationMap, resumeTaskId, conversationState.id);
         const existing = backgroundTaskStreams.get(resumeTaskId);
@@ -3118,6 +3188,13 @@ async function renderInlineApproval(frame) {
             resumeTaskId,
             typeof stream === "function" ? stream : () => { try { (stream?.close ?? stream?.dispose)?.call(stream); } catch { /* ignore */ } }
           );
+        }
+        // Approval execution can finish before the renderer's fresh SSE
+        // subscription is attached. Poll the canonical task detail once so
+        // terminal success/failed events clear the inline "processing" bubble.
+        if (!activeTaskId || activeTaskId === owningTaskId || activeTaskId === resumeTaskId) {
+          activeTaskId = resumeTaskId;
+          await refreshActiveTask();
         }
       }
       const executionResult = resp?.executionResult ?? null;
@@ -3155,14 +3232,18 @@ async function renderInlineApproval(frame) {
   renderedApprovalCards.set(approvalId, card);
 }
 
-function replayTaskTimelineEvents(events = []) {
+function replayTaskTimelineEvents(events = [], { taskId = activeTaskId, viewGeneration = overlayViewGeneration } = {}) {
+  if (!shouldRenderTaskFrameInCurrentOverlay(taskId, viewGeneration)) return;
   // Insert tool bubbles BEFORE the most recent assistant bubble so the
   // replayed timeline reads chronologically (user → tools → answer)
   // instead of (user → answer → tools dangling at the bottom).
   const assistantBubbles = bubbleArea.querySelectorAll(".bubble.assistant");
   const replayAnchor = assistantBubbles[assistantBubbles.length - 1] ?? null;
   for (const event of events) {
-    renderTaskTimelineEvent(toTaskEventFrame(event), { showOverlay: false, replayAnchor });
+    const frame = toTaskEventFrame(event);
+    const eventTaskId = frame.taskId ?? frame.task_id ?? taskId;
+    if (!shouldRenderTaskFrameInCurrentOverlay(eventTaskId, viewGeneration)) continue;
+    renderTaskTimelineEvent(frame, { showOverlay: false, replayAnchor });
   }
 }
 
@@ -3187,6 +3268,7 @@ function flushOverlayTextDelta() {
   const taskId = pendingOverlayTextDeltaTaskId ?? activeTaskId ?? null;
   pendingOverlayTextDeltaText = "";
   pendingOverlayTextDeltaTaskId = null;
+  if (!shouldRenderTaskFrameInCurrentOverlay(taskId)) return;
   applyOverlayTextDelta(taskId, delta);
 }
 
@@ -3522,6 +3604,16 @@ window.__lingxyOverlaySmoke = {
     const count = Math.max(1, Math.min(5000, Number(chunks) || 1000));
     const text = String(chunkText || "x");
     const started = performance.now();
+    const smokeConversation = ensureConversation(null, "GUI smoke stream");
+    activeTaskId = taskId;
+    const visibleConversationId = smokeConversation?.id
+      ?? conversationState?.id
+      ?? projectStore?.currentConversationId
+      ?? null;
+    if (visibleConversationId) {
+      bindTaskToConversationId(taskConversationMap, taskId, visibleConversationId);
+    }
+    const visibilityBefore = taskFrameVisibilityForCurrentOverlay(taskId);
     streamingBubble?.remove?.();
     streamingBubble = null;
     streamingBubbleRawText = "";
@@ -3541,7 +3633,13 @@ window.__lingxyOverlaySmoke = {
       rendered_chars: renderedText.length,
       expected_chars: count * text.length,
       duration_ms: durationMs,
-      streaming_bubbles: bubbleArea?.querySelectorAll?.(".bubble.assistant.streaming")?.length ?? 0
+      streaming_bubbles: bubbleArea?.querySelectorAll?.(".bubble.assistant.streaming")?.length ?? 0,
+      active_task_id: activeTaskId,
+      visible_conversation_id: visibleConversationId,
+      conversation_state_id: conversationState?.id ?? null,
+      project_current_conversation_id: projectStore?.currentConversationId ?? null,
+      visibility_reason: visibilityBefore.reason,
+      owner_conversation_id: visibilityBefore.ownerConversationId ?? null
     };
   },
   async runStopButtonCancel({ taskId = "gui-smoke-stop-button" } = {}) {
@@ -3665,6 +3763,7 @@ window.__lingxyOverlaySmoke = {
 };
 
 async function handleTaskEventFrame(rawEvent) {
+  const frameViewGeneration = overlayViewGeneration;
   const frame = toTaskEventFrame(rawEvent);
   if (frame.id && handledTaskEventIds.has(frame.id)) return;
   if (frame.id) handledTaskEventIds.add(frame.id);
@@ -3679,8 +3778,8 @@ async function handleTaskEventFrame(rawEvent) {
   if (frameTaskId && isEchoOriginEventFrame(frame)) {
     rememberEchoTask(frameTaskId);
   }
-  const ownerConvId = taskOwnerConversationId(taskConversationMap, frameTaskId);
-  const isForActiveConv = !ownerConvId || ownerConvId === conversationState?.id;
+  const visibility = taskFrameVisibilityForCurrentOverlay(frameTaskId, { viewGeneration: frameViewGeneration });
+  const isForActiveConv = visibility.render;
 
   if (lastTask?.task_id === activeTaskId) {
     lastTask = applyTaskEventPatch(lastTask, frame);
@@ -3786,7 +3885,7 @@ async function handleTaskEventFrame(rawEvent) {
   }
 
   // UCA-075: Skill proposal — user can save the repeated tool sequence as a skill
-  if (frame.event === "skill_proposal") {
+  if (frame.event === "skill_proposal" && isForActiveConv) {
     const proposal = frame.data?.proposal;
     const text = frame.data?.text ?? "💡 检测到重复操作，是否保存为可复用技能？";
     if (proposal) {
@@ -3823,9 +3922,11 @@ async function handleTaskEventFrame(rawEvent) {
       // also stamp it with the final character count as a residual hint.
       closeActiveThinkingCard();
       const detail = await refreshActiveTask();
-      appendOverlayContentEvidence(frameTaskId, extractContentEvidenceFromTaskDetail(detail));
-      if ((frame.event === "success" || frame.event === "partial_success") && frame.data?.evidence_summary) {
-        appendOverlayEvidenceSources(frameTaskId, frame.data.evidence_summary);
+      if (shouldRenderTaskFrameInCurrentOverlay(frameTaskId, frameViewGeneration)) {
+        appendOverlayContentEvidence(frameTaskId, extractContentEvidenceFromTaskDetail(detail));
+        if ((frame.event === "success" || frame.event === "partial_success") && frame.data?.evidence_summary) {
+          appendOverlayEvidenceSources(frameTaskId, frame.data.evidence_summary);
+        }
       }
     }
     if (frame.event === "partial_success") {
@@ -4352,8 +4453,10 @@ function buildChildBadgeRow({ parentTask, activeChildId }) {
   `;
 }
 
-async function ensureCompositeHeader(task) {
+async function ensureCompositeHeader(task, { viewGeneration = overlayViewGeneration } = {}) {
   if (!bubbleArea) return;
+  if (!isOverlayViewGenerationCurrent(viewGeneration)) return;
+  if (task?.task_id && !shouldRenderTaskFrameInCurrentOverlay(task.task_id, viewGeneration)) return;
   if (!task?.task_id) {
     compositeHeaderTaskId = null;
     const existing = bubbleArea.querySelector("[data-composite-header]");
@@ -4382,6 +4485,8 @@ async function ensureCompositeHeader(task) {
     } catch { /* ignore */ }
   }
 
+  if (!isOverlayViewGenerationCurrent(viewGeneration)) return;
+  if (!shouldRenderTaskFrameInCurrentOverlay(task.task_id, viewGeneration)) return;
   if (!parentTask) return;
 
   compositeHeaderTaskId = `${task.task_id}:${parentId}`;
@@ -4652,15 +4757,18 @@ function appendProviderFooterBubble({ descriptor, downgraded }) {
 }
 
 async function refreshActiveTask() {
-  if (!activeTaskId) {
+  const refreshViewGeneration = overlayViewGeneration;
+  const refreshTaskId = activeTaskId;
+  if (!refreshTaskId) {
     await refreshTaskSummaries();
     renderTaskListDock();
     return null;
   }
 
   try {
-    ensureActiveTaskEventStream(activeTaskId);
-    const payload = await overlayTaskClient.fetchTaskDetail(activeTaskId);
+    ensureActiveTaskEventStream(refreshTaskId);
+    const payload = await overlayTaskClient.fetchTaskDetail(refreshTaskId);
+    if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
     const task = {
       ...(payload.task ?? payload),
       artifacts: payload.artifacts ?? []
@@ -4668,9 +4776,11 @@ async function refreshActiveTask() {
     lastTask = task;
     lastArtifacts = task.artifacts;
     await refreshTaskSummaries();
-    ensureCompositeHeader(task);
+    if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
+    await ensureCompositeHeader(task, { viewGeneration: refreshViewGeneration });
+    if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
     renderTaskListDock();
-    replayTaskTimelineEvents(payload.events ?? []);
+    replayTaskTimelineEvents(payload.events ?? [], { taskId: refreshTaskId, viewGeneration: refreshViewGeneration });
 
     const childIds = Array.isArray(task.child_task_ids) ? task.child_task_ids : [];
     if (childIds.length > 0 && notifiedCompositeTaskId !== task.task_id) {
@@ -4727,10 +4837,12 @@ async function refreshActiveTask() {
       if (isPreviewableArtifactPath(previewPath)) {
         try {
           const rawText = await overlayShellClient.readTextFile(previewPath, 4000);
+          if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
           previewText = normalisePreviewText(rawText).slice(0, 1200);
           lastArtifactPreview = previewText;
         } catch { /* ignore */ }
       }
+      if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
 
       if (notifiedTaskId !== task.task_id) {
         notifiedTaskId = task.task_id;
@@ -4746,6 +4858,7 @@ async function refreshActiveTask() {
         appendTurn("assistant", memorySnippet);
         if (!isEchoTask(task.task_id)) {
           await maybeRevealOverlay({ markEngaged: true });
+          if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
         }
         if (isAudioNoteTask && previewText) {
           addBubble("assistant", `录音笔记整理好了：\n\n${previewText.slice(0, 1200)}`);
@@ -4753,9 +4866,11 @@ async function refreshActiveTask() {
         // UCA-049: surface which provider actually ran this task + warn if
         // the planner had to downgrade an unsupported "已完成" claim.
         try {
-          const detail = await overlayTaskClient.fetchTaskDetail(activeTaskId);
+          const detail = await overlayTaskClient.fetchTaskDetail(refreshTaskId);
+          if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
           appendProviderFooterBubble(extractTaskProviderInfo(detail.events ?? []));
         } catch { /* non-fatal — provider footer is informational */ }
+        if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
         showToast(
           "Task complete",
           previewText || `Result: ${resultLabel} — ${previewPath}`,
@@ -4862,7 +4977,8 @@ async function refreshActiveTask() {
         let inlineText = lastArtifactPreview;
         let providerInfo = { descriptor: null, downgraded: false };
         try {
-          const detail = await overlayTaskClient.fetchTaskDetail(activeTaskId);
+          const detail = await overlayTaskClient.fetchTaskDetail(refreshTaskId);
+          if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
           const events = detail.events ?? [];
           providerInfo = extractTaskProviderInfo(events);
           if (!inlineText) {
@@ -4873,6 +4989,7 @@ async function refreshActiveTask() {
             if (inlineText) lastArtifactPreview = inlineText;
           }
         } catch { /* ignore */ }
+        if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
 
         // UCA-064: For composite tasks, use result_summary instead of "Done."
         const compositeSummary = (task.child_task_ids?.length > 0 && task.result_summary)
@@ -4893,7 +5010,10 @@ async function refreshActiveTask() {
           streamingBubbleRawText = "";
         } else {
           addBubble("assistant", finalText);
-          if (shouldAutoRevealTaskResult()) await maybeRevealOverlay({ markEngaged: true });
+          if (shouldAutoRevealTaskResult()) {
+            await maybeRevealOverlay({ markEngaged: true });
+            if (!isActiveTaskRefreshCurrent(refreshTaskId, refreshViewGeneration)) return null;
+          }
         }
         if (!popKeptOpen) {
           // Apple-style: show a transient pop bubble too, but keep the reply
@@ -4973,28 +5093,33 @@ async function refreshActiveTask() {
       // conversation thread updates so a follow-up wake within the 30s
       // window can attach via parent_task_id, while making the partial
       // outcome visible.
-      const partialMsg = task.failure_user_message
-        ?? task.partial_message
-        ?? "Task partially succeeded.";
-      const partialText = formatPartialSuccessText(partialMsg);
+      const partialText = selectPartialSuccessTaskMessage(task);
+      const shouldRenderPartialOutcome = notifiedTaskId !== task.task_id
+        && notifiedInlineResultTaskId !== task.task_id;
       // Codex Round 5 review: success branches finalise streamingBubble in
       // place rather than adding a duplicate; partial_success must do the
       // same so a backend path that ends mid-stream (no inline_result, no
       // success event) doesn't leave a "streaming" bubble hanging in the UI.
+      const hadStreamingBubble = Boolean(streamingBubble);
       if (streamingBubble) {
         streamingBubble.classList.remove("streaming");
         streamingBubble.innerHTML = renderMarkdown(partialText);
         streamingBubble = null;
         streamingBubbleRawText = "";
-      } else {
+      } else if (shouldRenderPartialOutcome) {
         addBubble("assistant", partialText);
+      }
+      if (hadStreamingBubble || shouldRenderPartialOutcome) {
+        notifiedTaskId = task.task_id;
       }
       if (conversationState) {
         conversationState.lastCompletedTaskId = task.task_id;
         conversationState.lastCompletedAt = Date.now();
         conversationState.updatedAt = Date.now();
       }
-      appendTurn("assistant", `部分完成：${partialText.replace(/^Task partially succeeded:\s*/i, "")}`);
+      if (hadStreamingBubble || shouldRenderPartialOutcome) {
+        appendTurn("assistant", `部分完成：${partialText.replace(/^Task partially succeeded:\s*/i, "")}`);
+      }
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
         lastEchoTaskConversationId = task.conversation_id
@@ -5003,7 +5128,9 @@ async function refreshActiveTask() {
           ?? null;
         lastEchoTaskId = task.task_id;
       }
-      speakEchoFinalIfApplicable(task, partialText);
+      if (hadStreamingBubble || shouldRenderPartialOutcome) {
+        speakEchoFinalIfApplicable(task, partialText);
+      }
     } else if (task.status === "cancelled") {
       addSystemBubble("Task cancelled.");
       // Audit (2026-05-07): cancelled tasks left lastEchoTaskCompletedAt at
@@ -6000,9 +6127,10 @@ let echoVoiceHardLimitTimer = null;
 let echoCommandStartedAt = 0;
 let echoCommandLastSpeechAt = 0;
 let echoRecognizerRestartTimer = null;
-const ECHO_LOCAL_CAPTURE_MS = 8000;
-const ECHO_COMMAND_SILENCE_MS = 2400;
+const ECHO_LOCAL_CAPTURE_MS = 4000;
+const ECHO_COMMAND_SILENCE_MS = 1400;
 const ECHO_COMMAND_HARD_LIMIT_MS = 18000;
+const ECHO_TRANSCRIBE_FIRST_FRAME_TIMEOUT_MS = 6000;
 const ECHO_NOTE_COMMAND_PATTERNS = [
   /(?:开始|開始|启动|啟動|打开|開啟|开启|录|錄).{0,4}(?:录音|錄音|笔记|筆記|记录|記錄|会议|會議|note)/i,
   /(?:录音|錄音).{0,4}(?:笔记|筆記|记录|記錄|会议|會議)/i,
@@ -6098,9 +6226,20 @@ async function submitEchoVoiceCommand() {
   let deferredForMoreSpeech = false;
   clearEchoVoiceAutoSubmit();
   try {
-    showEchoHud({ text: "正在转写…", kind: "info", durationMs: 2000, throttleMs: 0 });
+    const liveTranscriptReady = voiceRecognitionProducedText
+      && commandInput.value.trim()
+      && !voiceLocalFallbackActive;
+    showEchoHud({
+      text: liveTranscriptReady ? "已识别，正在发送…" : "正在转写…",
+      kind: "info",
+      durationMs: 2000,
+      throttleMs: 0
+    });
     if (voiceRecording) {
-      const finalResult = await stopVoiceRecognition({ forceTranscribe: true });
+      const finalResult = await stopVoiceRecognition({
+        preferLiveTranscript: true,
+        streamingFirstFrameTimeoutMs: ECHO_TRANSCRIBE_FIRST_FRAME_TIMEOUT_MS
+      });
       const finalText = `${finalResult?.transcript ?? ""}`.trim();
       if (finalText) {
         commandInput.value = finalText;
@@ -6672,7 +6811,7 @@ function stopVoiceTracks() {
   stopVoiceAudioMeter();
 }
 
-function stopVoiceLocalRecorder({ transcribe = false } = {}) {
+function stopVoiceLocalRecorder({ transcribe = false, streamingFirstFrameTimeoutMs = undefined } = {}) {
   const recorder = voiceMediaRecorder;
   voiceMediaRecorder = null;
   voiceLocalFallbackActive = false;
@@ -6691,7 +6830,8 @@ function stopVoiceLocalRecorder({ transcribe = false } = {}) {
         voiceStatus.textContent = "⏳ 正在转写...";
         const blob = new Blob(chunks, { type: "audio/webm" });
         const streamed = await transcribeAudioBlobStreaming(blob, {
-          lang: selectedVoiceLanguage()
+          lang: selectedVoiceLanguage(),
+          firstFrameTimeoutMs: streamingFirstFrameTimeoutMs
         });
         if (streamed.ok) {
           const transcript = `${streamed.transcript ?? ""}`.trim();
@@ -6992,16 +7132,27 @@ async function startVoiceRecognition() {
   }
 }
 
-function stopVoiceRecognition({ discard = false, forceTranscribe = false } = {}) {
-  // In Echo sessions, Web Speech is only a low-latency preview. Always run
-  // the MediaRecorder audio through the final transcription path before
-  // sending so a bad interim transcript does not become the command.
+function stopVoiceRecognition({
+  discard = false,
+  forceTranscribe = false,
+  preferLiveTranscript = false,
+  streamingFirstFrameTimeoutMs = undefined
+} = {}) {
+  // Echo command capture uses Web Speech as the fast path and falls back to
+  // MediaRecorder transcription only when live recognition produced no usable
+  // text. Manual voice/note flows keep the conservative final-transcribe path.
+  const canUseLiveTranscript = Boolean(!forceTranscribe
+    && preferLiveTranscript
+    && voiceRecognitionProducedText
+    && commandInput.value.trim()
+    && !voiceLocalFallbackActive);
   const shouldTranscribe = !discard
+    && !canUseLiveTranscript
     && (forceTranscribe || voiceLocalFallbackActive || !voiceRecognitionProducedText || selectedVoiceLanguage() === "auto");
   voiceManualStopPending = true;
   if (voiceLocalFallbackActive || shouldTranscribe) {
     setVoiceRecording(false);
-    const stopped = stopVoiceLocalRecorder({ transcribe: shouldTranscribe }).finally(() => {
+    const stopped = stopVoiceLocalRecorder({ transcribe: shouldTranscribe, streamingFirstFrameTimeoutMs }).finally(() => {
       voiceManualStopPending = false;
     });
     return stopped;
@@ -7923,10 +8074,13 @@ async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
 // makes text appear progressively (one segment at a time) as faster-whisper
 // decodes, instead of waiting for the whole blob to be transcribed.
 // Resolves {ok: true, transcript} on a successful `done` event, or
-// {ok: false} if no frames arrive within the first-byte timeout or the
-// server reports an error — the caller falls back to the non-streaming path.
-async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
-  const FIRST_FRAME_TIMEOUT_MS = 30_000;
+// {ok: false} if the main-process bridge times out before the first frame or
+// the server reports an error — the caller falls back to the non-streaming path.
+async function transcribeAudioBlobStreaming(blob, { lang = "auto", firstFrameTimeoutMs = 30_000 } = {}) {
+  const requestedTimeoutMs = Number(firstFrameTimeoutMs);
+  const boundedFirstFrameTimeoutMs = Number.isFinite(requestedTimeoutMs)
+    ? Math.max(1000, Math.min(30_000, Math.trunc(requestedTimeoutMs)))
+    : 30_000;
   if (typeof overlayShellClient?.transcribeNoteAudioStreaming !== "function") {
     console.warn("[voice] stream transcribe bridge unavailable");
     return { ok: false };
@@ -7935,21 +8089,16 @@ async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
   let finalTranscript = "";
   let gotAnyFrame = false;
   let sawError = false;
-  let firstFrameTimer = null;
-  const clearFirstFrameTimer = () => {
-    if (firstFrameTimer) clearTimeout(firstFrameTimer);
-    firstFrameTimer = null;
-  };
   try {
-    const streamPromise = overlayShellClient.transcribeNoteAudioStreaming({
+    const result = await overlayShellClient.transcribeNoteAudioStreaming({
       audio: await blob.arrayBuffer(),
       mimeType: blob.type || "audio/webm",
       lang: lang || "auto",
-      outputLocale: transcriptionOutputLocale()
+      outputLocale: transcriptionOutputLocale(),
+      firstFrameTimeoutMs: boundedFirstFrameTimeoutMs
     }, (event) => {
         if (!gotAnyFrame) {
           gotAnyFrame = true;
-          clearFirstFrameTimer();
         }
         if (event.type === "segment" && event.text) {
           assembled += (assembled ? "\n" : "") + event.text;
@@ -7962,11 +8111,6 @@ async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
           sawError = true;
         }
     });
-    firstFrameTimer = setTimeout(() => {
-      console.warn("[voice] stream transcribe first frame timeout");
-      sawError = true;
-    }, FIRST_FRAME_TIMEOUT_MS);
-    const result = await streamPromise;
     if (result?.transcript && !finalTranscript) {
       finalTranscript = `${result.transcript}`.trim();
     }
@@ -7974,10 +8118,8 @@ async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
       sawError = true;
     }
   } catch (err) {
-    console.warn("[voice] stream transcribe reader aborted:", err);
+    console.warn("[voice] stream transcribe request failed:", err);
     return { ok: false };
-  } finally {
-    clearFirstFrameTimer();
   }
   if (!gotAnyFrame || sawError) return { ok: false };
   return { ok: true, transcript: finalTranscript || assembled };

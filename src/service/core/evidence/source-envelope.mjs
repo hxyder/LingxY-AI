@@ -226,7 +226,7 @@ export function normalizeSources(entry = {}) {
   const tool = entry.tool ?? entry.name ?? entry.tool_id ?? "";
   const sources = (() => {
     if (tool === "web_search_fetch") return sourcesFromWebSearch(entry);
-    if (tool === "fetch_url_content") return sourcesFromFetchUrl(entry);
+    if (tool === "fetch_url_content" || tool === "download_file") return sourcesFromFetchUrl(entry);
     if (tool === "read_file_text" || tool === "read_folder_text") return sourcesFromFreshFileRead(entry);
     if (tool === "vision_analyze") return sourcesFromVision(entry);
     if (tool === "search_file_content") return sourcesFromIndexedFileSearch(entry);

@@ -8,7 +8,7 @@ verification.
 
 - Current owner: `src/service/capabilities/schemas/index.mjs`
 - Public API: `ACTION_TOOL_SCHEMAS`
-- Current schema count: 61
+- Current schema count: 62
 - Runtime consumers:
   - `src/service/action_tools/tools/index.mjs`
   - `src/service/capabilities/tools/*.mjs`
@@ -39,7 +39,7 @@ verification.
 ## Verification
 
 - `scripts/verify-action-tool-schemas-contract.mjs` locks the moved owner,
-  old-path removal, public export, 61-key schema surface, key alignment with
+  old-path removal, public export, 62-key schema surface, key alignment with
   built-in tool ids, schema-only import-free shape, and this boundary document.
 
 ## Decision

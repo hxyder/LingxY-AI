@@ -2,7 +2,7 @@
 
 Phase 2A boundary inventory for built-in action tools.
 
-Status: verified against the current repository on 2026-05-11.
+Status: verified against the current repository on 2026-05-18.
 
 ## Contract Source
 
@@ -16,13 +16,13 @@ Status: verified against the current repository on 2026-05-11.
 
 ## Snapshot
 
-- Built-in tool count: 61
+- Built-in tool count: 62
 - Tool ids are registry contracts. Do not rename existing ids during reorganization.
 - Confirmation-gated tool ids: `send_email_smtp`, `create_scheduled_task`, `delete_scheduled_task`, `index_file_content`, `gui_click`, `gui_type_text`, `save_capability_draft`, `install_skill_from_github`, `account_send_email`.
 
 ## Tool Ids
 
-`open_url`, `web_search`, `compose_email`, `send_email_smtp`, `open_file`, `reveal_in_explorer`, `launch_app`, `copy_to_clipboard`, `notify`, `file_op`, `take_screenshot`, `read_clipboard`, `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task`, `translate_text`, `web_search_fetch`, `fetch_url_content`, `write_file`, `edit_file`, `run_script`, `generate_document`, `render_diagram`, `render_svg`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact`, `stat_file`, `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `verify_file_exists`, `register_artifact`, `resolve_output_path`, `gui_find_element`, `gui_click`, `gui_type_text`, `vision_analyze`, `recall_memory`, `list_recent_tasks`, `get_task_detail`, `list_conversation_artifacts`, `draft_capability`, `save_capability_draft`, `preview_skill_from_github`, `install_skill_from_github`, `connector_catalog_search`, `connector_catalog_get`, `connector_workflow_run`, `connector_plugin_manage`, `account_list_connected_accounts`, `account_list_emails`, `account_list_events`, `account_list_files`, `account_download_file`, `account_send_email`, `account_upload_file`, `account_create_event`.
+`open_url`, `web_search`, `compose_email`, `send_email_smtp`, `open_file`, `reveal_in_explorer`, `launch_app`, `copy_to_clipboard`, `notify`, `file_op`, `take_screenshot`, `read_clipboard`, `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task`, `translate_text`, `web_search_fetch`, `fetch_url_content`, `download_file`, `write_file`, `edit_file`, `run_script`, `generate_document`, `render_diagram`, `render_svg`, `list_files`, `glob_files`, `find_recent_files`, `get_latest_artifact`, `stat_file`, `read_file_text`, `read_folder_text`, `search_file_content`, `index_file_content`, `verify_file_exists`, `register_artifact`, `resolve_output_path`, `gui_find_element`, `gui_click`, `gui_type_text`, `vision_analyze`, `recall_memory`, `list_recent_tasks`, `get_task_detail`, `list_conversation_artifacts`, `draft_capability`, `save_capability_draft`, `preview_skill_from_github`, `install_skill_from_github`, `connector_catalog_search`, `connector_catalog_get`, `connector_workflow_run`, `connector_plugin_manage`, `account_list_connected_accounts`, `account_list_emails`, `account_list_events`, `account_list_files`, `account_download_file`, `account_send_email`, `account_upload_file`, `account_create_event`.
 
 ## Tool Family Ownership
 
@@ -33,7 +33,7 @@ is a live aggregator only.
 
 | Family | Source module | Tool IDs |
 |--------|---------------|----------|
-| Browser / Web / Search / Translation | `src/service/capabilities/tools/browser-web-tools.mjs` (~280 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `translate_text` |
+| Browser / Web / Search / Translation | `src/service/capabilities/tools/browser-web-tools.mjs` (~450 lines) | `open_url`, `web_search`, `web_search_fetch`, `fetch_url_content`, `download_file`, `translate_text` |
 | OS / App / File / Clipboard / Notify | `src/service/capabilities/tools/os-app-tools.mjs` (~195 lines) | `open_file`, `reveal_in_explorer`, `file_op`, `copy_to_clipboard`, `read_clipboard`, `notify` |
 | Email | `src/service/capabilities/tools/email-tools.mjs` (~70 lines) | `compose_email`, `send_email_smtp` |
 | Scheduler | `src/service/capabilities/tools/scheduler-tools.mjs` (~140 lines) | `create_scheduled_task`, `list_scheduled_tasks`, `delete_scheduled_task`, `pause_scheduled_task` |
@@ -81,7 +81,7 @@ None in `tools/index.mjs`.
 ## Boundary Rules
 
 - Registry id uniqueness is mandatory.
-- `BUILTIN_ACTION_TOOLS` order must remain stable (61 ids, frozen order).
+- `BUILTIN_ACTION_TOOLS` order must remain stable (62 ids, frozen order).
 - Tool ids are registry contracts. Do not rename existing ids during reorganization.
 - Confirmation-gated tool id list must remain unchanged.
 - Tool schemas must remain with the service runtime, not renderer UI.
@@ -97,4 +97,4 @@ Run:
 node scripts/verify-tool-registry-snapshot.mjs
 ```
 
-The verifier imports the built-in registry, checks duplicate ids, confirms the 61-id snapshot, and checks confirmation-gated ids.
+The verifier imports the built-in registry, checks duplicate ids, confirms the 62-id snapshot, and checks confirmation-gated ids.

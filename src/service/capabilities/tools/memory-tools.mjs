@@ -26,6 +26,10 @@ const DEFAULT_RECALL_LIMIT = 5;
 const DEFAULT_RECENT_MINUTES = 30;
 const DEFAULT_RECENT_LIMIT = 5;
 const MAX_LIMIT = 20;
+const MAX_SIDE_EFFECT_BODY_CHARS = 6000;
+
+const EMAIL_WORKFLOW_RE = /(?:gmail|outlook|email|mail).*(?:send|draft)|draft_confirm_send|email\.draft/i;
+const EMAIL_SEND_TOOL_RE = /(?:^|\.)(?:send_email|mail_send)$|account_send_email|gmail\.send_email|outlook.*send/i;
 
 function clampLimit(raw, fallback, max = MAX_LIMIT) {
   const n = Number(raw);
@@ -68,6 +72,188 @@ function extractArtifactPaths(task, runtime = null) {
 
 function formatObservation(lines) {
   return lines.join("\n");
+}
+
+function asObject(value) {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return null;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function compactString(value, max = 1000) {
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (text.length <= max) return text;
+  return `${text.slice(0, max)}\n[truncated ${text.length - max} chars]`;
+}
+
+function normalizeRecipients(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value.split(/[;,]/).map((item) => item.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function emailInputFromPayload(payload = {}) {
+  const args = asObject(payload.args) ?? {};
+  const pending = asObject(payload.pendingApproval)
+    ?? asObject(payload.pending_approval)
+    ?? asObject(payload.approval)
+    ?? {};
+  const proposed = asObject(payload.proposed_params)
+    ?? asObject(pending.proposed_params)
+    ?? {};
+  const state = asObject(args.state) ?? asObject(proposed.state) ?? asObject(pending.state) ?? {};
+  const candidates = [
+    asObject(args.input),
+    asObject(args),
+    asObject(proposed.input),
+    asObject(proposed),
+    asObject(state.outputs?.draft),
+    asObject(state.draft)
+  ].filter(Boolean);
+  const input = candidates.find((candidate) =>
+    candidate.to !== undefined || candidate.subject !== undefined || candidate.body !== undefined
+  );
+  if (!input) return null;
+  const to = normalizeRecipients(input.to ?? input.recipients);
+  const subject = typeof input.subject === "string" ? input.subject.trim() : "";
+  const body = typeof input.body === "string" ? input.body : "";
+  if (to.length === 0 && !subject && !body) return null;
+  return { to, subject, body };
+}
+
+function payloadLooksLikeEmailWorkflow(payload = {}) {
+  const args = asObject(payload.args) ?? {};
+  const workflowId = String(
+    payload.workflow_id
+      ?? payload.workflowId
+      ?? args.workflowId
+      ?? args.workflow_id
+      ?? payload.proposed_target
+      ?? ""
+  );
+  const toolId = String(payload.tool_id ?? payload.toolId ?? "");
+  return EMAIL_WORKFLOW_RE.test(workflowId) || EMAIL_SEND_TOOL_RE.test(toolId);
+}
+
+function mergeEmailRecord(record, patch = {}) {
+  if (!record) return patch;
+  const to = normalizeRecipients(patch.to);
+  if (to.length) record.to = to;
+  if (patch.subject) record.subject = patch.subject;
+  if (patch.body) record.body = patch.body;
+  if (patch.workflow_id) record.workflow_id = patch.workflow_id;
+  if (patch.tool_id) record.tool_id = patch.tool_id;
+  if (patch.approval_id) record.approval_id = patch.approval_id;
+  if (patch.status) record.status = patch.status;
+  if (patch.ts) record.ts = patch.ts;
+  return record;
+}
+
+function latestEmailRecord(records) {
+  return records.length ? records[records.length - 1] : null;
+}
+
+export function extractTaskSideEffectsFromEvents(events = []) {
+  const emailRecords = [];
+  for (const event of events ?? []) {
+    const payload = asObject(event?.payload) ?? {};
+    const eventType = String(event?.event_type ?? "");
+    const args = asObject(payload.args) ?? {};
+    const workflowId = String(payload.workflow_id ?? payload.workflowId ?? args.workflowId ?? args.workflow_id ?? "");
+    const toolId = String(payload.tool_id ?? payload.toolId ?? "");
+    const approvalId = String(
+      payload.approval_id
+        ?? payload.approvalId
+        ?? payload.pendingApproval?.approval_id
+        ?? payload.pending_approval?.approval_id
+        ?? ""
+    );
+
+    const input = emailInputFromPayload(payload);
+    if (input && payloadLooksLikeEmailWorkflow(payload)) {
+      emailRecords.push({
+        group: "email_send",
+        status: eventType === "pending_approval_created" ? "waiting_confirmation" : "prepared",
+        workflow_id: workflowId || null,
+        tool_id: toolId || (workflowId ? "connector_workflow_run" : null),
+        approval_id: approvalId || null,
+        to: input.to,
+        subject: input.subject,
+        body: input.body,
+        ts: event?.ts ?? null
+      });
+      continue;
+    }
+
+    if (eventType === "tool_call_completed"
+        && payload.success !== false
+        && (EMAIL_SEND_TOOL_RE.test(toolId) || EMAIL_WORKFLOW_RE.test(workflowId))) {
+      const record = latestEmailRecord(emailRecords) ?? {};
+      if (emailRecords.length === 0) emailRecords.push(record);
+      mergeEmailRecord(record, {
+        status: "sent",
+        workflow_id: workflowId || record.workflow_id || null,
+        tool_id: toolId || record.tool_id || null,
+        approval_id: approvalId || record.approval_id || null,
+        ts: event?.ts ?? record.ts ?? null
+      });
+    }
+
+    if (eventType === "success" && (EMAIL_WORKFLOW_RE.test(workflowId) || approvalId)) {
+      const record = latestEmailRecord(emailRecords);
+      if (record) {
+        mergeEmailRecord(record, {
+          status: "sent",
+          workflow_id: workflowId || record.workflow_id || null,
+          approval_id: approvalId || record.approval_id || null,
+          ts: event?.ts ?? record.ts ?? null
+        });
+      }
+    }
+  }
+
+  return emailRecords
+    .filter((record) => record.to?.length || record.subject || record.body || record.status === "sent")
+    .map((record) => ({
+      ...record,
+      status: record.status === "prepared" ? "prepared" : record.status,
+      to: normalizeRecipients(record.to),
+      subject: compactString(record.subject, 500),
+      body: compactString(record.body, MAX_SIDE_EFFECT_BODY_CHARS)
+    }));
+}
+
+function formatSideEffectLines(sideEffects = []) {
+  if (!sideEffects.length) return [];
+  const lines = ["side_effects:"];
+  for (const effect of sideEffects) {
+    const parts = [
+      `group=${effect.group}`,
+      `status=${effect.status}`,
+      effect.workflow_id ? `workflow_id=${effect.workflow_id}` : null,
+      effect.tool_id ? `tool_id=${effect.tool_id}` : null,
+      effect.approval_id ? `approval_id=${effect.approval_id}` : null
+    ].filter(Boolean);
+    lines.push(`- ${parts.join(" ")}`);
+    if (effect.to?.length) lines.push(`  to: ${effect.to.join(", ")}`);
+    if (effect.subject) lines.push(`  subject: ${effect.subject}`);
+    if (effect.body) {
+      lines.push("  body:");
+      lines.push(...String(effect.body).split(/\r?\n/).map((line) => `    ${line}`));
+    }
+  }
+  return lines;
 }
 
 function isUsableMemoryHit(hit) {
@@ -234,12 +420,14 @@ export const GET_TASK_DETAIL_TOOL = {
       return createActionResult({ success: false, observation: `task_id=${taskId} not found.` });
     }
     let answer = null;
+    let events = [];
     try {
-      const events = runtime.store.getTaskEvents?.(taskId) ?? [];
+      events = runtime.store.getTaskEvents?.(taskId) ?? [];
       const final = [...events].reverse().find((e) => e.event_type === "success" || e.event_type === "inline_result");
       answer = final?.payload?.text ?? null;
     } catch { /* best-effort */ }
     const summary = summariseTaskRow(task, runtime);
+    const sideEffects = extractTaskSideEffectsFromEvents(events);
     const lines = [
       `task_id=${summary.task_id}`,
       `status=${summary.status}`,
@@ -251,10 +439,11 @@ export const GET_TASK_DETAIL_TOOL = {
     if (summary.artifact_paths.length) {
       lines.push(`artifacts:\n${summary.artifact_paths.map((p) => "- " + p).join("\n")}`);
     }
+    lines.push(...formatSideEffectLines(sideEffects));
     return createActionResult({
       success: true,
       observation: formatObservation(lines),
-      metadata: { task_id: summary.task_id, artifact_paths: summary.artifact_paths }
+      metadata: { task_id: summary.task_id, artifact_paths: summary.artifact_paths, side_effects: sideEffects }
     });
   }
 };

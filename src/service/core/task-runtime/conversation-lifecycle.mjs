@@ -11,6 +11,7 @@ import {
   proposeTaskCompletionMemory,
   readUserMemoryProfileFromConfig
 } from "../../memory/user-profile.mjs";
+import { formatPartialSuccessContent } from "../../../shared/partial-success-text.mjs";
 
 export function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   try {
@@ -139,12 +140,6 @@ export function deriveConversationTitle(command) {
   if (!cleaned) return null;
   const MAX = 36;
   return cleaned.length > MAX ? `${cleaned.slice(0, MAX)}…` : cleaned;
-}
-
-function formatPartialSuccessContent(message = "") {
-  const raw = String(message ?? "").trim() || "see task for details";
-  const normalized = raw.replace(/^Task partially succeeded:?\s*/i, "").trim() || "see task for details";
-  return `Task partially succeeded: ${normalized}`;
 }
 
 export function backfillConversationTitles(runtime) {

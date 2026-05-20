@@ -27,7 +27,8 @@ const ARTIFACT_TOOL_IDS = new Set([
 const EXTERNAL_WEB_READ_TOOL_IDS = new Set([
   "web_search",
   "web_search_fetch",
-  "fetch_url_content"
+  "fetch_url_content",
+  "download_file"
 ]);
 
 const CODE_EXECUTION_TOOL_IDS = new Set(["run_script"]);
@@ -191,7 +192,11 @@ function externalWebReadForbidden(task) {
   const webGroupMode = policyGroups?.external_web_read?.mode;
   const webFetchMode = spec?.tool_policy?.web_search_fetch?.mode;
   const fetchUrlMode = spec?.tool_policy?.fetch_url_content?.mode;
-  return webGroupMode === "forbidden" || webFetchMode === "forbidden" || fetchUrlMode === "forbidden";
+  const downloadFileMode = spec?.tool_policy?.download_file?.mode;
+  return webGroupMode === "forbidden"
+    || webFetchMode === "forbidden"
+    || fetchUrlMode === "forbidden"
+    || downloadFileMode === "forbidden";
 }
 
 function taskUsesDegradedSideEffectSurface(task) {

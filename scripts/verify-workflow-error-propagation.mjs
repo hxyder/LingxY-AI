@@ -65,7 +65,10 @@ function makeRuntime({ toolResult, validation = { ok: true, failures: [] } }) {
           requiresConfirmation: false
         };
       },
-      validateOutput() {
+      validateOutput(toolId, output, context) {
+        if (typeof validation === "function") {
+          return validation(toolId, output, context);
+        }
         return validation;
       }
     },
@@ -73,6 +76,56 @@ function makeRuntime({ toolResult, validation = { ok: true, failures: [] } }) {
       create: () => ({ approval_id: "appr_test" })
     }
   };
+}
+
+// ---------------------------------------------------------------------
+// 0. Recurring calendar creation must not silently degrade to a single
+//    one-off event. If workflow input includes recurrence, the connector
+//    output validation receives that input and can reject outputs that
+//    did not preserve recurring-event evidence.
+// ---------------------------------------------------------------------
+{
+  let sawRecurringInput = false;
+  const runtime = makeRuntime({
+    toolResult: {
+      success: true,
+      observation: "Event created.",
+      metadata: {
+        tool_id: "account_create_event",
+        connector_status: "success",
+        event: { id: "event-single" }
+      }
+    },
+    validation: (_toolId, output, context = {}) => {
+      sawRecurringInput = Array.isArray(context.input?.recurrence);
+      return sawRecurringInput && !output?.event?.recurrence
+        ? {
+            ok: false,
+            failures: [{
+              path: "event.recurrence",
+              message: "recurrence must be preserved when requested"
+            }]
+          }
+        : { ok: true, failures: [] };
+    }
+  });
+
+  const result = await runConnectorWorkflow({
+    runtime,
+    workflowId: "google.calendar.create_confirm",
+    input: {
+      title: "Lunch",
+      startTime: "2026-05-18T09:00:00-04:00",
+      endTime: "2026-05-18T09:30:00-04:00",
+      recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20260630T235959Z"]
+    },
+    state: { confirmation: { approved: true } }
+  });
+
+  check("recurrence-fidelity: validation receives recurring workflow input", sawRecurringInput === true);
+  check("recurrence-fidelity: missing recurrence evidence fails the workflow", result.status === "failed");
+  check("recurrence-fidelity: error names recurrence preservation",
+    typeof result.error === "string" && /recurrence/.test(result.error));
 }
 
 // ---------------------------------------------------------------------

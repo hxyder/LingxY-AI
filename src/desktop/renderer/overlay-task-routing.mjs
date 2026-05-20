@@ -28,3 +28,46 @@ export function clearTaskConversationBinding(taskConversationMap, taskId) {
   if (!key) return false;
   return taskConversationMap.delete(key);
 }
+
+export function resolveOverlayTaskEventVisibility(taskConversationMap, {
+  taskId = null,
+  activeTaskId = null,
+  currentConversationId = null,
+  conversationId = null
+} = {}) {
+  const taskKey = normaliseTaskKey(taskId);
+  const activeTaskKey = normaliseTaskKey(activeTaskId);
+  const currentConversationKey = normaliseTaskKey(currentConversationId);
+  const explicitConversationKey = normaliseTaskKey(conversationId);
+  const ownerConversationId = taskOwnerConversationId(taskConversationMap, taskKey)
+    ?? explicitConversationKey
+    ?? null;
+
+  if (!currentConversationKey) {
+    return {
+      render: false,
+      ownerConversationId,
+      reason: "no_visible_conversation"
+    };
+  }
+
+  if (ownerConversationId) {
+    return ownerConversationId === currentConversationKey
+      ? { render: true, ownerConversationId, reason: "owner_matches_visible_conversation" }
+      : { render: false, ownerConversationId, reason: "owner_mismatch" };
+  }
+
+  if (taskKey && activeTaskKey && taskKey === activeTaskKey) {
+    return {
+      render: true,
+      ownerConversationId: currentConversationKey,
+      reason: "active_task_without_owner"
+    };
+  }
+
+  return {
+    render: false,
+    ownerConversationId: null,
+    reason: "unowned_background_task"
+  };
+}

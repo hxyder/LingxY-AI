@@ -119,6 +119,79 @@ function transcriptObservations(transcript = []) {
     .filter((entry) => entry.observation);
 }
 
+function countRawObservationFragmentsInBody(body = "", observations = []) {
+  const normalizedBody = normalizeText(body);
+  let count = 0;
+  for (const entry of observations) {
+    const observation = String(entry?.observation ?? "").trim();
+    if (observation.length < 80) continue;
+    const fragment = normalizeText(observation.slice(0, Math.min(220, observation.length)));
+    if (fragment && normalizedBody.includes(fragment)) count += 1;
+  }
+  return count;
+}
+
+function looksLikeRawTranscriptDumpBody(body = "", observations = []) {
+  const rawTranscript = observations.map((entry) => entry.observation).join("\n\n---\n\n");
+  const normalizedBody = normalizeText(body);
+  if (observations.some((entry) => entry.observation.length >= 120 && normalizedBody === normalizeText(entry.observation))) {
+    return true;
+  }
+  const hasDivider = /\n\s*---\s*\n/u.test(body);
+  if (hasDivider && rawTranscript.length >= 120 && overlapRatio(body, rawTranscript) > 0.82) {
+    return true;
+  }
+  if (!hasDivider) return false;
+  const fragmentCount = countRawObservationFragmentsInBody(body, observations);
+  return fragmentCount >= 2 || (fragmentCount >= 1 && observations.length === 1 && normalizedBody.length > 600);
+}
+
+function countBodyUrlMentions(body = "", urls = []) {
+  const text = String(body ?? "");
+  let count = 0;
+  for (const url of urls) {
+    const value = String(url ?? "").trim();
+    if (value && text.includes(value)) count += 1;
+  }
+  return count;
+}
+
+function hasDigestStructure(body = "") {
+  const text = String(body ?? "");
+  return /【(?:摘要|概览|要点|重点|结论|影响|建议|来源)】/u.test(text)
+    || /^(?:摘要|概览|要点|重点|结论|影响|建议|来源|summary|overview|key points|takeaways|analysis|impact|sources)\s*[:：]?$/imu.test(text)
+    || /(?:\n|^)\s*[-*]\s+(?:.+(?:表明|显示|指出|suggests|shows|indicates|means|implies).+)/iu.test(text);
+}
+
+function looksLikeSourceInventoryOnlyBody(body = "", evidence = {}) {
+  const text = String(body ?? "").trim();
+  if (!text || hasDigestStructure(text)) return false;
+  const sourceOnlyIntro = /(?:以下是\s*LingxY\s*根据本次已抓取证据整理的任务结果|LingxY prepared the result below from the evidence gathered during this run)/iu;
+  if (sourceOnlyIntro.test(text)) return true;
+
+  const urls = Array.isArray(evidence?.urls) ? evidence.urls : [];
+  const urlMentions = countBodyUrlMentions(text, urls);
+  const sourceCount = Number(evidence?.blended_source_count ?? evidence?.source_count ?? 0);
+  const numberedLines = text.split(/\r?\n/u).filter((line) => /^\s*\d+\.\s+\S/u.test(line)).length;
+  if (sourceCount > 0
+      && urlMentions >= Math.min(sourceCount, Math.max(1, urls.length))
+      && numberedLines >= 1
+      && numberedLines <= Math.max(1, urlMentions)) {
+    return true;
+  }
+  return false;
+}
+
+const EMAIL_BODY_ENVELOPE_HEADER_RE = /^\s*(?:#{1,6}\s*)?(?:[*_`]{0,2})\s*(?:subject|to|cc|bcc|from|主题|收件人|抄送|密送|发件人)\s*(?:[*_`]{0,2})\s*[:：]/iu;
+
+function hasEmailEnvelopeHeadersInBody(body = "") {
+  return String(body ?? "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .slice(0, 12)
+    .some((line) => EMAIL_BODY_ENVELOPE_HEADER_RE.test(line));
+}
+
 function validateEmailSendContentArgs(args = {}, ctx = {}) {
   if (!taskRequiresSynthesizedSideEffectBody(ctx.task)) return { ok: true };
   const body = typeof args.body === "string" ? args.body.trim()
@@ -126,6 +199,9 @@ function validateEmailSendContentArgs(args = {}, ctx = {}) {
       : "";
   if (!body) {
     return { ok: false, error: "email_body_requires_synthesized_content" };
+  }
+  if (hasEmailEnvelopeHeadersInBody(body)) {
+    return { ok: false, error: "email_body_must_not_include_envelope_headers" };
   }
 
   const gate = validateSuccessContract(
@@ -154,15 +230,14 @@ function validateEmailSendContentArgs(args = {}, ctx = {}) {
     }
   }
 
-  const rawTranscript = observations.map((entry) => entry.observation).join("\n\n---\n\n");
-  const normalizedBody = normalizeText(body);
-  if (body.includes("\n---\n")
-      || observations.some((entry) => entry.observation.length >= 120 && normalizedBody === normalizeText(entry.observation))
-      || (rawTranscript.length >= 120 && body.includes("---") && overlapRatio(body, rawTranscript) > 0.82)) {
+  if (looksLikeRawTranscriptDumpBody(body, observations)) {
     return { ok: false, error: "email_body_raw_tool_transcript_dump" };
   }
 
   const evidence = extractEvidence(ctx.transcript);
+  if ((evidence.blended_source_count ?? 0) > 0 && looksLikeSourceInventoryOnlyBody(body, evidence)) {
+    return { ok: false, error: "email_body_source_inventory_only" };
+  }
   if ((evidence.blended_source_count ?? 0) > 0 && body.length < 80) {
     return { ok: false, error: "email_body_requires_synthesized_content" };
   }

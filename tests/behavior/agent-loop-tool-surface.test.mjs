@@ -10,6 +10,7 @@ import {
 const tools = [
   { id: "web_search_fetch", policy_group: "external_web_read" },
   { id: "fetch_url_content", policy_group: "external_web_read" },
+  { id: "download_file", policy_group: "external_web_read" },
   { id: "vision_analyze" },
   { id: "file_op" },
   { id: "generate_document" },
@@ -42,7 +43,7 @@ test("agent tool surface composes image understanding with external web tools", 
 
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
-  assert.deepEqual(visible.sort(), ["vision_analyze", "web_search_fetch", "fetch_url_content"].sort());
+  assert.deepEqual(visible.sort(), ["vision_analyze", "web_search_fetch", "fetch_url_content", "download_file"].sort());
   assert.deepEqual(neededCapabilitiesOf(task), ["image_understanding", "external_web_read"]);
 });
 

@@ -219,6 +219,18 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       max_chars: { type: "number" }   // max characters of extracted text to return (default 6000, max 12000)
     }
   },
+  download_file: {
+    type: "object",
+    required: [],
+    properties: {
+      url: { type: "string" },        // full URL to download
+      filename: { type: "string" },   // optional basename to save as
+      path: { type: "string" },       // optional relative/allowed output path
+      kind: { type: "string" },       // optional artifact kind, e.g. image/pdf/docx/xlsx/csv/md/js
+      overwrite: { type: "boolean" },
+      max_bytes: { type: "number" }   // default 15 MiB, clamped to 25 MiB
+    }
+  },
   vision_analyze: {
     type: "object",
     required: [],

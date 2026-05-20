@@ -222,7 +222,7 @@ export function createConnectorCatalog(options = {}) {
         workflows: this.listWorkflows({ ...filter, query })
       };
     },
-    validateOutput(toolId, output = {}) {
+    validateOutput(toolId, output = {}, context = {}) {
       const tool = toolsById.get(toolId);
       if (!tool) {
         return {
@@ -230,7 +230,7 @@ export function createConnectorCatalog(options = {}) {
           failures: [{ path: "toolId", kind: "known_tool", message: `Unknown connector tool: ${toolId}` }]
         };
       }
-      return validateConnectorObject(output, tool.outputValidators ?? []);
+      return validateConnectorObject(output, tool.outputValidators ?? [], context);
     },
     toMcpResources() {
       return providerRecords.flatMap((provider) => [

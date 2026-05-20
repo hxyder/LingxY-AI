@@ -33,7 +33,7 @@ const NETWORK_UNAVAILABLE_CLAIM_PATTERNS = [
   /(?:网络|联网|搜索|网页|浏览|抓取).{0,12}(?:工具|访问|功能)?.{0,10}(?:暂时不可用|不可用|无法使用|访问受限|失败)/u,
   /(?:无法|不能|没能).{0,12}(?:实时)?(?:搜索|联网|抓取|访问)/u
 ];
-const NETWORK_EVIDENCE_TOOLS = new Set(["web_search", "web_search_fetch", "fetch_url_content"]);
+const NETWORK_EVIDENCE_TOOLS = new Set(["web_search", "web_search_fetch", "fetch_url_content", "download_file"]);
 
 function topList(values = [], limit = EVIDENCE_LIST_LIMIT) {
   if (!Array.isArray(values)) return [];

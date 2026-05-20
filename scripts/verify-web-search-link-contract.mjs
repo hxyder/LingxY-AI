@@ -45,7 +45,8 @@ assert.ok(openSearchExposed.includes("web_search"), "explicit search-page naviga
 
 for (const prompt of [
   "帮我找 3 个今天仍值得申请的 remote operations analyst 岗位，目标总薪资 100K+，回答必须给公司、职位、薪资线索和申请链接；不要打开网页，只把链接列出来。",
-  "查找最近一周关于美国半导体股票的 analyst report 或评级更新，选 3 条最值得看的，给出机构、关注点和原文链接；不要打开浏览器页面。"
+  "查找最近一周关于美国半导体股票的 analyst report 或评级更新，选 3 条最值得看的，给出机构、关注点和原文链接；不要打开浏览器页面。",
+  "把邮件里面提到的活动，需要订票的也做成链接"
 ]) {
   const spec = createTaskSpec(prompt, {}, {});
   assert.equal(
@@ -55,6 +56,28 @@ for (const prompt of [
   );
   assert.ok(spec.success_contract?.required_policy_groups?.includes("external_web_read"));
 }
+
+const emailLinkFollowupSpec = createTaskSpec(
+  "顺带把邮件里面提到的活动，需要订票的也做成链接发过去",
+  {
+    semantic_router_decision: {
+      web_policy: "required",
+      source_scope: "current_context",
+      source_mode: "provided_context",
+      primary_intent: "connector_action",
+      expected_output: "execution",
+      needed_capabilities: ["external_web_read", "email_send"],
+      required_policy_groups: ["email_send"],
+      confidence: 0.92,
+      reason: "User wants concrete ticket links added and sent to the prior recipient."
+    }
+  },
+  {}
+);
+assert.ok(emailLinkFollowupSpec.success_contract?.required_policy_groups?.includes("external_web_read"),
+  "ticket-link follow-up must require grounded URL lookup even when anchored to prior/local email context");
+assert.ok(emailLinkFollowupSpec.success_contract?.required_policy_groups?.includes("email_send"),
+  "deictic send follow-up must preserve SR email_send obligation when the text has executable send intent");
 
 const linkSpec = createTaskSpec(
   "帮我找 3 个 remote analyst 岗位，给公司、薪资线索和申请链接；不要打开网页，只把链接列出来。",

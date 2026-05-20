@@ -16,6 +16,12 @@ async function fetchDesktopServiceJson(url, requestInit) {
   try {
     return await fetch(url, requestInit);
   } catch (error) {
+    if (requestInit?.signal?.aborted || error?.name === "AbortError" || error?.code === "ABORT_ERR") {
+      const wrapped = new Error(`Desktop service request aborted at ${url}.`);
+      wrapped.code = "desktop_service_request_aborted";
+      wrapped.cause = error;
+      throw wrapped;
+    }
     const cause = error?.cause?.code || error?.cause?.message || error?.message || "fetch_failed";
     const wrapped = new Error(`Desktop service unreachable at ${url}: ${cause}`);
     wrapped.code = "desktop_service_unreachable";
@@ -171,10 +177,11 @@ export async function postDesktopServiceBinaryStream({
     }
   } catch (error) {
     clearFirstFrameTimer();
+    const timedOut = controller.signal.aborted || error?.code === "desktop_service_request_aborted" || error?.name === "AbortError";
     return {
       ok: false,
-      error: error?.name === "AbortError" ? "note_transcribe_stream_timeout" : "note_transcribe_stream_failed",
-      message: error?.message ?? String(error)
+      error: timedOut ? "note_transcribe_stream_timeout" : "note_transcribe_stream_failed",
+      message: timedOut ? "Timed out waiting for transcription stream." : (error?.message ?? String(error))
     };
   } finally {
     clearFirstFrameTimer();

@@ -112,7 +112,7 @@ function buildAgenticArtifactContractGuidance({ taskSpec, violation } = {}) {
   const kind = artifactKindFromTaskSpec(taskSpec);
   return [
     "The task contract is not satisfied yet. Do not finalize with prose only.",
-    `A real file artifact is required (${kind}). Call an artifact-producing tool now: generate_document for rendered document/html reports, or write_file for md/txt/csv/json and explicit .html filenames.`,
+    `A real file artifact is required (${kind}). Call an artifact-producing tool now: generate_document for rendered document/html reports, write_file for md/txt/csv/json and explicit .html filenames, or download_file for direct web image/PDF/file URLs.`,
     violation?.message ? `Current violation: ${violation.message}` : null
   ].filter(Boolean).join("\n");
 }

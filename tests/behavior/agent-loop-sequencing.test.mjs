@@ -377,6 +377,240 @@ test("preauthorized action-only handoff sends once without another planner turn"
   ));
 });
 
+test("scheduled action-only fallback reports the exact email body it sent", async () => {
+  const sent = [];
+  const marketObservation = "Market evidence: Dow futures fell while oil prices rose. ".repeat(4).trim();
+  const webTool = makeNoopTool("web_search_fetch", {
+    async execute() {
+      return {
+        success: true,
+        observation: marketObservation,
+        metadata: {
+          results: [{
+            title: "Stock market today: futures slide as oil jumps",
+            url: "https://example.com/market",
+            snippet: "Dow futures fell while oil prices rose."
+          }]
+        }
+      };
+    }
+  });
+  const emailTool = {
+    id: "account_send_email",
+    name: "Account Send Email",
+    description: "Send email for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["to", "subject", "body"],
+      properties: {
+        to: { type: "array", items: { type: "string" } },
+        subject: { type: "string" },
+        body: { type: "string" }
+      }
+    },
+    async execute(args) {
+      sent.push(args);
+      return { success: true, observation: "Email sent." };
+    }
+  };
+  const { runtime } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([webTool, emailTool]),
+    finalAnswerComposer: async ({ reason }) => {
+      if (reason === "action_only_email_body") return marketObservation;
+      return "This polished final answer was not the body sent by the email tool.";
+    }
+  });
+  const task = {
+    ...makeTask(),
+    execution_mode: "unattended_safe",
+    user_command: "Summarize market news and email reviewer@example.com",
+    task_spec: {
+      goal: "search_and_answer",
+      synthesis: { expected_output: "summary" },
+      tool_policy: { web_search_fetch: { mode: "required" } },
+      success_contract: { required_policy_groups: ["external_web_read", "email_send"] }
+    },
+    context_packet: {
+      selection_metadata: {
+        side_effect_authorization: {
+          kind: "scheduled_fire",
+          decision: "preauthorized",
+          source: "schedule_definition",
+          execution_mode: "unattended_safe",
+          groups: ["email_send"]
+        },
+        side_effect_contract: {
+          version: 1,
+          kind: "side_effect_contract",
+          groups: {
+            email_send: {
+              slots: {
+                to: { entity: "email_address", values: ["reviewer@example.com"], mode: "preserve" }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+  const planner = async ({ iteration }) => {
+    if (iteration === 0) return { type: "tool_call", tool: "web_search_fetch", args: { query: "market" } };
+    return { type: "tool_call", tool: "web_search_fetch", args: { query: "more market detail" } };
+  };
+
+  const result = await runToolAgentLoop({ task, runtime, planner, maxIterations: 6 });
+
+  assert.equal(result.status, "success");
+  assert.equal(sent.length, 1);
+  assert.equal(result.final_text, sent[0].body);
+  assert.doesNotMatch(result.final_text, /not the body sent/);
+});
+
+test("scheduled market email does not send when web evidence is off-topic", async () => {
+  const sent = [];
+  const webTool = makeNoopTool("web_search_fetch", {
+    async execute(args = {}) {
+      return {
+        success: true,
+        observation: [
+          `Search results: ${args.query}`,
+          "",
+          "1. Payload Playground - Security Testing Payload Generator Toolkit",
+          "   Free online toolkit with security testing payload generators.",
+          "   https://payloadplayground.com/"
+        ].join("\n"),
+        metadata: {
+          query: args.query,
+          results: [{
+            title: "Payload Playground - Security Testing Payload Generator Toolkit",
+            url: "https://payloadplayground.com/",
+            snippet: "Free online toolkit with security testing payload generators."
+          }]
+        }
+      };
+    }
+  });
+  const emailTool = {
+    id: "account_send_email",
+    name: "Account Send Email",
+    description: "Send email for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["to", "subject", "body"],
+      properties: {
+        to: { type: "array", items: { type: "string" } },
+        subject: { type: "string" },
+        body: { type: "string" }
+      }
+    },
+    async execute(args) {
+      sent.push(args);
+      return { success: true, observation: "Email sent." };
+    }
+  };
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([webTool, emailTool]),
+    finalAnswerComposer: async ({ reason }) =>
+      `Composer stopped because ${reason}; market evidence was not relevant enough to send.`
+  });
+  const userCommand = "收集美股市场最新汇总信息（包括主要股指表现、涨跌板块、重要新闻等），整理后发送邮件到 reviewer@example.com";
+  const task = {
+    ...makeTask(),
+    execution_mode: "unattended_safe",
+    user_command: userCommand,
+    task_spec: {
+      goal: "search_and_answer",
+      user_goal_text: userCommand,
+      topic: userCommand,
+      needs_current_web_data: true,
+      synthesis: {
+        expected_output: "summary",
+        user_goal: userCommand,
+        primary_intent: "research"
+      },
+      tool_policy: {
+        policy_groups: { external_web_read: { mode: "required" } },
+        web_search_fetch: { mode: "required" }
+      },
+      research_quality: {
+        profile: "multi_source_research",
+        min_sources: 1,
+        min_distinct_domains: 1,
+        single_source_digest_satisfies: false
+      },
+      success_contract: { required_policy_groups: ["external_web_read", "email_send"] }
+    },
+    context_packet: {
+      selection_metadata: {
+        scheduled_task_fire: true,
+        side_effect_authorization: {
+          kind: "scheduled_fire",
+          decision: "preauthorized",
+          source: "schedule_definition",
+          execution_mode: "unattended_safe",
+          groups: ["email_send"]
+        },
+        side_effect_contract: {
+          version: 1,
+          kind: "side_effect_contract",
+          groups: {
+            email_send: {
+              slots: {
+                to: { entity: "email_address", values: ["reviewer@example.com"], mode: "preserve" }
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+  const planner = async ({ iteration }) => {
+    if (iteration === 0) return { type: "tool_call", tool: "run_script", args: { code: "console.log('market')" } };
+    if (iteration === 1) {
+      return {
+        type: "tool_call",
+        tool: "web_search_fetch",
+        args: {
+          query: "test placeholder to satisfy external_web_read policy",
+          limit: 1
+        }
+      };
+    }
+    return {
+      type: "tool_call",
+      tool: "account_send_email",
+      args: {
+        to: ["reviewer@example.com"],
+        subject: "美股市场简报",
+        body: "Payload Playground is a security payload generator. https://payloadplayground.com/"
+      }
+    };
+  };
+
+  const result = await runToolAgentLoop({ task, runtime, planner, maxIterations: 5 });
+
+  assert.equal(result.status, "partial_success");
+  assert.equal(sent.length, 0);
+  assert.ok(result.transcript.some((entry) =>
+    entry.type === "tool_result"
+    && entry.tool === "web_search_fetch"
+    && entry.metadata?.query === "test placeholder to satisfy external_web_read policy"
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "phase_gate_signal"
+    && event.payload?.violation_kinds?.includes("external_web_read_required_irrelevant_results")
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "tool_call_denied"
+    && event.payload?.tool_id === "account_send_email"
+    && /external_web_read_required_irrelevant_results/.test(event.payload?.error ?? "")
+  ));
+});
+
 test("recent local event runs downgrade when final answer lacks dated event details", async () => {
   const webTool = {
     id: "web_search_fetch",

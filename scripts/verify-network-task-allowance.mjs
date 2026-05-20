@@ -10,7 +10,7 @@
  * (B2-a (a) open_url surface gating, B2-a (c) stable-QA SR override)
  * could conceivably over-block legitimate network tasks. This test
  * codifies the contract so a future tool-surface change that hides
- * web_search_fetch / fetch_url_content / account_send_email under a
+ * web_search_fetch / fetch_url_content / download_file / account_send_email under a
  * normal "needs the web" task fails the gate.
  *
  * The verifier exercises the SURFACE / OVERRIDE layers in isolation
@@ -58,6 +58,7 @@ const REGISTRY_SAMPLE = [
   { id: "web_search", policy_group: "external_web_read", required_capabilities: ["network"] },
   { id: "web_search_fetch", policy_group: "external_web_read", required_capabilities: ["network"] },
   { id: "fetch_url_content", policy_group: "external_web_read", required_capabilities: ["network"] },
+  { id: "download_file", policy_group: "external_web_read", required_capabilities: ["network", "file_write"] },
   // network — connector READ (codex round-1: was missing from the
   // first version of this verifier; account_list_* are first-class
   // mailbox/calendar reads)
@@ -91,8 +92,9 @@ function ids(list) {
 }
 
 // ---------------------------------------------------------------------
-// 1. external_web_read capability → web_search* + fetch_url_content
-//    visible. The user said "search-required" tasks must run.
+// 1. external_web_read capability → fetch-capable tools visible.
+//    `web_search` is a browser search-page helper and stays hidden unless
+//    the user explicitly asks to open a search-results page.
 // ---------------------------------------------------------------------
 {
   const t = task({
@@ -102,7 +104,8 @@ function ids(list) {
   const visible = ids(filterToolsForTask(REGISTRY_SAMPLE, t));
   check("search-required: web_search_fetch is visible", visible.includes("web_search_fetch"));
   check("search-required: fetch_url_content is visible", visible.includes("fetch_url_content"));
-  check("search-required: web_search is visible", visible.includes("web_search"));
+  check("search-required: download_file is visible", visible.includes("download_file"));
+  check("search-required: web_search page tool stays hidden", !visible.includes("web_search"));
 }
 
 // ---------------------------------------------------------------------

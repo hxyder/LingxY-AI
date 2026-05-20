@@ -81,10 +81,13 @@ function buildPreviewText({ workflow, input = {}, outputs = {} }) {
   const subject = input.subject ? `Subject: ${input.subject}\n` : "";
   const title = input.title ? `Title: ${input.title}\n` : "";
   const time = input.startTime || input.endTime ? `Time: ${input.startTime ?? ""}${input.endTime ? ` - ${input.endTime}` : ""}\n` : "";
+  const recurrence = input.recurrence
+    ? `Recurrence: ${Array.isArray(input.recurrence) ? input.recurrence.join("; ") : JSON.stringify(input.recurrence)}\n`
+    : "";
   const body = input.body ? `\n${input.body}` : "";
   const outputKeys = Object.keys(outputs);
   const outputNote = outputKeys.length ? `\nPrepared outputs: ${outputKeys.join(", ")}` : "";
-  return `${workflow.name ?? workflow.id}\n${target}${subject}${title}${time}${body}${outputNote}`.trim();
+  return `${workflow.name ?? workflow.id}\n${target}${subject}${title}${time}${recurrence}${body}${outputNote}`.trim();
 }
 
 function summarizeInput(input = {}) {
@@ -203,7 +206,7 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
 
   if (tool.execution?.kind === "local_preview") {
     const output = createLocalPreview(tool, input);
-    const validation = runtime.connectorCatalog.validateOutput(tool.id, output);
+    const validation = runtime.connectorCatalog.validateOutput(tool.id, output, { input });
     emit(emitTaskEvent, "tool_call_completed", {
       tool_id: tool.id,
       label: tool.timeline?.label ?? tool.name,
@@ -260,7 +263,7 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
         observation: text || (success ? "MCP tool completed." : "MCP tool returned an error."),
         metadata: { mcp_server: serverId, mcp_tool: tool.execution.toolName }
       };
-      const validation = runtime.connectorCatalog.validateOutput(tool.id, output);
+      const validation = runtime.connectorCatalog.validateOutput(tool.id, output, { input: callArgs });
       emit(emitTaskEvent, "tool_call_completed", {
         tool_id: tool.id,
         label: tool.timeline?.label ?? tool.name,
@@ -320,7 +323,7 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
 
   const result = await runtime.actionToolRegistry.call(actionToolId, args, toolContext);
   const output = normalizeActionOutput(tool.id, result);
-  const validation = runtime.connectorCatalog.validateOutput(tool.id, output);
+  const validation = runtime.connectorCatalog.validateOutput(tool.id, output, { input });
   const success = result.success === true && validation.ok;
   emit(emitTaskEvent, "tool_call_completed", {
     tool_id: tool.id,

@@ -11,7 +11,7 @@ import { normalizeSources } from "../evidence/source-envelope.mjs";
  * tasks.
  *
  * Pure observability — NOT a gate. Walks a finalised transcript,
- * extracts URLs from `web_search_fetch` and `fetch_url_content` tool
+ * extracts URLs from `web_search_fetch`, `fetch_url_content`, and `download_file` tool
  * results, normalises them to registrable domains, and reports
  * `source_count` / `distinct_domain_count` / a deduped list of
  * domains and URLs. Stamped onto the agent-loop's return value as
@@ -27,7 +27,7 @@ import { normalizeSources } from "../evidence/source-envelope.mjs";
  *
  * Scope:
  *   - Reads structured evidence fields only: `metadata.results[].url`
- *     from web_search_fetch, `metadata.url` from fetch_url_content, and
+ *     from web_search_fetch, `metadata.url` from fetch_url_content / download_file, and
  *     local paths from read_file_text / read_folder_text / vision_analyze.
  *     Other tools' result observations may also embed URLs or paths, but
  *     regex-extracting them from free-form text is noisy enough to corrupt
@@ -80,7 +80,7 @@ const ROUNDUP_MARKERS = [
 ];
 
 function isWebEvidenceTool(tool) {
-  return tool === "web_search_fetch" || tool === "fetch_url_content";
+  return tool === "web_search_fetch" || tool === "fetch_url_content" || tool === "download_file";
 }
 
 function webEvidenceIsUsable(entry = {}) {
@@ -203,7 +203,7 @@ export function extractEvidence(transcript) {
           }
         }
       }
-    } else if (entry.tool === "fetch_url_content") {
+    } else if (entry.tool === "fetch_url_content" || entry.tool === "download_file") {
       const u = typeof entry.metadata?.url === "string" ? entry.metadata.url : null;
       if (u) urls.add(u);
     } else if (entry.tool === "read_file_text") {
@@ -570,7 +570,7 @@ function collectWebDomains(entries) {
           if (d) out.add(d);
         }
       }
-    } else if (entry.tool === "fetch_url_content") {
+    } else if (entry.tool === "fetch_url_content" || entry.tool === "download_file") {
       const d = registrableDomain(typeof entry.metadata?.url === "string" ? entry.metadata.url : null);
       if (d) out.add(d);
     }

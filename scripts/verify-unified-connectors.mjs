@@ -318,12 +318,26 @@ async function runWriteToolCases() {
     scopes: ["Mail.Send", "Files.ReadWrite", "Calendars.ReadWrite"],
     capabilities: microsoftScopesToCapabilities(["Mail.Send", "Files.ReadWrite", "Calendars.ReadWrite"])
   });
+  const googleCalendarAccount = upsertConnectedAccount(runtime, {
+    provider: "google",
+    providerAccountId: "write-gcal",
+    email: "gcal-writer@example.com",
+    scopes: ["https://www.googleapis.com/auth/calendar.events"],
+    capabilities: googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar.events"])
+  });
   saveOAuthTokenRecord(runtime, {
     accountId: account.id,
     accessTokenEncrypted: "write-access",
     refreshTokenEncrypted: "write-refresh",
     expiresAt: new Date(Date.now() + 3600_000).toISOString(),
     scopes: account.scopes
+  });
+  saveOAuthTokenRecord(runtime, {
+    accountId: googleCalendarAccount.id,
+    accessTokenEncrypted: "gcal-write-access",
+    refreshTokenEncrypted: "gcal-write-refresh",
+    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    scopes: googleCalendarAccount.scopes
   });
 
   const risk = evaluateToolRisk(ACCOUNT_SEND_EMAIL_TOOL, {
@@ -379,23 +393,65 @@ async function runWriteToolCases() {
     title: "Planning",
     startTime: "2026-04-20T10:00:00",
     endTime: "2026-04-20T10:30:00",
-    attendees: ["ops@example.com"]
+    attendees: ["ops@example.com"],
+    recurrence: ["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260520T235959Z"],
+    timeZone: "America/New_York"
   }, {
     runtime,
     fetchImpl: async (url, options) => {
       assert.equal(url, "https://graph.microsoft.com/v1.0/me/events");
       const payload = JSON.parse(options.body);
       assert.equal(payload.subject, "Planning");
+      assert.deepEqual(payload.recurrence.pattern.daysOfWeek, ["monday", "wednesday"]);
+      assert.equal(payload.recurrence.range.endDate, "2026-05-20");
       return {
         ok: true,
         async json() {
-          return { id: "event-1", subject: "Planning", webLink: "https://example.com/event" };
+          return {
+            id: "event-1",
+            subject: "Planning",
+            webLink: "https://example.com/event",
+            recurrence: payload.recurrence
+          };
         }
       };
     }
   });
   assert.equal(event.success, true);
   assert.equal(event.metadata.event.id, "event-1");
+  assert.deepEqual(event.metadata.event.recurrence.pattern.daysOfWeek, ["monday", "wednesday"]);
+
+  const recurrence = ["RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20260630T235959Z"];
+  const recurringEvent = await ACCOUNT_CREATE_EVENT_TOOL.execute({
+    accountId: googleCalendarAccount.id,
+    title: "Breakfast",
+    startTime: "2026-05-18T09:00:00-04:00",
+    endTime: "2026-05-18T09:30:00-04:00",
+    recurrence,
+    timeZone: "America/New_York"
+  }, {
+    runtime,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://www.googleapis.com/calendar/v3/calendars/primary/events");
+      assert.equal(options.headers.Authorization, "Bearer gcal-write-access");
+      const payload = JSON.parse(options.body);
+      assert.deepEqual(payload.recurrence, recurrence);
+      return {
+        ok: true,
+        async json() {
+          return {
+            id: "gcal-recurring-1",
+            summary: "Breakfast",
+            htmlLink: "https://example.com/gcal-event",
+            recurrence: payload.recurrence
+          };
+        }
+      };
+    }
+  });
+  assert.equal(recurringEvent.success, true);
+  assert.equal(recurringEvent.metadata.event.id, "gcal-recurring-1");
+  assert.deepEqual(recurringEvent.metadata.event.recurrence, recurrence);
 }
 
 await rm(tmpRoot, { recursive: true, force: true });

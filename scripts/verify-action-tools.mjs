@@ -29,6 +29,7 @@ function createRuntime(name, extras = {}) {
     queue: createTaskQueueScaffold(),
     artifactStore: createArtifactStore({ baseDir: path.join(repoRoot, ".tmp", "verify-action-tools", name) }),
     actionToolRegistry: createActionToolRegistry(BUILTIN_ACTION_TOOLS),
+    smtpTransport: async (message) => ({ messageId: `verify-smtp:${message.to?.join(",") ?? "unknown"}` }),
     toolContext: {
       allowedApps: ["notepad.exe"],
       allowedRoots: [path.join(repoRoot, "tests")],

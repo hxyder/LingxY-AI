@@ -66,6 +66,7 @@ const TOOL_LABELS = Object.freeze({
   read_folder_text: "文件夹读取",
   web_search: "网页搜索",
   fetch_url_content: "网页读取",
+  download_file: "文件下载",
   account_send_email: "邮件发送",
   account_create_calendar_event: "日历创建",
   account_update_calendar_event: "日历更新",
@@ -137,6 +138,7 @@ function detectTool(errorLike = {}, text = "") {
   if (/calendar|日历|event/.test(haystack)) return "account_create_calendar_event";
   if (/generate[_ -]?document|document render|文件生成|生成文档/.test(haystack)) return "generate_document";
   if (/web search|search failed|搜索/.test(haystack)) return "web_search";
+  if (/download_file|下载文件|文件下载|download/.test(haystack)) return "download_file";
   if (/fetch|http|url|网页/.test(haystack)) return "fetch_url_content";
   if (/write_file|写入|save file/.test(haystack)) return "write_file";
   if (/edit_file|编辑文件/.test(haystack)) return "edit_file";
@@ -237,10 +239,10 @@ function toolRecovery(toolId, issue) {
       retryable: issue !== "auth"
     };
   }
-  if (toolId === "web_search" || toolId === "fetch_url_content") {
+  if (toolId === "web_search" || toolId === "fetch_url_content" || toolId === "download_file") {
     return {
-      hint: `${label}失败：可以换一个更具体的查询、打开原网页，或稍后重试网络请求。`,
-      actions: ["换更具体的关键词", "打开原网页确认可访问", "稍后重试"],
+      hint: `${label}失败：可以换一个更具体的查询、换直接文件链接、打开原网页，或稍后重试网络请求。`,
+      actions: ["换更具体的关键词", "换直接文件链接", "稍后重试"],
       retryable: true
     };
   }

@@ -161,7 +161,7 @@ async function run() {
 
   // ── 4. guard blocks group members via group-level entry only ───────────
   await (async () => {
-    const tools = ["web_search", "web_search_fetch", "fetch_url_content"].map(makeFakeWebTool);
+    const tools = toolsInGroup("external_web_read").map(makeFakeWebTool);
     const registry = createActionToolRegistry(tools);
     const runtime = makeFakeRuntime();
     const task = {
@@ -260,7 +260,7 @@ async function run() {
     const lines = renderToolPolicyForPrompt(policy);
     it("render: group entry comes first with `(any of: ...)`", () => {
       assert.ok(lines[0].startsWith("external_web_read: required"));
-      assert.match(lines[0], /\(any of: web_search, web_search_fetch, fetch_url_content\)/);
+      assert.ok(lines[0].includes(`(any of: ${toolsInGroup("external_web_read").join(", ")})`));
     });
     it("render: reason is the next pre-indented line", () => {
       assert.equal(lines[1], "  reason: User explicitly asked.");

@@ -84,7 +84,16 @@ test("scheduled email args normalize recipients and prompt-like subject before a
       args: {
         to: "hanxy308@163.com和sophieliang1998@gmail.com",
         subject: "收集美股市场最新汇总信息（包括主要股指表现、涨跌板块、重要新闻等），整理后发送邮件到 hanxy308@163.com和sophieliang1998@gmail.com",
-        body: "美股市场摘要正文"
+        body: [
+          "**Subject:** 美股市场简报",
+          "",
+          "**收件人:** hanxy308@163.com",
+          "",
+          "### 一、主要股指表现",
+          "- **道琼斯：** 上涨0.6%",
+          "",
+          "[您的助手]"
+        ].join("\n")
       }
     },
     tool: { id: "account_send_email" },
@@ -94,6 +103,10 @@ test("scheduled email args normalize recipients and prompt-like subject before a
 
   assert.deepEqual(args.to, ["hanxy308@163.com", "sophieliang1998@gmail.com"]);
   assert.equal(args.subject, "美股市场简报");
+  assert.doesNotMatch(args.body, /Subject|收件人|\*\*|###|\[您的助手\]/u);
+  assert.match(args.body, /一、主要股指表现/u);
+  assert.match(args.body, /道琼斯： 上涨0\.6%/u);
+  assert.match(args.body, /LingxY/u);
 });
 
 test("connector workflow email input uses the same scheduled shape contract", () => {

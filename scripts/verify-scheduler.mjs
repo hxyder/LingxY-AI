@@ -32,6 +32,7 @@ for (const key of [
 
 const service = createServiceBootstrap();
 const { runtime } = service;
+runtime.smtpTransport = async (message) => ({ messageId: `verify-scheduler:${message.to?.join(",") ?? "unknown"}` });
 
 assert.ok(runtime.scheduler);
 

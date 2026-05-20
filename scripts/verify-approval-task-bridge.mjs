@@ -359,5 +359,50 @@ function check(label, condition) {
       && e.payload?.approval_rejected === true));
 }
 
+// ---------------------------------------------------------------------
+// 8. Connector same-task resume → no compatibility bridge duplicate.
+// ---------------------------------------------------------------------
+{
+  const runtime = makeRuntime();
+  const originatingTaskId = "task_orig_008";
+  runtime.store.insertTask({
+    task_id: originatingTaskId,
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    progress: 0.5
+  });
+
+  const service = createPendingApprovalService({
+    runtime,
+    executeApprovedAction: async () => {
+      const task = runtime.store.getTask(originatingTaskId);
+      Object.assign(task, {
+        status: "success",
+        sub_status: "completed",
+        progress: 1,
+        result_summary: "Gmail Draft Confirm Send completed."
+      });
+      runtime.store.updateTask(originatingTaskId, task);
+      return { task, resumed_same_task: true };
+    }
+  });
+
+  const approval = service.create({
+    sourceType: "connector_workflow",
+    sourceId: originatingTaskId,
+    proposedAction: "connector_workflow",
+    proposedTarget: "google.gmail.draft_confirm_send",
+    proposedParams: { input: { to: ["sophie@example.com"], body: "hello" } },
+    metadata: { task_id: originatingTaskId, tool_id: "connector_workflow_run" }
+  });
+
+  await service.approve(approval.approval_id);
+
+  const orig = runtime.store.getTask(originatingTaskId);
+  check("same-task: original task remains completed by resume path", orig.sub_status === "completed");
+  check("same-task: compatibility bridge does not append duplicate terminal events",
+    !runtime.store.listEvents().some((e) => e.payload?.bridged_from_approval === true));
+}
+
 console.log(`\n${pass} pass / ${fail} fail`);
 if (fail > 0) process.exit(1);

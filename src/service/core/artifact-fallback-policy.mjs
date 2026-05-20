@@ -3,7 +3,8 @@ export const FILE_GENERATION_TOOL_IDS = new Set([
   "write_file",
   "edit_file",
   "render_diagram",
-  "render_svg"
+  "render_svg",
+  "download_file"
 ]);
 
 const EXECUTORS_WITH_FILE_GENERATION_TOOLS = new Set(["tool_using", "agentic"]);
@@ -84,10 +85,10 @@ export function taskRequestsNewArtifactOutput(task = {}) {
   const text = `${task?.user_command ?? ""}`.toLowerCase();
   if (!text.trim()) return false;
 
-  const artifactNoun = /(?:文件|文档|报告|表格|电子表格|幻灯片|演示文稿|网页|页面|artifact|file|document|report|spreadsheet|slides?|presentation|deck|page)/iu;
-  const explicitExtension = /(?:\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js)\b|docx|pdf|pptx|powerpoint|\bppt\b|xlsx|excel|html|markdown|json|csv|文本文件|网页文件|word\s*文档)/iu;
-  const explicitNewArtifactCreation = /(?:生成|创建|制作|新建|做)\s*(?:一个|一份|第二个|另一个|另一份|新的|新)?\s*(?:[\w.-]+\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js)\b|docx|pdf|pptx|powerpoint|\bppt\b|xlsx|excel|html|markdown|json|csv|文件|文档|报告|表格|电子表格|幻灯片|演示文稿|网页|页面)|(?:create|make|build|generate)\s+(?:a|an|new|another|second)?\s*(?:[\w.-]+\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js)\b|file|document|report|spreadsheet|slides?|presentation|deck|page|html|json|csv|markdown|excel|pptx|powerpoint)/iu;
-  const saveOrExportArtifact = /(?:保存|存为|导出|写入|落盘|产出|输出|整理成|转成|转换成|save|export|write|produce|output|convert)\s*(?:到|为|成|as|to|into)?\s*(?:[\w.-]+\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js)\b|docx|pdf|pptx|powerpoint|\bppt\b|xlsx|excel|html|markdown|json|csv|文件|文档|报告|表格|电子表格|幻灯片|演示文稿|网页|页面|file|document|report|spreadsheet|slides?|presentation|deck|page)/iu;
+  const artifactNoun = /(?:文件|文档|报告|表格|电子表格|幻灯片|演示文稿|网页|页面|图片|照片|图像|壁纸|artifact|file|document|report|spreadsheet|slides?|presentation|deck|page|image|photo|picture|wallpaper)/iu;
+  const explicitExtension = /(?:\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js|png|jpe?g|webp|gif|bmp|svg)\b|docx|pdf|pptx|powerpoint|\bppt\b|xlsx|excel|html|markdown|json|csv|文本文件|网页文件|图片|照片|图像|壁纸|word\s*文档)/iu;
+  const explicitNewArtifactCreation = /(?:生成|创建|制作|新建|做)\s*(?:一个|一份|一张|第二个|另一个|另一份|新的|新)?\s*(?:[\w.-]+\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js|png|jpe?g|webp|gif|bmp|svg)\b|docx|pdf|pptx|powerpoint|\bppt\b|xlsx|excel|html|markdown|json|csv|文件|文档|报告|表格|电子表格|幻灯片|演示文稿|网页|页面|图片|照片|图像|壁纸)|(?:create|make|build|generate)\s+(?:a|an|new|another|second)?\s*(?:[\w.-]+\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js|png|jpe?g|webp|gif|bmp|svg)\b|file|document|report|spreadsheet|slides?|presentation|deck|page|image|photo|picture|wallpaper|html|json|csv|markdown|excel|pptx|powerpoint)/iu;
+  const saveOrExportArtifact = /(?:保存|下载|存为|导出|写入|落盘|产出|输出|整理成|转成|转换成|save|download|export|write|produce|output|convert)\s*(?:到|为|成|as|to|into)?\s*(?:[\w.-]+\.(?:docx|pdf|pptx|xlsx|html|md|markdown|json|csv|txt|mjs|js|png|jpe?g|webp|gif|bmp|svg)\b|docx|pdf|pptx|powerpoint|\bppt\b|xlsx|excel|html|markdown|json|csv|文件|文档|报告|表格|电子表格|幻灯片|演示文稿|网页|页面|图片|照片|图像|壁纸|file|document|report|spreadsheet|slides?|presentation|deck|page|image|photo|picture|wallpaper)/iu;
   const existingArtifactReference = /(?:上一个|前一个|之前|刚才|已有|现有|原有|已生成|已创建|previous|prior|last|existing)\s*(?:生成的?|创建的?|保存的?|导出的?)?.{0,24}(?:文件|文档|报告|网页|页面|artifact|file|document|report|page)/iu;
   const inspectionVerb = /(?:读取|查看|检查|验证|确认|执行|运行|校验|分析|read|inspect|check|verify|validate|execute|run|analy[sz]e)/iu;
   if (existingArtifactReference.test(text)

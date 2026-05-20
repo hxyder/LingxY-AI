@@ -135,8 +135,9 @@ conversation has no generated artifact. Opening a file from a folder must keep a
 containing-folder button in the preview header, while the back stack handles
 recent preview navigation. Streaming reasoning cards stay at the bottom of the
 chat surface instead of being stranded above the assistant answer. Final-answer
-reviewer findings must be user-facing `Accuracy check:` warnings; raw reviewer
-labels are treated as internal leakage.
+reviewer findings must be short, localized user-facing quality warnings
+(English surfaces may use `Accuracy check:`); raw reviewer reasons, correction
+lists, and labels are internal event/audit data.
 
 PMAT-013 responsiveness/tool-flow follow-up, 2026-05-14: selecting an existing
 conversation must activate the conversation shell immediately so the user can
@@ -1154,9 +1155,10 @@ Acceptance:
 
 - Reviewer cannot silently rewrite outcomes without trace evidence.
 - Reviewer failures degrade gracefully.
-- Reviewer `revise` or `reject` verdicts keep the candidate answer and append a
-  user-facing `Accuracy check:` warning instead of leaking raw reviewer notes or
-  silently replacing user-visible content.
+- Reviewer `revise` or `reject` verdicts keep raw reviewer reasons/corrections
+  in typed events only; user-visible text gets a deterministic localized quality
+  warning (English surfaces may use `Accuracy check:`) instead of model-authored
+  reviewer notes.
 - Reviewer start/completion/skip events expose risk reasons, duration, verdict,
   and whether a visible note was applied.
 

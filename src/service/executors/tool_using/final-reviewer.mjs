@@ -151,38 +151,33 @@ export function normalizeFinalAnswerReview(raw = null) {
   };
 }
 
-function noteFromReview(review = {}) {
-  const parts = [];
-  if (review.reason) parts.push(sanitizeReviewNote(review.reason));
-  if (review.corrections?.length) {
-    parts.push(`Corrections: ${review.corrections.map(sanitizeReviewNote).join("; ")}`);
-  }
-  return parts.join(" ").trim().slice(0, 700);
-}
-
-function sanitizeReviewNote(value = "") {
-  return String(value ?? "")
-    .replace(/\b(?:Reviewer|Review)\s+note:\s*/giu, "")
-    .trim();
-}
-
 function hasCjk(value = "") {
   return /[\u3400-\u9fff]/u.test(String(value ?? ""));
 }
 
-function formatRejectedFinalAnswer({ task = null, review = {} } = {}) {
-  const zh = hasCjk(task?.user_command ?? task?.context_packet?.user_command ?? "");
-  const note = noteFromReview(review);
+function isChineseTask(task = null) {
+  return hasCjk(task?.user_command ?? task?.context_packet?.user_command ?? "");
+}
+
+function formatReviewCaution({ task = null } = {}) {
+  if (isChineseTask(task)) {
+    return "质量检查：这条回答可能仍缺少可靠证据或必要修正，请先按上文谨慎使用。";
+  }
+  return "Accuracy check: this answer may still need stronger evidence or correction before you rely on it.";
+}
+
+function formatRejectedFinalAnswer({ task = null } = {}) {
+  const zh = isChineseTask(task);
   if (zh) {
     return [
       "这次任务没有可靠完成，我不会把候选答案当作完成结果。",
-      note ? `Accuracy check: ${note}` : "Accuracy check: 最终审核拒绝了候选答案，因为它缺少足够的工具证据或包含未完成操作的声明。",
-      "需要重新执行并先取得必要的工具证据、完成必需操作后，才能给出结论或确认已发送。"
+      "质量检查：缺少足够可靠的工具证据，或必需操作尚未确认完成。",
+      "请重新执行；我会先完成必要的数据获取或操作确认，再给出结论。"
     ].join("\n");
   }
   return [
     "This task did not complete reliably, so I will not present the candidate answer as finished.",
-    note ? `Accuracy check: ${note}` : "Accuracy check: the final reviewer rejected the candidate because it lacked sufficient tool evidence or claimed an action that was not completed.",
+    "Accuracy check: required tool evidence is missing, or a required action was not confirmed complete.",
     "Please retry after the required evidence-gathering tools and required actions have completed."
   ].join("\n");
 }
@@ -192,15 +187,13 @@ export function applyFinalAnswerReview(candidateText = "", review = {}, { visibl
   if (!text) return text;
   if (!["revise", "reject"].includes(review?.verdict)) return text;
   if (review.verdict === "reject") {
-    return formatRejectedFinalAnswer({ task, review });
+    return formatRejectedFinalAnswer({ task });
   }
   if (visibleWarnings === false) return text;
-  const note = noteFromReview(review);
-  if (!note) return text;
   return [
     text,
     "",
-    `Accuracy check: this answer may need correction before you rely on it. ${note}`
+    formatReviewCaution({ task })
   ].join("\n");
 }
 

@@ -2,7 +2,7 @@
 
 Phase 2A boundary inventory for artifact creation, registration, extraction, lineage, preview, and quality gates.
 
-Status: verified against the current repository on 2026-05-09.
+Status: verified against the current repository on 2026-05-18.
 
 ## Owner Surfaces
 
@@ -23,6 +23,7 @@ Status: verified against the current repository on 2026-05-09.
 | Preview registry | `src/service/preview/registry.mjs` | Service runtime |
 | Preview HTTP routes | `src/service/core/http-routes/preview-file-routes.mjs` | Service runtime |
 | File reversibility helpers | `src/service/capabilities/tools/file-reversibility.mjs` | Service runtime |
+| Browser/web artifact download tools | `src/service/capabilities/tools/browser-web-tools.mjs` | Service runtime |
 | File mutation / execution tools | `src/service/capabilities/tools/file-mutation-execution-tools.mjs` | Service runtime |
 | Document artifact helpers | `src/service/capabilities/tools/document-artifact-helpers.mjs` | Service runtime |
 | Document render tools | `src/service/capabilities/tools/document-render-tools.mjs` | Service runtime |
@@ -39,11 +40,12 @@ Status: verified against the current repository on 2026-05-09.
 | `render_diagram` | creates rendered diagram artifacts |
 | `render_svg` | creates SVG artifacts |
 | `register_artifact` | registers an existing path as an artifact |
+| `download_file` | downloads public web files into local artifact/storage surfaces |
 | `account_download_file` | downloads connector files into local artifact/storage surfaces |
 
 ## Artifact Kinds In Current Surface
 
-Primary requested/generated kinds: `pptx`, `docx`, `xlsx`, `pdf`, `html`, `svg`, `png`, `txt`, `md`, `csv`, `json`, `js`, `mjs`, `py`, `ps1`.
+Primary requested/generated kinds: `pptx`, `docx`, `xlsx`, `pdf`, `html`, `image`, `svg`, `png`, `jpg`, `webp`, `txt`, `md`, `csv`, `json`, `js`, `mjs`, `py`, `ps1`.
 
 Document outline quality kinds: `pptx`, `docx`, `xlsx`, `html`, `pdf`.
 

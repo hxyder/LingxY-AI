@@ -15,7 +15,7 @@ export function neededCapabilitiesOf(task) {
 const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   // open_url intentionally NOT listed here: the contract validator only
   // counts actual web fetchers (web_search / web_search_fetch /
-  // fetch_url_content) as satisfying external_web_read. Listing open_url
+  // fetch_url_content / download_file) as satisfying external_web_read. Listing open_url
   // here misled the LLM planner into picking it for research-class
   // queries, after which the success contract still failed and the task
   // ended in partial_success with Google.com uselessly opened (see
@@ -23,7 +23,8 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   // browser_control capability for explicit "打开 URL" commands.
   external_web_read: (tool) =>
     tool.id === "web_search_fetch"
-    || tool.id === "fetch_url_content",
+    || tool.id === "fetch_url_content"
+    || tool.id === "download_file",
   file_read: (tool) =>
     /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|index_file_content|verify_file_exists|file_op)$/.test(tool.id),
   // The capability matcher surfaces every tool the LLM may need
@@ -84,7 +85,8 @@ const WEB_SEARCH_PAGE_TOOL_ID = "web_search";
 const EXTERNAL_WEB_READ_TOOL_IDS = new Set([
   "web_search",
   "web_search_fetch",
-  "fetch_url_content"
+  "fetch_url_content",
+  "download_file"
 ]);
 const SIDE_EFFECT_REQUIRED_GROUPS = new Set([
   "email_send",
@@ -466,7 +468,11 @@ function externalWebReadForbidden(task) {
   const webGroupMode = policyGroups?.external_web_read?.mode;
   const webFetchMode = spec?.tool_policy?.web_search_fetch?.mode;
   const fetchUrlMode = spec?.tool_policy?.fetch_url_content?.mode;
-  return webGroupMode === "forbidden" || webFetchMode === "forbidden" || fetchUrlMode === "forbidden";
+  const downloadFileMode = spec?.tool_policy?.download_file?.mode;
+  return webGroupMode === "forbidden"
+    || webFetchMode === "forbidden"
+    || fetchUrlMode === "forbidden"
+    || downloadFileMode === "forbidden";
 }
 
 function taskUsesDegradedSideEffectSurface(task) {

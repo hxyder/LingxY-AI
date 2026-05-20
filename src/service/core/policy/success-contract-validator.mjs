@@ -31,6 +31,10 @@ import {
   workflowMatchesActionGroup
 } from "./obligation-evaluator.mjs";
 import { extractEvidence } from "./evidence-normalizer.mjs";
+import {
+  evaluateExternalWebEvidenceRelevance,
+  filterRelevantExternalWebEvidenceTranscript
+} from "./evidence-relevance.mjs";
 import { SYNTHESIS_REQUIRED_OUTPUTS } from "../intent/semantic-router.mjs";
 import {
   isDeepFileTextCoverageScope,
@@ -349,7 +353,7 @@ function isRecentLocalEventQuery(task = null) {
 function hasExternalWebReadAttempt(transcript = []) {
   return (transcript ?? []).some((entry) =>
     entry?.type === "tool_result"
-    && ["web_search", "web_search_fetch", "fetch_url_content"].includes(entry?.tool)
+    && ["web_search", "web_search_fetch", "fetch_url_content", "download_file"].includes(entry?.tool)
   );
 }
 
@@ -369,7 +373,7 @@ function concreteEventDetailCount(finalText = "") {
   return count;
 }
 
-const ARTIFACT_DOWNLOAD_URL_RE = /https?:\/\/[^\s)\]]+\.(?:docx|pptx|xlsx|pdf|html?|md|txt|csv|json|mjs|js|py|ps1)(?:[?#][^\s)\]]*)?/iu;
+const ARTIFACT_DOWNLOAD_URL_RE = /https?:\/\/[^\s)\]]+\.(?:docx|pptx|xlsx|pdf|html?|md|txt|csv|json|mjs|js|py|ps1|png|jpe?g|webp|gif|bmp|svg)(?:[?#][^\s)\]]*)?/iu;
 const GENERATED_ARTIFACT_CLAIM_RE = /(?:已|已经|成功|为你|给你).{0,24}(?:生成|创建|制作|保存|导出).{0,32}(?:文件|文档|表格|幻灯片|报告|artifact)|(?:下载地址|下载链接|点击下载|download link)/iu;
 
 export function detectIncompleteFinalAnswerStructure(text = "") {
@@ -714,7 +718,7 @@ export function detectUnsatisfiedRequiredLinkAnswer(taskSpec = {}, transcript = 
 function isConcreteLinkDeliveryRequest(text = "") {
   const raw = String(text ?? "");
   if (!raw) return false;
-  return /(申请链接|原文链接|资料链接|来源链接|职位链接|岗位链接|报告链接|把.*链接.*列|列出.*链接|给出.*链接|给.*链接|links?\s+(?:for|to|with|listed|only)|application\s+links?|source\s+links?|original\s+links?)/i.test(raw);
+  return /(申请链接|原文链接|资料链接|来源链接|职位链接|岗位链接|报告链接|订票链接|购票链接|报名链接|预约链接|做成链接|把.*链接.*列|列出.*链接|给出.*链接|给.*链接|链接.{0,24}(?:发|发送|列出|整理)|links?\s+(?:for|to|with|listed|only)|application\s+links?|source\s+links?|original\s+links?|ticket\s+links?)/i.test(raw);
 }
 
 /**
@@ -817,11 +821,27 @@ export function validateSuccessContract(taskSpec, transcript = []) {
       violations.push({ kind, message });
       continue;
     }
-    if (!successfulHits.some((hit) => groupHitSatisfies(group, hit))) {
+    const substantiveHits = successfulHits.filter((hit) => groupHitSatisfies(group, hit));
+    if (substantiveHits.length === 0) {
       violations.push({
         kind: `${group}_required_returned_empty`,
         message: `success_contract.required_policy_groups includes "${group}"; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none returned usable results.`
       });
+      continue;
+    }
+    if (group === "external_web_read") {
+      const relevance = evaluateExternalWebEvidenceRelevance(taskSpec, substantiveHits);
+      if (relevance.applies && relevance.relevantEntries.length === 0) {
+        const queries = [...new Set(substantiveHits
+          .map((hit) => hit?.metadata?.query ?? hit?.result?.query)
+          .filter((value) => typeof value === "string" && value.trim())
+          .map((value) => value.trim()))];
+        const queryHint = queries.length > 0 ? ` Query attempted: ${queries.slice(0, 2).join(" | ")}.` : "";
+        violations.push({
+          kind: "external_web_read_required_irrelevant_results",
+          message: `success_contract.required_policy_groups includes "external_web_read"; web tools returned usable-looking results, but none matched the task topic.${queryHint} Retry with a more specific query or fetch an authoritative source before finalizing or performing side effects.`
+        });
+      }
     }
   }
 
@@ -926,7 +946,7 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   if (rq.profile !== "multi_source_research" && rq.profile !== "deep_research") return [];
   if (!Array.isArray(requiredGroups) || !requiredGroups.includes("external_web_read")) return [];
 
-  const evidence = extractEvidence(transcript);
+  const evidence = extractEvidence(filterRelevantExternalWebEvidenceTranscript(taskSpec, transcript));
   const violations = [];
 
   // Roundup gets its own (more specific) violation BEFORE the
@@ -1079,6 +1099,9 @@ function artifactPathMatchesKind(filePath = "", kind = "") {
   if (normalized === "word") return lower.endsWith(".docx");
   if (normalized === "excel") return lower.endsWith(".xlsx");
   if (normalized === "ppt" || normalized === "powerpoint") return lower.endsWith(".pptx");
+  if (normalized === "image") {
+    return [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".svg"].some((extension) => lower.endsWith(extension));
+  }
   if (normalized === "js" || normalized === "javascript") {
     return [".js", ".mjs", ".cjs", ".jsx"].some((extension) => lower.endsWith(extension));
   }
@@ -1091,6 +1114,9 @@ function artifactKindsMatch(actualKind = "", requiredKind = "") {
   if (!required) return true;
   if (!actual) return false;
   if (actual === required) return true;
+  if (required === "image" && ["image", "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"].includes(actual)) {
+    return true;
+  }
   if ((required === "js" || required === "javascript") && ["js", "mjs", "cjs", "jsx", "javascript"].includes(actual)) {
     return true;
   }

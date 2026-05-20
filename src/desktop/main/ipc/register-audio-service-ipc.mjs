@@ -1,3 +1,9 @@
+function normalizeFirstFrameTimeoutMs(value, fallback = 30_000) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.max(1000, Math.min(30_000, Math.trunc(numeric)));
+}
+
 export function registerAudioServiceIpc({
   ipcMain,
   IPC_CHANNELS,
@@ -94,6 +100,7 @@ export function registerAudioServiceIpc({
     const base = getServiceBaseUrl();
     const actor = desktopActorForSender(event.sender);
     const streamId = `${payload?.streamId ?? ""}`.trim();
+    const firstFrameTimeoutMs = normalizeFirstFrameTimeoutMs(payload?.firstFrameTimeoutMs);
     const params = new URLSearchParams();
     params.set("stream", "1");
     params.set("lang", `${payload?.lang || "auto"}`);
@@ -106,6 +113,7 @@ export function registerAudioServiceIpc({
         search: `?${params}`,
         body: payload?.audio,
         contentType: payload?.mimeType || "audio/webm",
+        firstFrameTimeoutMs,
         onEvent(frame) {
           event.sender.send(IPC_CHANNELS.noteTranscribeStreamEvent, {
             streamId,

@@ -416,6 +416,27 @@ async function run() {
       }
     };
   }
+  function marketEmailSpec() {
+    return {
+      user_goal_text: "收集美股市场最新汇总信息，包括主要股指表现、涨跌板块、重要新闻，整理后发送邮件",
+      needs_current_web_data: true,
+      research_quality: {
+        profile: "multi_source_research",
+        min_sources: 3,
+        min_distinct_domains: 2,
+        single_source_digest_satisfies: false,
+        reason: "test"
+      },
+      tool_policy: {
+        policy_groups: { external_web_read: { mode: "required" } }
+      },
+      success_contract: {
+        artifact_created: false, artifact_registered: false, tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: ["external_web_read"]
+      }
+    };
+  }
 
   it("D3: multi_source + 1 source / 1 domain → insufficient_sources + single_domain_only", () => {
     const transcript = [{
@@ -487,6 +508,46 @@ async function run() {
       }
     }];
     const out = validateSuccessContract(multiSourceSpec(), transcript);
+    assert.equal(out.satisfied, true,
+      `expected satisfied; violations=${JSON.stringify(out.violations)}`);
+  });
+
+  it("D3: market-email research rejects generic country results as irrelevant", () => {
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "United States - Wikipedia\nU.S. Department of State\nUSAGov\nUSA TODAY\nUs (2019) IMDb",
+      metadata: {
+        query: "US stock market today S&P 500 Dow Jones Nasdaq performance May 19 2026",
+        results: [
+          { url: "https://en.wikipedia.org/wiki/United_States", title: "United States - Wikipedia" },
+          { url: "https://www.state.gov/", title: "U.S. Department of State" },
+          { url: "https://www.usa.gov/", title: "USAGov" },
+          { url: "https://www.usatoday.com/", title: "USA TODAY" },
+          { url: "https://www.imdb.com/title/tt6857112/", title: "Us (2019) - IMDb" }
+        ]
+      }
+    }];
+    const out = validateSuccessContract(marketEmailSpec(), transcript);
+    assert.equal(out.satisfied, false);
+    const kinds = out.violations.map((v) => v.kind);
+    assert.ok(kinds.includes("external_web_read_required_irrelevant_results"), `kinds=${JSON.stringify(kinds)}`);
+    assert.ok(kinds.includes("external_web_read_insufficient_sources"), `kinds=${JSON.stringify(kinds)}`);
+  });
+
+  it("D3: market-email research accepts relevant market sources", () => {
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "Stock market today: S&P 500, Dow Jones and Nasdaq updates.",
+      metadata: {
+        query: "US stock market today S&P 500 Dow Jones Nasdaq performance May 19 2026",
+        results: [
+          { url: "https://www.marketwatch.com/markets", title: "Stock Market Today: Dow, S&P 500 and Nasdaq" },
+          { url: "https://www.cnbc.com/markets/", title: "Wall Street market live updates: S&P 500, Nasdaq" },
+          { url: "https://www.reuters.com/markets/us/", title: "US stocks: Dow Jones, S&P 500 and sectors move" }
+        ]
+      }
+    }];
+    const out = validateSuccessContract(marketEmailSpec(), transcript);
     assert.equal(out.satisfied, true,
       `expected satisfied; violations=${JSON.stringify(out.violations)}`);
   });

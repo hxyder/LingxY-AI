@@ -29,7 +29,7 @@
 
 import assert from "node:assert/strict";
 
-import { CREATE_SCHEDULED_TASK_TOOL } from "../src/service/action_tools/tools/index.mjs";
+import { CREATE_SCHEDULED_TASK_TOOL } from "../src/service/capabilities/tools/scheduler-tools.mjs";
 
 let pass = 0;
 let fail = 0;

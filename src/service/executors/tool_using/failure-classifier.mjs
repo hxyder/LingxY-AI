@@ -101,6 +101,7 @@ const NETWORK_TOOL_IDS = new Set([
   "web_search",
   "web_search_fetch",
   "fetch_url_content",
+  "download_file",
   "open_url",
   "send_email_smtp",
   "translate_text",

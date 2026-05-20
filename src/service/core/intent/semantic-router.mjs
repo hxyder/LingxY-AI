@@ -51,7 +51,7 @@ const SOURCE_SCOPES = Object.freeze([
 const WEB_POLICY_MODES = Object.freeze(["forbidden", "optional", "required"]);
 const OUTPUT_KINDS = Object.freeze([
   "conversation", "markdown", "file", "docx", "pptx", "xlsx", "pdf",
-  "html", "csv", "dashboard"
+  "html", "csv", "image", "dashboard"
 ]);
 const EXECUTORS = Object.freeze([
   "fast", "tool_using", "agentic", "translate", "multi_modal", "kimi"
@@ -762,7 +762,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "Field guidance:",
     "- source_scope: pick the *most specific* scope. uploaded_files / selection beat current_context; current_context beats local_project; local_project beats none. external_world is for explicit online research.",
     "- web_policy: required only if the answer demands fresh external data the system does not already have; optional if a search would help but isn't critical; forbidden when the request is local-only or you have no signal that the user wants the open web.",
-    "- output_kind: conversation for chat replies; pick the file kind (docx/pptx/xlsx/pdf/markdown/...) when the user asked for a document.",
+    "- output_kind: conversation for chat replies; pick the file kind (docx/pptx/xlsx/pdf/markdown/image/...) when the user asked for a real artifact.",
     "- executor: fast for short conversational answers; tool_using for tool-driven actions; agentic for multi-step planning with artifacts; multi_modal for image-led tasks.",
     "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `deep_research` ONLY when the user explicitly asks for thorough / comprehensive / in-depth / exhaustive coverage (e.g. \"深入调研\", \"全面对比\", \"彻底搜一下\", \"comprehensive review\", \"exhaustive comparison\", \"deep dive\"). Do NOT pick deep_research just because the topic is broad — the user must have asked for depth verbatim. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
     "- file_read_depth: classify LOCAL file-reading depth separately from web research. `shallow` for metadata/listing/quick preview only; `focused` for one known file or a narrow named section; `standard` for normal attached-file/folder analysis; `deep` when the user asks to audit/review/analyze a folder/project/material set thoroughly or needs recursive evidence across many files. Do not use topic keywords; judge the required evidence coverage.",

@@ -304,7 +304,7 @@ assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
   "echo result cards: pressing V on a result card must start a voice follow-up without opening the overlay");
 assert.ok(/else if \(voiceMode \|\| voiceRecording\)[\s\S]{0,80}submitEchoVoiceCommand\(\)/.test(overlayJs),
   "echo result cards: popup-card V starts composer voice capture, so global Enter must submit even when the full voice panel is hidden");
-assert.ok(/let deferredForMoreSpeech = false;[\s\S]{0,1200}deferredForMoreSpeech = true;[\s\S]{0,260}scheduleEchoVoiceAutoSubmit\(ECHO_COMMAND_SILENCE_MS[\s\S]{0,1200}echoVoiceAutoSubmitInFlight = false;[\s\S]{0,120}if \(deferredForMoreSpeech\) return;/.test(overlayJs),
+assert.ok(/async function submitEchoVoiceCommand\(\)[\s\S]{0,2600}let deferredForMoreSpeech = false;[\s\S]{0,1800}deferredForMoreSpeech = true;[\s\S]{0,320}scheduleEchoVoiceAutoSubmit\(ECHO_COMMAND_SILENCE_MS[\s\S]{0,1800}echoVoiceAutoSubmitInFlight = false;[\s\S]{0,160}if \(deferredForMoreSpeech\) return;/.test(overlayJs),
   "echo voice state machine: when speech is still active, deferred auto-submit must keep the Echo session and timer alive");
 assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,420}seenActions[\s\S]{0,260}actionKey[\s\S]{0,260}seenActions\.has\(dedupeKey\)[\s\S]{0,160}continue/.test(popupCardJs)
     && /seenLabels/.test(popupCardJs)
@@ -422,6 +422,11 @@ assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:appr
   "approval mutation: console must not call approval mutation routes directly");
 assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:approve|reject)/.test(overlayJs),
   "approval mutation: overlay must not call approval mutation routes directly");
+{
+  const approvalBlock = overlayJs.match(/approveBtn\.addEventListener\("click", async \(\) => \{[\s\S]{0,2600}?\} catch \(error\)/)?.[0] ?? "";
+  assert.ok(/activeTaskId = resumeTaskId/.test(approvalBlock) && /await refreshActiveTask\(\)/.test(approvalBlock),
+    "approval resume: overlay must poll the resumed task after approve so terminal status clears the processing placeholder even if SSE raced ahead");
+}
 assert.ok(/id="skillEditValidation"/.test(consoleHtml),
   "skills: edit modal must expose validation feedback");
 assert.ok(/data-skill-reveal/.test(consoleJs) && /data-skill-open/.test(consoleJs),

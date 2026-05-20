@@ -88,6 +88,50 @@ test("accepts a synthesized research email body with structured source evidence"
   assert.equal(result.ok, true);
 });
 
+test("rejects research email bodies that include envelope headers", () => {
+  const result = validateToolCall(emailTool, {
+    to: ["reviewer@example.com"],
+    subject: "Market digest",
+    body: [
+      "**Subject:** Market digest",
+      "",
+      "**To:** reviewer@example.com",
+      "",
+      "Summary",
+      "",
+      "- Major indexes were mixed to higher according to the gathered market source.",
+      "",
+      "Sources: Market evidence"
+    ].join("\n")
+  }, {
+    task: researchEmailTask(),
+    transcript: transcript()
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "email_body_must_not_include_envelope_headers");
+});
+
+test("accepts a synthesized research email body that uses markdown section dividers", () => {
+  const result = validateToolCall(emailTool, {
+    to: ["reviewer@example.com"],
+    subject: "Market digest",
+    body: [
+      "Market digest",
+      "",
+      "---",
+      "",
+      "Major indexes were mixed to higher according to the gathered market source.",
+      "The brief keeps the source evidence summarized in user-facing prose instead of dumping the tool transcript.",
+      "",
+      "Sources: Market evidence"
+    ].join("\n")
+  }, {
+    task: researchEmailTask(),
+    transcript: transcript()
+  });
+  assert.equal(result.ok, true);
+});
+
 test("blocks research email send until non-action evidence contract is satisfied", () => {
   const task = researchEmailTask();
   task.task_spec.research_quality = {
@@ -136,13 +180,46 @@ test("rejects a single raw web observation used verbatim as the email body", () 
   assert.equal(result.error, "email_body_raw_tool_transcript_dump");
 });
 
+test("rejects joined raw web observations separated by markdown dividers", () => {
+  const observations = [
+    "First market observation says index futures fell while oil prices rose. ".repeat(3).trim(),
+    "Second market observation says investors watched geopolitical risk and technology earnings. ".repeat(3).trim()
+  ];
+  const result = validateToolCall(emailTool, {
+    to: ["reviewer@example.com"],
+    subject: "Market digest",
+    body: observations.join("\n\n---\n\n")
+  }, {
+    task: researchEmailTask(),
+    transcript: observations.map((observation, index) => ({
+      type: "tool_result",
+      tool: "web_search_fetch",
+      success: true,
+      observation,
+      metadata: {
+        results: [{
+          title: `Market evidence ${index + 1}`,
+          url: `https://example.com/market-${index + 1}`,
+          snippet: observation
+        }]
+      }
+    }))
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "email_body_raw_tool_transcript_dump");
+});
+
 test("allows a structured source digest even when it quotes a web excerpt", () => {
   const rawObservation = "Market summary evidence from the search tool. ".repeat(8).trim();
   const result = validateToolCall(emailTool, {
     to: ["reviewer@example.com"],
     subject: "Market digest",
     body: [
-      "LingxY prepared the result below from the evidence gathered during this run:",
+      "Market digest",
+      "",
+      "Summary",
+      "",
+      "- The gathered market source indicates the following relevant point:",
       "",
       "1. Market evidence",
       `   ${rawObservation}`,
@@ -161,6 +238,36 @@ test("allows a structured source digest even when it quotes a web excerpt", () =
     }]
   });
   assert.equal(result.ok, true);
+});
+
+test("rejects source inventory only research email bodies", () => {
+  const rawObservation = "Market summary evidence from the search tool. ".repeat(8).trim();
+  const result = validateToolCall(emailTool, {
+    to: ["reviewer@example.com"],
+    subject: "Market digest",
+    body: [
+      "LingxY prepared the result below from the evidence gathered during this run:",
+      "",
+      "1. Market evidence",
+      `   ${rawObservation}`,
+      "   https://example.com/market",
+      "",
+      "Note: this automatically sent content is based on structured tool evidence and excludes account, connector, and debug logs."
+    ].join("\n")
+  }, {
+    task: researchEmailTask(),
+    transcript: [{
+      type: "tool_result",
+      tool: "web_search_fetch",
+      success: true,
+      observation: rawObservation,
+      metadata: {
+        results: [{ title: "Market evidence", url: "https://example.com/market", snippet: rawObservation }]
+      }
+    }]
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "email_body_source_inventory_only");
 });
 
 test("does not impose research body rules on a simple plain email", () => {

@@ -385,7 +385,7 @@ test("agent final reviewer stays disabled by default even for high-risk answers"
   assert.equal(events.some((event) => event.event_type === "final_reviewer_started"), false);
 });
 
-test("agent final reviewer appends user-facing accuracy check instead of leaking reviewer internals", async () => {
+test("agent final reviewer appends deterministic user-facing accuracy check instead of leaking reviewer internals", async () => {
   const events = [];
   const text = await composeFinalAnswer({
     task: {
@@ -419,11 +419,14 @@ test("agent final reviewer appends user-facing accuracy check instead of leaking
 
   assert.match(text, /^The launch is delayed\./);
   assert.doesNotMatch(text, /Reviewer note:/);
+  assert.doesNotMatch(text, /source date/);
+  assert.doesNotMatch(text, /Add source date/);
   assert.match(text, /Accuracy check:/);
-  assert.match(text, /source date/);
+  assert.match(text, /stronger evidence or correction/);
   const completed = events.find((event) => event.event_type === "final_reviewer_completed");
   assert.equal(completed?.payload?.status, "completed");
   assert.equal(completed?.payload?.verdict, "revise");
+  assert.match(completed?.payload?.reason, /source date/);
   assert.equal(completed?.payload?.visible_note_applied, true);
 });
 
@@ -468,10 +471,13 @@ test("agent final reviewer reject replaces unsupported candidate answer", async 
   assert.doesNotMatch(text, /道琼斯上涨 0\.56%/);
   assert.doesNotMatch(text, /已经把完整美股汇总发送/);
   assert.doesNotMatch(text, /Reviewer note:/);
+  assert.doesNotMatch(text, /candidate fabricates/);
+  assert.doesNotMatch(text, /Corrections:/);
   assert.match(text, /没有可靠完成|did not complete reliably/);
-  assert.match(text, /Accuracy check:/);
+  assert.match(text, /质量检查：缺少足够可靠的工具证据/);
   const completed = events.find((event) => event.event_type === "final_reviewer_completed");
   assert.equal(completed?.payload?.verdict, "reject");
+  assert.match(completed?.payload?.reason, /candidate fabricates/);
   assert.equal(completed?.payload?.visible_note_applied, true);
 });
 

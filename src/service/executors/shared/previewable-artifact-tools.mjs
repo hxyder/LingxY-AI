@@ -3,7 +3,8 @@ export const STREAMABLE_ARTIFACT_TOOL_IDS = new Set([
   "generate_document",
   "edit_file",
   "render_diagram",
-  "render_svg"
+  "render_svg",
+  "download_file"
 ]);
 
 export function isStreamableArtifactTool(toolOrId) {

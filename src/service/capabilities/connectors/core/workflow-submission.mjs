@@ -252,6 +252,7 @@ export async function resumeConnectorWorkflowTask({
         taskEvents: runtime.store.getTaskEvents(task.task_id),
         pendingApproval: result.approval,
         workflowResult: result,
+        same_task_resume: true,
         resumed_same_task: true
       };
     }
@@ -264,6 +265,7 @@ export async function resumeConnectorWorkflowTask({
         task,
         taskEvents: runtime.store.getTaskEvents(task.task_id),
         workflowResult: result,
+        same_task_resume: true,
         resumed_same_task: true
       };
     }
@@ -285,6 +287,7 @@ export async function resumeConnectorWorkflowTask({
       task,
       taskEvents: runtime.store.getTaskEvents(task.task_id),
       workflowResult: result,
+      same_task_resume: true,
       resumed_same_task: true
     };
   } catch (error) {
@@ -296,6 +299,7 @@ export async function resumeConnectorWorkflowTask({
         status: "failed",
         error: error.message
       },
+      same_task_resume: true,
       resumed_same_task: true
     };
   }

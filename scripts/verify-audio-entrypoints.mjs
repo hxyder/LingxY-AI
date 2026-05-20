@@ -108,6 +108,22 @@ for (const echoInvariant of [
   assert.ok(source.includes(echoInvariant), `echo wake profile missing invariant: ${echoInvariant}`);
 }
 
+const echoSilenceMatch = overlayJs.match(/const ECHO_COMMAND_SILENCE_MS = (\d+);/u);
+const echoLocalCaptureMatch = overlayJs.match(/const ECHO_LOCAL_CAPTURE_MS = (\d+);/u);
+const echoStreamTimeoutMatch = overlayJs.match(/const ECHO_TRANSCRIBE_FIRST_FRAME_TIMEOUT_MS = (\d+);/u);
+assert.ok(echoSilenceMatch && Number(echoSilenceMatch[1]) <= 1600,
+  "echo command capture must auto-submit quickly after a speech pause");
+assert.ok(echoLocalCaptureMatch && Number(echoLocalCaptureMatch[1]) <= 5000,
+  "echo local fallback capture must not hold command submission for an old long window");
+assert.ok(echoStreamTimeoutMatch && Number(echoStreamTimeoutMatch[1]) <= 8000,
+  "echo command fallback transcription must use a short first-frame timeout");
+assert.ok(/submitEchoVoiceCommand\(\)[\s\S]{0,1200}preferLiveTranscript:\s*true[\s\S]{0,220}streamingFirstFrameTimeoutMs:\s*ECHO_TRANSCRIBE_FIRST_FRAME_TIMEOUT_MS/u.test(overlayJs),
+  "echo command submit must prefer live speech recognition and bound fallback stream latency");
+assert.ok(!/submitEchoVoiceCommand\(\)[\s\S]{0,1200}forceTranscribe:\s*true/u.test(overlayJs),
+  "echo command submit must not force full-blob transcription when live recognition has usable text");
+assert.ok(main.includes("firstFrameTimeoutMs") && main.includes("normalizeFirstFrameTimeoutMs"),
+  "audio IPC must forward bounded stream timeout policy into the main-process upload bridge");
+
 for (const viewInvariant of [
   "export function formatNoteElapsed",
   "export function setVoiceCardMode",

@@ -477,6 +477,22 @@ async function run() {
     assert.equal(out.decision.expected_output, "execution");
     assert.deepEqual(out.decision.required_policy_groups, ["email_send"]);
   });
+  await it("schema: accepts image output kind for real image artifacts", async () => {
+    const adapter = decisionAdapter({
+      ...validDecision,
+      output_kind: "image",
+      artifact_required: true,
+      primary_intent: "artifact_generation",
+      expected_output: "artifact",
+      needed_capabilities: ["external_web_read", "artifact_generation"],
+      required_policy_groups: ["external_web_read"]
+    });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "download a landscape wallpaper" });
+    assert.equal(out.kind, "decision",
+      `expected image output_kind to pass schema; got ${JSON.stringify(out)}`);
+    assert.equal(out.decision.output_kind, "image");
+    assert.equal(out.decision.artifact_required, true);
+  });
   await it("schema: email_send contract cannot be normalized to draft-only output", async () => {
     const adapter = decisionAdapter({
       ...validDecision,
