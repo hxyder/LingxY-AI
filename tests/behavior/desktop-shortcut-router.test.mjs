@@ -7,7 +7,7 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-test("capture-and-ask starts capture before showing overlay and hydrates context asynchronously", async () => {
+test("capture-and-ask shows overlay immediately and hydrates context asynchronously", async () => {
   const events = [];
   const captureOptions = [];
   let captureInFlight = false;
@@ -80,9 +80,9 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
 
   assert.deepEqual(events.slice(0, 4), [
     "inFlight:true",
-    "capture:start",
     "show:overlay:false",
-    "send:uca:shortcut-triggered"
+    "send:uca:shortcut-triggered",
+    "capture:start"
   ]);
   assert.equal(captureInFlight, true);
 
@@ -135,11 +135,12 @@ test("capture-and-ask reports an empty capture instead of leaving overlay pendin
       shellContextReceived: "uca:shell-context-received"
     },
     windows,
+    captureAndAskActivePreviewDelayMs: 1,
     captureAndAskClipboardPollMs: 5
   });
 
   router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
-  await delay(20);
+  await delay(30);
 
   assert.equal(calls.length, 2);
   assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
@@ -179,6 +180,7 @@ test("capture-and-ask times out a stuck selection capture and releases the hotke
     windows,
     captureAndAskSelectionTimeoutMs: 20,
     captureAndAskWindowTimeoutMs: 20,
+    captureAndAskActivePreviewDelayMs: 1,
     captureAndAskClipboardPollMs: 5
   });
 
@@ -290,7 +292,7 @@ test("capture-and-ask sends selected files without waiting for active-window fal
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.activeWindowEnabled, false);
   assert.deepEqual(enqueued[0]?.payload?.file_paths, ["E:\\docs\\resume.docx"]);
-  assert.equal(clipboardReads, 1, "file captures must not wait for delayed clipboard text");
+  assert.ok(clipboardReads <= 2, "file captures may start a cheap clipboard race but must not wait for it");
 });
 
 test("capture-and-ask falls back to active window only when no selection exists", async () => {
@@ -343,11 +345,12 @@ test("capture-and-ask falls back to active window only when no selection exists"
       shellContextReceived: "uca:shell-context-received"
     },
     windows,
+    captureAndAskActivePreviewDelayMs: 1,
     captureAndAskClipboardPollMs: 5
   });
 
   router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
-  await delay(20);
+  await delay(30);
 
   assert.equal(calls.length, 2);
   assert.equal(calls[0]?.activeWindowEnabled, false);

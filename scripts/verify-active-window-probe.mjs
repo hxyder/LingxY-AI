@@ -199,7 +199,7 @@ async function runScenario(scenario, options = {}) {
   assert.ok(firstActiveDisabled >= 0 && fallbackSelectionDisabled > firstActiveDisabled && fallbackActiveEnabled > fallbackSelectionDisabled,
     "capture-and-ask must first capture selected files/text without active-window preview, then fall back to active-window only when there is no selection");
 }
-assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*120/,
+assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*80/,
   "capture-context.ps1 must wait briefly before copying so the hotkey modifier can be released");
 assert.match(captureContextPs1Source, /keybd_event\(0x10,\s*0,\s*2[\s\S]{0,260}keybd_event\(0xA1,\s*0,\s*2/,
   "capture-context.ps1 must release Shift modifiers before simulating Ctrl+C");
@@ -209,15 +209,15 @@ assert.match(captureContextPs1Source, /Start-Sleep -Milliseconds \$PreCopyDelayM
   const captureBlockStart = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
   const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);
   const guardIndex = guardIndexRaw >= 0 ? guardIndexRaw : mainWithShortcutRouterSource.indexOf("captureInFlight = true;", captureBlockStart);
-  const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", guardIndex >= 0 ? guardIndex : captureBlockStart);
-  const inactiveShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay", { focus: false })', captureIndex);
-  const focusShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', inactiveShowIndex);
+  const inactiveShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay", { focus: false })', guardIndex >= 0 ? guardIndex : captureBlockStart);
+  const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", inactiveShowIndex);
+  const focusShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', captureIndex);
   assert.ok(captureBlockStart >= 0
       && guardIndex > captureBlockStart
-      && captureIndex > guardIndex
-      && inactiveShowIndex > captureIndex
+      && inactiveShowIndex > guardIndex
+      && captureIndex > inactiveShowIndex
       && focusShowIndex > inactiveShowIndex,
-    "capture-and-ask must guard re-entrance, start foreground capture, reveal overlay without stealing focus, then focus it after capture completion");
+    "capture-and-ask must guard re-entrance, reveal overlay without stealing focus, start foreground capture, then focus once usable context arrives");
 }
 assert.ok(/async function captureActiveWindowContext\s*\(\{[\s\S]{0,180}activeWindowEnabled\s*=\s*true[\s\S]{0,180}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,420}activeWindowEnabled:\s*activeWindowEnabled\s*&&\s*activeWindowProbeEnabledCache[\s\S]{0,220}clipboardBaseline/.test(electronMainSource)

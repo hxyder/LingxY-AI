@@ -1,6 +1,6 @@
 param(
   [switch]$SimulateCopy,
-  [int]$PreCopyDelayMs = 120
+  [int]$PreCopyDelayMs = 80
 )
 
 Set-StrictMode -Version Latest
@@ -125,7 +125,7 @@ if ($SimulateCopy) {
         Start-Sleep -Milliseconds $PreCopyDelayMs
     }
     [UcaCapture]::SimulateCopy()
-    Start-Sleep -Milliseconds 350
+    Start-Sleep -Milliseconds 180
 }
 
 # Read clipboard
