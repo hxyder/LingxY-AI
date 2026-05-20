@@ -201,10 +201,14 @@ async function runScenario(scenario, options = {}) {
 }
 assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*80/,
   "capture-context.ps1 must wait briefly before copying so the hotkey modifier can be released");
+assert.match(captureContextPs1Source, /\[int\]\$PostCopyPollMs\s*=\s*900/,
+  "capture-context.ps1 must poll after copying so Electron/Chromium editors can publish delayed clipboard selections");
 assert.match(captureContextPs1Source, /keybd_event\(0x10,\s*0,\s*2[\s\S]{0,260}keybd_event\(0xA1,\s*0,\s*2/,
   "capture-context.ps1 must release Shift modifiers before simulating Ctrl+C");
 assert.match(captureContextPs1Source, /Start-Sleep -Milliseconds \$PreCopyDelayMs[\s\S]{0,180}\[UcaCapture\]::SimulateCopy\(\)/,
   "capture-context.ps1 must apply the pre-copy delay immediately before simulated copy");
+assert.match(captureContextPs1Source, /Get-ClipboardSnapshot[\s\S]{0,1200}while \(\[DateTime\]::UtcNow -lt \$deadline\)/,
+  "capture-context.ps1 must use a bounded post-copy clipboard poll instead of a fixed sleep");
 {
   const captureBlockStart = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
   const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);

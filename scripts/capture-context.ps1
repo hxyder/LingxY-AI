@@ -1,6 +1,8 @@
 param(
   [switch]$SimulateCopy,
-  [int]$PreCopyDelayMs = 80
+  [int]$PreCopyDelayMs = 80,
+  [int]$PostCopyPollMs = 900,
+  [int]$PostCopyPollIntervalMs = 55
 )
 
 Set-StrictMode -Version Latest
@@ -119,28 +121,61 @@ if ($procName -eq "explorer") {
     $explorerSelection = Get-ExplorerSelection -ForegroundPid $fgPid
 }
 
+function Get-ClipboardSnapshot {
+    $snapshot = @{
+        files = @()
+        text = ""
+    }
+    try {
+        $fileList = [System.Windows.Forms.Clipboard]::GetFileDropList()
+        if ($fileList -and $fileList.Count -gt 0) {
+            foreach ($f in $fileList) { $snapshot.files += [string]$f }
+        }
+    } catch {}
+
+    try {
+        $snapshot.text = [System.Windows.Forms.Clipboard]::GetText()
+    } catch {}
+
+    return $snapshot
+}
+
+function Join-ClipboardFiles {
+    param($Files)
+    if (-not $Files) { return "" }
+    return (@($Files) | ForEach-Object { [string]$_ }) -join "`n"
+}
+
 # Simulate Ctrl+C if requested
+$preCopySnapshot = $null
 if ($SimulateCopy) {
+    $preCopySnapshot = Get-ClipboardSnapshot
     if ($PreCopyDelayMs -gt 0) {
         Start-Sleep -Milliseconds $PreCopyDelayMs
     }
     [UcaCapture]::SimulateCopy()
-    Start-Sleep -Milliseconds 180
+    $deadline = [DateTime]::UtcNow.AddMilliseconds([Math]::Max(0, $PostCopyPollMs))
+    $baselineText = if ($preCopySnapshot) { [string]$preCopySnapshot.text } else { "" }
+    $baselineFiles = if ($preCopySnapshot) { Join-ClipboardFiles $preCopySnapshot.files } else { "" }
+    $pollIntervalMs = [Math]::Max(10, $PostCopyPollIntervalMs)
+    do {
+        $remaining = [int][Math]::Max(0, ($deadline - [DateTime]::UtcNow).TotalMilliseconds)
+        $sleepMs = if ($remaining -gt 0) { [Math]::Min($pollIntervalMs, $remaining) } else { 0 }
+        if ($sleepMs -gt 0) {
+            Start-Sleep -Milliseconds $sleepMs
+        }
+        $candidate = Get-ClipboardSnapshot
+        $candidateText = [string]$candidate.text
+        $candidateFiles = Join-ClipboardFiles $candidate.files
+        if ($candidateFiles -and $candidateFiles -ne $baselineFiles) { break }
+        if ($candidateText.Trim().Length -gt 2 -and $candidateText.Trim() -ne $baselineText.Trim()) { break }
+    } while ([DateTime]::UtcNow -lt $deadline)
 }
 
 # Read clipboard
-$files = @()
-$text = ""
-try {
-    $fileList = [System.Windows.Forms.Clipboard]::GetFileDropList()
-    if ($fileList -and $fileList.Count -gt 0) {
-        foreach ($f in $fileList) { $files += $f }
-    }
-} catch {}
-
-try {
-    $text = [System.Windows.Forms.Clipboard]::GetText()
-} catch {}
+$clipboardSnapshot = Get-ClipboardSnapshot
+$files = @($clipboardSnapshot.files)
+$text = [string]$clipboardSnapshot.text
 
 if ($explorerSelection -and $explorerSelection.files -and $explorerSelection.files.Count -gt 0) {
     $files = @($explorerSelection.files)

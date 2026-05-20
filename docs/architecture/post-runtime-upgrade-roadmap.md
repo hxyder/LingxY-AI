@@ -79,9 +79,11 @@ Overlay inactive and races selection capture, a fresh clipboard-change poll, and
 a delayed active-window preview. Selected text/files still win over
 active-window hints, but the user no longer waits for the full serial chain
 before seeing a usable Overlay. The selection PowerShell path uses shorter
-pre/post-copy waits, and the Overlay watchdog/auto-hide behavior is aligned to
-the shorter capture budget so "正在捕捉当前选择..." cannot linger for several
-seconds or be dismissed before a result arrives.
+pre-copy waits plus a bounded post-copy clipboard poll so Chromium/Electron
+editors can publish delayed selections without forcing every capture to sleep
+for the worst case. The Overlay watchdog/auto-hide behavior is aligned to the
+capture budget so "正在捕捉当前选择..." cannot linger for several seconds or be
+dismissed before a result arrives.
 
 PMAT-013 update, 2026-05-13: Console Chat now uses separate in-sidebar
 `会话` and `项目` tabs instead of a single ambiguous personal/project dropdown.
