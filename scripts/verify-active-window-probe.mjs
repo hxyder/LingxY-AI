@@ -214,14 +214,14 @@ assert.match(captureContextPs1Source, /Get-ClipboardSnapshot[\s\S]{0,1200}while 
   const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);
   const guardIndex = guardIndexRaw >= 0 ? guardIndexRaw : mainWithShortcutRouterSource.indexOf("captureInFlight = true;", captureBlockStart);
   const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", guardIndex >= 0 ? guardIndex : captureBlockStart);
-  const inactiveShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay", { focus: false, moveTop: true })', captureIndex);
-  const focusShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', captureIndex);
+  const inactiveShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay", { focus: false, moveTop: true, forceForeground: true })', captureIndex);
+  const focusShowIndex = mainWithShortcutRouterSource.indexOf("? { forceForeground: true }", inactiveShowIndex);
   assert.ok(captureBlockStart >= 0
       && guardIndex > captureBlockStart
       && captureIndex > guardIndex
       && inactiveShowIndex > captureIndex
       && focusShowIndex > inactiveShowIndex,
-    "capture-and-ask must guard re-entrance, start foreground capture, reveal overlay without stealing focus, then focus once usable context arrives");
+    "capture-and-ask must guard re-entrance, start foreground capture, reveal overlay without stealing focus, force it to the front, then focus once usable context arrives");
 }
 assert.ok(/async function captureActiveWindowContext\s*\(\{[\s\S]{0,180}activeWindowEnabled\s*=\s*true[\s\S]{0,180}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,420}activeWindowEnabled:\s*activeWindowEnabled\s*&&\s*activeWindowProbeEnabledCache[\s\S]{0,220}clipboardBaseline/.test(electronMainSource)

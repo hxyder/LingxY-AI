@@ -83,7 +83,10 @@ pre-copy waits plus a bounded post-copy clipboard poll so Chromium/Electron
 editors can publish delayed selections without forcing every capture to sleep
 for the worst case. The Overlay watchdog/auto-hide behavior is aligned to the
 capture budget so "正在捕捉当前选择..." cannot linger for several seconds or be
-dismissed before a result arrives.
+dismissed before a result arrives. Hotkey-driven Overlay reveals use a
+temporary foreground/topmost pulse and then restore the configured presentation,
+so VS Code, browsers, and other foreground apps do not leave the usable Overlay
+hidden behind the current window.
 
 PMAT-013 update, 2026-05-13: Console Chat now uses separate in-sidebar
 `会话` and `项目` tabs instead of a single ambiguous personal/project dropdown.

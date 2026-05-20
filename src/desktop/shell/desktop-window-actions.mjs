@@ -8,7 +8,8 @@ export function createDesktopWindowActions({
   enforceDockWindowInvariants,
   applyWindowPresentation,
   enqueueWindowMessage,
-  IPC_CHANNELS
+  IPC_CHANNELS,
+  foregroundRestoreMs = 900
 } = {}) {
   if (!(windows instanceof Map)) {
     throw new TypeError("createDesktopWindowActions requires windows Map.");
@@ -18,6 +19,33 @@ export function createDesktopWindowActions({
   }
   if (typeof applyWindowPresentation !== "function") {
     throw new TypeError("createDesktopWindowActions requires applyWindowPresentation.");
+  }
+  const foregroundRestoreTimers = new Map();
+
+  function clearForegroundRestoreTimer(windowId) {
+    const timer = foregroundRestoreTimers.get(windowId);
+    if (timer) {
+      clearTimeout(timer);
+      foregroundRestoreTimers.delete(windowId);
+    }
+  }
+
+  function scheduleForegroundRestore(windowId, target) {
+    if (!Number.isFinite(foregroundRestoreMs) || foregroundRestoreMs <= 0) {
+      return;
+    }
+    clearForegroundRestoreTimer(windowId);
+    const timer = setTimeout(() => {
+      foregroundRestoreTimers.delete(windowId);
+      if (typeof target.isDestroyed === "function" && target.isDestroyed()) {
+        return;
+      }
+      applyWindowPresentation(windowId, target);
+    }, foregroundRestoreMs);
+    if (typeof timer?.unref === "function") {
+      timer.unref();
+    }
+    foregroundRestoreTimers.set(windowId, timer);
   }
 
   function showWindow(windowId, options = {}) {
@@ -36,13 +64,19 @@ export function createDesktopWindowActions({
       enforceDockWindowInvariants(target);
     }
     applyWindowPresentation(windowId, target);
+    if (options?.forceForeground === true && typeof target.setAlwaysOnTop === "function") {
+      try {
+        target.setAlwaysOnTop(true, "screen-saver");
+        scheduleForegroundRestore(windowId, target);
+      } catch { /* ignore */ }
+    }
     const shouldFocus = options?.focus !== false;
     if (!shouldFocus && typeof target.showInactive === "function") {
       target.showInactive();
     } else {
       target.show();
     }
-    if (shouldFocus || options?.moveTop === true) {
+    if (shouldFocus || options?.moveTop === true || options?.forceForeground === true) {
       try { target.moveTop(); } catch { /* ignore */ }
     }
     if (shouldFocus) {
@@ -73,7 +107,7 @@ export function createDesktopWindowActions({
   function openOverlayVoice(payload = {}) {
     const mode = payload?.mode === "note" ? "note" : "voice";
     const shortcutId = mode === "note" ? "note-wake" : "voice-wake";
-    const shown = showWindow("overlay");
+    const shown = showWindow("overlay", { forceForeground: true });
     enqueueWindowMessage("overlay", IPC_CHANNELS.shortcutTriggered, {
       shortcutId,
       accelerator: mode === "note" ? "Ctrl+Shift+N" : "Ctrl+Shift+V",

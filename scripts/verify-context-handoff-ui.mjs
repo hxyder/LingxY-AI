@@ -82,25 +82,32 @@ assert.equal(mainProcess.includes("hotkey_preview"), true);
   const end = mainProcess.indexOf('if (shortcut.id === "capture-screenshot")', start);
   const block = mainProcess.slice(start, end);
   const captureIndex = block.indexOf("captureActiveWindowContext({");
-  const inactiveOverlayIndex = block.indexOf('showWindow("overlay", { focus: false, moveTop: true })');
-  const focusedOverlayIndex = block.indexOf('showWindow("overlay")', inactiveOverlayIndex);
+  const inactiveOverlayIndex = block.indexOf('showWindow("overlay", { focus: false, moveTop: true, forceForeground: true })');
+  const focusedOverlayIndex = block.indexOf("? { forceForeground: true }", inactiveOverlayIndex);
   assert.ok(start >= 0 && end > start, "capture-and-ask hotkey block must be present");
   assert.ok(captureIndex >= 0, "capture-and-ask must run active-window capture");
   assert.ok(inactiveOverlayIndex > captureIndex && focusedOverlayIndex > inactiveOverlayIndex,
-    "capture-and-ask must start foreground capture, show the overlay without stealing selection focus, then focus it after capture resolves");
+    "capture-and-ask must start foreground capture, show the overlay without stealing selection focus, force it to the front, then focus it after capture resolves");
   const showWindowStart = desktopWindowActions.indexOf("function showWindow");
   const showWindowEnd = desktopWindowActions.indexOf("function hideWindow", showWindowStart);
   const showWindowBlock = desktopWindowActions.slice(showWindowStart, showWindowEnd);
-  const foregroundStart = showWindowBlock.indexOf("const shouldFocus");
+  const foregroundStart = showWindowBlock.indexOf("applyWindowPresentation(windowId, target)");
   const foregroundEnd = showWindowBlock.indexOf("// Keep the dock orb", foregroundStart);
   const foregroundBlock = showWindowBlock.slice(foregroundStart, foregroundEnd);
+  const topmostIndex = foregroundBlock.indexOf('target.setAlwaysOnTop(true, "screen-saver")');
+  const restoreIndex = foregroundBlock.indexOf("scheduleForegroundRestore(windowId, target)");
   const showInactiveIndex = foregroundBlock.indexOf("target.showInactive()");
-  const gatedMoveTopIndex = foregroundBlock.indexOf("if (shouldFocus || options?.moveTop === true)");
+  const gatedMoveTopIndex = foregroundBlock.indexOf("try { target.moveTop();", showInactiveIndex);
   const focusIndex = foregroundBlock.indexOf("if (shouldFocus)", gatedMoveTopIndex);
   assert.ok(showWindowStart >= 0 && showWindowEnd > showWindowStart, "desktop window showWindow action must be present");
+  assert.ok(topmostIndex >= 0 && restoreIndex > topmostIndex,
+    "showWindow({ forceForeground:true }) must temporarily raise the window and restore configured presentation");
   assert.ok(showInactiveIndex >= 0, "showWindow({ focus:false }) must use showInactive when available");
   assert.ok(gatedMoveTopIndex > showInactiveIndex,
-    "showWindow({ focus:false }) must gate moveTop behind focus or an explicit moveTop request");
+    "showWindow({ focus:false }) must gate moveTop behind focus, explicit moveTop, or foreground forcing");
+  assert.match(foregroundBlock,
+    /if \(shouldFocus \|\| options\?\.moveTop === true \|\| options\?\.forceForeground === true\)/,
+    "showWindow({ forceForeground:true }) must be allowed to move the window to the front");
   assert.ok(focusIndex > gatedMoveTopIndex,
     "showWindow({ focus:false }) must gate focus behind shouldFocus");
 }

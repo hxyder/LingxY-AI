@@ -164,7 +164,7 @@ export function createShortcutRouter({
           });
           enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
         }).catch(() => {});
-        showWindow("overlay");
+        showWindow("overlay", { forceForeground: true });
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
@@ -178,7 +178,7 @@ export function createShortcutRouter({
             sendEchoShortcutWake("voice");
             return;
           }
-          showWindow("overlay");
+          showWindow("overlay", { forceForeground: true });
           for (const bw of windows.values()) {
             bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
           }
@@ -193,7 +193,7 @@ export function createShortcutRouter({
             sendEchoShortcutWake("note");
             return;
           }
-          showWindow("overlay");
+          showWindow("overlay", { forceForeground: true });
           for (const bw of windows.values()) {
             bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
           }
@@ -244,7 +244,7 @@ export function createShortcutRouter({
           ? normalizeCaptureContext({ selectedText })
           : null);
 
-        showWindow("overlay", { focus: false, moveTop: true });
+        showWindow("overlay", { focus: false, moveTop: true, forceForeground: true });
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
@@ -260,7 +260,9 @@ export function createShortcutRouter({
               ...shellPayload,
               capture_elapsed_ms: Date.now() - startedAt
             });
-            showWindow("overlay", focus ? {} : { focus: false, moveTop: true });
+            showWindow("overlay", focus
+              ? { forceForeground: true }
+              : { focus: false, moveTop: true, forceForeground: true });
           };
 
           const activePreview = (async () => {
@@ -307,7 +309,7 @@ export function createShortcutRouter({
 
           await activePreview;
           if (activePreviewDelivered || hasActiveWindowContext(activePreviewContext)) {
-            showWindow("overlay");
+            showWindow("overlay", { forceForeground: true });
             return;
           }
 
@@ -328,7 +330,7 @@ export function createShortcutRouter({
               timeout_ms: selectionTimedOut ? captureAndAskSelectionTimeoutMs : null
             }
           ));
-          showWindow("overlay");
+          showWindow("overlay", { forceForeground: true });
         })().catch((err) => {
           safeError?.("[LingxY] capture-and-ask failed", err?.message ?? err);
           void appendDesktopDiagnosticError?.("capture_and_ask_failed", err, {
@@ -339,7 +341,7 @@ export function createShortcutRouter({
             "failed",
             "捕获当前选择失败。请保持内容选中后重试，或直接在输入框里粘贴/提问。"
           ));
-          showWindow("overlay");
+          showWindow("overlay", { forceForeground: true });
         }).finally(() => {
           setCaptureInFlight(false);
         });
@@ -358,7 +360,7 @@ export function createShortcutRouter({
           let result;
           try { result = JSON.parse(stdout.trim()); } catch { result = { ok: false }; }
           if (result.ok) {
-            showWindow("overlay");
+            showWindow("overlay", { forceForeground: true });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
               targetWindow: "overlay",
               source_app: "uca.screenshot",
@@ -367,7 +369,7 @@ export function createShortcutRouter({
             });
           } else {
             safeError("[LingxY] capture-screenshot: PowerShell returned ok=false", result);
-            showWindow("overlay");
+            showWindow("overlay", { forceForeground: true });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
               targetWindow: "overlay",
               source_app: "uca.screenshot",
@@ -380,7 +382,7 @@ export function createShortcutRouter({
           }
         }).catch((err) => {
           safeError("[LingxY] capture-screenshot: PowerShell failed", err?.message ?? err);
-          showWindow("overlay");
+          showWindow("overlay", { forceForeground: true });
           enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
             targetWindow: "overlay",
             source_app: "uca.screenshot",

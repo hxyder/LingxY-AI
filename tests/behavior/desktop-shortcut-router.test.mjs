@@ -26,7 +26,7 @@ test("capture-and-ask shows overlay immediately and hydrates context asynchronou
 
   const router = createShortcutRouter({
     showWindow(windowId, options = {}) {
-      events.push(`show:${windowId}:${options?.focus !== false}:${options?.moveTop === true}`);
+      events.push(`show:${windowId}:${options?.focus !== false}:${options?.moveTop === true}:${options?.forceForeground === true}`);
     },
     captureActiveWindowContext(options) {
       captureOptions.push(options);
@@ -81,7 +81,7 @@ test("capture-and-ask shows overlay immediately and hydrates context asynchronou
   assert.deepEqual(events.slice(0, 4), [
     "inFlight:true",
     "capture:start",
-    "show:overlay:false:true",
+    "show:overlay:false:true:true",
     "send:uca:shortcut-triggered"
   ]);
   assert.equal(captureInFlight, true);
@@ -91,7 +91,7 @@ test("capture-and-ask shows overlay immediately and hydrates context asynchronou
 
   assert.ok(events.indexOf("context:build") > events.indexOf("capture:resolve"));
   assert.ok(events.includes("enqueue:overlay:uca:shell-context-received"));
-  assert.ok(events.includes("show:overlay:true:false"));
+  assert.ok(events.includes("show:overlay:true:false:true"));
   assert.equal(events.at(-1), "inFlight:false");
   assert.equal(captureInFlight, false);
   assert.equal(captureOptions[0]?.activeWindowEnabled, false);
@@ -109,7 +109,7 @@ test("capture-and-ask reports an empty capture instead of leaving overlay pendin
 
   const router = createShortcutRouter({
     showWindow(windowId, options = {}) {
-      shown.push({ windowId, focus: options?.focus !== false });
+      shown.push({ windowId, focus: options?.focus !== false, forceForeground: options?.forceForeground === true });
     },
     async captureActiveWindowContext(options) {
       calls.push(options);
@@ -144,6 +144,7 @@ test("capture-and-ask reports an empty capture instead of leaving overlay pendin
 
   assert.equal(calls.length, 2);
   assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
+  assert.deepEqual(shown.map((entry) => entry.forceForeground), [true, true]);
   assert.equal(enqueued[0]?.payload?.capture_status, "empty");
   assert.match(enqueued[0]?.payload?.error, /没有捕获到选中内容/);
   assert.equal(captureInFlight, false);
@@ -159,7 +160,7 @@ test("capture-and-ask times out a stuck selection capture and releases the hotke
 
   const router = createShortcutRouter({
     showWindow(windowId, options = {}) {
-      shown.push({ windowId, focus: options?.focus !== false });
+      shown.push({ windowId, focus: options?.focus !== false, forceForeground: options?.forceForeground === true });
     },
     captureActiveWindowContext() {
       return new Promise(() => {});
@@ -189,6 +190,7 @@ test("capture-and-ask times out a stuck selection capture and releases the hotke
   await delay(40);
 
   assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
+  assert.deepEqual(shown.map((entry) => entry.forceForeground), [true, true]);
   assert.equal(enqueued[0]?.payload?.capture_status, "timeout");
   assert.match(enqueued[0]?.payload?.error, /超时/);
   assert.equal(captureInFlight, false);
