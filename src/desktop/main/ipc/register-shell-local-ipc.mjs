@@ -80,7 +80,8 @@ export function registerShellLocalIpc({
         includeSelection: options?.includeSelection !== false,
         activeWindowEnabled: options?.activeWindowEnabled !== false,
         allowClipboardFallback: options?.allowClipboardFallback !== false,
-        clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null
+        clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null,
+        timeoutMs: Number.isFinite(options?.timeoutMs) ? Number(options.timeoutMs) : undefined
       });
       if (options?.excludeShellWindow && looksLikeShellWindowContext(context)) {
         const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -93,7 +94,8 @@ export function registerShellLocalIpc({
               includeSelection: options?.includeSelection !== false,
               activeWindowEnabled: options?.activeWindowEnabled !== false,
               allowClipboardFallback: options?.allowClipboardFallback !== false,
-              clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null
+              clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null,
+              timeoutMs: Number.isFinite(options?.timeoutMs) ? Number(options.timeoutMs) : undefined
             });
           } finally {
             if (typeof sourceWindow.showInactive === "function") sourceWindow.showInactive();

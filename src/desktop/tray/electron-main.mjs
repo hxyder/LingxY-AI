@@ -375,12 +375,16 @@ export function createElectronShellRuntime({
     allowClipboardFallback = true,
     clipboardBaseline = null,
     preferLastExternal = false,
-    maxExternalAgeMs = 10 * 60_000
+    maxExternalAgeMs = 10 * 60_000,
+    timeoutMs = 3000
   } = {}) {
+    const boundedTimeoutMs = Number.isFinite(timeoutMs)
+      ? Math.max(650, Math.min(3000, Number(timeoutMs)))
+      : 3000;
     const contextPromise = runCaptureActiveWindowContext({
       runPowerShell: runPowerShellScript,
       clipboardFallback: () => clipboard.readText() ?? "",
-      timeoutMs: 3000,
+      timeoutMs: boundedTimeoutMs,
       activeWindowEnabled: activeWindowEnabled && activeWindowProbeEnabledCache,
       includeSelection,
       allowClipboardFallback,

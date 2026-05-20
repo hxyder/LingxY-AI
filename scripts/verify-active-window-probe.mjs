@@ -187,10 +187,18 @@ async function runScenario(scenario, options = {}) {
   assert.equal(ctx.activeWindow.extra.reason, "address_bar_unreadable");
 }
 
-assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(mainWithShortcutRouterSource),
-  "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
-assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2400}activeWindowEnabled:\s*false[\s\S]{0,1400}includeSelection:\s*false[\s\S]{0,220}activeWindowEnabled:\s*true/.test(mainWithShortcutRouterSource),
-  "capture-and-ask must first capture selected files/text without active-window preview, then fall back to active-window only when there is no selection");
+{
+  const start = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
+  const end = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-screenshot"', start);
+  const block = mainWithShortcutRouterSource.slice(start, end);
+  assert.match(block, /allowClipboardFallback:\s*false[\s\S]{0,260}clipboardBaseline:\s*hotKeyClipboardSnapshot/,
+    "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
+  const firstActiveDisabled = block.indexOf("activeWindowEnabled: false");
+  const fallbackSelectionDisabled = block.indexOf("includeSelection: false", firstActiveDisabled);
+  const fallbackActiveEnabled = block.indexOf("activeWindowEnabled: true", fallbackSelectionDisabled);
+  assert.ok(firstActiveDisabled >= 0 && fallbackSelectionDisabled > firstActiveDisabled && fallbackActiveEnabled > fallbackSelectionDisabled,
+    "capture-and-ask must first capture selected files/text without active-window preview, then fall back to active-window only when there is no selection");
+}
 assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*120/,
   "capture-context.ps1 must wait briefly before copying so the hotkey modifier can be released");
 assert.match(captureContextPs1Source, /keybd_event\(0x10,\s*0,\s*2[\s\S]{0,260}keybd_event\(0xA1,\s*0,\s*2/,
@@ -201,10 +209,15 @@ assert.match(captureContextPs1Source, /Start-Sleep -Milliseconds \$PreCopyDelayM
   const captureBlockStart = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
   const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);
   const guardIndex = guardIndexRaw >= 0 ? guardIndexRaw : mainWithShortcutRouterSource.indexOf("captureInFlight = true;", captureBlockStart);
-  const showIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', guardIndex >= 0 ? guardIndex : captureBlockStart);
   const captureIndex = mainWithShortcutRouterSource.indexOf("captureActiveWindowContext({", guardIndex >= 0 ? guardIndex : captureBlockStart);
-  assert.ok(captureBlockStart >= 0 && guardIndex > captureBlockStart && captureIndex > guardIndex && showIndex > captureIndex,
-    "capture-and-ask must guard re-entrance, start capture before focusing LingxY, then reveal overlay immediately while capture hydrates asynchronously");
+  const inactiveShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay", { focus: false })', captureIndex);
+  const focusShowIndex = mainWithShortcutRouterSource.indexOf('showWindow("overlay")', inactiveShowIndex);
+  assert.ok(captureBlockStart >= 0
+      && guardIndex > captureBlockStart
+      && captureIndex > guardIndex
+      && inactiveShowIndex > captureIndex
+      && focusShowIndex > inactiveShowIndex,
+    "capture-and-ask must guard re-entrance, start foreground capture, reveal overlay without stealing focus, then focus it after capture completion");
 }
 assert.ok(/async function captureActiveWindowContext\s*\(\{[\s\S]{0,180}activeWindowEnabled\s*=\s*true[\s\S]{0,180}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,420}activeWindowEnabled:\s*activeWindowEnabled\s*&&\s*activeWindowProbeEnabledCache[\s\S]{0,220}clipboardBaseline/.test(electronMainSource)

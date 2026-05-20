@@ -265,12 +265,14 @@ or sample-specific exceptions.
 
 PMAT-014 desktop latency follow-up, 2026-05-15: hotkey capture must not trade
 speed for wrong context. `capture-and-ask` starts the PowerShell capture promise
-before focusing LingxY, then shows the overlay immediately while the capture
-result hydrates asynchronously. The active-window feature flag is cached
-locally; `/health` refresh runs after capture starts so a slow service health
-request cannot make the probe capture the Electron overlay/console. If the
-foreground result is still a LingxY shell window, the shell wrapper prefers the
-last remembered external window or suppresses the shell preview.
+before focusing LingxY, then shows the overlay without stealing foreground
+focus while the copy probe hydrates asynchronously. The overlay is focused only
+after the capture path returns a context or a bounded empty/error result. The
+active-window feature flag is cached locally; `/health` refresh runs after
+capture starts so a slow service health request cannot make the probe capture
+the Electron overlay/console. If the foreground result is still a LingxY shell
+window, the shell wrapper prefers the last remembered external window or
+suppresses the shell preview.
 
 PMAT-014 global latency execution plan, 2026-05-15: the speed program is now
 tracked as an end-to-end runtime optimization, not a single-task micro-fix.

@@ -212,6 +212,9 @@ let pendingFileSelection = null;
 let pendingCapture = null;
 let pendingActiveWindowContext = null;
 let pendingActiveWindowContextCapturedAt = 0;
+let shortcutCaptureSession = null;
+const SHORTCUT_CAPTURE_WATCHDOG_MS = 5600;
+const SCREENSHOT_CAPTURE_WATCHDOG_MS = 10000;
 const EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS = 30 * 1000;
 const VOICE_CONTEXT_FALLBACK_MAX_AGE_MS = 60 * 1000;
 const NOTE_SOURCE_CONTEXT_MAX_AGE_MS = 60 * 1000;
@@ -1157,6 +1160,9 @@ function renderConversationFromState() {
 }
 
 function startNewConversation({ preservePendingInputContext = false } = {}) {
+  if (!preservePendingInputContext) {
+    clearShortcutCaptureSession();
+  }
   const preservedPendingFileSelection = preservePendingInputContext ? pendingFileSelection : null;
   const preservedPendingCapture = preservePendingInputContext ? pendingCapture : null;
   advanceOverlayViewGeneration();
@@ -1201,10 +1207,54 @@ function startNewConversation({ preservePendingInputContext = false } = {}) {
 
 let lastShellHandoffAt = 0;
 
+function clearShortcutCaptureSession() {
+  if (shortcutCaptureSession?.timer) {
+    clearTimeout(shortcutCaptureSession.timer);
+  }
+  shortcutCaptureSession = null;
+}
+
+function finishShortcutCaptureSession({ message = "", remove = false } = {}) {
+  const session = shortcutCaptureSession;
+  if (!session) return false;
+  clearShortcutCaptureSession();
+  const bubble = session.bubble;
+  if (!bubble?.isConnected) return false;
+  if (remove) {
+    bubble.remove();
+    if (bubbleArea && bubbleArea.children.length === 0) {
+      bubbleArea.hidden = true;
+      showEmptyState();
+    }
+    return true;
+  }
+  if (message) {
+    bubble.textContent = message;
+    bubble.dataset.rawText = message;
+  }
+  return true;
+}
+
 function beginShortcutCaptureSession(shortcutId = "") {
   if (Date.now() - lastShellHandoffAt < 800) return;
+  clearShortcutCaptureSession();
   startNewConversation();
-  addSystemBubble(shortcutId === "capture-screenshot" ? "正在截图..." : "正在捕捉当前选择...");
+  const waitingText = shortcutId === "capture-screenshot" ? "正在截图..." : "正在捕捉当前选择...";
+  const bubble = addSystemBubble(waitingText);
+  const watchdogMs = shortcutId === "capture-screenshot"
+    ? SCREENSHOT_CAPTURE_WATCHDOG_MS
+    : SHORTCUT_CAPTURE_WATCHDOG_MS;
+  shortcutCaptureSession = {
+    shortcutId,
+    bubble,
+    timer: setTimeout(() => {
+      finishShortcutCaptureSession({
+        message: shortcutId === "capture-screenshot"
+          ? "截图仍未完成。可以重试，或直接输入问题。"
+          : "没有捕获到内容。请保持内容选中后重试，或直接在输入框里粘贴/提问。"
+      });
+    }, watchdogMs)
+  };
   void maybeRevealOverlay({ markEngaged: true });
   commandInput.focus();
 }
@@ -5570,7 +5620,8 @@ async function resolveActiveWindowBrowserCapture() {
         excludeShellWindow: true,
         preferLastExternal: true,
         maxExternalAgeMs: 2 * 60 * 1000,
-        captureMode: "current_page_submit"
+        captureMode: "current_page_submit",
+        timeoutMs: 900
       }),
       900,
       null
@@ -5619,7 +5670,8 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
         excludeShellWindow: true,
         preferLastExternal: true,
         maxExternalAgeMs: VOICE_CONTEXT_FALLBACK_MAX_AGE_MS,
-        captureMode
+        captureMode,
+        timeoutMs: 1200
       }),
       1200,
       null
@@ -5639,15 +5691,23 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
 
 function applyShellHandoff(payload) {
   lastShellHandoffAt = Date.now();
+  const isHotkeyCapture = payload?.capture_mode === "hotkey_capture" || payload?.captureMode === "hotkey_capture";
   if (payload?.error) {
-    addSystemBubble(payload.error);
+    const handledPending = isHotkeyCapture
+      ? finishShortcutCaptureSession({ message: payload.error })
+      : false;
+    if (!handledPending) {
+      addSystemBubble(payload.error);
+    }
     commandInput.focus();
     return;
+  }
+  if (isHotkeyCapture) {
+    finishShortcutCaptureSession({ remove: true });
   }
 
   if (payload?.file_paths?.length) {
     const isEchoReceipt = payload.surface === "echo_receipt" || payload.mode === "echo";
-    const isHotkeyCapture = payload.capture_mode === "hotkey_capture" || payload.captureMode === "hotkey_capture";
     const hasExistingThread = Boolean(conversationState?.turns?.length || activeTaskId);
     if (!isEchoReceipt && (isHotkeyCapture || hasExistingThread)) {
       startNewConversation();
@@ -7704,7 +7764,8 @@ function captureNoteSourceContext(sessionId = noteSessionId) {
         excludeShellWindow: true,
         preferLastExternal: true,
         maxExternalAgeMs: NOTE_SOURCE_CONTEXT_MAX_AGE_MS,
-        captureMode: "note_recording"
+        captureMode: "note_recording",
+        timeoutMs: 1200
       });
       if (sessionId === noteSessionId) {
         noteSourceContext = payload ?? null;

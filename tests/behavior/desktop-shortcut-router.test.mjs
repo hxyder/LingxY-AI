@@ -21,8 +21,8 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
   ]);
 
   const router = createShortcutRouter({
-    showWindow(windowId) {
-      events.push(`show:${windowId}`);
+    showWindow(windowId, options = {}) {
+      events.push(`show:${windowId}:${options?.focus !== false}`);
     },
     captureActiveWindowContext(options) {
       captureOptions.push(options);
@@ -76,7 +76,7 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
   assert.deepEqual(events.slice(0, 4), [
     "inFlight:true",
     "capture:start",
-    "show:overlay",
+    "show:overlay:false",
     "send:uca:shortcut-triggered"
   ]);
   assert.equal(captureInFlight, true);
@@ -86,10 +86,104 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
 
   assert.ok(events.indexOf("context:build") > events.indexOf("capture:resolve"));
   assert.ok(events.includes("enqueue:overlay:uca:shell-context-received"));
+  assert.ok(events.includes("show:overlay:true"));
   assert.equal(events.at(-1), "inFlight:false");
   assert.equal(captureInFlight, false);
   assert.equal(captureOptions[0]?.activeWindowEnabled, false);
   assert.equal(windowMessages.filter((message) => message.channel === "uca:shortcut-triggered").length, 1);
+});
+
+test("capture-and-ask reports an empty capture instead of leaving overlay pending", async () => {
+  const calls = [];
+  const enqueued = [];
+  const shown = [];
+  let captureInFlight = false;
+  const windows = new Map([
+    ["overlay", { webContents: { send() {} } }]
+  ]);
+
+  const router = createShortcutRouter({
+    showWindow(windowId, options = {}) {
+      shown.push({ windowId, focus: options?.focus !== false });
+    },
+    async captureActiveWindowContext(options) {
+      calls.push(options);
+      return {
+        processName: null,
+        windowTitle: null,
+        filePaths: [],
+        selectedText: null,
+        activeWindow: null
+      };
+    },
+    buildShellContextPayload() {
+      throw new Error("empty capture should not build a context payload");
+    },
+    getCaptureInFlight: () => captureInFlight,
+    setCaptureInFlight(value) { captureInFlight = value; },
+    clipboard: { readText: () => "" },
+    enqueueWindowMessage(windowId, channel, payload) {
+      enqueued.push({ windowId, channel, payload });
+    },
+    IPC_CHANNELS: {
+      shortcutTriggered: "uca:shortcut-triggered",
+      shellContextReceived: "uca:shell-context-received"
+    },
+    windows
+  });
+
+  router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
+  assert.equal(enqueued[0]?.payload?.capture_status, "empty");
+  assert.match(enqueued[0]?.payload?.error, /没有捕获到选中内容/);
+  assert.equal(captureInFlight, false);
+});
+
+test("capture-and-ask times out a stuck selection capture and releases the hotkey", async () => {
+  const enqueued = [];
+  const shown = [];
+  let captureInFlight = false;
+  const windows = new Map([
+    ["overlay", { webContents: { send() {} } }]
+  ]);
+
+  const router = createShortcutRouter({
+    showWindow(windowId, options = {}) {
+      shown.push({ windowId, focus: options?.focus !== false });
+    },
+    captureActiveWindowContext() {
+      return new Promise(() => {});
+    },
+    buildShellContextPayload() {
+      throw new Error("timed-out capture should not build a context payload");
+    },
+    getCaptureInFlight: () => captureInFlight,
+    setCaptureInFlight(value) { captureInFlight = value; },
+    clipboard: { readText: () => "" },
+    enqueueWindowMessage(windowId, channel, payload) {
+      enqueued.push({ windowId, channel, payload });
+    },
+    IPC_CHANNELS: {
+      shortcutTriggered: "uca:shortcut-triggered",
+      shellContextReceived: "uca:shell-context-received"
+    },
+    windows,
+    captureAndAskSelectionTimeoutMs: 20,
+    captureAndAskWindowTimeoutMs: 20
+  });
+
+  router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
+  assert.equal(captureInFlight, true);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
+  assert.equal(enqueued[0]?.payload?.capture_status, "timeout");
+  assert.match(enqueued[0]?.payload?.error, /超时/);
+  assert.equal(captureInFlight, false);
 });
 
 test("capture-and-ask sends selected files without waiting for active-window fallback", async () => {

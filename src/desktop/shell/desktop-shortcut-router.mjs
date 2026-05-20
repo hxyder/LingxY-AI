@@ -1,3 +1,47 @@
+const CAPTURE_AND_ASK_SELECTION_TIMEOUT_MS = 2400;
+const CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS = 1400;
+
+class ShortcutCaptureTimeoutError extends Error {
+  constructor(label, timeoutMs) {
+    super(`${label} timed out after ${timeoutMs}ms`);
+    this.name = "ShortcutCaptureTimeoutError";
+    this.code = "SHORTCUT_CAPTURE_TIMEOUT";
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+function withTimeout(promise, timeoutMs, label) {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return Promise.resolve(promise);
+  }
+  let timer = null;
+  return new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new ShortcutCaptureTimeoutError(label, timeoutMs)), timeoutMs);
+    Promise.resolve(promise).then(resolve, reject).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  });
+}
+
+function hasSelectedCaptureContext(ctx) {
+  return Boolean((Array.isArray(ctx?.filePaths) && ctx.filePaths.length > 0) || ctx?.selectedText);
+}
+
+function hasActiveWindowContext(ctx) {
+  return Boolean(ctx?.activeWindow && !ctx.activeWindow.blocked);
+}
+
+function buildCaptureStatusPayload(status, message, detail = {}) {
+  return {
+    targetWindow: "overlay",
+    source_app: "uca.desktop",
+    capture_mode: "hotkey_capture",
+    capture_status: status,
+    error: message,
+    ...detail
+  };
+}
+
 export function createShortcutRouter({
   showWindow,
   sendEchoShortcutWake,
@@ -17,7 +61,9 @@ export function createShortcutRouter({
   screenshotCapturePath,
   safeError,
   appendDesktopDiagnosticError,
-  safeNotify
+  safeNotify,
+  captureAndAskSelectionTimeoutMs = CAPTURE_AND_ASK_SELECTION_TIMEOUT_MS,
+  captureAndAskWindowTimeoutMs = CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS
 } = {}) {
   if (typeof showWindow !== "function") throw new TypeError("createShortcutRouter requires showWindow.");
   if (typeof captureActiveWindowContext !== "function") throw new TypeError("createShortcutRouter requires captureActiveWindowContext.");
@@ -84,17 +130,33 @@ export function createShortcutRouter({
         }
         setCaptureInFlight(true);
         const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
-        const capturePromise = captureActiveWindowContext({
-          includeSelection: true,
-          activeWindowEnabled: false,
-          allowClipboardFallback: false,
-          clipboardBaseline: hotKeyClipboardSnapshot
-        });
-        showWindow("overlay");
+        const capturePromise = withTimeout(
+          captureActiveWindowContext({
+            includeSelection: true,
+            activeWindowEnabled: false,
+            allowClipboardFallback: false,
+            clipboardBaseline: hotKeyClipboardSnapshot,
+            timeoutMs: captureAndAskSelectionTimeoutMs
+          }),
+          captureAndAskSelectionTimeoutMs,
+          "selection capture"
+        );
+        showWindow("overlay", { focus: false });
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
         capturePromise.then(async (ctx) => {
+          ctx = {
+            processName: null,
+            windowTitle: null,
+            filePaths: [],
+            selectedText: null,
+            activeWindow: null,
+            ...(ctx ?? {})
+          };
+          if (!Array.isArray(ctx.filePaths)) {
+            ctx.filePaths = [];
+          }
           if (!ctx.selectedText) {
             const postClipboard = clipboard.readText() ?? "";
             const postTrimmed = postClipboard.trim();
@@ -104,38 +166,66 @@ export function createShortcutRouter({
             }
           }
 
-          const hasFiles = ctx.filePaths.length > 0;
-          const hasText = Boolean(ctx.selectedText);
-
-          if (hasFiles || hasText) {
+          if (hasSelectedCaptureContext(ctx)) {
             const shellPayload = buildShellContextPayload({
               context: ctx,
               sourceApp: ctx.processName ?? ctx.activeWindow?.process ?? "unknown",
               captureMode: "hotkey_capture"
             });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
+            showWindow("overlay");
             return;
           }
 
-          const windowCtx = await captureActiveWindowContext({
-            includeSelection: false,
-            activeWindowEnabled: true,
-            allowClipboardFallback: false,
-            preferLastExternal: true
-          });
-          const hasActiveWindow = Boolean(windowCtx.activeWindow && !windowCtx.activeWindow.blocked);
-          if (hasActiveWindow) {
+          let windowCtx = null;
+          try {
+            windowCtx = await withTimeout(
+              captureActiveWindowContext({
+                includeSelection: false,
+                activeWindowEnabled: true,
+                allowClipboardFallback: false,
+                preferLastExternal: true,
+                timeoutMs: captureAndAskWindowTimeoutMs
+              }),
+              captureAndAskWindowTimeoutMs,
+              "active-window fallback"
+            );
+          } catch (err) {
+            safeError?.("[LingxY] capture-and-ask active-window fallback failed", err?.message ?? err);
+            void appendDesktopDiagnosticError?.("capture_and_ask_active_window_fallback_failed", err, {
+              timedOut: err?.code === "SHORTCUT_CAPTURE_TIMEOUT",
+              shortcutId: shortcut.id
+            });
+          }
+          if (hasActiveWindowContext(windowCtx)) {
             const shellPayload = buildShellContextPayload({
               context: windowCtx,
               sourceApp: windowCtx.processName ?? windowCtx.activeWindow?.process ?? "unknown",
               captureMode: "hotkey_capture"
             });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
+          } else {
+            enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, buildCaptureStatusPayload(
+              "empty",
+              "没有捕获到选中内容。请保持内容选中后再试，或直接在输入框里粘贴/提问。"
+            ));
           }
-        }).catch(() => {
-          // The overlay is already visible. A capture failure should leave the
-          // user in the composer instead of turning the hotkey into a blocking
-          // desktop probe.
+          showWindow("overlay");
+        }).catch((err) => {
+          const timedOut = err?.code === "SHORTCUT_CAPTURE_TIMEOUT";
+          safeError?.("[LingxY] capture-and-ask failed", err?.message ?? err);
+          void appendDesktopDiagnosticError?.("capture_and_ask_failed", err, {
+            timedOut,
+            shortcutId: shortcut.id
+          });
+          enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, buildCaptureStatusPayload(
+            timedOut ? "timeout" : "failed",
+            timedOut
+              ? "捕获当前选择超时。请保持内容选中后再试，或直接在输入框里粘贴/提问。"
+              : "捕获当前选择失败。请保持内容选中后再试，或直接在输入框里粘贴/提问。",
+            timedOut ? { timeout_ms: err.timeoutMs ?? null } : {}
+          ));
+          showWindow("overlay");
         }).finally(() => {
           setCaptureInFlight(false);
         });

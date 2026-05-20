@@ -19,11 +19,13 @@ Status: verified against the current repository on 2026-05-09.
 - Main-process handler registration references across `electron-main.mjs` and IPC modules: 113
 - Main-process send references across `electron-main.mjs`, desktop main IPC helpers, and IPC modules: 26
 
-PMAT-014 note, 2026-05-15: `capture-and-ask` now sends
-`uca:shortcut-triggered` once immediately when the hotkey is pressed, then
-hydrates selected file/text/window context asynchronously. The send-reference
-snapshot dropped by one because the previous capture-failure/resolution resend
-was retired; the IPC channel contract is unchanged.
+PMAT-014 note, 2026-05-20: `capture-and-ask` sends
+`uca:shortcut-triggered` once immediately when the hotkey is pressed, shows the
+overlay without stealing selection focus, then hydrates selected
+file/text/window context asynchronously over `uca:shell-context-received`.
+Empty, failed, and timed-out captures use an additive `capture_status` payload
+on that existing channel so the overlay can exit its pending state without a
+new IPC route.
 - Renderer invoke references: 109
 - Renderer listener references: 22
 - Hard-coded main IPC handler channels outside `IPC_CHANNELS`: 13

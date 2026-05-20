@@ -20,7 +20,7 @@ export function createDesktopWindowActions({
     throw new TypeError("createDesktopWindowActions requires applyWindowPresentation.");
   }
 
-  function showWindow(windowId) {
+  function showWindow(windowId, options = {}) {
     const target = windows.get(windowId);
     if (!target) {
       return false;
@@ -36,9 +36,16 @@ export function createDesktopWindowActions({
       enforceDockWindowInvariants(target);
     }
     applyWindowPresentation(windowId, target);
-    target.show();
+    const shouldFocus = options?.focus !== false;
+    if (!shouldFocus && typeof target.showInactive === "function") {
+      target.showInactive();
+    } else {
+      target.show();
+    }
     try { target.moveTop(); } catch { /* ignore */ }
-    target.focus();
+    if (shouldFocus) {
+      target.focus();
+    }
     // Keep the dock orb above all other UCA windows so it remains draggable
     // even when the overlay is open on top.
     if (windowId !== "dock") {

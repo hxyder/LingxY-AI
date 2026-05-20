@@ -72,11 +72,12 @@ assert.equal(mainProcess.includes("hotkey_preview"), true);
   const end = mainProcess.indexOf('if (shortcut.id === "capture-screenshot")', start);
   const block = mainProcess.slice(start, end);
   const captureIndex = block.indexOf("captureActiveWindowContext({");
-  const firstOverlayIndex = block.indexOf('showWindow("overlay")');
+  const inactiveOverlayIndex = block.indexOf('showWindow("overlay", { focus: false })');
+  const focusedOverlayIndex = block.indexOf('showWindow("overlay")', inactiveOverlayIndex);
   assert.ok(start >= 0 && end > start, "capture-and-ask hotkey block must be present");
   assert.ok(captureIndex >= 0, "capture-and-ask must run active-window capture");
-  assert.ok(firstOverlayIndex > captureIndex,
-    "capture-and-ask must start foreground capture before focusing the overlay, then hydrate asynchronously");
+  assert.ok(inactiveOverlayIndex > captureIndex && focusedOverlayIndex > inactiveOverlayIndex,
+    "capture-and-ask must show the overlay without stealing selection focus, then focus it after capture resolves");
 }
 assert.ok(mainProcess.includes("Dropping onto the dock is mode-aware:")
     && /shellSubmitDroppedFiles[\s\S]{0,700}const settings = await loadSettings\(\);[\s\S]{0,520}if \(!settings\?\.echoMode\)[\s\S]{0,80}showWindow\("overlay"\)[\s\S]{0,360}enqueueWindowMessage\(\s*"overlay"/.test(mainProcess),
