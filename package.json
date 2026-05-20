@@ -12,6 +12,8 @@
   },
   "scripts": {
     "check": "node scripts/run-checks.mjs",
+    "clean:local": "node scripts/clean-local-generated.mjs",
+    "clean:local:dry-run": "node scripts/clean-local-generated.mjs --dry-run",
     "build:trial-package": "node scripts/build-trial-package.mjs",
     "start:desktop": "node scripts/start-desktop.mjs",
     "start:runtime": "node scripts/start-runtime.mjs",

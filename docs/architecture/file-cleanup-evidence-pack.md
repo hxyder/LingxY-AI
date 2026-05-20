@@ -56,6 +56,10 @@ the candidate and leaves deletion to a deliberate follow-up action.
   docs, template, behavior tests, and check manifest wiring.
 - `node scripts/run-file-cleanup-candidates.mjs` writes a non-destructive
   candidate report under `.tmp/file-cleanup-candidates/`.
+- `npm run clean:local:dry-run` previews deletion of approved disposable local
+  output only.
+- `npm run clean:local` deletes only approved disposable local output:
+  `.tmp/`, `tmp/`, `.tmp-checkfast.log`, and `.codex-behavior.log`.
 
 ## Guardrails
 

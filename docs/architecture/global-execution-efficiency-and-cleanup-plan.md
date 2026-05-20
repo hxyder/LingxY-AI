@@ -111,6 +111,7 @@ The machine-readable cleanup gate is the File Cleanup Evidence Pack:
 - Contract: `src/shared/file-cleanup-evidence-pack.mjs`.
 - Architecture docs: `docs/architecture/file-cleanup-evidence-pack.md`.
 - Non-destructive candidate report: `scripts/run-file-cleanup-candidates.mjs`.
+- Disposable local output cleaner: `scripts/clean-local-generated.mjs`.
 - Verifier: `npm run verify:file-cleanup-evidence-pack`.
 
 Do not delete or archive:
