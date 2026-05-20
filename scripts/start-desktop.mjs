@@ -28,6 +28,7 @@ async function waitForRuntime(timeoutMs = 15_000) {
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
 env.UCA_SERVICE_BASE_URL = serviceBaseUrl;
+env.LINGXY_DESKTOP_DISABLE_EMBEDDED_SERVICE = "1";
 
 let runtimeChild = null;
 if (!(await isRuntimeReady())) {

@@ -294,6 +294,8 @@ assert.match(desktopServiceRuntime, /export function servicePortFromUrl\(/,
   "desktop-service-runtime.mjs must own desktop service URL port parsing");
 assert.match(desktopServiceRuntime, /export function shouldHostEmbeddedService\(/,
   "desktop-service-runtime.mjs must own embedded-service host eligibility parsing");
+assert.match(desktopServiceRuntime, /LINGXY_DESKTOP_DISABLE_EMBEDDED_SERVICE/,
+  "desktop-service-runtime.mjs must allow dev launchers to disable Electron embedded runtime hosting");
 assert.match(desktopServiceRuntime, /export async function serviceIsHealthy\(/,
   "desktop-service-runtime.mjs must own reusable desktop service health checks");
 assert.doesNotMatch(electronMain, /const notificationBatches = new Map\(\)/,

@@ -71,6 +71,7 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 }
 
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
+const startDesktop = readFileSync(new URL("../scripts/start-desktop.mjs", import.meta.url), "utf8");
 const desktopSettings = readFileSync(new URL("../src/desktop/tray/desktop-settings.mjs", import.meta.url), "utf8");
 const desktopWindowBounds = readFileSync(new URL("../src/desktop/tray/desktop-window-bounds.mjs", import.meta.url), "utf8");
 const desktopWindowLifecycle = readFileSync(new URL("../src/desktop/shell/desktop-window-lifecycle.mjs", import.meta.url), "utf8");
@@ -84,6 +85,10 @@ if (!electronMain.includes("createPersistentRuntime")
     || !electronMain.includes("ensureEmbeddedServiceRuntime")
     || !electronMain.includes("embedded_runtime_start_failed")) {
   throw new Error("Desktop shell must self-host the local runtime when 127.0.0.1 service is not already running.");
+}
+if (!/spawn\(process\.execPath,\s*\["scripts\/start-runtime\.mjs"\]/.test(startDesktop)
+    || !/LINGXY_DESKTOP_DISABLE_EMBEDDED_SERVICE\s*=\s*"1"/.test(startDesktop)) {
+  throw new Error("Dev desktop launcher must host runtime in Node and disable Electron embedded runtime fallback.");
 }
 if (!electronMain.includes("resolveDesktopActorForSender(sender, windows)")
     || /function desktopActorForSender[\s\S]{0,220}return\s+["']desktop_shell["']/.test(electronMain)) {

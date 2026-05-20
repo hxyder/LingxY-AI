@@ -7,7 +7,10 @@ export function servicePortFromUrl(urlValue) {
   }
 }
 
-export function shouldHostEmbeddedService(urlValue) {
+export function shouldHostEmbeddedService(urlValue, { env = process.env } = {}) {
+  if (env?.LINGXY_DESKTOP_DISABLE_EMBEDDED_SERVICE === "1") {
+    return false;
+  }
   try {
     const parsed = new URL(urlValue);
     return ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
