@@ -1,13 +1,35 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
+import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
+import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
+import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { runDagPlan } from "../src/service/dag/executor.mjs";
 import { createNodeDispatcher } from "../src/service/dag/dispatch.mjs";
+import { runDagLane } from "../src/service/dag/entrypoint.mjs";
 import { planDag, replanDag } from "../src/service/dag/planner.mjs";
 import { validateDagPlan } from "../src/service/dag/schema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
+
+function makeRuntime(overrides = {}) {
+  return {
+    store: createInMemoryStoreScaffold(),
+    eventBus: createEventBusScaffold(),
+    queue: createTaskQueueScaffold(),
+    artifactStore: createArtifactStore({ baseDir: path.join(repoRoot, ".tmp", "verify-dag-execution") }),
+    actionToolRegistry: {
+      list: () => [],
+      call: async () => ({ success: true, observation: "ok", metadata: {} })
+    },
+    toolContext: {},
+    configStore: { load: () => ({}), save: (value) => value, patch: (value) => value },
+    ...overrides
+  };
+}
 
 // ── runDagPlan: topo order, placeholder substitution, per-node status ─────
 
@@ -292,6 +314,85 @@ const repoRoot = path.resolve(__dirname, "..");
     llm: async () => JSON.stringify(replanned)
   });
   assert.ok(r.plan, `replan should accept placeholder pointing at completed node, got: ${JSON.stringify(r)}`);
+}
+
+// ── runDagLane: exhausted replan attempts fall back to single-turn lane ──
+
+{
+  const entrypoint = readFileSync(new URL("../src/service/dag/entrypoint.mjs", import.meta.url), "utf8");
+  const contextSubmission = readFileSync(new URL("../src/service/core/context-submission.mjs", import.meta.url), "utf8");
+  assert.match(entrypoint, /fallback_single_turn/u, "DAG lane must emit an explicit fallback event");
+  assert.match(contextSubmission, /dagResult\?\.fallbackSingleTurn/u, "context-submission must detect DAG fallback");
+  assert.match(contextSubmission, /parentTaskId\s*=\s*dagResult\.parentTask\.task_id/u,
+    "single-turn fallback should be linked to the failed DAG parent task");
+
+  const oldFetch = globalThis.fetch;
+  const oldEnv = {
+    UCA_CONFIG_PATH: process.env.UCA_CONFIG_PATH,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    UCA_FAST_MODEL: process.env.UCA_FAST_MODEL
+  };
+  const plans = [
+    {
+      summary: "initial failing plan",
+      nodes: [{ id: "fail_a", kind: "action_tool", tool: "always_fail", params: {}, on_failure: "replan" }]
+    },
+    {
+      summary: "replan failing plan 1",
+      nodes: [{ id: "fail_b", kind: "action_tool", tool: "always_fail", params: {}, on_failure: "replan" }]
+    },
+    {
+      summary: "replan failing plan 2",
+      nodes: [{ id: "fail_c", kind: "action_tool", tool: "always_fail", params: {}, on_failure: "replan" }]
+    }
+  ];
+  let fetchCount = 0;
+  try {
+    process.env.UCA_CONFIG_PATH = path.join(repoRoot, ".tmp", "verify-dag-execution", "missing-runtime.json");
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.OPENAI_BASE_URL = "https://planner.test/v1";
+    process.env.UCA_FAST_MODEL = "gpt-test";
+    globalThis.fetch = async () => {
+      const plan = plans[Math.min(fetchCount, plans.length - 1)];
+      fetchCount += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(plan) } }]
+        })
+      };
+    };
+
+    const runtime = makeRuntime({
+      actionToolRegistry: {
+        list: () => [{ id: "always_fail", description: "test failure tool" }],
+        call: async () => ({ success: false, observation: "intentional DAG node failure" })
+      }
+    });
+    const result = await runDagLane({
+      runtime,
+      userCommand: "查多个来源并生成结果",
+      contextPacket: { source_type: "test", text: "" },
+      executionMode: "interactive"
+    });
+    assert.equal(result.fallbackSingleTurn, true, `expected fallback result, got ${JSON.stringify(result)}`);
+    assert.equal(result.planReason, "max_replan_attempts_exhausted");
+    assert.ok(result.parentTask?.task_id, "fallback should return the failed DAG parent task");
+    const task = runtime.store.getTask(result.parentTask.task_id);
+    assert.equal(task.status, "failed");
+    assert.equal(task.failure_category, "model_call_error");
+    const eventTypes = runtime.store.getTaskEvents(task.task_id).map((event) => event.event_type);
+    assert.ok(eventTypes.includes("dag.fallback_single_turn"), `missing fallback event: ${eventTypes.join(",")}`);
+    assert.ok(eventTypes.filter((type) => type === "dag.replan_attempt").length >= 2,
+      "DAG lane should try replans before falling back");
+  } finally {
+    globalThis.fetch = oldFetch;
+    for (const [key, value] of Object.entries(oldEnv)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 }
 
 console.log("DAG execution layer (planner + executor + dispatch + replan) verification passed.");

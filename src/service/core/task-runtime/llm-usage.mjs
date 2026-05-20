@@ -80,6 +80,25 @@ export function normalizeLlmUsage(usage = {}) {
   };
 }
 
+export function normalizeProviderRequestAdjustments(value = []) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (!item || typeof item !== "object") return "";
+      return String(item.type ?? item.id ?? item.name ?? item.reason ?? "").trim();
+    })
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+export function providerRequestAdjustmentExtra(response = {}) {
+  const adjustments = normalizeProviderRequestAdjustments(response?.provider_request_adjustments);
+  return adjustments.length > 0
+    ? { provider_request_adjustments: adjustments }
+    : {};
+}
+
 export function buildLlmUsagePayload({
   callSite = "unknown",
   iteration = null,

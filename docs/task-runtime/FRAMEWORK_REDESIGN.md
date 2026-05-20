@@ -289,8 +289,9 @@ async function onNodeFailed(node, error, state) {
 
 ### Phase 4 —— Replan Hook（0.5 周）
 
-- [ ] `dag/replan-hook.mjs`：on_failure="replan" 时回喂 planner
-- [ ] planner prompt 支持 "replan" mode：输入含 failed_node + reason，输出替换剩余 plan 的子 plan
+- [x] `dag/entrypoint.mjs`：on_failure="replan" 时回喂 `replanDag`
+- [x] planner prompt 支持 "replan" mode：输入含 failed_node + reason，输出替换剩余 plan 的子 plan
+- [x] replan 多次仍失败或 replan 不可用时，降级为单轮 agent 处理原命令，并保留 DAG 父任务 trace
 
 ### Phase 5 —— 流式 interleaving（1 周，可选）
 

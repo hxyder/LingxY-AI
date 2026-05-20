@@ -1,6 +1,6 @@
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { resolveProviderForModelRole } from "../shared/provider-resolver.mjs";
-import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
+import { emitLlmUsage, providerRequestAdjustmentExtra } from "../../core/task-runtime/llm-usage.mjs";
 import { compactTranscriptForComposer } from "./finalization.mjs";
 import {
   selectSuccessContractValidationSpec,
@@ -283,7 +283,10 @@ async function runProviderReviewer({
       { name: "system", content: system },
       { name: "current", content: user }
     ],
-    extra: { reason: reason || "normal" }
+    extra: {
+      ...providerRequestAdjustmentExtra(response),
+      reason: reason || "normal"
+    }
   });
   return response?.text ?? "";
 }

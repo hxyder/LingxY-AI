@@ -60,6 +60,12 @@ function summariseSnapshot(snapshot, plan) {
   return `${summary}（在节点 ${failed} 失败：${snapshot.failure?.message ?? "unknown"}）`;
 }
 
+function shouldFallbackToSingleTurn(snapshot, attempts, replanUnavailable = false) {
+  return snapshot?.status === "failed"
+    && snapshot?.failure?.policy === "replan"
+    && (replanUnavailable || attempts >= MAX_DAG_ATTEMPTS);
+}
+
 /**
  * Run the DAG lane end-to-end. Returns the same submission shape as
  * submitContextTask so context-submission can return it directly.
@@ -133,6 +139,7 @@ export async function runDagLane({
   let snapshot = await runDagPlan({ plan: currentPlan, dispatchNode: dispatchForRun, onEvent: emit });
   let attempts = 1;
   const accumulatedResults = { ...snapshot.results };
+  let replanUnavailable = false;
 
   while (snapshot.status === "failed"
     && snapshot.failure?.policy === "replan"
@@ -150,6 +157,7 @@ export async function runDagLane({
       contextPacket
     });
     if (!replan.plan) {
+      replanUnavailable = true;
       emit({ type: "replan_failed", reason: replan.reason });
       break;
     }
@@ -166,6 +174,34 @@ export async function runDagLane({
       accumulatedResults[id] = value;
     }
     currentPlan = replan.plan;
+  }
+
+  if (shouldFallbackToSingleTurn(snapshot, attempts, replanUnavailable)) {
+    const replyText = summariseSnapshot(snapshot, planResult.plan);
+    const reason = replanUnavailable ? "replan_unavailable" : "max_replan_attempts_exhausted";
+    emit({
+      type: "fallback_single_turn",
+      reason,
+      attempts,
+      failed_node_id: snapshot.failedNodeId
+    });
+    markTaskFailed(runtime, parentTask, {
+      message: `${replyText}；已降级为单轮 agent 重试。`,
+      category: "model_call_error"
+    });
+    emitTaskEvent({
+      runtime,
+      taskId: parentTask.task_id,
+      eventType: "inline_result",
+      payload: { text: `${replyText}；已降级为单轮 agent 重试。` }
+    });
+    return {
+      fallbackSingleTurn: true,
+      planReason: reason,
+      parentTask,
+      taskEvents: runtime.store.getTaskEvents(parentTask.task_id),
+      dagSnapshot: snapshot
+    };
   }
 
   // 4. Mark final status

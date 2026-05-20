@@ -284,50 +284,55 @@ export function classifyFailure(errorLike) {
   const providerHint = providerRecovery(provider, issue);
   const toolHint = toolRecovery(toolId, issue);
 
-  let category = "internal_error";
-  if (code.includes("enoent") || message.includes("not found")) {
-    category = "tool_unavailable";
-  } else if (code.includes("eacces") || code.includes("eperm") || message.includes("permission")) {
-    category = "permission_denied";
-  } else if (code.includes("abort") || message.includes("cancel")) {
-    category = "user_interrupted";
-  } else if (code.includes("timeout") || message.includes("timeout")) {
-    category = "timeout";
-  } else if (message.includes("redaction_state_lost") || message.includes("敏感数据的任务无法恢复")) {
-    category = "redaction_state_lost";
-  } else if (code.includes("enotfound") || code.includes("econn") || message.includes("network")) {
-    category = "network_error";
-  } else if (
-    message.includes("artifact")
-    && (
-      message.includes("no artifact")
-      || message.includes("requires a")
-      || message.includes("required")
-      || message.includes("missing")
-      || message.includes("was not created")
-    )
-  ) {
-    category = "missing_artifact";
-  } else if (message.includes("parse") || message.includes("pdf") || message.includes("docx")) {
-    category = "parse_error";
-  } else if (message.includes("429") || message.includes("rate limit") || message.includes("model")) {
-    category = "model_call_error";
-  } else if (message.includes("save") || message.includes("disk") || message.includes("write")) {
-    category = "output_save_error";
-  } else if ((errorLike?.exitCode != null && errorLike.exitCode !== 0) || message.includes("cli failed") || message.includes("kimi cli failed") || message.includes("code cli failed")) {
-    category = "cli_execution_error";
-  } else if (message.includes("capture") || message.includes("selection")) {
-    category = "context_capture_error";
-  } else if (code.includes("eisdir") || message.includes("is a directory") || message.includes("illegal operation on a directory")) {
-    // Folder dropped where a file was expected — commonly hits when the user
-    // drags a directory onto the overlay. Surface it as a parse-style error
-    // with an actionable message rather than "unclassified internal error".
-    category = "parse_error";
+  const explicitCategory = FAILURE_CATEGORIES.includes(`${errorLike?.category ?? ""}`)
+    ? `${errorLike.category}`
+    : "";
+  let category = explicitCategory || "internal_error";
+  if (!explicitCategory) {
+    if (code.includes("enoent") || message.includes("not found")) {
+      category = "tool_unavailable";
+    } else if (code.includes("eacces") || code.includes("eperm") || message.includes("permission")) {
+      category = "permission_denied";
+    } else if (code.includes("abort") || message.includes("cancel")) {
+      category = "user_interrupted";
+    } else if (code.includes("timeout") || message.includes("timeout")) {
+      category = "timeout";
+    } else if (message.includes("redaction_state_lost") || message.includes("敏感数据的任务无法恢复")) {
+      category = "redaction_state_lost";
+    } else if (code.includes("enotfound") || code.includes("econn") || message.includes("network")) {
+      category = "network_error";
+    } else if (
+      message.includes("artifact")
+      && (
+        message.includes("no artifact")
+        || message.includes("requires a")
+        || message.includes("required")
+        || message.includes("missing")
+        || message.includes("was not created")
+      )
+    ) {
+      category = "missing_artifact";
+    } else if (message.includes("parse") || message.includes("pdf") || message.includes("docx")) {
+      category = "parse_error";
+    } else if (message.includes("429") || message.includes("rate limit") || message.includes("model")) {
+      category = "model_call_error";
+    } else if (message.includes("save") || message.includes("disk") || message.includes("write")) {
+      category = "output_save_error";
+    } else if ((errorLike?.exitCode != null && errorLike.exitCode !== 0) || message.includes("cli failed") || message.includes("kimi cli failed") || message.includes("code cli failed")) {
+      category = "cli_execution_error";
+    } else if (message.includes("capture") || message.includes("selection")) {
+      category = "context_capture_error";
+    } else if (code.includes("eisdir") || message.includes("is a directory") || message.includes("illegal operation on a directory")) {
+      // Folder dropped where a file was expected — commonly hits when the user
+      // drags a directory onto the overlay. Surface it as a parse-style error
+      // with an actionable message rather than "unclassified internal error".
+      category = "parse_error";
+    }
   }
 
-  if (issue === "disk") {
+  if (!explicitCategory && issue === "disk") {
     category = "output_save_error";
-  } else if (category === "internal_error") {
+  } else if (!explicitCategory && category === "internal_error") {
     if (issue === "auth" || issue === "permission") {
       category = "permission_denied";
     } else if (provider && ["rate_limit", "context_limit", "model_unavailable"].includes(issue)) {

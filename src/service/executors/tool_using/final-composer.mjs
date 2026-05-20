@@ -8,7 +8,7 @@ import {
 } from "../../core/policy/obligation-evaluator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { renderEvidenceLedgerFromSummary } from "../shared/evidence-ledger.mjs";
-import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
+import { emitLlmUsage, providerRequestAdjustmentExtra } from "../../core/task-runtime/llm-usage.mjs";
 import {
   generateTextWithContinuations,
   incompleteOutputNotice
@@ -298,6 +298,7 @@ export async function composeFinalAnswer({
               : [])
           ],
           extra: {
+            ...providerRequestAdjustmentExtra(response),
             reason: reason || "normal",
             finish_reason: response?.finish_reason ?? null,
             stop_reason: response?.stop_reason ?? null,

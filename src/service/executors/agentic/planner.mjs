@@ -56,7 +56,7 @@ import {
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { appendAuditLog } from "../../security/audit-log.mjs";
-import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
+import { emitLlmUsage, providerRequestAdjustmentExtra } from "../../core/task-runtime/llm-usage.mjs";
 import { cacheableSystemMessage } from "../shared/prompt-cache.mjs";
 import {
   shouldLoadSkillContextForTask,
@@ -589,7 +589,8 @@ export async function runAgenticPlanner({
           { name: "action_obligations", content: promptActionObligationsContent },
           { name: "tool_transcript", content: messages.slice(2 + promptHistoryMessages.length + 1 + (promptActionObligationsContent ? 1 : 0)) },
           { name: "tool_schemas", content: toolSchemas }
-        ]
+        ],
+        extra: providerRequestAdjustmentExtra(response)
       });
       forcedNextToolChoice = null;
     } catch (error) {
@@ -1022,7 +1023,8 @@ export async function runAgenticPlanner({
           { name: "action_obligations", content: promptActionObligationsContent },
           { name: "tool_transcript", content: messages.slice(2 + promptHistoryMessages.length + 1 + (promptActionObligationsContent ? 1 : 0), -1) },
           { name: "synthesis_instruction", content: messages[messages.length - 1]?.content ?? "" }
-        ]
+        ],
+        extra: providerRequestAdjustmentExtra(synthesis)
       });
       const text = synthesis?.text ?? "";
       if (text && text.trim()) finalText = text;

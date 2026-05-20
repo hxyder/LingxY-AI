@@ -7,7 +7,9 @@ import {
   buildLlmUsagePayload,
   emitLlmUsage,
   estimatePromptSegments,
-  normalizeLlmUsage
+  normalizeLlmUsage,
+  normalizeProviderRequestAdjustments,
+  providerRequestAdjustmentExtra
 } from "../src/service/core/task-runtime/llm-usage.mjs";
 
 let pass = 0;
@@ -63,6 +65,25 @@ function sseStream(events) {
   assert.equal(usage.cache_hit_tokens, 60);
   assert.equal(usage.cache_miss_tokens, 40);
   ok("normalizeLlmUsage preserves provider cache buckets");
+}
+
+{
+  const adjustments = normalizeProviderRequestAdjustments([
+    "deepseek_forced_tool_choice_thinking_disabled",
+    { type: "openai_compat_stream_usage_enabled" },
+    null,
+    { reason: "fallback_reason" }
+  ]);
+  assert.deepEqual(adjustments, [
+    "deepseek_forced_tool_choice_thinking_disabled",
+    "openai_compat_stream_usage_enabled",
+    "fallback_reason"
+  ]);
+  assert.deepEqual(
+    providerRequestAdjustmentExtra({ provider_request_adjustments: adjustments }),
+    { provider_request_adjustments: adjustments }
+  );
+  ok("provider request adjustments normalize into compact trace metadata");
 }
 
 {
@@ -217,11 +238,22 @@ function sseStream(events) {
   const agentLoop = readFileSync(new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url), "utf8");
   const agenticPlanner = readFileSync(new URL("../src/service/executors/agentic/planner.mjs", import.meta.url), "utf8");
   const finalComposer = readFileSync(new URL("../src/service/executors/tool_using/final-composer.mjs", import.meta.url), "utf8");
+  const finalReviewer = readFileSync(new URL("../src/service/executors/tool_using/final-reviewer.mjs", import.meta.url), "utf8");
+  const fastExecutor = readFileSync(new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url), "utf8");
   assert.match(agentLoop, /emitLlmUsage\(\{[\s\S]*callSite:\s*"tool_using\.planner"/);
   assert.match(agenticPlanner, /emitLlmUsage\(\{[\s\S]*callSite:\s*"agentic\.planner"/);
   assert.match(agenticPlanner, /emitLlmUsage\(\{[\s\S]*callSite:\s*"agentic\.synthesis"/);
   assert.match(finalComposer, /emitLlmUsage\(\{[\s\S]*callSite:\s*"tool_using\.final_composer"/);
-  ok("planner/composer call sites emit llm_usage");
+  for (const [label, source] of Object.entries({
+    agentLoop,
+    agenticPlanner,
+    finalComposer,
+    finalReviewer,
+    fastExecutor
+  })) {
+    assert.match(source, /providerRequestAdjustmentExtra/u, `${label} must surface provider compatibility adjustments in llm_usage`);
+  }
+  ok("planner/composer call sites emit llm_usage with provider adjustment trace");
 }
 
 process.stdout.write(`\n${pass} pass / 0 fail\n`);

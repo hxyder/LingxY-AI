@@ -138,6 +138,7 @@ test("task lifecycle failure finalizer emits failed event, system outcome, queue
   const failure = markTaskFailed(runtime, task, { message: "Provider timed out", category: "timeout" });
 
   assert.equal(task.status, "failed");
+  assert.equal(failure.category, "timeout");
   assert.equal(task.failure_category, failure.category);
   assert.equal(runtime.queue.snapshot().running, 0);
   assert.deepEqual(clearedRedactions, [task.task_id]);

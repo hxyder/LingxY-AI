@@ -30,7 +30,7 @@ import {
   extractAbsoluteLocalPathsFromText
 } from "../shared/resource-context.mjs";
 import { renderBackgroundContextsBlock } from "../../core/intent/background-contexts.mjs";
-import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
+import { emitLlmUsage, providerRequestAdjustmentExtra } from "../../core/task-runtime/llm-usage.mjs";
 import { renderToolPolicyForPrompt, toolsInGroup } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
@@ -961,6 +961,7 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
                 : [])
             ],
             extra: {
+              ...providerRequestAdjustmentExtra(attemptResponse),
               finish_reason: attemptResponse?.finish_reason ?? null,
               stop_reason: attemptResponse?.stop_reason ?? null,
               output_limited: Boolean(limitReason),

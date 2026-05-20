@@ -1458,8 +1458,21 @@ export async function submitContextTask({
           dagSnapshot: dagResult.dagSnapshot
         };
       }
-      // Decision #4 fallback: planner couldn't produce a valid plan.
-      // Let the single-turn agent handle the original command instead.
+      if (dagResult?.fallbackSingleTurn && dagResult?.parentTask?.task_id) {
+        parentTaskId = dagResult.parentTask.task_id;
+        contextPacket = mergeContextPacketPatch(contextPacketForTriage ?? contextPacket ?? {}, {
+          background_contexts: [{
+            type: "dag_fallback",
+            title: "DAG planner fallback",
+            text: `DAG planner could not complete after replan attempts; rerun the original command as a single-turn agent. Failed node: ${dagResult.dagSnapshot?.failedNodeId ?? "unknown"}. Reason: ${dagResult.planReason ?? "unknown"}.`,
+            source_task_id: dagResult.parentTask.task_id,
+            trust: "system"
+          }]
+        });
+      }
+      // Decision #4 fallback: planner couldn't produce a valid plan, or a
+      // replan path exhausted its attempts. Let the single-turn agent handle
+      // the original command instead.
     }
   }
   if (contextPacketForTriage

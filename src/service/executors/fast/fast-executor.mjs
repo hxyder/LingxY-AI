@@ -17,7 +17,7 @@ import {
 import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
 import { fetchExternal, fetchExternalResponse } from "../../core/external-call.mjs";
 import { emitTaskEvent as emitRuntimeTaskEvent } from "../../core/task-runtime.mjs";
-import { emitLlmUsage } from "../../core/task-runtime/llm-usage.mjs";
+import { emitLlmUsage, providerRequestAdjustmentExtra } from "../../core/task-runtime/llm-usage.mjs";
 
 const FAST_API_FETCH_TIMEOUT_MS = 120_000;
 const FAST_CACHEABLE_SYSTEM_PREFIX = [
@@ -348,6 +348,7 @@ export function createFastExecutorScaffold() {
                   : [])
               ],
               extra: {
+                ...providerRequestAdjustmentExtra(response),
                 finish_reason: response?.finish_reason ?? null,
                 stop_reason: response?.stop_reason ?? null,
                 output_limited: Boolean(limitReason),
