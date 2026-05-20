@@ -9190,6 +9190,7 @@ overlayShellClient.onOverlayAutoHide?.(() => {
   // between the blur event and the deferred sample, we don't want to
   // auto-dismiss while the user is acting on a confirmation card.
   if (document.hasFocus()) return;
+  if (shortcutCaptureSession?.shortcutId === "capture-and-ask") return;
   requestOverlayDismiss();
 });
 

@@ -207,18 +207,49 @@ export function createShortcutRouter({
         }
         setCaptureInFlight(true);
         const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
-        showWindow("overlay", { focus: false });
+        const startedAt = Date.now();
+        let selectionTimedOut = false;
+        let activePreviewContext = null;
+        let activePreviewDelivered = false;
+        let selectedDelivered = false;
+
+        const selectionFromCapture = withTimeout(
+          captureActiveWindowContext({
+            includeSelection: true,
+            activeWindowEnabled: false,
+            allowClipboardFallback: false,
+            clipboardBaseline: hotKeyClipboardSnapshot,
+            timeoutMs: captureAndAskSelectionTimeoutMs
+          }),
+          captureAndAskSelectionTimeoutMs,
+          "selection capture"
+        ).then((ctx) => {
+          const normalized = normalizeCaptureContext(ctx);
+          return hasSelectedCaptureContext(normalized) ? normalized : null;
+        }).catch((err) => {
+          selectionTimedOut = err?.code === "SHORTCUT_CAPTURE_TIMEOUT";
+          safeError?.("[LingxY] capture-and-ask selection capture failed", err?.message ?? err);
+          void appendDesktopDiagnosticError?.("capture_and_ask_selection_failed", err, {
+            timedOut: selectionTimedOut,
+            shortcutId: shortcut.id
+          });
+          return null;
+        });
+
+        const selectionFromClipboard = waitForClipboardChange({
+          clipboard,
+          baseline: hotKeyClipboardSnapshot,
+          timeoutMs: captureAndAskClipboardPollMs
+        }).then((selectedText) => selectedText
+          ? normalizeCaptureContext({ selectedText })
+          : null);
+
+        showWindow("overlay", { focus: false, moveTop: true });
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
 
         (async () => {
-          const startedAt = Date.now();
-          let selectionTimedOut = false;
-          let activePreviewContext = null;
-          let activePreviewDelivered = false;
-          let selectedDelivered = false;
-
           const sendContext = (ctx, { focus = true } = {}) => {
             const shellPayload = buildShellContextPayload({
               context: ctx,
@@ -231,37 +262,6 @@ export function createShortcutRouter({
             });
             showWindow("overlay", focus ? {} : { focus: false, moveTop: true });
           };
-
-          const selectionFromCapture = withTimeout(
-            captureActiveWindowContext({
-              includeSelection: true,
-              activeWindowEnabled: false,
-              allowClipboardFallback: false,
-              clipboardBaseline: hotKeyClipboardSnapshot,
-              timeoutMs: captureAndAskSelectionTimeoutMs
-            }),
-            captureAndAskSelectionTimeoutMs,
-            "selection capture"
-          ).then((ctx) => {
-            const normalized = normalizeCaptureContext(ctx);
-            return hasSelectedCaptureContext(normalized) ? normalized : null;
-          }).catch((err) => {
-            selectionTimedOut = err?.code === "SHORTCUT_CAPTURE_TIMEOUT";
-            safeError?.("[LingxY] capture-and-ask selection capture failed", err?.message ?? err);
-            void appendDesktopDiagnosticError?.("capture_and_ask_selection_failed", err, {
-              timedOut: selectionTimedOut,
-              shortcutId: shortcut.id
-            });
-            return null;
-          });
-
-          const selectionFromClipboard = waitForClipboardChange({
-            clipboard,
-            baseline: hotKeyClipboardSnapshot,
-            timeoutMs: captureAndAskClipboardPollMs
-          }).then((selectedText) => selectedText
-            ? normalizeCaptureContext({ selectedText })
-            : null);
 
           const activePreview = (async () => {
             await wait(captureAndAskActivePreviewDelayMs);

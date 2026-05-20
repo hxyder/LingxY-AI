@@ -46,6 +46,9 @@ assert.match(overlayJs,
   /function beginShortcutCaptureSession[\s\S]{0,1200}shortcutId === "capture-and-ask"[\s\S]{0,180}markUserEngaged\(\);[\s\S]{0,80}return;/,
   "capture-and-ask renderer session must not call shellShowWindow/focus while native foreground copy is still in flight");
 assert.match(overlayJs,
+  /onOverlayAutoHide\?\.\([\s\S]{0,420}shortcutCaptureSession\?\.shortcutId === "capture-and-ask"[\s\S]{0,80}return;/,
+  "overlay auto-hide must not dismiss a pending capture-and-ask session before shell context arrives");
+assert.match(overlayJs,
   /function showActiveWindowPreviewCard[\s\S]{0,1800}else if \(title \|\| process\)/,
   "overlay must render a generic current-window card when the active-window probe only has process/title context");
 
@@ -79,12 +82,12 @@ assert.equal(mainProcess.includes("hotkey_preview"), true);
   const end = mainProcess.indexOf('if (shortcut.id === "capture-screenshot")', start);
   const block = mainProcess.slice(start, end);
   const captureIndex = block.indexOf("captureActiveWindowContext({");
-  const inactiveOverlayIndex = block.indexOf('showWindow("overlay", { focus: false })');
+  const inactiveOverlayIndex = block.indexOf('showWindow("overlay", { focus: false, moveTop: true })');
   const focusedOverlayIndex = block.indexOf('showWindow("overlay")', inactiveOverlayIndex);
   assert.ok(start >= 0 && end > start, "capture-and-ask hotkey block must be present");
   assert.ok(captureIndex >= 0, "capture-and-ask must run active-window capture");
   assert.ok(inactiveOverlayIndex > captureIndex && focusedOverlayIndex > inactiveOverlayIndex,
-    "capture-and-ask must show the overlay without stealing selection focus, then focus it after capture resolves");
+    "capture-and-ask must start foreground capture, show the overlay without stealing selection focus, then focus it after capture resolves");
   const showWindowStart = desktopWindowActions.indexOf("function showWindow");
   const showWindowEnd = desktopWindowActions.indexOf("function hideWindow", showWindowStart);
   const showWindowBlock = desktopWindowActions.slice(showWindowStart, showWindowEnd);

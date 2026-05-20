@@ -73,14 +73,15 @@ gaps.
 | PMAT-016 Desktop context and launchable selection contract | active | File selection must dominate active-window tracking. If a user selects files/folders/app shortcuts and invokes LingxY, the overlay should appear immediately and the active-window probe must not overwrite the selected resource context. Launchable resources such as `.lnk`, `.exe`, `.bat`, `.cmd`, `.appref-ms`, or shell targets are not document-analysis inputs. | Capture-and-ask shows the overlay before waiting for PowerShell/active-window capture. When selected files are present, active-window preview/tracking is suppressed for that handoff. Launch/open commands over launchable resources route through the action-tool submission path with typed `launchable_file_context`, or return a clear actionable message, never an unclassified internal file-text error. |
 
 PMAT-016 hotkey capture responsiveness follow-up, 2026-05-20: capture-and-ask
-now treats perceived latency as a first-class contract. The shell shows the
-Overlay inactive before starting foreground capture, then races simulated-copy
-selection capture, a fresh clipboard-change poll, and a delayed active-window
-preview. Selected text/files still win over active-window hints, but the user no
-longer waits for the full serial chain before seeing a usable Overlay. The
-selection PowerShell path uses shorter pre/post-copy waits, and the Overlay
-watchdog is aligned to the shorter capture budget so "正在捕捉当前选择..." cannot
-linger for several seconds without a result.
+now treats perceived latency as a first-class contract. The shell starts the
+foreground simulated-copy capture first, without awaiting it, then reveals the
+Overlay inactive and races selection capture, a fresh clipboard-change poll, and
+a delayed active-window preview. Selected text/files still win over
+active-window hints, but the user no longer waits for the full serial chain
+before seeing a usable Overlay. The selection PowerShell path uses shorter
+pre/post-copy waits, and the Overlay watchdog/auto-hide behavior is aligned to
+the shorter capture budget so "正在捕捉当前选择..." cannot linger for several
+seconds or be dismissed before a result arrives.
 
 PMAT-013 update, 2026-05-13: Console Chat now uses separate in-sidebar
 `会话` and `项目` tabs instead of a single ambiguous personal/project dropdown.

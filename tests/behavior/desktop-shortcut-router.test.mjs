@@ -26,7 +26,7 @@ test("capture-and-ask shows overlay immediately and hydrates context asynchronou
 
   const router = createShortcutRouter({
     showWindow(windowId, options = {}) {
-      events.push(`show:${windowId}:${options?.focus !== false}`);
+      events.push(`show:${windowId}:${options?.focus !== false}:${options?.moveTop === true}`);
     },
     captureActiveWindowContext(options) {
       captureOptions.push(options);
@@ -80,9 +80,9 @@ test("capture-and-ask shows overlay immediately and hydrates context asynchronou
 
   assert.deepEqual(events.slice(0, 4), [
     "inFlight:true",
-    "show:overlay:false",
-    "send:uca:shortcut-triggered",
-    "capture:start"
+    "capture:start",
+    "show:overlay:false:true",
+    "send:uca:shortcut-triggered"
   ]);
   assert.equal(captureInFlight, true);
 
@@ -91,7 +91,7 @@ test("capture-and-ask shows overlay immediately and hydrates context asynchronou
 
   assert.ok(events.indexOf("context:build") > events.indexOf("capture:resolve"));
   assert.ok(events.includes("enqueue:overlay:uca:shell-context-received"));
-  assert.ok(events.includes("show:overlay:true"));
+  assert.ok(events.includes("show:overlay:true:false"));
   assert.equal(events.at(-1), "inFlight:false");
   assert.equal(captureInFlight, false);
   assert.equal(captureOptions[0]?.activeWindowEnabled, false);
