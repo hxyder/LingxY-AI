@@ -106,6 +106,13 @@ assert.match(skillContext, /context_packet\?\.file_paths/u,
   "skill relevance must account for typed attached file context");
 
 const toolUsing = read("src/service/executors/tool_using/agent-loop.mjs");
+const plannerHeartbeat = read("src/service/executors/shared/planner-progress-heartbeat.mjs");
+assert.match(plannerHeartbeat, /export function startPlannerModelWaitHeartbeat/u,
+  "planner wait heartbeat must live in a shared executor module");
+assert.match(plannerHeartbeat, /waiting_for_planner_first_output/u,
+  "planner heartbeat must distinguish the first-output wait");
+assert.match(plannerHeartbeat, /planner_mode/u,
+  "planner heartbeat events must identify the planner surface");
 const toolUsingGate = toolUsing.indexOf("shouldLoadSkillContextForTask(task)");
 const toolUsingList = toolUsing.indexOf("skillRegistries?.listSkills");
 assert.ok(toolUsingGate >= 0 && toolUsingList >= 0 && toolUsingGate < toolUsingList,
@@ -124,6 +131,14 @@ const agenticGate = agentic.indexOf("shouldLoadSkillContextForTask(task)");
 const agenticList = agentic.indexOf("skillRegistries?.listSkills");
 assert.ok(agenticGate >= 0 && agenticList >= 0 && agenticGate < agenticList,
   "agentic planner must gate skill registry scans by shared typed relevance");
+assert.match(agentic, /startPlannerModelWaitHeartbeat/u,
+  "agentic planner must surface long provider waits as progress, not a silent gap");
+assert.match(agentic, /planner_mode:\s*"agentic_planner"/u,
+  "agentic planner wait events must be identifiable in the UI timeline");
+assert.match(agentic, /emitImmediately:\s*true/u,
+  "agentic planner must surface model-wait status immediately when the request is sent");
+assert.match(agentic, /stopPlannerHeartbeatOnDelta\(plannerHeartbeat\)/u,
+  "agentic planner heartbeat must stop once the provider streams or returns");
 
 const deterministicArtifactPlan = read("src/service/executors/shared/deterministic-artifact-plan.mjs");
 assert.match(deterministicArtifactPlan, /TEXT_FILE_KINDS = new Set\(\["md", "txt", "csv", "json"\]\)/u,

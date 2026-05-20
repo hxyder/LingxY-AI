@@ -83,6 +83,10 @@ import {
 } from "../../core/policy/obligation-evaluator.mjs";
 import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
 import { buildDeterministicArtifactPlan } from "../shared/deterministic-artifact-plan.mjs";
+import {
+  startPlannerModelWaitHeartbeat,
+  stopPlannerHeartbeatOnDelta
+} from "../shared/planner-progress-heartbeat.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -540,17 +544,39 @@ export async function runAgenticPlanner({
     }
 
     let response;
+    onEvent?.({
+      event_type: "planner_request_started",
+      payload: {
+        iteration: iterations,
+        planner_mode: "agentic_planner"
+      }
+    });
+    const plannerHeartbeat = {
+      stop: startPlannerModelWaitHeartbeat({
+        emitTaskEvent(event_type, payload) {
+          onEvent?.({ event_type, payload });
+        }
+      }, {
+        iteration: iterations,
+        emitImmediately: true,
+        plannerMode: "agentic_planner"
+      })
+    };
     try {
       messages[1].content = buildSystemPrompt(transcriptForValidator(transcript));
       // Planner text is internal reasoning, not assistant-visible output.
       // Providers can stream prose plus JSON tool protocol while deciding;
       // keep it off text_delta so UI bubbles only receive final synthesis.
       const onTextDelta = (adapter.supportsStreaming && onEvent)
-        ? (delta) => onEvent({ event_type: "reasoning_delta", payload: { delta } })
+        ? (delta) => {
+            stopPlannerHeartbeatOnDelta(plannerHeartbeat);
+            onEvent({ event_type: "reasoning_delta", payload: { delta } });
+          }
         : undefined;
       const onToolInputDelta = (adapter.supportsStreaming && onEvent)
         ? (toolName, partialJson) => {
             if (!isStreamableArtifactTool(toolName)) return;
+            stopPlannerHeartbeatOnDelta(plannerHeartbeat);
             onEvent({
               event_type: "tool_input_delta",
               payload: { tool_id: toolName, partial_json: partialJson }
@@ -567,6 +593,7 @@ export async function runAgenticPlanner({
         onReasoningDelta: (adapter.supportsStreaming && onEvent)
           ? (delta) => {
               if (!delta) return;
+              stopPlannerHeartbeatOnDelta(plannerHeartbeat);
               onEvent({ event_type: "reasoning_delta", payload: { delta } });
             }
           : undefined,
@@ -601,6 +628,8 @@ export async function runAgenticPlanner({
       });
       finalText = `Provider call failed: ${error.message}`;
       break;
+    } finally {
+      stopPlannerHeartbeatOnDelta(plannerHeartbeat);
     }
 
     const text = response?.text ?? "";

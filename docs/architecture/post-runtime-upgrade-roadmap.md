@@ -478,7 +478,11 @@ status immediately when the provider request is sent, then continues with
 bounded heartbeats, because real API evidence showed timer-only heartbeats can
 be missed by the user's perceived wait even when the task event stream is
 healthy. This preserves the existing Electron/renderer structure and keeps
-console rendering changes inside the progress surface.
+console rendering changes inside the progress surface. Follow-up work extends
+the same shared planner-wait heartbeat to the `agentic` planner, so both major
+tool-capable executors emit immediate `waiting_for_planner_first_output`
+progress before the first provider frame and stop the heartbeat as soon as
+streaming reasoning, tool input, or a response arrives.
 
 PMAT-014 file cleanup follow-up, 2026-05-16: file cleanup is now part of the
 global execution-efficiency program rather than an ad hoc deletion pass. The
