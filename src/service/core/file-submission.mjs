@@ -34,6 +34,69 @@ function normalizeFilePaths(filePaths) {
     : [];
 }
 
+const FILE_INVENTORY_COUNT_PATTERNS = [
+  /(?:一共|共有|总共|多少|几个|数量|个数|统计|清点).{0,16}(?:文件|目录|文件夹|folder|directory|directories|files?)/i,
+  /(?:文件|目录|文件夹|folder|directory|directories|files?).{0,16}(?:一共|共有|总共|多少|几个|数量|个数|统计|清点)/i,
+  /\b(?:how many|count|number of)\b.{0,40}\b(?:files?|folders?|directories|items|entries)\b/i,
+  /\b(?:files?|folders?|directories|items|entries)\b.{0,40}\b(?:count|number)\b/i
+];
+
+const FILE_CONTENT_COUNT_PATTERNS = [
+  /(字数|字符数|单词数|行数|页数|段落数|token\s*数)/i,
+  /(多少|几个|几|统计).{0,8}(字|字符|单词|行|页|段落|tokens?)/i,
+  /\b(words?|lines?|characters?|pages?|paragraphs?|tokens?)\b/i
+];
+
+export function shouldUseFileInventoryContext({
+  userCommand = "",
+  filePaths = [],
+  route = {},
+  taskSpec = {}
+} = {}) {
+  if (!Array.isArray(filePaths) || filePaths.length === 0) return false;
+  const text = String(userCommand ?? "").trim();
+  if (!text) return false;
+  if (!FILE_INVENTORY_COUNT_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (FILE_CONTENT_COUNT_PATTERNS.some((pattern) => pattern.test(text))) return false;
+  if (taskSpec?.artifact?.required === true) return false;
+  if (["generate_document", "analyze_and_report", "transform_existing_file", "translate", "multimodal_analyze"].includes(taskSpec?.goal)) {
+    return false;
+  }
+  const contentTags = new Set(["analyze", "summarize", "rewrite", "translate", "generate_report", "describe_image"]);
+  if ((route?.intent_tags ?? []).some((tag) => contentTags.has(tag))) return false;
+  return true;
+}
+
+function formatInventoryFastPathResult(contextPacket = {}) {
+  const inventory = contextPacket?.selection_metadata?.file_inventory;
+  if (!inventory || inventory.inventory_only !== true) return null;
+  const selectedCount = Number(inventory.selected_count ?? 0);
+  const selectedFileCount = Number(inventory.selected_file_count ?? 0);
+  const selectedDirectoryCount = Number(inventory.selected_directory_count ?? 0);
+  const totalFileCount = Number(inventory.total_file_count ?? 0);
+  const totalDirectoryCount = Number(inventory.total_directory_count ?? 0);
+  const lines = [
+    `已完成文件清点：共 ${totalFileCount} 个文件。`,
+    "",
+    `选中项目：${selectedCount} 个（${selectedDirectoryCount} 个文件夹，${selectedFileCount} 个文件）`,
+    `递归统计：${totalFileCount} 个文件，${totalDirectoryCount} 个子文件夹`
+  ];
+  if (inventory.truncated) {
+    lines.push(`结果已截断：达到最多 ${inventory.max_entries ?? "若干"} 个条目的枚举上限。`);
+  }
+  if (Array.isArray(inventory.items) && inventory.items.length > 0) {
+    lines.push("", "明细：");
+    for (const item of inventory.items) {
+      if (item.type === "directory") {
+        lines.push(`- ${item.path}：${item.file_count ?? 0} 个文件，${item.directory_count ?? 0} 个子文件夹${item.truncated ? "（已截断）" : ""}`);
+      } else {
+        lines.push(`- ${item.path}：1 个文件`);
+      }
+    }
+  }
+  return lines.join("\n");
+}
+
 function createPendingFileContextPacket({
   filePaths,
   captureMode,
@@ -127,6 +190,12 @@ export async function submitFileTask({
     capture_mode: captureMode,
     file_paths: normalizedFilePaths
   }, route);
+  const inventoryOnlyContext = shouldUseFileInventoryContext({
+    userCommand,
+    filePaths: normalizedFilePaths,
+    route,
+    taskSpec: preflightTaskSpec
+  });
   const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
   // file-submission specialises in file-backed analysis, which the code_cli
   // runtime handles natively via its task package. When the router upgrades the
@@ -146,6 +215,7 @@ export async function submitFileTask({
       sourceApp,
       traceId,
       contextId,
+      inventoryOnly: inventoryOnlyContext,
       onProgress: options.onProgress
     }).then((packet) => attachFileContentEvidence(packet, selectionMetadata));
   };
@@ -331,6 +401,41 @@ export async function submitFileTask({
       }, true);
 
       if (shouldRunContextLikeFileTask) {
+        if (inventoryOnlyContext) {
+          const text = formatInventoryFastPathResult(task.context_packet);
+          if (text) {
+            emitTaskEvent({
+              runtime,
+              taskId: task.task_id,
+              eventType: "inline_result",
+              payload: {
+                text,
+                artifact_paths: []
+              }
+            });
+            emitTaskEvent({
+              runtime,
+              taskId: task.task_id,
+              eventType: "success",
+              payload: {
+                text,
+                artifact_paths: [],
+                deterministic: true,
+                source: "file_inventory"
+              }
+            });
+            applyExecutorEvent(runtime, task, {
+              type: "success",
+              text
+            });
+            markTaskSucceeded(runtime, task);
+            return {
+              task,
+              taskEvents: store.getTaskEvents(task.task_id),
+              artifacts: []
+            };
+          }
+        }
         return executeExistingContextTask({
           runtime,
           task,

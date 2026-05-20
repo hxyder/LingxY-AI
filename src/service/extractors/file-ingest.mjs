@@ -92,6 +92,9 @@ const IGNORED_DIRECTORY_NAMES = new Set([
 ]);
 const MAX_EXPANDED_DIRECTORY_FILES = 200;
 const DEFAULT_EXTRACTION_CONCURRENCY = 3;
+const DEFAULT_INVENTORY_MAX_DEPTH = 12;
+const DEFAULT_INVENTORY_MAX_ENTRIES = 10000;
+const INVENTORY_SAMPLE_LIMIT = 80;
 
 function asLatin1(buffer) {
   return Buffer.from(buffer).toString("latin1");
@@ -151,6 +154,165 @@ async function expandInputFilePaths(filePaths = []) {
     if (output.length >= MAX_EXPANDED_DIRECTORY_FILES) break;
   }
   return [...new Set(output)];
+}
+
+function mimeTypeFromPath(filePath) {
+  return MIME_BY_EXTENSION[path.extname(filePath).toLowerCase()] ?? "application/octet-stream";
+}
+
+function createInventoryState({ maxEntries = DEFAULT_INVENTORY_MAX_ENTRIES } = {}) {
+  return {
+    maxEntries,
+    visitedEntries: 0,
+    truncated: false
+  };
+}
+
+function canVisitInventoryEntry(state) {
+  if (state.visitedEntries >= state.maxEntries) {
+    state.truncated = true;
+    return false;
+  }
+  state.visitedEntries += 1;
+  return true;
+}
+
+function inventoryEntryLine(entry = {}) {
+  const label = entry.type === "directory" ? "[dir]" : "[file]";
+  const counts = entry.type === "directory"
+    ? ` files=${entry.file_count ?? 0}, dirs=${entry.directory_count ?? 0}${entry.truncated ? ", truncated" : ""}`
+    : "";
+  return `${label} ${entry.path}${counts}`;
+}
+
+async function collectPathInventory(filePath, {
+  depth = 0,
+  maxDepth = DEFAULT_INVENTORY_MAX_DEPTH,
+  state = createInventoryState()
+} = {}) {
+  const info = await stat(filePath);
+  const isDirectory = info.isDirectory();
+  if (!isDirectory) {
+    return {
+      path: filePath,
+      name: path.basename(filePath),
+      type: "file",
+      size: info.size,
+      mime: info.isFile() ? mimeTypeFromPath(filePath) : "application/octet-stream",
+      file_count: info.isFile() ? 1 : 0,
+      directory_count: 0,
+      direct_file_count: info.isFile() ? 1 : 0,
+      direct_directory_count: 0,
+      sample_entries: [],
+      truncated: false
+    };
+  }
+
+  const inventory = {
+    path: filePath,
+    name: path.basename(filePath),
+    type: "directory",
+    size: 0,
+    mime: "inode/directory",
+    file_count: 0,
+    directory_count: 0,
+    direct_file_count: 0,
+    direct_directory_count: 0,
+    sample_entries: [],
+    truncated: false
+  };
+
+  if (depth >= maxDepth) {
+    inventory.truncated = true;
+    state.truncated = true;
+    return inventory;
+  }
+
+  let entries = [];
+  try {
+    entries = await readdir(filePath, { withFileTypes: true });
+  } catch (error) {
+    inventory.truncated = true;
+    inventory.error = error?.message ?? String(error);
+    return inventory;
+  }
+
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.isDirectory() && IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
+    if (!entry.isDirectory() && !entry.isFile()) continue;
+    if (!canVisitInventoryEntry(state)) {
+      inventory.truncated = true;
+      break;
+    }
+
+    const childPath = path.join(filePath, entry.name);
+    if (entry.isFile()) {
+      inventory.file_count += 1;
+      inventory.direct_file_count += 1;
+      if (inventory.sample_entries.length < INVENTORY_SAMPLE_LIMIT) {
+        inventory.sample_entries.push({ type: "file", path: childPath });
+      }
+      continue;
+    }
+
+    inventory.directory_count += 1;
+    inventory.direct_directory_count += 1;
+    const childInventory = await collectPathInventory(childPath, {
+      depth: depth + 1,
+      maxDepth,
+      state
+    });
+    inventory.file_count += childInventory.file_count;
+    inventory.directory_count += childInventory.directory_count;
+    inventory.truncated = inventory.truncated || childInventory.truncated;
+    if (inventory.sample_entries.length < INVENTORY_SAMPLE_LIMIT) {
+      inventory.sample_entries.push({
+        type: "directory",
+        path: childPath,
+        file_count: childInventory.file_count,
+        directory_count: childInventory.directory_count,
+        truncated: childInventory.truncated
+      });
+    }
+  }
+
+  inventory.truncated = inventory.truncated || state.truncated;
+  return inventory;
+}
+
+function renderInventoryText({
+  filePaths = [],
+  inventories = [],
+  totalFileCount = 0,
+  totalDirectoryCount = 0,
+  truncated = false
+} = {}) {
+  const selectedFileCount = inventories.filter((entry) => entry.type === "file").length;
+  const selectedDirectoryCount = inventories.filter((entry) => entry.type === "directory").length;
+  const lines = [
+    "# File inventory",
+    "Content extraction was skipped because this request only needs file/folder counts.",
+    `Selected items: ${filePaths.length} (${selectedDirectoryCount} directories, ${selectedFileCount} files)`,
+    `Recursive file count: ${totalFileCount}`,
+    `Recursive directory count: ${totalDirectoryCount}`,
+    `Truncated: ${truncated ? "yes" : "no"}`,
+    "",
+    "## Selected item counts"
+  ];
+  for (const entry of inventories) {
+    if (entry.type === "directory") {
+      lines.push(`- [directory] ${entry.path}: ${entry.file_count} files, ${entry.directory_count} directories${entry.truncated ? " (truncated)" : ""}`);
+      for (const sample of entry.sample_entries.slice(0, 12)) {
+        lines.push(`  - ${inventoryEntryLine(sample)}`);
+      }
+      if (entry.sample_entries.length > 12) {
+        lines.push(`  - ... ${entry.sample_entries.length - 12} more sampled entries omitted`);
+      }
+    } else {
+      lines.push(`- [file] ${entry.path}: 1 file`);
+    }
+  }
+  return lines.join("\n");
 }
 
 async function mapWithConcurrency(items = [], concurrency = DEFAULT_EXTRACTION_CONCURRENCY, worker) {
@@ -316,12 +478,122 @@ export async function buildFileContextPacket({
   capturedAt = new Date().toISOString(),
   extractFileContentImpl = extractFileContent,
   extractionConcurrency = DEFAULT_EXTRACTION_CONCURRENCY,
+  inventoryOnly = false,
+  inventoryMaxDepth = DEFAULT_INVENTORY_MAX_DEPTH,
+  inventoryMaxEntries = DEFAULT_INVENTORY_MAX_ENTRIES,
   onProgress = null
 }) {
   onProgress?.({
     phase: "file_expand_started",
     input_count: Array.isArray(filePaths) ? filePaths.length : 0
   });
+  if (inventoryOnly) {
+    const inventoryState = createInventoryState({ maxEntries: inventoryMaxEntries });
+    const inventories = [];
+    for (const filePath of filePaths) {
+      inventories.push(await collectPathInventory(filePath, {
+        maxDepth: inventoryMaxDepth,
+        state: inventoryState
+      }));
+    }
+    const totalFileCount = inventories.reduce((sum, entry) => sum + (entry.file_count ?? 0), 0);
+    const totalDirectoryCount = inventories.reduce((sum, entry) => sum + (entry.directory_count ?? 0), 0);
+    const truncated = inventoryState.truncated || inventories.some((entry) => entry.truncated);
+    onProgress?.({
+      phase: "file_expand_finished",
+      expanded_count: totalFileCount,
+      input_count: Array.isArray(filePaths) ? filePaths.length : 0,
+      inventory_only: true,
+      truncated
+    });
+
+    const total = inventories.length;
+    onProgress?.({
+      phase: "file_ingest_started",
+      total,
+      expanded_count: totalFileCount,
+      input_count: Array.isArray(filePaths) ? filePaths.length : 0,
+      inventory_only: true
+    });
+    inventories.forEach((entry, index) => {
+      onProgress?.({
+        phase: "file_ingest_progress",
+        path: entry.path,
+        index,
+        completed: index + 1,
+        total,
+        inventory_only: true
+      });
+    });
+    onProgress?.({
+      phase: "file_ingest_finished",
+      completed: total,
+      total,
+      inventory_only: true
+    });
+
+    const fileMetadata = inventories.map((entry) => ({
+      path: entry.path,
+      size: entry.size,
+      mime: entry.mime,
+      extraction_mode: entry.type === "directory" ? "directory_inventory" : "file_inventory",
+      file_count: entry.file_count,
+      directory_count: entry.directory_count,
+      direct_file_count: entry.direct_file_count,
+      direct_directory_count: entry.direct_directory_count,
+      recursive: entry.type === "directory",
+      truncated: entry.truncated
+    }));
+    const directFilePaths = inventories
+      .filter((entry) => entry.type === "file")
+      .map((entry) => entry.path);
+    return {
+      schema_version: "1.0",
+      context_id: contextId,
+      trace_id: traceId,
+      source_type: filePaths.length > 1 ? "file_group" : "file",
+      source_app: sourceApp,
+      capture_mode: captureMode,
+      security_level: "user",
+      redaction_applied: false,
+      file_paths: directFilePaths,
+      original_file_paths: filePaths,
+      file_metadata: fileMetadata,
+      image_paths: [],
+      text: renderInventoryText({
+        filePaths,
+        inventories,
+        totalFileCount,
+        totalDirectoryCount,
+        truncated
+      }),
+      captured_at: capturedAt,
+      selection_metadata: {
+        file_inventory: {
+          mode: "recursive_count",
+          inventory_only: true,
+          selected_count: filePaths.length,
+          selected_file_count: directFilePaths.length,
+          selected_directory_count: inventories.filter((entry) => entry.type === "directory").length,
+          total_file_count: totalFileCount,
+          total_directory_count: totalDirectoryCount,
+          truncated,
+          max_depth: inventoryMaxDepth,
+          max_entries: inventoryMaxEntries,
+          items: inventories.map((entry) => ({
+            path: entry.path,
+            type: entry.type,
+            file_count: entry.file_count,
+            directory_count: entry.directory_count,
+            direct_file_count: entry.direct_file_count,
+            direct_directory_count: entry.direct_directory_count,
+            truncated: entry.truncated
+          }))
+        }
+      }
+    };
+  }
+
   const expandedFilePaths = await expandInputFilePaths(filePaths);
   onProgress?.({
     phase: "file_expand_finished",

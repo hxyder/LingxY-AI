@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -59,6 +59,48 @@ test("file ingest extracts multiple files with bounded concurrency and preserves
     assert.ok(progress.some((event) => event.phase === "file_ingest_started"));
     assert.equal(progress.at(-1).phase, "file_ingest_finished");
     assert.equal(progress.filter((event) => event.phase === "file_ingest_progress").length, 4);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("file ingest inventory mode counts selected folders without extracting file contents", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-file-ingest-inventory-"));
+  try {
+    const selectedFolder = path.join(dir, "selected");
+    const nestedFolder = path.join(selectedFolder, "nested");
+    await mkdir(nestedFolder, { recursive: true });
+    await writeFile(path.join(selectedFolder, "a.txt"), "alpha", "utf8");
+    await writeFile(path.join(nestedFolder, "b.txt"), "beta", "utf8");
+    const selectedFile = path.join(dir, "image.png");
+    await writeFile(selectedFile, "not a real png", "utf8");
+    const progress = [];
+
+    const packet = await buildFileContextPacket({
+      filePaths: [selectedFolder, selectedFile],
+      traceId: "trace_inventory",
+      contextId: "ctx_inventory",
+      inventoryOnly: true,
+      onProgress(event) {
+        progress.push(event);
+      },
+      async extractFileContentImpl() {
+        throw new Error("inventory mode must not extract file contents");
+      }
+    });
+
+    assert.equal(packet.selection_metadata.file_inventory.inventory_only, true);
+    assert.equal(packet.selection_metadata.file_inventory.total_file_count, 3);
+    assert.equal(packet.selection_metadata.file_inventory.total_directory_count, 1);
+    assert.deepEqual(packet.image_paths, []);
+    assert.deepEqual(packet.file_paths, [selectedFile]);
+    assert.match(packet.text, /Content extraction was skipped/);
+    assert.match(packet.text, /Recursive file count: 3/);
+    assert.equal(packet.file_metadata.find((entry) => entry.path === selectedFolder)?.extraction_mode, "directory_inventory");
+    assert.equal(packet.file_metadata.find((entry) => entry.path === selectedFile)?.extraction_mode, "file_inventory");
+    assert.equal(progress[0].phase, "file_expand_started");
+    assert.ok(progress.some((event) => event.phase === "file_expand_finished" && event.inventory_only === true));
+    assert.equal(progress.at(-1).phase, "file_ingest_finished");
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -1,4 +1,5 @@
 import path from "node:path";
+import { FILE_EVIDENCE_COVERAGE } from "../file-evidence-coverage.mjs";
 
 function cleanString(value) {
   const text = typeof value === "string" ? value.trim() : "";
@@ -51,9 +52,22 @@ function fileTextExtracted(metadata = {}) {
   if (!mode) return false;
   return !new Set([
     "directory_listing",
+    "directory_inventory",
+    "file_inventory",
     "pdf_ocr_unavailable",
     "unsupported_binary"
   ]).has(mode);
+}
+
+function isDirectoryMetadata(mode = "") {
+  return mode === "directory_listing" || mode === "directory_inventory";
+}
+
+function coverageForFileMetadata(mode = "", contentExtracted = false) {
+  if (mode === "directory_inventory") return FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE;
+  if (mode === "directory_listing") return FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW;
+  if (contentExtracted) return FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT;
+  return FILE_EVIDENCE_COVERAGE.FILE_METADATA;
 }
 
 export function makeContentEvidence({
@@ -224,28 +238,24 @@ export function fileContentEvidenceFromContextPacket(contextPacket = {}) {
     const contentExtracted = fileTextExtracted(entry);
     const mode = cleanString(entry.extraction_mode);
     const mime = cleanString(entry.mime);
-    const isDirectoryListing = mode === "directory_listing";
+    const isDirectoryListing = isDirectoryMetadata(mode);
     const isImage = mime?.startsWith("image/") === true;
     return makeContentEvidence({
       source_kind: isDirectoryListing
         ? "local_directory_listing"
-        : isImage
+        : isImage && contentExtracted
           ? "local_image_text"
           : contentExtracted
             ? "local_file_text"
-            : "local_file_metadata",
-      coverage_scope: isDirectoryListing
-        ? "directory_listing_shallow"
-        : contentExtracted
-          ? "single_file_text"
-          : "file_metadata",
+          : "local_file_metadata",
+      coverage_scope: coverageForFileMetadata(mode, contentExtracted),
       locator: entry.path,
       title: basename(entry.path),
       modality: isImage ? "image" : mimeModality(mime),
       content_extracted: contentExtracted,
       extraction_mode: mode,
       byte_length: entry.size,
-      item_count: entry.page_count
+      item_count: entry.page_count ?? entry.file_count
     });
   }).filter(Boolean);
 }

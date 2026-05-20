@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { submitFileTask } from "../../src/service/core/file-submission.mjs";
+import {
+  shouldUseFileInventoryContext,
+  submitFileTask
+} from "../../src/service/core/file-submission.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 
 function createRuntime() {
@@ -249,6 +252,56 @@ test("API-provider file submissions create one visible task before ingest comple
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+test("file count submissions use deterministic inventory without content extraction or image routing", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-file-count-"));
+  try {
+    const selectedFolder = path.join(dir, "selected");
+    const nestedFolder = path.join(selectedFolder, "nested");
+    await mkdir(nestedFolder, { recursive: true });
+    await writeFile(path.join(selectedFolder, "a.txt"), "alpha", "utf8");
+    await writeFile(path.join(nestedFolder, "b.txt"), "beta", "utf8");
+    const selectedImage = path.join(dir, "screen.png");
+    await writeFile(selectedImage, "not a real png", "utf8");
+    const runtime = createRuntime();
+
+    const result = await submitFileTask({
+      runtime,
+      filePaths: [selectedFolder, selectedImage],
+      userCommand: "一共有多少个文件",
+      executionMode: "interactive"
+    });
+
+    const events = runtime.store.getTaskEvents(result.task.task_id);
+    const names = events.map((event) => event.event_type);
+    assert.equal(result.task.status, "success");
+    assert.match(result.task.result_summary, /共 3 个文件/);
+    assert.equal(result.task.task_spec.goal, "qa");
+    assert.deepEqual(result.task.context_packet.image_paths, []);
+    assert.equal(result.task.context_packet.selection_metadata.file_inventory.total_file_count, 3);
+    assert.ok(names.includes("file_expand_finished"));
+    assert.ok(names.includes("inline_result"));
+    assert.ok(names.includes("success"));
+    assert.equal(names.includes("provider_resolved"), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("file inventory detector excludes content-count requests", () => {
+  assert.equal(shouldUseFileInventoryContext({
+    userCommand: "一共有多少个文件",
+    filePaths: ["C:\\tmp\\folder"],
+    route: { intent_tags: ["file_action"] },
+    taskSpec: { goal: "qa", artifact: { required: false } }
+  }), true);
+  assert.equal(shouldUseFileInventoryContext({
+    userCommand: "统计这个文件有多少行",
+    filePaths: ["C:\\tmp\\notes.txt"],
+    route: { intent_tags: ["file_action"] },
+    taskSpec: { goal: "qa", artifact: { required: false } }
+  }), false);
 });
 
 test("file submission emits file ingest events before provider execution", async () => {

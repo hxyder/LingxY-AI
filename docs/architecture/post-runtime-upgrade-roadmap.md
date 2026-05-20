@@ -287,6 +287,15 @@ fallback remains an existing `uca:shell-context-received` payload and must
 render even when the probe only knows process/title instead of a URL or file
 path.
 
+PMAT-014 file inventory latency follow-up, 2026-05-20: file/folder count tasks
+must not pay the file-content extraction cost. When the TaskSpec and route facts
+indicate a local file inventory/count request, the service file-submission path
+uses recursive directory enumeration only, keeps image files as files instead of
+vision inputs, records inventory metadata as non-content evidence, and can
+return a deterministic count result without starting a provider loop. Content
+counts such as line/word/page counts still require the normal content-read
+pipeline.
+
 PMAT-014 global latency execution plan, 2026-05-15: the speed program is now
 tracked as an end-to-end runtime optimization, not a single-task micro-fix.
 External framework signals reviewed for this pass: LangGraph persistence treats
