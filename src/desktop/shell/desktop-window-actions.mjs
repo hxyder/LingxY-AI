@@ -42,7 +42,9 @@ export function createDesktopWindowActions({
     } else {
       target.show();
     }
-    try { target.moveTop(); } catch { /* ignore */ }
+    if (shouldFocus || options?.moveTop === true) {
+      try { target.moveTop(); } catch { /* ignore */ }
+    }
     if (shouldFocus) {
       target.focus();
     }

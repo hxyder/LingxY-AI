@@ -3,6 +3,10 @@ import assert from "node:assert/strict";
 
 import { createShortcutRouter } from "../../src/desktop/shell/desktop-shortcut-router.mjs";
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 test("capture-and-ask starts capture before showing overlay and hydrates context asynchronously", async () => {
   const events = [];
   const captureOptions = [];
@@ -64,7 +68,8 @@ test("capture-and-ask starts capture before showing overlay and hydrates context
       shortcutTriggered: "uca:shortcut-triggered",
       shellContextReceived: "uca:shell-context-received"
     },
-    windows
+    windows,
+    captureAndAskClipboardPollMs: 5
   });
 
   const handler = router.buildShortcutHandler({
@@ -129,12 +134,12 @@ test("capture-and-ask reports an empty capture instead of leaving overlay pendin
       shortcutTriggered: "uca:shortcut-triggered",
       shellContextReceived: "uca:shell-context-received"
     },
-    windows
+    windows,
+    captureAndAskClipboardPollMs: 5
   });
 
   router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
+  await delay(20);
 
   assert.equal(calls.length, 2);
   assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
@@ -173,12 +178,13 @@ test("capture-and-ask times out a stuck selection capture and releases the hotke
     },
     windows,
     captureAndAskSelectionTimeoutMs: 20,
-    captureAndAskWindowTimeoutMs: 20
+    captureAndAskWindowTimeoutMs: 20,
+    captureAndAskClipboardPollMs: 5
   });
 
   router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
   assert.equal(captureInFlight, true);
-  await new Promise((resolve) => setTimeout(resolve, 40));
+  await delay(40);
 
   assert.deepEqual(shown.map((entry) => entry.focus), [false, true]);
   assert.equal(enqueued[0]?.payload?.capture_status, "timeout");
@@ -186,9 +192,59 @@ test("capture-and-ask times out a stuck selection capture and releases the hotke
   assert.equal(captureInFlight, false);
 });
 
+test("capture-and-ask waits briefly for delayed clipboard selection after simulated copy", async () => {
+  const calls = [];
+  const enqueued = [];
+  let captureInFlight = false;
+  let clipboardText = "old clipboard";
+  setTimeout(() => {
+    clipboardText = "fresh selected text from the foreground app";
+  }, 20);
+  const windows = new Map([
+    ["overlay", { webContents: { send() {} } }]
+  ]);
+
+  const router = createShortcutRouter({
+    showWindow() {},
+    async captureActiveWindowContext(options) {
+      calls.push(options);
+      return {
+        processName: "chrome",
+        windowTitle: "Example",
+        filePaths: [],
+        selectedText: null,
+        activeWindow: null
+      };
+    },
+    buildShellContextPayload({ context }) {
+      return { targetWindow: "overlay", capture: { text: context.selectedText } };
+    },
+    getCaptureInFlight: () => captureInFlight,
+    setCaptureInFlight(value) { captureInFlight = value; },
+    clipboard: { readText: () => clipboardText },
+    enqueueWindowMessage(windowId, channel, payload) {
+      enqueued.push({ windowId, channel, payload });
+    },
+    IPC_CHANNELS: {
+      shortcutTriggered: "uca:shortcut-triggered",
+      shellContextReceived: "uca:shell-context-received"
+    },
+    windows,
+    captureAndAskClipboardPollMs: 120
+  });
+
+  router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
+  await delay(90);
+
+  assert.equal(calls.length, 1, "delayed clipboard text should avoid active-window fallback");
+  assert.equal(enqueued[0]?.payload?.capture?.text, "fresh selected text from the foreground app");
+  assert.equal(captureInFlight, false);
+});
+
 test("capture-and-ask sends selected files without waiting for active-window fallback", async () => {
   const calls = [];
   const enqueued = [];
+  let clipboardReads = 0;
   let captureInFlight = false;
   const windows = new Map([
     ["overlay", { webContents: { send() {} } }]
@@ -211,7 +267,12 @@ test("capture-and-ask sends selected files without waiting for active-window fal
     },
     getCaptureInFlight: () => captureInFlight,
     setCaptureInFlight(value) { captureInFlight = value; },
-    clipboard: { readText: () => "" },
+    clipboard: {
+      readText: () => {
+        clipboardReads += 1;
+        return "";
+      }
+    },
     enqueueWindowMessage(windowId, channel, payload) {
       enqueued.push({ windowId, channel, payload });
     },
@@ -219,7 +280,8 @@ test("capture-and-ask sends selected files without waiting for active-window fal
       shortcutTriggered: "uca:shortcut-triggered",
       shellContextReceived: "uca:shell-context-received"
     },
-    windows
+    windows,
+    captureAndAskClipboardPollMs: 5
   });
 
   router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
@@ -228,6 +290,7 @@ test("capture-and-ask sends selected files without waiting for active-window fal
   assert.equal(calls.length, 1);
   assert.equal(calls[0]?.activeWindowEnabled, false);
   assert.deepEqual(enqueued[0]?.payload?.file_paths, ["E:\\docs\\resume.docx"]);
+  assert.equal(clipboardReads, 1, "file captures must not wait for delayed clipboard text");
 });
 
 test("capture-and-ask falls back to active window only when no selection exists", async () => {
@@ -279,12 +342,12 @@ test("capture-and-ask falls back to active window only when no selection exists"
       shortcutTriggered: "uca:shortcut-triggered",
       shellContextReceived: "uca:shell-context-received"
     },
-    windows
+    windows,
+    captureAndAskClipboardPollMs: 5
   });
 
   router.buildShortcutHandler({ id: "capture-and-ask", accelerator: "Ctrl+Shift+Space" })();
-  await new Promise((resolve) => setImmediate(resolve));
-  await new Promise((resolve) => setImmediate(resolve));
+  await delay(20);
 
   assert.equal(calls.length, 2);
   assert.equal(calls[0]?.activeWindowEnabled, false);

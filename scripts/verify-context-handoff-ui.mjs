@@ -42,12 +42,19 @@ assert.equal(overlayJs.includes("hotkey_capture"), true);
 assert.equal(overlayJs.includes("pendingActiveWindowContext"), true);
 assert.equal(overlayJs.includes("resolveActiveWindowBrowserCapture"), true);
 assert.equal(overlayJs.includes("/browser/context/recent?"), true);
+assert.match(overlayJs,
+  /function beginShortcutCaptureSession[\s\S]{0,1200}shortcutId === "capture-and-ask"[\s\S]{0,180}markUserEngaged\(\);[\s\S]{0,80}return;/,
+  "capture-and-ask renderer session must not call shellShowWindow/focus while native foreground copy is still in flight");
+assert.match(overlayJs,
+  /function showActiveWindowPreviewCard[\s\S]{0,1800}else if \(title \|\| process\)/,
+  "overlay must render a generic current-window card when the active-window probe only has process/title context");
 
 const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes("onContextReceived"), true);
 assert.equal(preload.includes("resolveDroppedFilePaths"), true);
 assert.equal(preload.includes("submitDroppedFiles"), true);
 
+const desktopWindowActions = await read("src/desktop/shell/desktop-window-actions.mjs");
 const mainProcess = [
   await read("src/desktop/tray/electron-main.mjs"),
   await read("src/desktop/tray/desktop-launch-args.mjs"),
@@ -78,6 +85,21 @@ assert.equal(mainProcess.includes("hotkey_preview"), true);
   assert.ok(captureIndex >= 0, "capture-and-ask must run active-window capture");
   assert.ok(inactiveOverlayIndex > captureIndex && focusedOverlayIndex > inactiveOverlayIndex,
     "capture-and-ask must show the overlay without stealing selection focus, then focus it after capture resolves");
+  const showWindowStart = desktopWindowActions.indexOf("function showWindow");
+  const showWindowEnd = desktopWindowActions.indexOf("function hideWindow", showWindowStart);
+  const showWindowBlock = desktopWindowActions.slice(showWindowStart, showWindowEnd);
+  const foregroundStart = showWindowBlock.indexOf("const shouldFocus");
+  const foregroundEnd = showWindowBlock.indexOf("// Keep the dock orb", foregroundStart);
+  const foregroundBlock = showWindowBlock.slice(foregroundStart, foregroundEnd);
+  const showInactiveIndex = foregroundBlock.indexOf("target.showInactive()");
+  const gatedMoveTopIndex = foregroundBlock.indexOf("if (shouldFocus || options?.moveTop === true)");
+  const focusIndex = foregroundBlock.indexOf("if (shouldFocus)", gatedMoveTopIndex);
+  assert.ok(showWindowStart >= 0 && showWindowEnd > showWindowStart, "desktop window showWindow action must be present");
+  assert.ok(showInactiveIndex >= 0, "showWindow({ focus:false }) must use showInactive when available");
+  assert.ok(gatedMoveTopIndex > showInactiveIndex,
+    "showWindow({ focus:false }) must gate moveTop behind focus or an explicit moveTop request");
+  assert.ok(focusIndex > gatedMoveTopIndex,
+    "showWindow({ focus:false }) must gate focus behind shouldFocus");
 }
 assert.ok(mainProcess.includes("Dropping onto the dock is mode-aware:")
     && /shellSubmitDroppedFiles[\s\S]{0,700}const settings = await loadSettings\(\);[\s\S]{0,520}if \(!settings\?\.echoMode\)[\s\S]{0,80}showWindow\("overlay"\)[\s\S]{0,360}enqueueWindowMessage\(\s*"overlay"/.test(mainProcess),

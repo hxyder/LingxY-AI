@@ -1,5 +1,6 @@
 const CAPTURE_AND_ASK_SELECTION_TIMEOUT_MS = 2400;
 const CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS = 1400;
+const CAPTURE_AND_ASK_CLIPBOARD_POLL_MS = 900;
 
 class ShortcutCaptureTimeoutError extends Error {
   constructor(label, timeoutMs) {
@@ -42,6 +43,32 @@ function buildCaptureStatusPayload(status, message, detail = {}) {
   };
 }
 
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForClipboardChange({
+  clipboard,
+  baseline = "",
+  timeoutMs = CAPTURE_AND_ASK_CLIPBOARD_POLL_MS,
+  intervalMs = 60
+} = {}) {
+  if (typeof clipboard?.readText !== "function") return "";
+  const startedAt = Date.now();
+  const preTrimmed = String(baseline ?? "").trim();
+  while (Date.now() - startedAt <= timeoutMs) {
+    const text = clipboard.readText() ?? "";
+    const trimmed = text.trim();
+    if (trimmed.length > 2 && trimmed !== preTrimmed) {
+      return trimmed;
+    }
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) break;
+    await wait(Math.min(intervalMs, remainingMs));
+  }
+  return "";
+}
+
 export function createShortcutRouter({
   showWindow,
   sendEchoShortcutWake,
@@ -63,7 +90,8 @@ export function createShortcutRouter({
   appendDesktopDiagnosticError,
   safeNotify,
   captureAndAskSelectionTimeoutMs = CAPTURE_AND_ASK_SELECTION_TIMEOUT_MS,
-  captureAndAskWindowTimeoutMs = CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS
+  captureAndAskWindowTimeoutMs = CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS,
+  captureAndAskClipboardPollMs = CAPTURE_AND_ASK_CLIPBOARD_POLL_MS
 } = {}) {
   if (typeof showWindow !== "function") throw new TypeError("createShortcutRouter requires showWindow.");
   if (typeof captureActiveWindowContext !== "function") throw new TypeError("createShortcutRouter requires captureActiveWindowContext.");
@@ -157,13 +185,12 @@ export function createShortcutRouter({
           if (!Array.isArray(ctx.filePaths)) {
             ctx.filePaths = [];
           }
-          if (!ctx.selectedText) {
-            const postClipboard = clipboard.readText() ?? "";
-            const postTrimmed = postClipboard.trim();
-            const preTrimmed = hotKeyClipboardSnapshot.trim();
-            if (postTrimmed.length > 2 && postTrimmed !== preTrimmed) {
-              ctx.selectedText = postTrimmed;
-            }
+          if (!ctx.selectedText && ctx.filePaths.length === 0) {
+            ctx.selectedText = await waitForClipboardChange({
+              clipboard,
+              baseline: hotKeyClipboardSnapshot,
+              timeoutMs: captureAndAskClipboardPollMs
+            }) || null;
           }
 
           if (hasSelectedCaptureContext(ctx)) {
@@ -205,6 +232,12 @@ export function createShortcutRouter({
             });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
           } else {
+            void appendDesktopDiagnosticError?.("capture_and_ask_empty", null, {
+              shortcutId: shortcut.id,
+              selectionTimeoutMs: captureAndAskSelectionTimeoutMs,
+              clipboardPollMs: captureAndAskClipboardPollMs,
+              windowFallbackTimeoutMs: captureAndAskWindowTimeoutMs
+            });
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, buildCaptureStatusPayload(
               "empty",
               "没有捕获到选中内容。请保持内容选中后再试，或直接在输入框里粘贴/提问。"

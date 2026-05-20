@@ -1255,6 +1255,10 @@ function beginShortcutCaptureSession(shortcutId = "") {
       });
     }, watchdogMs)
   };
+  if (shortcutId === "capture-and-ask") {
+    markUserEngaged();
+    return;
+  }
   void maybeRevealOverlay({ markEngaged: true });
   commandInput.focus();
 }
@@ -5486,6 +5490,13 @@ function showActiveWindowPreviewCard(activeWindow) {
     subLabel = title;
     quickActions = [
       { label: "基于此上下文提问", command: `基于当前窗口"${title}"的上下文` }
+    ];
+  } else if (title || process) {
+    icon = "🪟";
+    label = `当前窗口：${process || "app"}`;
+    subLabel = title;
+    quickActions = [
+      { label: "基于此窗口提问", command: title ? `基于当前窗口"${title}"的上下文` : "基于当前窗口上下文" }
     ];
   } else {
     return;

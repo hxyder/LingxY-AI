@@ -26,6 +26,12 @@ file/text/window context asynchronously over `uca:shell-context-received`.
 Empty, failed, and timed-out captures use an additive `capture_status` payload
 on that existing channel so the overlay can exit its pending state without a
 new IPC route.
+PMAT-014 follow-up, 2026-05-20: the renderer-side shortcut pending bubble must
+not call the shell show/focus bridge for `capture-and-ask`; Electron main owns
+the inactive reveal before the native copy probe completes. Delayed clipboard
+text is accepted only as a bounded post-copy compensation when no file selection
+was captured, and active-window payloads with only process/title still render as
+a generic current-window card on the existing context channel.
 - Renderer invoke references: 109
 - Renderer listener references: 22
 - Hard-coded main IPC handler channels outside `IPC_CHANNELS`: 13

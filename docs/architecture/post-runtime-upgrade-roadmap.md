@@ -274,6 +274,19 @@ the Electron overlay/console. If the foreground result is still a LingxY shell
 window, the shell wrapper prefers the last remembered external window or
 suppresses the shell preview.
 
+PMAT-014 capture reliability follow-up, 2026-05-20: the inactive reveal contract
+must hold across both main and renderer. For `capture-and-ask`, the renderer may
+create/update the pending bubble but must not call `shellShowWindow` or focus
+the command input while the foreground app is still being copied.
+`showWindow({ focus: false })` must also avoid `moveTop()` unless explicitly
+requested, because on Windows it can activate the overlay before `Ctrl+C`
+reaches the selected app. A short clipboard poll is allowed only after the
+native copy probe returns no text and no file selection, so delayed clipboard
+writes are captured without making file selection slower. Active-window
+fallback remains an existing `uca:shell-context-received` payload and must
+render even when the probe only knows process/title instead of a URL or file
+path.
+
 PMAT-014 global latency execution plan, 2026-05-15: the speed program is now
 tracked as an end-to-end runtime optimization, not a single-task micro-fix.
 External framework signals reviewed for this pass: LangGraph persistence treats
