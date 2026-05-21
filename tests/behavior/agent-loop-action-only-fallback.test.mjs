@@ -281,6 +281,30 @@ test("uses a composed side-effect body instead of raw transcript evidence when p
   assert.doesNotMatch(decision?.args?.body ?? "", /Raw market transcript/);
 });
 
+test("strips composer scaffold from composed side-effect email bodies", () => {
+  const decision = synthesiseDeterministicActionFallback({
+    task: makePreauthorizedTask(),
+    transcript: makeTranscript({ observation: "Raw market transcript." }),
+    allowed: ["account_send_email"],
+    bodyOverride: [
+      "以下是邮件正文内容，可直接发送：",
+      "",
+      "---",
+      "",
+      "主要股指表现",
+      "",
+      "Major indexes were mixed based on the gathered evidence."
+    ].join("\n")
+  });
+  assert.equal(decision?.tool, "account_send_email");
+  assert.equal(decision?.args?.body, [
+    "主要股指表现",
+    "",
+    "Major indexes were mixed based on the gathered evidence."
+  ].join("\n"));
+  assert.doesNotMatch(decision?.args?.body ?? "", /以下是邮件正文|可直接发送/u);
+});
+
 test("strips email envelope headers from composed side-effect bodies", () => {
   const decision = synthesiseDeterministicActionFallback({
     task: makePreauthorizedTask(),

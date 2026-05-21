@@ -5,6 +5,7 @@ import {
 } from "../../core/artifact-quality.mjs";
 import { SYNTHESIS_REQUIRED_OUTPUTS } from "../../core/intent/semantic-router.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import { hasEmailBodyComposerScaffold } from "../../core/policy/scheduled-work-policy.mjs";
 import {
   selectSuccessContractValidationSpec,
   validateSuccessContract
@@ -287,6 +288,9 @@ function validateEmailSendContentArgs(args = {}, ctx = {}) {
   }
   if (hasEmailEnvelopeHeadersInBody(body)) {
     return { ok: false, error: "email_body_must_not_include_envelope_headers" };
+  }
+  if (hasEmailBodyComposerScaffold(body)) {
+    return { ok: false, error: "email_body_must_not_include_composer_scaffold" };
   }
 
   const gate = validateSuccessContract(

@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   deriveScheduleTitle,
   isPromptLikeTitle,
+  normalizeEmailBodyPlainText,
   normalizeScheduleRecordTitle
 } from "../../src/service/core/policy/scheduled-work-policy.mjs";
 import { applySideEffectContractToDecisionArgs } from "../../src/service/executors/tool_using/side-effect-gate.mjs";
@@ -89,6 +90,10 @@ test("scheduled email args normalize recipients and prompt-like subject before a
           "",
           "**收件人:** hanxy308@163.com",
           "",
+          "以下是邮件正文内容，可直接发送：",
+          "",
+          "---",
+          "",
           "### 一、主要股指表现",
           "- **道琼斯：** 上涨0.6%",
           "",
@@ -103,10 +108,40 @@ test("scheduled email args normalize recipients and prompt-like subject before a
 
   assert.deepEqual(args.to, ["hanxy308@163.com", "sophieliang1998@gmail.com"]);
   assert.equal(args.subject, "美股市场简报");
-  assert.doesNotMatch(args.body, /Subject|收件人|\*\*|###|\[您的助手\]/u);
+  assert.doesNotMatch(args.body, /Subject|收件人|以下是邮件正文|可直接发送|\*\*|###|\[您的助手\]/u);
+  assert.doesNotMatch(args.body, /^-{3,}$/um);
   assert.match(args.body, /一、主要股指表现/u);
   assert.match(args.body, /道琼斯： 上涨0\.6%/u);
   assert.match(args.body, /LingxY/u);
+});
+
+test("email body normalization removes composer scaffold without dropping real titles", () => {
+  assert.equal(
+    normalizeEmailBodyPlainText([
+      "以下是邮件正文内容，可直接发送：",
+      "----------------",
+      "主要股指表现",
+      "",
+      "内容正文。"
+    ].join("\n")),
+    [
+      "主要股指表现",
+      "",
+      "内容正文。"
+    ].join("\n")
+  );
+  assert.equal(
+    normalizeEmailBodyPlainText([
+      "Market digest",
+      "----------------",
+      "Major indexes were mixed."
+    ].join("\n")),
+    [
+      "Market digest",
+      "----------------",
+      "Major indexes were mixed."
+    ].join("\n")
+  );
 });
 
 test("connector workflow email input uses the same scheduled shape contract", () => {

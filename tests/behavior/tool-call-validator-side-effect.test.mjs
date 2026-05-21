@@ -138,6 +138,27 @@ test("rejects research email bodies that include envelope headers", () => {
   assert.equal(result.error, "email_body_must_not_include_envelope_headers");
 });
 
+test("rejects research email bodies that include composer scaffold text", () => {
+  const result = validateToolCall(emailTool, {
+    to: ["reviewer@example.com"],
+    subject: "Market digest",
+    body: [
+      "以下是邮件正文内容，可直接发送：",
+      "",
+      "Summary",
+      "",
+      "- Major indexes were mixed to higher according to the gathered market source.",
+      "",
+      "Sources: Market evidence"
+    ].join("\n")
+  }, {
+    task: researchEmailTask(),
+    transcript: transcript()
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "email_body_must_not_include_composer_scaffold");
+});
+
 test("accepts a synthesized research email body that uses markdown section dividers", () => {
   const result = validateToolCall(emailTool, {
     to: ["reviewer@example.com"],

@@ -10,6 +10,8 @@ const NEWS_PATTERN = /(?:news|digest|brief|summary|roundup|新闻|简报|汇总|
 const EMAIL_SEND_PATTERN = /(?:send|email|mail|gmail|outlook|发送|发邮件|邮件|邮箱|收件人|@)/iu;
 const REMINDER_PATTERN = /(?:remind|reminder|notify|alert|提醒|待办|通知)/iu;
 const EMAIL_BODY_ENVELOPE_HEADER_RE = /^\s*(?:#{1,6}\s*)?(?:[*_`]{0,2})\s*(?:subject|to|cc|bcc|from|主题|收件人|抄送|密送|发件人)\s*(?:[*_`]{0,2})\s*[:：]/iu;
+const EMAIL_BODY_COMPOSER_SCAFFOLD_RE = /^\s*(?:#{1,6}\s*)?(?:[*_`]{0,2})\s*(?:(?:(?:以下|下面|这是|这里是|以下为|下面为)\s*)?(?:是|为)?\s*(?:整理(?:后|好的)?的?\s*)?(?:邮件\s*)?(?:正文|邮件正文)(?:内容)?(?:\s*[，,]\s*(?:可直接发送|供(?:你|您)?发送|用于发送))?|(?:here(?:'s|\s+is)\s+(?:the\s+)?(?:email|message)\s+body(?:\s+to\s+send)?)|(?:(?:email|message)\s+body|body\s+content)(?:\s+(?:below|to\s+send))?)\s*(?:[:：])?\s*(?:[*_`]{0,2})\s*$/iu;
+const EMAIL_BODY_LEADING_DIVIDER_RE = /^\s*[-*_]{3,}\s*$/u;
 const PLACEHOLDER_SIGNATURE_RE = /^\s*\[(?:您的助手|你的助手|your assistant|assistant|name|姓名)[^\]]*\]\s*$/ium;
 
 function compactText(value) {
@@ -211,6 +213,32 @@ export function deriveScheduledEmailSubject({ task = null, args = {}, workflowId
   return "LingxY 定时任务";
 }
 
+export function hasEmailBodyComposerScaffold(value = "") {
+  const lines = String(value ?? "").replace(/\r\n/g, "\n").split("\n");
+  return lines
+    .slice(0, 8)
+    .some((line) => EMAIL_BODY_COMPOSER_SCAFFOLD_RE.test(line));
+}
+
+function stripEmailBodyComposerScaffold(lines = []) {
+  const output = [...lines];
+  let removed = false;
+  for (let guard = 0; guard < 3; guard += 1) {
+    const index = output.findIndex((line) => String(line ?? "").trim());
+    if (index < 0 || index > 3 || !EMAIL_BODY_COMPOSER_SCAFFOLD_RE.test(output[index])) break;
+    output.splice(index, 1);
+    removed = true;
+  }
+  if (!removed) return output;
+
+  while (output.length > 0 && !String(output[0] ?? "").trim()) output.shift();
+  if (EMAIL_BODY_LEADING_DIVIDER_RE.test(output[0] ?? "")) {
+    output.shift();
+    while (output.length > 0 && !String(output[0] ?? "").trim()) output.shift();
+  }
+  return output;
+}
+
 export function normalizeEmailBodyPlainText(value = "") {
   const text = String(value ?? "").replace(/\r\n/g, "\n").trim();
   if (!text) return "";
@@ -221,7 +249,7 @@ export function normalizeEmailBodyPlainText(value = "") {
     lines.push(line);
   }
 
-  return lines.join("\n")
+  return stripEmailBodyComposerScaffold(lines).join("\n")
     .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/giu, "$1 ($2)")
     .replace(/^\s*#{1,6}\s+/gmu, "")
     .replace(/^\s*>\s?/gmu, "")

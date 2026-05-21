@@ -303,7 +303,37 @@ const fakeSearchRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS.map((to
         ...tool,
         async execute(args) {
           searchedArgs = args;
-          return { success: true, observation: "Fake current search results" };
+          return {
+            success: true,
+            observation: [
+              "DeepSeek recent AI news: source one reports a model update and product rollout.",
+              "A second independent source covers benchmark and developer adoption details.",
+              "A third independent source discusses market and ecosystem reaction."
+            ].join("\n"),
+            metadata: {
+              searched_at: "2026-05-21T12:00:00.000Z",
+              results: [
+                {
+                  title: "DeepSeek model update",
+                  url: "https://example.com/deepseek-model-update",
+                  snippet: "DeepSeek released a recent AI model update with product rollout details.",
+                  published_date: "2026-05-21"
+                },
+                {
+                  title: "DeepSeek developer adoption",
+                  url: "https://example.org/deepseek-developer-adoption",
+                  snippet: "Developers evaluated DeepSeek's latest AI tools and benchmark changes.",
+                  published_date: "2026-05-21"
+                },
+                {
+                  title: "DeepSeek ecosystem reaction",
+                  url: "https://example.net/deepseek-ecosystem-reaction",
+                  snippet: "The AI ecosystem reacted to DeepSeek's recent product and model news.",
+                  published_date: "2026-05-21"
+                }
+              ]
+            }
+          };
         }
       }
     : tool
