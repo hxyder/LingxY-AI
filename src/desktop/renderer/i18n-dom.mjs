@@ -136,7 +136,15 @@ const EN_TO_ZH = new Map(Object.entries({
 }));
 
 [
+  ["Chat", "对话"],
   ["Conversations", "会话"],
+  ["Conversations", "对话"],
+  ["Conversations and history", "对话与历史"],
+  ["Choose a conversation or project", "选择会话或项目"],
+  ["Choose a project or history conversation", "选择项目或历史对话"],
+  ["Conversation history list", "历史对话列表"],
+  ["Switch conversations / view history", "切换对话 / 查看历史会话"],
+  ["Switch conversations / view history (local cache pending, click to retry)", "切换对话 / 查看历史会话（本地缓存待写入，点击重试）"],
   ["Projects", "项目"],
   ["Search conversations...", "搜索对话…"],
   ["Project scope", "项目范围"],

@@ -50,6 +50,9 @@ import {
   formatToolDisplayName
 } from "./tool-display.mjs";
 import {
+  currentLingxyLocale
+} from "./i18n-dom.mjs";
+import {
   extractContentEvidenceFromTaskDetail,
   extractEvidenceSummaryFromMessage,
   renderContentEvidenceHtml,
@@ -584,29 +587,23 @@ let projectStore = null;
 let conversationState = null;
 let projectStoreRemoteReady = false;
 let projectStoreSyncInFlight = null;
-// "unknown" before first attempt, then "online" or "offline". Used to notify
-// the user exactly once when we transition into an offline state (don't spam
-// a toast on every fire-and-forget persist call).
+// "unknown" before first attempt, then whether the runtime-side local
+// persistence accepted the conversation cache. Renderer localStorage remains
+// usable even when this path is unavailable.
 let projectSyncIndicatorState = "unknown";
 
 function updateProjectSyncIndicator(success) {
-  const prev = projectSyncIndicatorState;
   const next = success ? "online" : "offline";
   projectSyncIndicatorState = next;
   const btn = document.querySelector("#projectSelectorBtn");
   if (btn) {
     btn.classList.toggle("sync-offline", !success);
+    const isZh = currentLingxyLocale() === "zh-CN";
     btn.title = success
-      ? "切换对话 / 查看历史会话"
-      : "切换对话 / 查看历史会话（本地改动未同步到服务端，点击重试）";
-  }
-  if (!success && prev !== "offline") {
-    // First transition into offline — let the user know their changes are
-    // local-only. Subsequent failures stay silent until we recover and fail
-    // again.
-    try {
-      addSystemBubble("对话/会话同步到服务端失败，本地仍会保留。恢复连接后点击「对话」按钮可重新同步。");
-    } catch { /* addSystemBubble not yet initialized on early calls */ }
+      ? (isZh ? "切换对话 / 查看历史会话" : "Switch conversations / view history")
+      : (isZh
+          ? "切换对话 / 查看历史会话（本地缓存待写入，点击重试）"
+          : "Switch conversations / view history (local cache pending, click to retry)");
   }
 }
 
