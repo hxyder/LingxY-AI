@@ -1,0 +1,10 @@
+# LingxY app launcher — Python dependencies.
+#
+# rapidfuzz: fast fuzzy matching for "user typed 'wechat' → 'WeChat' candidate"
+#   We fall back to stdlib difflib if not installed (less accurate, slower).
+#
+# pywin32:   Windows API bindings for window enumeration / activation.
+#   Only needed for 83.7 (real launch with state-aware activation).
+#   83.6 indexer/dry-run does NOT require this.
+rapidfuzz>=3.5
+pywin32>=306; sys_platform == "win32"

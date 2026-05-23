@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "kind": "tools",
+  "provider": "microsoft",
+  "service": "microsoft.calendar",
+  "tools": [
+    {
+      "id": "microsoft.calendar.list_events",
+      "mcpName": "outlook_calendar_list_events",
+      "name": "Outlook Calendar List Events",
+      "description": "List upcoming or matching events from a connected Outlook / Microsoft 365 calendar.",
+      "capability": "calendarRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_list_events",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "accountId": { "type": "string" },
+          "startTime": { "type": "string" },
+          "endTime": { "type": "string" },
+          "query": { "type": "string" },
+          "limit": { "type": "number", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "timeline": {
+        "label": "Outlook Calendar event search",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "microsoft.calendar.create_event",
+      "mcpName": "outlook_calendar_create_event",
+      "name": "Outlook Calendar Create Event",
+      "description": "Create an Outlook Calendar event using a connected account after workflow-level confirmation.",
+      "capability": "calendarWrite",
+      "risk": "medium",
+      "requiresConfirmation": true,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_create_event",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "title",
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "accountId": { "type": "string" },
+          "title": { "type": "string", "minLength": 1 },
+          "startTime": { "type": "string" },
+          "endTime": { "type": "string" },
+          "attendees": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" }
+          },
+          "description": { "type": "string" },
+          "location": { "type": "string" },
+          "timeZone": { "type": "string" },
+          "recurrence": {
+            "oneOf": [
+              { "type": "object" },
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "string" }
+            ],
+            "description": "Microsoft Graph recurrence object, or a supported RRULE that can be converted into Graph recurrence."
+          }
+        }
+      },
+      "outputValidators": [
+        { "path": "event.id", "kind": "nonempty_string" },
+        {
+          "path": "event.recurrence",
+          "kind": "present_when_input_present",
+          "inputPath": "recurrence",
+          "message": "recurrence must be preserved when requested"
+        }
+      ],
+      "timeline": {
+        "label": "Outlook Calendar create event",
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

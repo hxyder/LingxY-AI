@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "kind": "connector",
+  "provider": "microsoft",
+  "displayName": "Microsoft 365",
+  "description": "Microsoft 365 account connector contracts for Outlook mail, Outlook calendar, and OneDrive.",
+  "services": [
+    "microsoft.outlook",
+    "microsoft.calendar",
+    "microsoft.onedrive"
+  ],
+  "accounts": {
+    "provider": "microsoft",
+    "identityScopes": [
+      "openid",
+      "email",
+      "profile",
+      "User.Read"
+    ],
+    "capabilityScopes": {
+      "emailRead": [
+        "Mail.Read"
+      ],
+      "emailWrite": [
+        "Mail.Send"
+      ],
+      "calendarRead": [
+        "Calendars.Read"
+      ],
+      "calendarWrite": [
+        "Calendars.ReadWrite"
+      ],
+      "fileRead": [
+        "Files.Read.All"
+      ],
+      "fileWrite": [
+        "Files.ReadWrite"
+      ]
+    }
+  },
+  "mcp": {
+    "serverId": "microsoft-365",
+    "instructions": "Use the Microsoft 365 connector tools for Outlook mail, Outlook calendar, and OneDrive tasks involving connected Microsoft accounts. Prefer workflow templates for draft-confirm-send and create-confirm flows."
+  }
+}

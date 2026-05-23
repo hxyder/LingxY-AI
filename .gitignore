@@ -1,0 +1,53 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / JS
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.vite/
+
+# Logs and generated output
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+.cache/
+artifacts/
+outputs/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+**/secrets.json
+
+# Editors
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+
+# Python helpers
+.venv/
+__pycache__/
+*.pyc
+
+# Local runtime/downloaded engines
+.uca-runtime/
+models/
+internal/
+external/paddle_ocr_runtime/python/
+external/paddle_ocr_runtime/models/
+external/local-speech-runtime/python/
+external/local-speech-runtime/models/
+
+# Build leftovers
+*.orig
+bin/
+obj/

@@ -1,0 +1,290 @@
+/*
+ * tokens.css — LingxY design tokens (v3)
+ *
+ * Ported from LingxY Console v3 mockup. Two themes (light / dark),
+ * five accent families, three density levels. Every legacy token
+ * name from previous phases (--bg-0/1/2, --surface, --surface-strong,
+ * --ink-soft, --success, --warning, --danger, --shadow-xl/lg/md/sm,
+ * --radius-xl/lg/md/sm/pill, --app-rail-width, --topbar-height, --fs-*,
+ * --fw-*, --space-*) resolves to the new system, so existing components
+ * keep rendering without rewrites.
+ *
+ * Crisp Apple-inspired system palette: white, soft grays, near-black text,
+ * and a restrained system-blue action color. The desktop shell should feel
+ * native, quiet, and spacious instead of copied from any one chat product.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* v3 CORE NAMES ------------------------------------------------ */
+  /* UCA-120: pure white light mode (no warm paper), pure near-black
+     dark mode. Distinct from warm paper palettes. System blue is the
+     only light-mode accent. */
+  /* UCA-123: contrast bump — #737373 felt too pale on pure white. */
+  /* UCA-179: retuned for ChatGPT/Claude.ai/Linear-style crispness. Panel-2
+     nudged slightly darker (#f4f4f5) so input/hover states read as a real
+     surface against pure white. Lines softened so tables + dividers don't
+     over-weight the page. */
+  --bg: #ffffff;
+  --panel: #ffffff;
+  --panel-2: #f5f5f7;
+  --ink: #1d1d1f;
+  --ink-2: #3a3a3c;
+  --muted: #6e6e73;
+  --muted-2: #9a9aa0;
+  --line: #e5e5ea;
+  --line-2: #d1d1d6;
+
+  --accent: #007aff;
+  --accent-ink: #ffffff;
+  --accent-soft: #e8f2ff;
+  --accent-strong: #005ecb;
+
+  --ok: #248a3d;
+  --ok-soft: #e8f5ea;
+  --warn: #7a6500;
+  --warn-soft: #fff7cc;
+  --err: #d70015;
+  --err-soft: #fde7e9;
+  --info: #007aff;
+  --info-soft: #e8f2ff;
+
+  --rail-w: 240px;
+  --top-h: 54px;
+  --radius: 8px;
+  --radius-sm: 7px;
+  --radius-lg: 12px;
+  --shadow: 0 1px 2px rgba(26, 25, 23, .03), 0 4px 12px rgba(26, 25, 23, .04);
+  --shadow-lg: 0 8px 28px rgba(26, 25, 23, .08);
+
+  /* UCA-177 polish: elevation tokens for modern card depth (hairline +
+     subtle drop), and a focus ring that adapts to the current accent. */
+  --elev-hairline: inset 0 0 0 0.5px color-mix(in srgb, var(--ink) 5%, transparent);
+  --elev-1: 0 1px 1px rgba(15, 23, 42, 0.04), 0 0 0 0.5px rgba(15, 23, 42, 0.04);
+  --elev-2: 0 2px 6px rgba(15, 23, 42, 0.06), 0 0 0 0.5px rgba(15, 23, 42, 0.05);
+  --elev-3: 0 10px 28px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --ring-accent: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  --ring-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+
+  /* UCA-180: theme-aware translucent surfaces for the topbar + tab-bar.
+     Previously these were hardcoded rgba(255,255,255,...) which
+     whitewashed the top of the window in dark mode — the rail looked
+     inky but the whole header glowed bright. Now they follow theme. */
+  --canvas-blur: rgba(255, 255, 255, 0.78);
+  --canvas-blur-soft: rgba(255, 255, 255, 0.48);
+  --canvas-overlay: rgba(15, 15, 15, 0.04);
+
+  /* TYPOGRAPHY -------------------------------------------------- */
+  --font-sans: 'Inter', 'Noto Sans SC', -apple-system, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-display: var(--font-sans);
+  --font-text: var(--font-sans);
+
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-md: 13px;
+  --fs-base: 13px;
+  --fs-lg: 15px;
+  --fs-xl: 19px;
+  --fs-2xl: 24px;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  --z-base: 0;
+  --z-dropdown: 10;
+  --z-overlay: 30;
+  --z-modal: 100;
+  --z-toast: 300;
+
+  --overlay-width: 520px;
+  --pad: 14px;
+  --row-h: 36px;
+
+  /* LEGACY ALIASES ---------------------------------------------- */
+  /* Old phases used a different set of semantic names. Every consumer
+     of those names still resolves through tokens below; do not add
+     new consumers — use the v3 names (--panel, --ink, --ok, …). */
+  --bg-0: var(--bg);
+  --bg-1: var(--panel-2);
+  --bg-2: var(--line);
+  --surface: var(--panel-2);
+  --surface-strong: var(--panel);
+  --surface-soft: var(--panel-2);
+  --surface-dark: var(--ink);
+  --glass: var(--panel);
+  --glass-border: var(--line);
+  --ink-soft: var(--ink-2);
+  --line-strong: var(--line-2);
+  --teal-soft: var(--info-soft);
+  --success: var(--ok);
+  --warning: var(--warn);
+  --danger: var(--err);
+
+  --status-success-bg: var(--ok-soft);
+  --status-success-border: var(--ok);
+  --status-success-text: var(--ok);
+  --status-running-bg: var(--info-soft);
+  --status-running-border: var(--info);
+  --status-running-text: var(--info);
+  --status-queued-bg: var(--line);
+  --status-queued-border: var(--line-2);
+  --status-queued-text: var(--muted);
+  --status-error-bg: var(--err-soft);
+  --status-error-border: var(--err);
+  --status-error-text: var(--err);
+  --status-info-bg: var(--info-soft);
+  --status-info-border: var(--info);
+  --status-info-text: var(--info);
+
+  --shadow-xl: var(--shadow-lg);
+  --shadow-md: var(--shadow);
+  --shadow-sm: var(--shadow);
+  --radius-xl: var(--radius-lg);
+  --radius-md: var(--radius);
+  --radius-pill: 999px;
+
+  --app-rail-width: var(--rail-w);
+  --app-rail-collapsed-width: 64px;
+  --topbar-height: var(--top-h);
+
+  /* ── GLASS tokens (floating layers: overlay / cheatsheet / palette) ──
+     Deliberately decoupled from Console's main accent so the
+     floating UI keeps its frosted-glass, high-end, neutral aesthetic
+     regardless of the Console's brand color. */
+  --glass-surface: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.14),
+    0 4px 16px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --glass-backdrop: rgba(20, 19, 16, 0.38);
+  --glass-ink: #1a1d24;
+  --glass-ink-soft: #3a3f4b;
+  --glass-muted: #6b7280;
+  --glass-line: rgba(0, 0, 0, 0.08);
+  --glass-line-strong: rgba(0, 0, 0, 0.14);
+  --glass-accent: #5b6b7a;          /* cool gray-blue, neutral */
+  --glass-accent-strong: #44515d;
+  --glass-accent-soft: rgba(91, 107, 122, 0.12);
+  --glass-accent-ink: #ffffff;
+  /* Glass status colors — slightly desaturated vs Console status tokens */
+  --glass-ok: #3e7a46;
+  --glass-err: #a8382f;
+
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+
+/* ── dark theme ────────────────────────────────────────────────── */
+/* UCA-179: crisp dark palette.
+   bg (#000) → panel (#1c1c1e) → panel-2 (#2c2c2e) forms a clean
+   3-step surface stack so chat backgrounds, bubbles, and inputs
+   actually look layered instead of bleeding together. Muted nudged
+   brighter for AA contrast against deep black. */
+:is(html, body)[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #000000;
+  --panel: #1c1c1e;
+  --panel-2: #2c2c2e;
+  --ink: #f5f5f7;
+  --ink-2: #d1d1d6;
+  --muted: #aeaeb2;
+  --muted-2: #8e8e93;
+  --line: #38383a;
+  --line-2: #48484a;
+
+  --accent-soft: rgba(10, 132, 255, .20);
+  --ok-soft: rgba(62, 122, 70, .18);
+  --warn-soft: rgba(180, 120, 32, .18);
+  --err-soft: rgba(168, 56, 47, .18);
+  --info-soft: rgba(58, 109, 143, .18);
+
+  /* Dark-mode translucent canvas surfaces (UCA-180). */
+  --canvas-blur: rgba(15, 15, 15, 0.72);
+  --canvas-blur-soft: rgba(15, 15, 15, 0.48);
+  --canvas-overlay: rgba(255, 255, 255, 0.04);
+
+  --shadow: none;
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, .4);
+
+  /* dark-retuned status triples */
+  --status-success-bg: var(--ok-soft);
+  --status-success-text: #7fb089;
+  --status-running-bg: var(--info-soft);
+  --status-running-text: #7ba8c4;
+  --status-queued-bg: var(--line);
+  --status-queued-text: var(--muted);
+  --status-error-bg: var(--err-soft);
+  --status-error-text: #c77268;
+  --status-info-bg: var(--info-soft);
+  --status-info-text: #7ba8c4;
+
+  /* dark glass: inky warm surface, cooler neutrals */
+  --glass-surface: rgba(24, 24, 28, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --glass-backdrop: rgba(0, 0, 0, 0.55);
+  --glass-ink: #ece7da;
+  --glass-ink-soft: #c2beb2;
+  --glass-muted: #8a8577;
+  --glass-line: rgba(255, 255, 255, 0.08);
+  --glass-line-strong: rgba(255, 255, 255, 0.16);
+  --glass-accent: #9aa3b2;
+  --glass-accent-strong: #c7ced9;
+  --glass-accent-soft: rgba(154, 163, 178, 0.16);
+  --glass-accent-ink: #1a1d24;
+}
+
+/* ── accent families ───────────────────────────────────────────── */
+/* Default (unset) → system blue. */
+:root { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
+:is(html, body)[data-theme="dark"] { --accent: #0a84ff; --accent-strong: #409cff; --accent-soft: rgba(10, 132, 255, .20); --accent-ink: #ffffff; }
+html[data-accent="terra"]  { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
+html[data-theme="dark"][data-accent="terra"] { --accent-soft: rgba(10, 132, 255, .20); }
+
+html[data-accent="ink"]    { --accent: #1a1917; --accent-strong: #000000; --accent-soft: #e8e5dc; --accent-ink: #ffffff; }
+html[data-theme="dark"][data-accent="ink"] { --accent: #ece7da; --accent-strong: #ffffff; --accent-ink: #1a1917; --accent-soft: rgba(236, 231, 218, .18); }
+
+html[data-accent="olive"]  { --accent: #5b6b3b; --accent-strong: #465528; --accent-soft: #e4e8d6; --accent-ink: #ffffff; }
+html[data-theme="dark"][data-accent="olive"] { --accent-soft: rgba(91, 107, 59, .22); }
+
+html[data-accent="ocean"]  { --accent: #2d6880; --accent-strong: #1f4e61; --accent-soft: #dae7ed; --accent-ink: #ffffff; }
+html[data-theme="dark"][data-accent="ocean"] { --accent-soft: rgba(45, 104, 128, .22); }
+
+html[data-accent="plum"]   { --accent: #7a3958; --accent-strong: #5d2843; --accent-soft: #eddbe5; --accent-ink: #ffffff; }
+html[data-theme="dark"][data-accent="plum"] { --accent-soft: rgba(122, 57, 88, .22); }
+
+/* Legacy accent names map to the closest new family so existing
+   html[data-accent="amber"] remains a legacy alias but maps to system blue. */
+html[data-accent="amber"]  { --accent: #007aff; --accent-strong: #005ecb; --accent-soft: #e8f2ff; --accent-ink: #ffffff; }
+html[data-accent="indigo"] { --accent: #2d6880; --accent-strong: #1f4e61; --accent-soft: #dae7ed; --accent-ink: #ffffff; }
+html[data-accent="teal"]   { --accent: #5b6b3b; --accent-strong: #465528; --accent-soft: #e4e8d6; --accent-ink: #ffffff; }
+html[data-accent="rose"]   { --accent: #7a3958; --accent-strong: #5d2843; --accent-soft: #eddbe5; --accent-ink: #ffffff; }
+html[data-accent="slate"]  { --accent: #1a1917; --accent-strong: #000000; --accent-soft: #e8e5dc; --accent-ink: #ffffff; }
+
+/* ── density ────────────────────────────────────────────────── */
+html[data-density="compact"]  { --pad: 10px; --row-h: 32px; }
+html[data-density="regular"]  { --pad: 14px; --row-h: 36px; }
+html[data-density="roomy"]    { --pad: 18px; --row-h: 42px; }
+html[data-density="balanced"] { --pad: 14px; --row-h: 40px; }  /* legacy */

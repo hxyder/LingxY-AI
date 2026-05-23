@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LingxY · 扩展设置</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header class="hero">
+        <p class="eyebrow">LingxY 扩展设置</p>
+        <h1>独立运行模式</h1>
+        <p class="hint">未启动桌面程序时，扩展会直接调用您配置的 LLM API 完成翻译 / 总结 / 解释任务。</p>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head"><h2>桌面程序地址（可选）</h2></div>
+        <label class="field">
+          <span>Desktop runtime URL</span>
+          <input id="runtime-url" type="url" placeholder="http://127.0.0.1:4310" />
+        </label>
+        <p class="hint">桌面程序运行时扩展会优先调用它；没开的话会 fallback 到下方的 LLM 配置。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>LLM 直连配置</h2></div>
+        <label class="field">
+          <span>提供商</span>
+          <select id="provider"></select>
+        </label>
+        <label class="field">
+          <span>API Key</span>
+          <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-… / sk-… / AIza… / ollama 留空" />
+        </label>
+        <label class="field">
+          <span>模型</span>
+          <select id="model"></select>
+        </label>
+        <label id="custom-model-field" class="field" hidden>
+          <span>自定义模型</span>
+          <input id="custom-model" type="text" placeholder="输入 provider 支持的模型 ID" />
+        </label>
+        <label id="reasoning-field" class="field" hidden>
+          <span>思考强度</span>
+          <select id="reasoning"></select>
+        </label>
+        <p id="provider-hint" class="hint">Key 使用 chrome.storage.local 保存，不会离开您的浏览器。Anthropic 需要 CORS header「anthropic-dangerous-direct-browser-access: true」（扩展已内置）。Ollama 需本地已启动并监听 11434。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>状态</h2></div>
+        <div class="status-grid">
+          <div class="status-item"><span class="status-label">桌面程序</span><span id="status-desktop" class="status-value">检测中…</span></div>
+          <div class="status-item"><span class="status-label">API Key</span><span id="status-key" class="status-value">—</span></div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="save-btn" class="primary" type="button">保存</button>
+        <button id="test-btn" class="ghost" type="button">测试直连</button>
+        <span id="save-status" class="hint"></span>
+      </div>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

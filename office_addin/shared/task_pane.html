@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LingxY</title>
+    <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+        font-size: 13px;
+        background: #ffffff;
+        color: #1f2430;
+      }
+
+      /* ───── layout ───── */
+      .app { display: flex; flex-direction: column; height: 100vh; }
+      .header {
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        background: rgba(255,255,255,0.96);
+      }
+      .logo {
+        width: 22px; height: 22px; border-radius: 7px;
+        background: linear-gradient(135deg, #b85c2a, #9a4a1f);
+      }
+      .header-title { font-size: 13px; font-weight: 650; flex: 1; }
+      .header-host { font-size: 11px; color: #7b8190; }
+      .header-action {
+        all: unset; cursor: pointer;
+        width: 26px; height: 26px;
+        display: grid; place-items: center;
+        border-radius: 7px;
+        font-size: 13px;
+        color: #7b8190;
+        transition: background 120ms, color 120ms;
+      }
+      .header-action:hover { background: rgba(184,92,42,0.1); color: #b85c2a; }
+
+      .chat {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px 14px 8px;
+        display: flex; flex-direction: column; gap: 10px;
+        scroll-behavior: smooth;
+      }
+
+      /* ───── empty state ───── */
+      .empty {
+        display: flex; flex-direction: column; gap: 12px;
+        padding-top: 16px;
+        text-align: center;
+      }
+      .empty h2 { margin: 0; font-size: 15px; font-weight: 700; color: #1f2430; }
+      .empty p { margin: 0; font-size: 12px; color: #7b8190; line-height: 1.5; }
+      .empty-chips {
+        display: flex; flex-wrap: wrap; gap: 6px;
+        justify-content: center;
+        margin-top: 6px;
+      }
+      .empty-chip {
+        all: unset; cursor: pointer;
+        padding: 7px 14px;
+        font-size: 12px; font-weight: 550;
+        color: #b85c2a;
+        background: rgba(184,92,42,0.09);
+        border: 1px solid rgba(184,92,42,0.18);
+        border-radius: 999px;
+        transition: background 120ms, transform 80ms;
+      }
+      .empty-chip:hover { background: rgba(184,92,42,0.16); transform: translateY(-1px); }
+
+      /* ───── bubbles ───── */
+      .msg { display: flex; flex-direction: column; max-width: 92%; animation: fade-in 160ms ease; }
+      .msg.user { align-self: flex-end; }
+      .msg.assistant, .msg.system { align-self: flex-start; }
+      .msg-body {
+        padding: 9px 13px;
+        border-radius: 14px;
+        line-height: 1.55;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        font-size: 13px;
+      }
+      .msg.user .msg-body { background: #b85c2a; color: #fff; border-bottom-right-radius: 4px; }
+      .msg.assistant .msg-body { background: #f1f3f6; color: #1f2430; border-bottom-left-radius: 4px; }
+      .msg.system .msg-body { background: transparent; color: #7b8190; font-size: 11px; padding: 0 4px; }
+      .msg.assistant.streaming .msg-body::after { content: "▍"; color: #b85c2a; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+
+      .msg-actions {
+        display: flex; gap: 2px; margin-top: 4px;
+        opacity: 0; transition: opacity 140ms;
+      }
+      .msg.assistant:hover .msg-actions, .msg-actions.sticky { opacity: 1; }
+      .icon-btn {
+        all: unset; cursor: pointer;
+        padding: 4px 7px;
+        border-radius: 6px;
+        font-size: 11px;
+        color: #5c6272;
+        background: transparent;
+        transition: background 120ms;
+      }
+      .icon-btn:hover { background: rgba(184,92,42,0.1); color: #b85c2a; }
+      .icon-btn:disabled { opacity: 0.4; cursor: default; }
+
+      @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
+      @keyframes blink { 50% { opacity: 0; } }
+
+      /* ───── composer ───── */
+      .composer {
+        border-top: 1px solid rgba(0,0,0,0.06);
+        padding: 8px 12px 10px;
+        background: rgba(255,255,255,0.96);
+      }
+      .scope-chip {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 4px 10px; margin-bottom: 6px;
+        border-radius: 999px;
+        font-size: 11px;
+        color: #5c6272;
+        background: rgba(31,41,55,0.05);
+        border: 1px solid rgba(31,41,55,0.08);
+        cursor: pointer;
+        transition: background 120ms;
+      }
+      .scope-chip:hover { background: rgba(184,92,42,0.1); color: #b85c2a; }
+      .scope-chip .scope-dot { width: 6px; height: 6px; border-radius: 50%; background: #b85c2a; }
+      .scope-chip.document .scope-dot { background: #9a4a1f; }
+      .scope-chip .scope-caret { font-size: 9px; opacity: 0.6; }
+
+      .input-box {
+        display: flex; align-items: flex-end; gap: 6px;
+        padding: 6px 6px 6px 10px;
+        background: #fff;
+        border: 1.5px solid rgba(0,0,0,0.1);
+        border-radius: 14px;
+        transition: border-color 120ms, box-shadow 120ms;
+      }
+      .input-box:focus-within { border-color: #b85c2a; box-shadow: 0 0 0 3px rgba(184,92,42,0.1); }
+      textarea#inputArea {
+        flex: 1;
+        border: none; outline: none; background: transparent;
+        resize: none;
+        font-family: inherit; font-size: 13px; line-height: 1.5;
+        min-height: 20px; max-height: 120px;
+        padding: 4px 0;
+      }
+      .send-btn {
+        all: unset; cursor: pointer;
+        width: 28px; height: 28px; flex-shrink: 0;
+        display: grid; place-items: center;
+        border-radius: 8px;
+        background: #b85c2a; color: #fff;
+        transition: background 120ms, transform 120ms, opacity 120ms;
+      }
+      .send-btn:hover:not(:disabled) { background: #9a4a1f; transform: scale(1.05); }
+      .send-btn:disabled { opacity: 0.35; cursor: default; background: #9aa3b0; }
+      .send-btn svg { width: 14px; height: 14px; fill: currentColor; }
+
+      .hint {
+        font-size: 10px; color: #9aa3b0;
+        margin-top: 4px; padding-left: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <div class="header">
+        <div class="logo" aria-hidden="true"></div>
+        <div class="header-title">LingxY</div>
+        <div id="headerHost" class="header-host">Office</div>
+        <button id="clearBtn" class="header-action" type="button" title="清空对话（不影响文档）">✨</button>
+      </div>
+
+      <div id="chat" class="chat">
+        <!-- populated by index.js -->
+      </div>
+
+      <div class="composer">
+        <button id="scopeChip" class="scope-chip" type="button" title="切换上下文范围">
+          <span class="scope-dot"></span>
+          <span id="scopeLabel">选中内容</span>
+          <span class="scope-caret">▾</span>
+        </button>
+        <div class="input-box">
+          <textarea id="inputArea" rows="1" placeholder="告诉 LingxY 你想做什么..." autofocus></textarea>
+          <button id="sendBtn" class="send-btn" type="button" disabled aria-label="发送">
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M3.4 20.4l17.45-8.05a.5.5 0 0 0 0-.91L3.4 3.4a.5.5 0 0 0-.7.6l2.4 7.5a.5.5 0 0 0 .42.34l9.48.9a.1.1 0 0 1 0 .2l-9.48.9a.5.5 0 0 0-.42.34L2.7 19.8a.5.5 0 0 0 .7.6z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="hint">Enter 发送 · Shift+Enter 换行 · 点上方标签切换上下文范围</div>
+      </div>
+    </div>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

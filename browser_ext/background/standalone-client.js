@@ -1,0 +1,691 @@
+import {
+  DEFAULT_RUNTIME_URL,
+  PROVIDER_CONFIGS,
+  applyReasoningSelectionToBody,
+  isStandaloneProviderConfigured,
+  normalizeStandaloneConfig
+} from "../shared/provider-catalog.js";
+
+// Standalone LLM client used when the desktop runtime is unavailable.
+// Calls Anthropic / OpenAI / Gemini directly from the extension service
+// worker; supports simple text-in text-out turns.
+//
+// Security note: the API key lives in chrome.storage.local. We never log it.
+// CORS: Anthropic requires the "anthropic-dangerous-direct-browser-access"
+// header; OpenAI and Gemini allow CORS from extension origins by default.
+
+export async function loadStandaloneConfig(chromeApi = (typeof chrome !== "undefined" ? chrome : null)) {
+  // Node-side verify scripts import this module without a chrome global; in
+  // that environment the standalone config is simply absent, so return null
+  // rather than throwing ReferenceError on the default parameter lookup.
+  if (!chromeApi?.storage?.local?.get) return null;
+  const data = await chromeApi.storage.local.get("ucaStandaloneConfig");
+  return data.ucaStandaloneConfig ? normalizeStandaloneConfig(data.ucaStandaloneConfig) : null;
+}
+
+export function hasStandaloneProviderConfig(config = {}) {
+  return isStandaloneProviderConfigured(config);
+}
+
+// Probe the desktop runtime with a bounded timeout; cache the result for a few
+// seconds so rapid context-menu clicks don't each re-ping. Cold desktop starts
+// and busy local runtimes can take more than a second to answer /health, so keep
+// the probe short enough for UI feedback but long enough to avoid false offline
+// states.
+const DESKTOP_PROBE_TIMEOUT_MS = 5000;
+const probeCache = { ok: null, expiresAt: 0 };
+
+export async function isDesktopAvailable(runtimeUrl) {
+  const now = Date.now();
+  if (probeCache.expiresAt > now) return probeCache.ok;
+  const url = (runtimeUrl || DEFAULT_RUNTIME_URL).replace(/\/+$/, "");
+  let ok = false;
+  let t = null;
+  try {
+    const controller = new AbortController();
+    t = setTimeout(() => controller.abort(), DESKTOP_PROBE_TIMEOUT_MS);
+    const response = await fetch(`${url}/health`, { signal: controller.signal });
+    ok = response.ok;
+  } catch { ok = false; }
+  finally {
+    if (t) clearTimeout(t);
+  }
+  probeCache.ok = ok;
+  probeCache.expiresAt = now + 5000; // 5s cache
+  return ok;
+}
+
+export function invalidateDesktopProbe() {
+  probeCache.expiresAt = 0;
+}
+
+// ── Provider-specific call wrappers. Each returns { ok, text, error }. ─────
+
+function flattenTextContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (typeof part?.text === "string") return part.text;
+      if (typeof part?.content === "string") return part.content;
+      if (typeof part?.value === "string") return part.value;
+      return "";
+    }).join("");
+  }
+  if (typeof content?.text === "string") return content.text;
+  if (typeof content?.content === "string") return content.content;
+  if (typeof content?.value === "string") return content.value;
+  return "";
+}
+
+function extractResponsesApiText(payload = {}) {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  const output = Array.isArray(payload?.output) ? payload.output : [];
+  return output
+    .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .map((part) => flattenTextContent(part))
+    .join("");
+}
+
+function extractOpenAICompatText(payload = {}) {
+  return flattenTextContent(payload?.choices?.[0]?.message?.content)
+    || flattenTextContent(payload?.choices?.[0]?.delta?.content)
+    || flattenTextContent(payload?.choices?.[0]?.text)
+    || extractResponsesApiText(payload);
+}
+
+function hasMeaningfulText(text = "") {
+  return typeof text === "string" && text.trim().length > 0;
+}
+
+async function callAnthropic({ apiKey, model, prompt, systemPrompt, messages = null, maxTokens = 1024 }) {
+  // When `messages` is provided we use it directly (multi-turn chat). The
+  // `role: "system"` entries are lifted to Anthropic's top-level `system`
+  // field because Anthropic doesn't accept system as a message role.
+  const effectiveMessages = Array.isArray(messages) && messages.length > 0
+    ? messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content ?? "" }))
+    : [{ role: "user", content: prompt }];
+  const effectiveSystem = systemPrompt
+    ?? (Array.isArray(messages) ? messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n") : "");
+  const body = {
+    model: model || "claude-sonnet-4-6",
+    max_tokens: maxTokens,
+    messages: effectiveMessages
+  };
+  if (effectiveSystem) body.system = effectiveSystem;
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    return { ok: false, error: `anthropic_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  const payload = await response.json();
+  const text = payload?.content?.find?.((b) => b.type === "text")?.text ?? "";
+  return { ok: true, text };
+}
+
+async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt, messages: providedMessages = null, reasoningEffort = "", maxTokens = 1024 }) {
+  const messages = [];
+  if (Array.isArray(providedMessages) && providedMessages.length > 0) {
+    messages.push(...providedMessages);
+  } else {
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+  }
+  const headers = { "Content-Type": "application/json" };
+  if (config.authStyle === "bearer" && apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  const body = {
+    model: model || config.defaultModel,
+    messages,
+    max_tokens: maxTokens
+  };
+  applyReasoningSelectionToBody(body, {
+    provider: config.id ?? "",
+    model: body.model,
+    reasoningEffort
+  });
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) {
+    return { ok: false, error: `http_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  const payload = await response.json();
+  const text = extractOpenAICompatText(payload);
+  return { ok: true, text };
+}
+
+async function callGemini({ apiKey, model, prompt, systemPrompt, messages = null, maxTokens = 1024 }) {
+  const modelName = model || "gemini-1.5-flash";
+  // Convert OpenAI-style messages to Gemini's contents[] shape. The system
+  // prompt becomes the `systemInstruction` top-level field (supported by
+  // v1beta generateContent); fall back to prepending as text for older
+  // models that don't accept systemInstruction.
+  let contents;
+  let systemInstruction = null;
+  if (Array.isArray(messages) && messages.length > 0) {
+    const sys = messages.filter((m) => m.role === "system").map((m) => m.content ?? "").join("\n\n");
+    if (sys) systemInstruction = { parts: [{ text: sys }] };
+    contents = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content ?? "" }]
+      }));
+  } else {
+    if (systemPrompt) systemInstruction = { parts: [{ text: systemPrompt }] };
+    contents = [{ role: "user", parts: [{ text: prompt }] }];
+  }
+  const requestBody = { contents, generationConfig: { maxOutputTokens: maxTokens } };
+  if (systemInstruction) requestBody.systemInstruction = systemInstruction;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody)
+    }
+  );
+  if (!response.ok) {
+    return { ok: false, error: `gemini_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  const payload = await response.json();
+  const text = payload?.candidates?.[0]?.content?.parts?.map?.((p) => p.text ?? "").join("") ?? "";
+  return { ok: true, text };
+}
+
+// ── Streaming ──────────────────────────────────────────────────────────────
+// UCA-166: SSE streaming for chat. Most providers speak the OpenAI
+// /chat/completions SSE shape (lines `data: {choices:[{delta:{content:
+// "..."}}]}`). Anthropic has its own event names; Gemini has
+// streamGenerateContent. We branch on provider.
+
+async function* parseSseStream(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.search(/\r?\n\r?\n/)) !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + (buffer[boundary] === "\r" ? 4 : 2));
+        const parsed = parseSseFrame(frame);
+        if (parsed) yield parsed;
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* ignore */ }
+  }
+}
+
+function parseSseFrame(raw) {
+  let event = "message";
+  const dataLines = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^\s/, ""));
+  }
+  if (dataLines.length === 0) return null;
+  const dataText = dataLines.join("\n");
+  if (dataText === "[DONE]") return { event: "done" };
+  let data = dataText;
+  if (dataText.startsWith("{") || dataText.startsWith("[")) {
+    try { data = JSON.parse(dataText); } catch { /* keep raw */ }
+  }
+  return { event, data };
+}
+
+async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEffort = "", maxTokens = 1024, onChunk, onReasoningChunk, signal }) {
+  const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
+  if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const body = {
+    model: model || config.defaultModel,
+    messages,
+    max_tokens: maxTokens,
+    stream: true
+  };
+  applyReasoningSelectionToBody(body, { provider: config.id ?? "", model: body.model, reasoningEffort });
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok) {
+    return { ok: false, error: `http_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  // Accumulate `delta.content` (user-visible answer) AND `delta.reasoning_content`
+  // (Qwen3/DeepSeek thinking tokens) separately. Old code only read
+  // `delta.content` through extractOpenAICompatText, which meant that during
+  // Qwen's thinking phase every SSE chunk produced delta="" → no onChunk
+  // fired → full stayed "". Downstream hasMeaningfulText(full)===false then
+  // silently fired a second non-streaming request (see callLLMDirectStream),
+  // making Qwen "sometimes not stream" — the worst of both worlds: double the
+  // tokens billed and no progressive output.
+  let fullContent = "";
+  let fullReasoning = "";
+  for await (const frame of parseSseStream(response)) {
+    if (frame.event === "done") break;
+    const payload = frame.data ?? {};
+    const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
+    const delta = choice?.delta ?? {};
+    // Content delta — stream to the UI.
+    const contentDelta = typeof delta.content === "string" && delta.content
+      ? delta.content
+      : (extractOpenAICompatText(payload) || "");
+    if (contentDelta) {
+      fullContent += contentDelta;
+      onChunk?.(contentDelta, fullContent);
+    }
+    // Reasoning delta — surface via onReasoningChunk so the sidepanel can
+    // render a folded "🧠 思考过程" section in real time. Falling back to
+    // accumulate-only when no callback is provided so older callers don't
+    // break. Either way we keep the running total so the "empty stream"
+    // fallback heuristic at line ~389 sees that the model produced bytes.
+    if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+      fullReasoning += delta.reasoning_content;
+      onReasoningChunk?.(delta.reasoning_content, fullReasoning);
+    }
+  }
+  return {
+    ok: true,
+    text: fullContent,
+    reasoning_content: fullReasoning || null,
+    // Signals to callLLMDirectStream that the SSE stream actually delivered
+    // something — even if fullContent is empty, if reasoning_content is
+    // non-empty we know the model answered, just produced thinking only (or
+    // was cut off mid-thinking). Either way, firing a second non-streaming
+    // request would be wrong: if cut off, a retry should be explicit user
+    // choice, not silent duplication.
+    streamedBytes: fullContent.length + fullReasoning.length
+  };
+}
+
+async function streamAnthropic({ apiKey, model, messages, systemPrompt, maxTokens = 1024, onChunk, signal }) {
+  const effectiveMessages = Array.isArray(messages) && messages.length > 0
+    ? messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content ?? "" }))
+    : [];
+  const effectiveSystem = systemPrompt
+    ?? (Array.isArray(messages) ? messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n") : "");
+  const body = {
+    model: model || "claude-sonnet-4-6",
+    max_tokens: maxTokens,
+    messages: effectiveMessages,
+    stream: true
+  };
+  if (effectiveSystem) body.system = effectiveSystem;
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok) {
+    return { ok: false, error: `anthropic_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  let full = "";
+  for await (const frame of parseSseStream(response)) {
+    if (frame.event === "content_block_delta") {
+      const delta = frame.data?.delta?.text ?? "";
+      if (delta) {
+        full += delta;
+        onChunk?.(delta, full);
+      }
+    } else if (frame.event === "message_stop" || frame.event === "done") {
+      break;
+    }
+  }
+  return { ok: true, text: full };
+}
+
+async function streamGemini({ apiKey, model, messages, systemPrompt, maxTokens = 1024, onChunk, signal }) {
+  const modelName = model || "gemini-1.5-flash";
+  let contents;
+  let systemInstruction = null;
+  if (Array.isArray(messages) && messages.length > 0) {
+    const sys = messages.filter((m) => m.role === "system").map((m) => m.content ?? "").join("\n\n");
+    if (sys) systemInstruction = { parts: [{ text: sys }] };
+    contents = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content ?? "" }] }));
+  } else {
+    if (systemPrompt) systemInstruction = { parts: [{ text: systemPrompt }] };
+    contents = [{ role: "user", parts: [{ text: "" }] }];
+  }
+  const requestBody = { contents, generationConfig: { maxOutputTokens: maxTokens } };
+  if (systemInstruction) requestBody.systemInstruction = systemInstruction;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(requestBody),
+      signal
+    }
+  );
+  if (!response.ok) {
+    return { ok: false, error: `gemini_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  let full = "";
+  for await (const frame of parseSseStream(response)) {
+    const delta = frame.data?.candidates?.[0]?.content?.parts?.map?.((p) => p.text ?? "").join("") ?? "";
+    if (delta) {
+      full += delta;
+      onChunk?.(delta, full);
+    }
+  }
+  return { ok: true, text: full };
+}
+
+export async function callLLMDirectStream({ config, messages, systemPrompt, maxTokens, onChunk, onReasoningChunk, signal }) {
+  const normalizedConfig = normalizeStandaloneConfig(config);
+  const provider = normalizedConfig?.provider;
+  try {
+    let streamed = null;
+    if (provider === "anthropic") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      streamed = await streamAnthropic({
+        apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+        messages, systemPrompt, maxTokens, onChunk, signal
+      });
+    } else if (provider === "gemini") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      streamed = await streamGemini({
+        apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+        messages, systemPrompt, maxTokens, onChunk, signal
+      });
+    } else {
+      const entry = PROVIDER_CONFIGS[provider];
+      if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
+      if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      // Prepend system prompt into messages for OpenAI-compat stream.
+      const effectiveMessages = Array.isArray(messages) && messages.length > 0
+        ? messages
+        : [{ role: "system", content: systemPrompt ?? "" }, { role: "user", content: "" }];
+      streamed = await streamOpenAICompat(
+        { ...entry, id: provider },
+        {
+          apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+          messages: effectiveMessages,
+          reasoningEffort: normalizedConfig.reasoningEffort,
+          maxTokens, onChunk, onReasoningChunk, signal
+        }
+      );
+    }
+    if (!streamed?.ok) return streamed ?? { ok: false, error: "stream_failed" };
+    if (hasMeaningfulText(streamed.text)) return streamed;
+
+    // Stream came back OK but with no visible text. Before we silently fire
+    // a second non-streaming request (which doubles billing and erases the
+    // streaming UX entirely), check if the model actually produced *any*
+    // bytes — reasoning tokens count. If it did, treat this as a real
+    // response and surface the reasoning so the user isn't staring at an
+    // empty bubble. This is the exact failure mode that caused Qwen3
+    // thinking-mode requests to arrive "all at once" after a long silent
+    // wait: the stream was working fine, extractor just dropped every
+    // reasoning chunk.
+    if (streamed.reasoning_content && streamed.streamedBytes > 0) {
+      return {
+        ok: true,
+        text: `【思考】\n${streamed.reasoning_content}`,
+        reasoning_content: streamed.reasoning_content
+      };
+    }
+
+    const fallback = await callLLMDirect({
+      config: normalizedConfig,
+      messages,
+      prompt: Array.isArray(messages) ? "" : (messages?.[messages.length - 1]?.content ?? ""),
+      systemPrompt,
+      maxTokens
+    });
+    if (!fallback.ok) return fallback;
+    if (!hasMeaningfulText(fallback.text)) return { ok: false, error: "empty_response" };
+    return fallback;
+  } catch (error) {
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
+function buildDataUrl(mediaType, base64) {
+  return `data:${mediaType};base64,${base64}`;
+}
+
+async function resolveVisionImageUrl(imageUrl) {
+  if (typeof imageUrl !== "string" || !imageUrl) return imageUrl;
+  if (imageUrl.startsWith("data:")) return imageUrl;
+  try {
+    const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+    return buildDataUrl(mediaType, base64);
+  } catch {
+    return imageUrl;
+  }
+}
+
+// ── Vision: Anthropic / Gemini have custom shapes; a subset of OpenAI-
+// compatible providers (OpenAI, Doubao Ark, GLM, Qwen, OpenRouter, etc.)
+// can read `image_url` content over their chat-completions endpoints.
+
+async function fetchImageAsBase64(imageUrl) {
+  const response = await fetch(imageUrl);
+  if (!response.ok) throw new Error(`image_fetch_${response.status}`);
+  const blob = await response.blob();
+  const mediaType = blob.type || "image/jpeg";
+  const buffer = await blob.arrayBuffer();
+  // base64 via btoa + String.fromCharCode (chunked to avoid stack overflow)
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return { base64: btoa(binary), mediaType };
+}
+
+async function callAnthropicVision({ apiKey, model, prompt, imageUrl }) {
+  const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({
+      model: model || "claude-sonnet-4-6",
+      max_tokens: 1024,
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+          { type: "text", text: prompt }
+        ]
+      }]
+    })
+  });
+  if (!response.ok) return { ok: false, error: `anthropic_vision_${response.status}:${await response.text().catch(() => "")}` };
+  const payload = await response.json();
+  return { ok: true, text: payload?.content?.find?.((b) => b.type === "text")?.text ?? "" };
+}
+
+async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl, reasoningEffort = "" }) {
+  const headers = { "Content-Type": "application/json" };
+  if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const resolvedImageUrl = await resolveVisionImageUrl(imageUrl);
+  const body = {
+    model: model || config.defaultModel,
+    max_tokens: 1024,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: resolvedImageUrl, detail: "high" } },
+        { type: "text", text: prompt }
+      ]
+    }]
+  };
+  applyReasoningSelectionToBody(body, {
+    provider: config.id ?? "",
+    model: body.model,
+    reasoningEffort
+  });
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) return { ok: false, error: `openai_compat_vision_${response.status}:${await response.text().catch(() => "")}` };
+  const payload = await response.json();
+  return { ok: true, text: extractOpenAICompatText(payload) };
+}
+
+function providerSupportsDirectVision(provider = "") {
+  return new Set([
+    "openai",
+    "doubao",
+    "gemini",
+    "qwen",
+    "zhipu",
+    "mistral",
+    "siliconflow",
+    "openrouter",
+    "xai"
+  ]).has(`${provider ?? ""}`.trim());
+}
+
+async function callGeminiVision({ apiKey, model, prompt, imageUrl }) {
+  const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+  const modelName = model || "gemini-1.5-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [
+          { inline_data: { mime_type: mediaType, data: base64 } },
+          { text: prompt }
+        ] }]
+      })
+    }
+  );
+  if (!response.ok) return { ok: false, error: `gemini_vision_${response.status}:${await response.text().catch(() => "")}` };
+  const payload = await response.json();
+  return { ok: true, text: payload?.candidates?.[0]?.content?.parts?.map?.((p) => p.text ?? "").join("") ?? "" };
+}
+
+export async function callLLMDirectVision({ config, prompt, imageUrl }) {
+  const normalizedConfig = normalizeStandaloneConfig(config);
+  if (!imageUrl) return { ok: false, error: "no_image_url" };
+  try {
+    if (normalizedConfig.provider === "anthropic") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callAnthropicVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    }
+    if (normalizedConfig.provider === "gemini") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callGeminiVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    }
+    const entry = PROVIDER_CONFIGS[normalizedConfig.provider];
+    if (entry && providerSupportsDirectVision(normalizedConfig.provider)) {
+      if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callOpenAICompatVision({ ...entry, id: normalizedConfig.provider }, {
+        apiKey: normalizedConfig.apiKey,
+        model: normalizedConfig.model,
+        prompt,
+        imageUrl,
+        reasoningEffort: normalizedConfig.reasoningEffort
+      });
+    }
+    return { ok: false, error: `vision_unsupported_provider:${normalizedConfig.provider}` };
+  } catch (error) {
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
+export async function callLLMDirect({ config, prompt, systemPrompt, messages = null, maxTokens }) {
+  const normalizedConfig = normalizeStandaloneConfig(config);
+  const provider = normalizedConfig?.provider;
+  // Anthropic and Gemini have their own request/response shapes. Everything
+  // else goes through the OpenAI-compatible dispatcher via PROVIDER_CONFIGS.
+  try {
+    if (provider === "anthropic") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callAnthropic({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt, messages, maxTokens });
+    }
+    if (provider === "gemini") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callGemini({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt, messages, maxTokens });
+    }
+    const entry = PROVIDER_CONFIGS[provider];
+    if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
+    if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+    return await callOpenAICompat({ ...entry, id: provider }, {
+      apiKey: normalizedConfig.apiKey,
+      model: normalizedConfig.model,
+      prompt,
+      systemPrompt,
+      messages,
+      reasoningEffort: normalizedConfig.reasoningEffort,
+      maxTokens
+    });
+  } catch (error) {
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
+// ── Prompt builders for each quick-action kind ─────────────────────────────
+
+export function buildPromptFor(action, selectionState = {}, enrichmentMarkdown = "") {
+  const text = (selectionState.text ?? selectionState.selectionText ?? "").trim();
+  const url = selectionState.url ?? "";
+  const title = selectionState.pageTitle ?? "";
+  const contextLine = [title, url].filter(Boolean).join(" · ");
+  const body = text || title || url || "";
+  const enrichmentBlock = enrichmentMarkdown ? `\n\n---\n${enrichmentMarkdown}\n---\n` : "";
+  switch (action) {
+    case "uca.translate-selection":
+    case "translate":
+      return { prompt: `请把下面这段文字翻译成中文（若本身是中文，则译为英文），只输出翻译结果：\n\n${body}`, systemPrompt: "You are a precise translator." };
+    case "uca.fetch-link":
+      return {
+        prompt: `请总结以下链接内容，结合抓取到的正文得出结论。若无法判断请说明。\n\n标题/URL：${contextLine}\n锚文本：${body}${enrichmentBlock}`,
+        systemPrompt: "You are a concise summarizer. Ground every claim on the provided page / link excerpts; never invent facts."
+      };
+    case "uca.inspect-image":
+      return { prompt: `请分析这张图片，并直接回答图里有什么、关键文字是什么、是否需要进一步注意细节。图片 URL：${selectionState.imageUrl ?? ""}`, systemPrompt: "You describe images concisely." };
+    case "uca.explain-page":
+    case "explain":
+      return {
+        prompt: `请解释下面的网页内容，说明它的要点、背景和为什么值得关注。请结合完整页面概况与选区中的链接正文，输出结构化 Markdown（先总述 → 关键要点 → 具体证据 → 结论）。\n\n标题/URL：${contextLine}\n\n用户高亮的片段：${body}${enrichmentBlock}`,
+        systemPrompt: "You explain webpages to a curious reader. Combine the highlighted snippet with the full-page outline and any fetched link excerpts; cite which source each claim comes from."
+      };
+    case "uca.summarize-selection":
+    case "summarize":
+    default:
+      return {
+        prompt: `请基于以下内容产出 Markdown 总结：先一段整体概述 → 再用编号列表列出 3-7 条关键要点 → 最后一条简短的"值得注意的延伸"。结合整页概况与选区链接正文，但不要脱离高亮片段的核心议题。\n\n标题/URL：${contextLine}\n\n用户高亮的片段：${body}${enrichmentBlock}`,
+        systemPrompt: "You write clear bullet-point summaries. Ground every bullet on the provided page / link material; if enrichment contradicts the selection, flag it explicitly."
+      };
+  }
+}

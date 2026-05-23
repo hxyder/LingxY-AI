@@ -1,0 +1,55 @@
+name: Feature request
+description: Suggest a product or workflow improvement.
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please describe the user scenario first. Implementation ideas are welcome, but the problem and workflow matter most.
+  - type: textarea
+    id: scenario
+    attributes:
+      label: User scenario
+      description: What are you trying to do, and why does it matter?
+      placeholder: "I want to ... because ..."
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current workaround or pain
+      description: What do you do today, and what feels slow, confusing, or unreliable?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the outcome in product terms. Avoid assuming a specific implementation unless it matters.
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Product area
+      options:
+        - Chat / conversations
+        - Projects / files / RAG
+        - Documents / artifacts
+        - Scheduler / reminders
+        - Connectors / MCP / skills
+        - Browser / Office integration
+        - Desktop UI / overlay
+        - Packaging / install / release
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks or constraints
+      description: Mention privacy, permissions, external services, compatibility, or cost concerns if relevant.
+    validations:
+      required: false

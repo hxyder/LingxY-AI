@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "id": "data.briefing.report",
+  "name": "数据汇报",
+  "description": "从表格或 Office 选区生成汇报稿。",
+  "version": "1.0.0",
+  "input": {
+    "source_types": ["office_selection", "file", "file_group"]
+  },
+  "steps": [
+    {
+      "id": "analyze",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "总结数据趋势和异常点。"
+      }
+    },
+    {
+      "id": "report",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "生成面向管理层的简报。"
+      }
+    }
+  ],
+  "output": {
+    "primary": "${steps.report.result}"
+  },
+  "cost_estimate": {
+    "tokens_in": 6000,
+    "tokens_out": 1800
+  }
+}
