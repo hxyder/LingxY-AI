@@ -40,6 +40,15 @@ assert.match(i18nDom, /data-i18n-en/, "explicit bilingual element support missin
 assert.match(i18nDom, /TEXT_SKIP_SELECTOR/, "user-content skip guard missing");
 assert.match(i18nDom, /"en-US"/, "English locale missing");
 assert.match(i18nDom, /"zh-CN"/, "Chinese locale missing");
+assert.match(i18nDom, /applyScheduled/, "locale observer should coalesce mutation-triggered applies");
+assert.match(i18nDom, /applyTimer/, "locale observer should debounce mutation-triggered applies");
+assert.match(i18nDom, /scheduleLingxyLocaleApply/, "locale observer should use a shared scheduler");
+assert.match(i18nDom, /observer\.disconnect\(\)/, "locale apply should pause the observer while it rewrites DOM");
+assert.match(i18nDom, /setTextNodeIfChanged/, "locale text pass should avoid rewriting unchanged text nodes");
+assert.match(i18nDom, /setTextContentIfChanged/, "locale element pass should avoid rewriting unchanged text content");
+assert.match(i18nDom, /setAttributeIfChanged/, "locale attribute pass should avoid rewriting unchanged attributes");
+assert.doesNotMatch(i18nDom, /node\.nodeValue\s*=\s*translate/, "locale text pass must be idempotent");
+assert.doesNotMatch(i18nDom, /element\.setAttribute\(attr,\s*translate/, "locale attribute pass must be idempotent");
 
 const toolDisplay = read("src/desktop/renderer/tool-display.mjs");
 assert.match(toolDisplay, /TOOL_DISPLAY_LABELS_EN/, "tool display labels need an English locale");

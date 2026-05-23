@@ -6,6 +6,8 @@ const managedTextNodes = new WeakSet();
 const localeSelects = new Set();
 let activeLocale = normalizeLocale(readStoredLocale());
 let applying = false;
+let applyScheduled = false;
+let applyTimer = null;
 let observer = null;
 let storageListenerInstalled = false;
 
@@ -225,10 +227,7 @@ export function installLingxyI18nControls({ select = null } = {}) {
   }
   applyLingxyLocale(activeLocale);
   if (!observer && document.body) {
-    observer = new MutationObserver(() => {
-      if (applying) return;
-      queueMicrotask(() => applyLingxyLocale(activeLocale));
-    });
+    observer = new MutationObserver(scheduleLingxyLocaleApply);
     observer.observe(document.body, { childList: true, subtree: true });
   }
   if (!storageListenerInstalled) {
@@ -245,17 +244,43 @@ export function installLingxyI18nControls({ select = null } = {}) {
 
 export function applyLingxyLocale(locale = activeLocale) {
   activeLocale = normalizeLocale(locale);
+  applyScheduled = false;
+  if (applyTimer) {
+    clearTimeout(applyTimer);
+    applyTimer = null;
+  }
+  const shouldResumeObserver = Boolean(observer && document.body);
+  if (shouldResumeObserver) observer.disconnect();
   applying = true;
   try {
-    document.documentElement.lang = activeLocale;
-    document.documentElement.dataset.locale = activeLocale;
-    document.body?.setAttribute("data-locale", activeLocale);
+    setAttributeIfChanged(document.documentElement, "lang", activeLocale);
+    if (document.documentElement.dataset.locale !== activeLocale) {
+      document.documentElement.dataset.locale = activeLocale;
+    }
+    setAttributeIfChanged(document.body, "data-locale", activeLocale);
     applyBilingualContainers(document.body);
     applyTextNodes(document.body);
     applyAttributes(document.body);
   } finally {
     applying = false;
+    if (shouldResumeObserver) {
+      setTimeout(() => {
+        if (!applying && observer && document.body) {
+          observer.observe(document.body, { childList: true, subtree: true });
+        }
+      }, 0);
+    }
   }
+}
+
+function scheduleLingxyLocaleApply() {
+  if (applying || applyScheduled) return;
+  applyScheduled = true;
+  applyTimer = setTimeout(() => {
+    applyTimer = null;
+    if (applying) return;
+    applyLingxyLocale(activeLocale);
+  }, 50);
 }
 
 function readStoredLocale() {
@@ -329,8 +354,8 @@ function applyBilingualContainers(root) {
     parent.dataset.i18nComplexBilingual = "done";
     for (const node of directTextNodes) managedTextNodes.add(node);
     directZh.forEach((node) => {
-      node.hidden = true;
-      node.setAttribute("aria-hidden", "true");
+      if (!node.hidden) node.hidden = true;
+      setAttributeIfChanged(node, "aria-hidden", "true");
     });
   });
   root.querySelectorAll("[data-i18n-en][data-i18n-zh]").forEach((element) => {
@@ -338,11 +363,14 @@ function applyBilingualContainers(root) {
       const directTextNodes = Array.from(element.childNodes)
         .filter((node) => node.nodeType === Node.TEXT_NODE && managedTextNodes.has(node));
       if (directTextNodes[0]) {
-        directTextNodes[0].nodeValue = activeLocale === "zh-CN" ? element.dataset.i18nZh : element.dataset.i18nEn;
+        setTextNodeIfChanged(
+          directTextNodes[0],
+          activeLocale === "zh-CN" ? element.dataset.i18nZh : element.dataset.i18nEn
+        );
       }
       return;
     }
-    element.textContent = activeLocale === "zh-CN" ? element.dataset.i18nZh : element.dataset.i18nEn;
+    setTextContentIfChanged(element, activeLocale === "zh-CN" ? element.dataset.i18nZh : element.dataset.i18nEn);
   });
 }
 
@@ -362,7 +390,7 @@ function applyTextNodes(root) {
   while (walker.nextNode()) nodes.push(walker.currentNode);
   for (const node of nodes) {
     if (!textOriginals.has(node)) textOriginals.set(node, node.nodeValue);
-    node.nodeValue = translate(textOriginals.get(node), activeLocale);
+    setTextNodeIfChanged(node, translate(textOriginals.get(node), activeLocale));
   }
 }
 
@@ -377,7 +405,7 @@ function applyAttributes(root) {
     for (const attr of ATTRS) {
       if (!element.hasAttribute(attr)) continue;
       if (!originals.has(attr)) originals.set(attr, element.getAttribute(attr));
-      element.setAttribute(attr, translate(originals.get(attr), activeLocale));
+      setAttributeIfChanged(element, attr, translate(originals.get(attr), activeLocale));
     }
   });
 }
@@ -397,6 +425,24 @@ function normalizeBilingualPair(left, right) {
 
 function syncLocaleSelects() {
   for (const select of localeSelects) {
-    if (select?.isConnected) select.value = activeLocale;
+    if (select?.isConnected && select.value !== activeLocale) select.value = activeLocale;
   }
+}
+
+function setTextNodeIfChanged(node, value) {
+  if (!node) return;
+  const next = String(value ?? "");
+  if (node.nodeValue !== next) node.nodeValue = next;
+}
+
+function setTextContentIfChanged(element, value) {
+  if (!element) return;
+  const next = String(value ?? "");
+  if (element.textContent !== next) element.textContent = next;
+}
+
+function setAttributeIfChanged(element, attr, value) {
+  if (!element) return;
+  const next = String(value ?? "");
+  if (element.getAttribute(attr) !== next) element.setAttribute(attr, next);
 }
