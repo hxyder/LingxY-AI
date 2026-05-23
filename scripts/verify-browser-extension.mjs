@@ -570,6 +570,12 @@ assert.equal(sidepanelJs.includes("window.__ucaSelectionState"), true);
 assert.equal(sidepanelJs.includes("sourceType: isSelectedLink ? \"link\" : \"text_selection\""), true);
 assert.equal(serviceWorkerJs.includes("resolveQuickActionRouteContext"), true);
 assert.equal(serviceWorkerJs.includes("resolvePageExplainRouteContext"), true);
+assert.equal(serviceWorkerJs.includes("resolveDesktopRuntimeAvailability"), true,
+  "extension should centralize desktop runtime probing so configured URL failures can fall back to the default runtime");
+assert.equal(serviceWorkerJs.includes("DEFAULT_RUNTIME_URL"), true,
+  "extension desktop runtime probing should keep the built-in 127.0.0.1:4310 fallback");
+assert.equal(serviceWorkerJs.includes("defaultDesktopUp"), true,
+  "extension should retry the default desktop runtime URL when the configured runtime URL is stale");
 assert.equal(serviceWorkerJs.includes("function isValidRoutePlan("), false,
   "service worker must use the shared run-mode routePlan validator");
 assert.equal(serviceWorkerJs.includes("isValidRoutePlan"), true);
@@ -587,11 +593,15 @@ assert.equal(
   "context-menu link/image actions must not bypass the shared quick-action route plan"
 );
 assert.equal(manifest.commands["explain-page"].suggested_key.default, "Ctrl+Shift+E");
+assert.ok(/command !== "explain-page"[\s\S]{0,520}origin:\s*"keyboard_shortcut"[\s\S]{0,520}queueSidePanelAnalysis/.test(serviceWorkerJs),
+  "Ctrl+Shift+E page/video explain must use the sidepanel queue instead of silent desktop-only handoff");
 const popupHtml = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.html"), "utf8");
 assert.equal(popupHtml.includes("快捷键 Ctrl+Shift+E"), true);
 const popupJs = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.js"), "utf8");
 const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared", "run-mode-view.js"), "utf8");
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
+assert.equal(popupJs.includes("!response?.ok && !response?.queued"), true,
+  "popup page-explain button must open the sidepanel when the request was queued with a recoverable runtime warning");
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("../shared/location.js"), true);
 assert.equal(sidepanelJs.includes("await import(\"../shared/location.js\")"), false,

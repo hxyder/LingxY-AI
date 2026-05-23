@@ -401,7 +401,7 @@ async function bootPopup(doc = document, chromeApi = chrome) {
         const response = await new Promise((resolve) => {
           chromeApi.runtime.sendMessage({ type: "uca.page.explain", openPanel: false }, resolve);
         });
-        if (!response?.ok) {
+        if (!response?.ok && !response?.queued) {
           throw new Error(response?.error ?? response?.reason ?? "unknown");
         }
         if (explainStatus) explainStatus.textContent = "正在打开侧边栏…";
