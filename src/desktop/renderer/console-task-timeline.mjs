@@ -8,6 +8,7 @@ import {
 import {
   formatToolArgsPreview
 } from "./tool-display.mjs";
+import { currentLingxyLocale } from "./i18n-dom.mjs";
 import {
   buildCapabilityToolView,
   renderCapabilityToolViewHtml
@@ -67,6 +68,10 @@ export function renderDowngradedWarning(downgraded) {
   `;
 }
 
+function localeText(en, zh) {
+  return currentLingxyLocale() === "zh-CN" ? zh : en;
+}
+
 // Events carrying extra payload detail use a <details> element so the
 // user can expand only what they want to see. Failures and pending steps
 // default to open; routine success steps stay collapsed.
@@ -104,8 +109,8 @@ export function renderTimelineEntry(event, context = {}) {
   const detailLines = [];
   if (hasToolArgs) {
     const toolId = payload.tool_id ?? payload.tool ?? "";
-    const preview = formatToolArgsPreview(toolId, payload.args) || "参数已折叠";
-    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">参数摘要</div><div class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(preview)}</div>`);
+    const preview = formatToolArgsPreview(toolId, payload.args) || localeText("Args collapsed", "参数已折叠");
+    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">${localeText("Args summary", "参数摘要")}</div><div class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(preview)}</div>`);
   }
   if (hasObservation) {
     const raw = typeof payload.observation === "string" ? payload.observation
