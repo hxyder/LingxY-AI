@@ -49,6 +49,7 @@ const electronMainSource = readFileSync(path.join(repoRoot, "src", "desktop", "t
 const shellLocalIpcSource = readFileSync(path.join(repoRoot, "src", "desktop", "main", "ipc", "register-shell-local-ipc.mjs"), "utf8");
 const shortcutRouterSource = readFileSync(path.join(repoRoot, "src", "desktop", "shell", "desktop-shortcut-router.mjs"), "utf8");
 const captureContextPs1Source = readFileSync(path.join(repoRoot, "scripts", "capture-context.ps1"), "utf8");
+const activeWindowProbeSource = readFileSync(path.join(repoRoot, "scripts", "active-window-probe.ps1"), "utf8");
 const mainWithIpcSource = `${electronMainSource}\n${shellLocalIpcSource}`;
 const mainWithShortcutRouterSource = `${electronMainSource}\n${shortcutRouterSource}`;
 
@@ -111,8 +112,8 @@ function createMockRunner(scenario, options = {}) {
       return {
         stdout: JSON.stringify({
           title: "Mocked window",
-          process: scenario === "browser-edge-url" ? "msedge" : "",
-          files: [],
+          process: options.captureProcess ?? (scenario === "browser-edge-url" ? "msedge" : ""),
+          files: options.captureFiles ?? [],
           text: options.captureText ?? "",
           folder: ""
         }) + "\n",
@@ -181,6 +182,28 @@ async function runScenario(scenario, options = {}) {
 }
 
 {
+  const ctx = await runScenario("browser-address-unreadable", {
+    captureProcess: "chrome",
+    captureFiles: ["C:\\Users\\der\\Desktop\\test.docx"],
+    allowClipboardFallback: false
+  });
+  assert.deepEqual(ctx.filePaths, [],
+    "stale clipboard file lists from non-Explorer apps must not become current selected files");
+  assert.equal(ctx.activeWindow.process, "chrome");
+  assert.equal(ctx.activeWindow.detectedKind, "window_title");
+}
+
+{
+  const ctx = await runScenario("unknown-process", {
+    captureProcess: "explorer",
+    captureFiles: ["C:\\Users\\der\\Desktop\\test.docx"],
+    allowClipboardFallback: false
+  });
+  assert.deepEqual(ctx.filePaths, ["C:\\Users\\der\\Desktop\\test.docx"],
+    "Explorer foreground file selections should still be accepted");
+}
+
+{
   const ctx = await runScenario("browser-address-unreadable");
   assert.equal(ctx.activeWindow.detectedKind, "window_title");
   assert.equal(ctx.activeWindow.url, undefined);
@@ -198,6 +221,17 @@ async function runScenario(scenario, options = {}) {
   const fallbackActiveEnabled = block.indexOf("activeWindowEnabled: true", fallbackSelectionDisabled);
   assert.ok(firstActiveDisabled >= 0 && fallbackSelectionDisabled > firstActiveDisabled && fallbackActiveEnabled > fallbackSelectionDisabled,
     "capture-and-ask must first capture selected files/text without active-window preview, then fall back to active-window only when there is no selection");
+  const activeCaptureIndex = block.indexOf("const activeWindowCapture = withTimeout(");
+  const showOverlayIndex = block.indexOf('showWindow("overlay", { focus: false, moveTop: true, forceForeground: true })');
+  assert.ok(activeCaptureIndex >= 0 && showOverlayIndex > activeCaptureIndex,
+    "capture-and-ask must start active-window capture before showing Overlay so it does not capture the LingxY window");
+  assert.match(block, /const activeWindowCapture = withTimeout\([\s\S]{0,420}preferLastExternal:\s*false/,
+    "capture-and-ask active-window capture must not reuse stale external context");
+}
+{
+  const timeoutMatch = shortcutRouterSource.match(/const CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS = (\d+);/);
+  assert.ok(timeoutMatch && Number(timeoutMatch[1]) >= 2400,
+    "capture-and-ask active-window fallback must allow cold PowerShell/UIAutomation browser URL probes");
 }
 assert.match(captureContextPs1Source, /\[int\]\$PreCopyDelayMs\s*=\s*80/,
   "capture-context.ps1 must wait briefly before copying so the hotkey modifier can be released");
@@ -209,6 +243,12 @@ assert.match(captureContextPs1Source, /Start-Sleep -Milliseconds \$PreCopyDelayM
   "capture-context.ps1 must apply the pre-copy delay immediately before simulated copy");
 assert.match(captureContextPs1Source, /Get-ClipboardSnapshot[\s\S]{0,1200}while \(\[DateTime\]::UtcNow -lt \$deadline\)/,
   "capture-context.ps1 must use a bounded post-copy clipboard poll instead of a fixed sleep");
+assert.ok(/function Test-LooksLikeBrowserUrl/.test(activeWindowProbeSource)
+    && /function Get-BrowserUrlFromHandle/.test(activeWindowProbeSource)
+    && /Get-Process -Id \$ProcessId[\s\S]{0,260}\$proc\.MainWindowHandle[\s\S]{0,180}Get-BrowserUrlFromHandle -WindowHandle \$proc\.MainWindowHandle/.test(activeWindowProbeSource),
+  "active-window probe must retry browser URL reads from the top-level browser window when the foreground handle is a child surface");
+assert.ok(/Test-LooksLikeBrowserUrl -Value \$candidate/.test(activeWindowProbeSource),
+  "active-window probe must accept URL-looking omnibox values even when the localized address bar label changes");
 {
   const captureBlockStart = mainWithShortcutRouterSource.indexOf('shortcut.id === "capture-and-ask"');
   const guardIndexRaw = mainWithShortcutRouterSource.indexOf("setCaptureInFlight(true)", captureBlockStart);
@@ -380,4 +420,4 @@ assert.ok(/async function captureActiveWindowContext\s*\(\{[\s\S]{0,180}activeWi
   assert.equal(payload.capture, undefined);
 }
 
-console.log("Active window probe verification passed (parser / 8 mocked scenarios / payload merge).");
+console.log("Active window probe verification passed (parser / mocked scenarios / payload merge).");

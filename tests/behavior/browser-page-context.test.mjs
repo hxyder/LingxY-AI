@@ -11,6 +11,7 @@ import {
 import { createEventBusScaffold } from "../../src/service/core/events/event-bus.mjs";
 import { createTaskQueueScaffold } from "../../src/service/core/queue/task-queue.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
+import { formatUntrustedSourceMaterial } from "../../src/service/executors/shared/resource-context.mjs";
 import { createArtifactStore } from "../../src/service/store/artifact-store.mjs";
 
 function createFetchResponse(body, contentType = "text/html; charset=utf-8") {
@@ -103,6 +104,57 @@ test("explicit current-page browser capture fetches page text before execution",
       event.event_type === "step_finished"
       && event.payload?.step === "browser_page_context_prefetch"
     ));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("current-page fetch extracts article text deeply enough for later facts without truncation refusal", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-browser-page-"));
+  const lateFact = "Flight altitude: 100 km. Engine performance: nominal. Recovery: successful catch.";
+  const filler = Array.from({ length: 700 }, (_, index) => `Background paragraph ${index}.`).join(" ");
+  const seen = {};
+  const runtime = {
+    store: createInMemoryStoreScaffold(),
+    queue: createTaskQueueScaffold(),
+    eventBus: createEventBusScaffold(),
+    artifactStore: createArtifactStore({ baseDir: tempDir }),
+    executors: [{
+      id: "fast",
+      async *execute(task) {
+        seen.text = task.context_packet?.text ?? "";
+        seen.sourcePrompt = formatUntrustedSourceMaterial(task);
+        yield { event_type: "inline_result", payload: { text: "ok" } };
+        yield { event_type: "success", payload: { text: "ok" } };
+      }
+    }],
+    async fetchImpl(url) {
+      assert.equal(url, "https://example.com/long-flight-test");
+      return createFetchResponse(`<html><head><title>Flight Test</title></head><body><article><h1>Flight Test</h1><p>${filler}</p><p>${lateFact}</p></article></body></html>`);
+    }
+  };
+
+  try {
+    const { task } = await submitBrowserTask({
+      runtime,
+      userCommand: "分析当前页面，提取飞行高度、测试里程碑、发动机表现、回收情况",
+      executionMode: "interactive",
+      capture: {
+        sourceType: "webpage",
+        browser: "chrome.exe",
+        url: "https://example.com/long-flight-test",
+        pageTitle: "Flight Test",
+        text: "URL：https://example.com/long-flight-test",
+        metadata: { hasPageContent: false }
+      }
+    });
+
+    assert.equal(task.status, "success");
+    assert.match(seen.text, /Flight altitude: 100 km/);
+    assert.match(seen.text, /Engine performance: nominal/);
+    assert.match(seen.sourcePrompt, /Recovery: successful catch/);
+    assert.doesNotMatch(seen.sourcePrompt, /\[truncated/);
+    assert.equal(task.context_packet.selection_metadata.browser_page_prefetch, "success");
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

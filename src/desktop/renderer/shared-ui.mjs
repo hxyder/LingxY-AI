@@ -145,15 +145,22 @@ export function artifactStatusInfo(status = "") {
   };
 }
 
-export function formatRelativeTime(value) {
+export function formatRelativeTime(value, { locale = "zh-CN" } = {}) {
   if (!value) return "";
   const ts = typeof value === "number" ? value : new Date(value).getTime();
   if (Number.isNaN(ts)) return "";
   const ms = Date.now() - ts;
-  if (ms < 0) return "刚刚";
-  if (ms < 60_000) return "刚刚";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} 分钟前`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} 小时前`;
+  const english = /^en/i.test(String(locale ?? ""));
+  if (ms < 0) return english ? "just now" : "刚刚";
+  if (ms < 60_000) return english ? "just now" : "刚刚";
+  if (ms < 3_600_000) {
+    const minutes = Math.floor(ms / 60_000);
+    return english ? `${minutes} min ago` : `${minutes} 分钟前`;
+  }
+  if (ms < 86_400_000) {
+    const hours = Math.floor(ms / 3_600_000);
+    return english ? `${hours} hr ago` : `${hours} 小时前`;
+  }
   const d = new Date(ts);
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");

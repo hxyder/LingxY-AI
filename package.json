@@ -129,6 +129,7 @@
     "verify:chat-blocks": "node scripts/verify-chat-blocks.mjs",
     "verify:external-surfaces": "node scripts/verify-external-surfaces.mjs",
     "verify:ui-extras": "node scripts/verify-ui-extras.mjs",
+    "verify:ui-i18n": "node scripts/verify-ui-i18n.mjs",
     "verify:popup-card-fit": "node scripts/verify-popup-card-fit.mjs",
     "verify:timeline-card": "node scripts/verify-timeline-card.mjs",
     "verify:notes-feature": "node scripts/verify-notes-feature.mjs",

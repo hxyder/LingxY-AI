@@ -198,6 +198,7 @@ export function formatResourceContext(task) {
 }
 
 const UNTRUSTED_SOURCE_MAX_CHARS = 8000;
+const BROWSER_PAGE_SOURCE_MAX_CHARS = 24000;
 
 /**
  * Render captured user/page content (selection text, web-page extract,
@@ -220,9 +221,13 @@ export function formatUntrustedSourceMaterial(task) {
 
   if (!url && !text) return null;
 
-  const truncated = text.length > UNTRUSTED_SOURCE_MAX_CHARS;
+  const sourceType = `${ctx.source_type ?? ctx.sourceType ?? ""}`;
+  const maxSourceChars = ["webpage", "page_explanation"].includes(sourceType)
+    ? BROWSER_PAGE_SOURCE_MAX_CHARS
+    : UNTRUSTED_SOURCE_MAX_CHARS;
+  const truncated = text.length > maxSourceChars;
   const body = truncated
-    ? `${text.slice(0, UNTRUSTED_SOURCE_MAX_CHARS)}…[truncated, ${text.length} chars total]`
+    ? `${text.slice(0, maxSourceChars)}…[truncated, ${text.length} chars total; answer from the available captured evidence instead of refusing solely because the capture is truncated]`
     : text;
 
   // Tag carries `kind` so a future composer can distinguish web pages from

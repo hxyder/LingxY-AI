@@ -182,8 +182,11 @@ export function buildAgenticSystemPrompt({
         ? `The user asked for a ${requestedFormat.id} artifact. Use generate_document (kind=${requestedFormat.id}) to create a new file, or edit_file to update an existing artifact in place. Pass outline as a native JSON object, not a stringified JSON blob. Do not refuse by claiming you cannot save files — you can.`
         : "If the user does not explicitly ask for a file, reply conversationally.";
 
-  const languageLine = language && language !== "auto"
-    ? `Reply to the user in ${language}.`
+  const effectiveLanguage = language && language !== "auto"
+    ? language
+    : (task?.task_spec?.constraints?.language ?? "auto");
+  const languageLine = effectiveLanguage && effectiveLanguage !== "auto"
+    ? `Reply to the user in ${effectiveLanguage}.`
     : "Reply to the user in the same language they used.";
 
   // UCA-098: When the task is the firing of an already-scheduled run, the

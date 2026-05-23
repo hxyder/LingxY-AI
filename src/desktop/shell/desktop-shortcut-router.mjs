@@ -1,5 +1,5 @@
 const CAPTURE_AND_ASK_SELECTION_TIMEOUT_MS = 2400;
-const CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS = 850;
+const CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS = 2400;
 const CAPTURE_AND_ASK_CLIPBOARD_POLL_MS = 1400;
 const CAPTURE_AND_ASK_ACTIVE_PREVIEW_DELAY_MS = 360;
 
@@ -31,6 +31,11 @@ function hasSelectedCaptureContext(ctx) {
 
 function hasActiveWindowContext(ctx) {
   return Boolean(ctx?.activeWindow && !ctx.activeWindow.blocked);
+}
+
+function isSelectionFirstWindowContext(ctx) {
+  const process = `${ctx?.activeWindow?.process ?? ctx?.processName ?? ""}`.trim().toLowerCase().replace(/\.exe$/u, "");
+  return process === "explorer";
 }
 
 function buildCaptureStatusPayload(status, message, detail = {}) {
@@ -244,6 +249,25 @@ export function createShortcutRouter({
           ? normalizeCaptureContext({ selectedText })
           : null);
 
+        const activeWindowCapture = withTimeout(
+          captureActiveWindowContext({
+            includeSelection: false,
+            activeWindowEnabled: true,
+            allowClipboardFallback: false,
+            preferLastExternal: false,
+            timeoutMs: captureAndAskWindowTimeoutMs
+          }),
+          captureAndAskWindowTimeoutMs,
+          "active-window fallback"
+        ).then((ctx) => normalizeCaptureContext(ctx)).catch((err) => {
+          safeError?.("[LingxY] capture-and-ask active-window fallback failed", err?.message ?? err);
+          void appendDesktopDiagnosticError?.("capture_and_ask_active_window_fallback_failed", err, {
+            timedOut: err?.code === "SHORTCUT_CAPTURE_TIMEOUT",
+            shortcutId: shortcut.id
+          });
+          return null;
+        });
+
         showWindow("overlay", { focus: false, moveTop: true, forceForeground: true });
         for (const bw of windows.values()) {
           bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
@@ -268,30 +292,15 @@ export function createShortcutRouter({
           const activePreview = (async () => {
             await wait(captureAndAskActivePreviewDelayMs);
             if (selectedDelivered) return null;
-            try {
-              const windowCtx = normalizeCaptureContext(await withTimeout(
-                captureActiveWindowContext({
-                  includeSelection: false,
-                  activeWindowEnabled: true,
-                  allowClipboardFallback: false,
-                  preferLastExternal: true,
-                  timeoutMs: captureAndAskWindowTimeoutMs
-                }),
-                captureAndAskWindowTimeoutMs,
-                "active-window fallback"
-              ));
-              if (hasActiveWindowContext(windowCtx)) {
-                if (selectedDelivered) return null;
-                activePreviewContext = windowCtx;
-                activePreviewDelivered = true;
-                sendContext(windowCtx);
+            const windowCtx = await activeWindowCapture;
+            if (hasActiveWindowContext(windowCtx)) {
+              if (selectedDelivered) return null;
+              activePreviewContext = windowCtx;
+              if (isSelectionFirstWindowContext(windowCtx)) {
+                return activePreviewContext;
               }
-            } catch (err) {
-              safeError?.("[LingxY] capture-and-ask active-window fallback failed", err?.message ?? err);
-              void appendDesktopDiagnosticError?.("capture_and_ask_active_window_fallback_failed", err, {
-                timedOut: err?.code === "SHORTCUT_CAPTURE_TIMEOUT",
-                shortcutId: shortcut.id
-              });
+              activePreviewDelivered = true;
+              sendContext(windowCtx);
             }
             return activePreviewContext;
           })();
@@ -309,6 +318,10 @@ export function createShortcutRouter({
 
           await activePreview;
           if (activePreviewDelivered || hasActiveWindowContext(activePreviewContext)) {
+            if (!activePreviewDelivered && hasActiveWindowContext(activePreviewContext)) {
+              activePreviewDelivered = true;
+              sendContext(activePreviewContext);
+            }
             showWindow("overlay", { forceForeground: true });
             return;
           }

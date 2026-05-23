@@ -289,6 +289,42 @@ test("file count submissions use deterministic inventory without content extract
   }
 });
 
+test("file count submissions honor requested file extension filters", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-file-count-extension-"));
+  try {
+    const folder1 = path.join(dir, "folder1");
+    const folder2 = path.join(dir, "folder2");
+    await mkdir(folder1, { recursive: true });
+    await mkdir(folder2, { recursive: true });
+    await writeFile(path.join(folder1, "report.docx"), "not a real docx", "utf8");
+    await writeFile(path.join(folder1, "notes.txt"), "notes", "utf8");
+    await writeFile(path.join(folder2, "brief.docx"), "not a real docx", "utf8");
+    const runtime = createRuntime();
+
+    const result = await submitFileTask({
+      runtime,
+      filePaths: [folder1, folder2],
+      userCommand: "how many docx files does these 2 folder have",
+      executionMode: "interactive",
+      selectionMetadata: {
+        ui_locale: "en-US",
+        preferred_locale: "en-US",
+        response_locale: "en-US"
+      }
+    });
+
+    const inventory = result.task.context_packet.selection_metadata.file_inventory;
+    assert.equal(result.task.status, "success");
+    assert.match(result.task.result_summary, /File count complete: 2 \.docx files\./);
+    assert.deepEqual(inventory.file_extension_filter, [".docx"]);
+    assert.equal(inventory.total_file_count, 2);
+    assert.equal(inventory.items[0].file_count, 1);
+    assert.equal(inventory.items[1].file_count, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("file inventory detector excludes content-count requests", () => {
   assert.equal(shouldUseFileInventoryContext({
     userCommand: "一共有多少个文件",

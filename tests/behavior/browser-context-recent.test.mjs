@@ -44,3 +44,28 @@ test("recent browser context can require exact URL match", () => {
   assert.equal(exact.length, 1);
   assert.equal(exact[0].text, "current message");
 });
+
+test("recent browser context can recover the current page by title when browser URL is unreadable", () => {
+  const contexts = [
+    {
+      url: "https://example.com/old",
+      pageTitle: "Previous Article",
+      text: "old page body",
+      receivedAt: new Date().toISOString()
+    },
+    {
+      url: "https://example.com/current",
+      pageTitle: "LingxY Active Window Probe Test",
+      text: "current visible page body",
+      receivedAt: new Date().toISOString()
+    }
+  ];
+
+  const titleOnly = listRecentBrowserContexts(contexts, {
+    title: "LingxY Active Window Probe Test - Google Chrome",
+    limit: 1
+  });
+
+  assert.equal(titleOnly.length, 1);
+  assert.equal(titleOnly[0].text, "current visible page body");
+});

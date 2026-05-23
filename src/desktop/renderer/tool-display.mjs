@@ -1,3 +1,5 @@
+import { currentLingxyLocale } from "./i18n-dom.mjs";
+
 export const TOOL_DISPLAY_LABELS = Object.freeze({
   web_search: "打开网页搜索",
   web_search_fetch: "搜索网页",
@@ -49,6 +51,69 @@ export const TOOL_DISPLAY_LABELS = Object.freeze({
   save_capability_draft: "保存能力草稿"
 });
 
+export const TOOL_DISPLAY_LABELS_EN = Object.freeze({
+  web_search: "Open web search",
+  web_search_fetch: "Search web",
+  fetch_url_content: "Read web page",
+  search_file_content: "Search file index",
+  read_file_text: "Read file text",
+  read_folder_text: "Read folder text",
+  index_file_content: "Index file content",
+  list_files: "List files",
+  glob_files: "Match files",
+  find_recent_files: "Find recent files",
+  stat_file: "Read file info",
+  verify_file_exists: "Verify file exists",
+  file_op: "File operation",
+  generate_document: "Generate document",
+  write_file: "Write file",
+  edit_file: "Edit file",
+  render_diagram: "Render diagram",
+  render_svg: "Render SVG",
+  vision_analyze: "Analyze image",
+  launch_app: "Launch app",
+  open_url: "Open URL",
+  notify: "Send notification",
+  create_scheduled_task: "Create scheduled task",
+  "Create Scheduled Task": "Create scheduled task",
+  list_scheduled_tasks: "List scheduled tasks",
+  "List Scheduled Tasks": "List scheduled tasks",
+  update_scheduled_task: "Update scheduled task",
+  "Update Scheduled Task": "Update scheduled task",
+  delete_scheduled_task: "Delete scheduled task",
+  "Delete Scheduled Task": "Delete scheduled task",
+  connector_workflow_run: "Connector workflow",
+  account_send_email: "Send email",
+  send_email_smtp: "Send email",
+  account_create_event: "Create calendar event",
+  account_list_events: "Read calendar",
+  account_upload_file: "Upload file",
+  account_list_emails: "Read email",
+  account_list_files: "Read files",
+  google_gmail_send_email: "Send Gmail",
+  "google.gmail.send_email": "Send Gmail",
+  microsoft_outlook_send_email: "Send Outlook email",
+  "microsoft.outlook.send_email": "Send Outlook email",
+  google_calendar_create_event: "Create Google Calendar event",
+  "google.calendar.create_event": "Create Google Calendar event",
+  microsoft_calendar_create_event: "Create Outlook Calendar event",
+  "microsoft.calendar.create_event": "Create Outlook Calendar event",
+  draft_capability: "Draft capability",
+  save_capability_draft: "Save capability draft"
+});
+
+function isZhLocale() {
+  return currentLingxyLocale() === "zh-CN";
+}
+
+function localeText(en, zh) {
+  return isZhLocale() ? zh : en;
+}
+
+function activeToolLabels() {
+  return isZhLocale() ? TOOL_DISPLAY_LABELS : TOOL_DISPLAY_LABELS_EN;
+}
+
 export function compactToolText(value = "", max = 96) {
   const text = String(value ?? "").replace(/\s+/g, " ").trim();
   return text.length > max ? `${text.slice(0, max)}...` : text;
@@ -56,8 +121,8 @@ export function compactToolText(value = "", max = 96) {
 
 export function formatToolDisplayName(toolName = "") {
   const raw = String(toolName ?? "").trim();
-  if (!raw) return "工具";
-  return TOOL_DISPLAY_LABELS[raw] || raw.replace(/_/g, " ");
+  if (!raw) return localeText("Tool", "工具");
+  return activeToolLabels()[raw] || raw.replace(/_/g, " ");
 }
 
 function pickFirstString(value, keys = []) {
@@ -87,15 +152,15 @@ function formatTriggerPreview(trigger = {}) {
   const cron = trigger.cron ?? trigger.expression ?? "";
   const natural = trigger.natural_language ?? trigger.naturalLanguage ?? trigger.text ?? "";
   const timezone = trigger.timezone ?? trigger.time_zone ?? trigger.tz ?? "";
-  if (type === "at" && at) return compactToolText(`一次 · ${at}`, 72);
-  if (type === "cron" && cron) return compactToolText(`重复 · ${cron}`, 72);
+  if (type === "at" && at) return compactToolText(`${localeText("Once", "一次")} · ${at}`, 72);
+  if (type === "cron" && cron) return compactToolText(`${localeText("Repeat", "重复")} · ${cron}`, 72);
   if (natural) {
     const suffix = timezone ? ` · ${timezone}` : "";
-    return compactToolText(`时间 · ${natural}${suffix}`, 72);
+    return compactToolText(`${localeText("Time", "时间")} · ${natural}${suffix}`, 72);
   }
-  if (type) return compactToolText(`时间 · ${type}`, 72);
+  if (type) return compactToolText(`${localeText("Time", "时间")} · ${type}`, 72);
   const fallback = at || cron || "";
-  return fallback ? compactToolText(`时间 · ${fallback}`, 72) : "";
+  return fallback ? compactToolText(`${localeText("Time", "时间")} · ${fallback}`, 72) : "";
 }
 
 function formatActionPreview(action = {}) {
@@ -150,9 +215,9 @@ export function formatToolArgsPreview(toolName = "", args = {}) {
     const trigger = formatTriggerPreview(value.trigger);
     const action = formatActionPreview(value.action);
     return compactToolText([
-      name ? `任务 · ${name}` : "",
+      name ? `${localeText("Task", "任务")} · ${name}` : "",
       trigger,
-      action ? `动作 · ${action}` : ""
+      action ? `${localeText("Action", "动作")} · ${action}` : ""
     ].filter(Boolean).join(" · "), 110);
   }
   if (normalizedToolName === "update_scheduled_task" || normalizedToolName === "delete_scheduled_task") {
@@ -181,5 +246,5 @@ export function formatToolArgsPreview(toolName = "", args = {}) {
     "description",
     "message"
   ]);
-  return summary ? compactToolText(summary, 110) : "参数已折叠";
+  return summary ? compactToolText(summary, 110) : localeText("Args collapsed", "参数已折叠");
 }

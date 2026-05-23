@@ -90,6 +90,10 @@ if (!/spawn\(process\.execPath,\s*\["scripts\/start-runtime\.mjs"\]/.test(startD
     || !/LINGXY_DESKTOP_DISABLE_EMBEDDED_SERVICE\s*=\s*"1"/.test(startDesktop)) {
   throw new Error("Dev desktop launcher must host runtime in Node and disable Electron embedded runtime fallback.");
 }
+if (!/AbortSignal\.timeout\(5000\)/.test(startDesktop)
+    || !/function waitForRuntime\(timeoutMs = 45_000\)/.test(startDesktop)) {
+  throw new Error("Dev desktop launcher readiness polling must tolerate slow /health responses before warning.");
+}
 if (!electronMain.includes("resolveDesktopActorForSender(sender, windows)")
     || /function desktopActorForSender[\s\S]{0,220}return\s+["']desktop_shell["']/.test(electronMain)) {
   throw new Error("desktopActorForSender must delegate to the shared fail-closed actor resolver.");

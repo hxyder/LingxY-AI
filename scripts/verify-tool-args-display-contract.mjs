@@ -28,11 +28,11 @@ const scheduleArgs = {
 };
 
 const preview = formatToolArgsPreview("create_scheduled_task", scheduleArgs);
-assert.match(preview, /任务 · 提醒备份审计报告/);
-assert.match(preview, /时间 · 2026-05-08 20:00 美国东部时间/);
-assert.match(preview, /动作 · 提醒备份/);
+assert.match(preview, /Task · 提醒备份审计报告/);
+assert.match(preview, /Time · 2026-05-08 20:00 美国东部时间/);
+assert.match(preview, /Action · 提醒备份/);
 assert.doesNotMatch(preview, /"userCommand"|"\w+":|\{|\}/);
-assert.equal(formatToolDisplayName("Create Scheduled Task"), "创建定时任务");
+assert.equal(formatToolDisplayName("Create Scheduled Task"), "Create scheduled task");
 
 const html = renderTimelineEntry({
   event_type: "tool_call_started",
@@ -42,7 +42,7 @@ const html = renderTimelineEntry({
     args: scheduleArgs
   }
 });
-assert.match(html, /参数摘要/);
+assert.match(html, /Args summary/);
 assert.match(html, /提醒备份审计报告/);
 assert.doesNotMatch(html, /Create Scheduled Task\s*\{/);
 assert.doesNotMatch(html, /"name"|"trigger"|"action"|"userCommand"/);
@@ -59,7 +59,7 @@ const fallbackHtml = renderTimelineEntry({
     }
   }
 });
-assert.match(fallbackHtml, /参数已折叠/);
+assert.match(fallbackHtml, /Args collapsed/);
 assert.doesNotMatch(fallbackHtml, /private@example\.com|do-not-render|"nested"|\{/);
 
 const timelineSource = readFileSync(

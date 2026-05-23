@@ -466,6 +466,9 @@ function sendRuntimeMessageSafely(message, callback) {
 function humanizeQuickActionError(rawError = "") {
   const msg = `${rawError ?? ""}`;
   if (/^empty_selection$/i.test(msg)) return "请先选中要处理的文本，然后再点此按钮。";
+  if (/^(no_runtime|runtime_unavailable)$/i.test(msg)) return "桌面程序未连接。请先启动 LingxY，或在扩展选项里配置 standalone provider。";
+  if (/^no_vision_runtime$/i.test(msg)) return "图片分析需要启动 LingxY，或在扩展选项里配置支持视觉的 standalone provider。";
+  if (/^no_provider_configured$/i.test(msg)) return "还没配置 standalone provider。请启动 LingxY，或右键扩展图标 → 选项 → 配置 provider。";
   if (/^no_api_key$/i.test(msg)) return "还没配置 LLM API Key。右键扩展图标 → 选项 → 填一个 provider 的 key。";
   if (/^(unknown_provider|vision_unsupported_provider)/i.test(msg)) return "当前 provider 不支持这个操作，换一个 provider 再试。";
   if (/^network_error/i.test(msg)) return `网络错误，请检查代理 / 网络连接。\n（${msg}）`;
@@ -478,6 +481,22 @@ function humanizeQuickActionError(rawError = "") {
   if (/^timeout$/i.test(msg)) return "超时（30s 内未收到结果）。若使用 thinking 模式或大模型，请在扩展设置换更快的 model。";
   if (/扩展刚更新过/.test(msg)) return msg;
   return msg || "unknown error";
+}
+
+function isExpectedQuickActionError(rawError = "") {
+  const msg = `${rawError ?? ""}`;
+  return /^(empty_selection|no_runtime|runtime_unavailable|no_vision_runtime|no_provider_configured|no_api_key|unknown_provider|vision_unsupported_provider|stream_ended_without_terminal|timeout)$/i.test(msg)
+    || /^desktop_/i.test(msg)
+    || /^network_error/i.test(msg)
+    || /扩展刚更新过/.test(msg);
+}
+
+function safeDisconnectPort(port) {
+  try { port?.disconnect?.(); } catch { /* ignore */ }
+}
+
+function safeQuickActionFrameError(frame, message) {
+  try { frame?.setError?.(message); } catch { /* frame may be detached */ }
 }
 
 const BROWSER_CONTEXT_MAX_TEXT = 6000;
@@ -904,24 +923,36 @@ function createFloatingChipController(doc = document) {
           const port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
           streamingActive = true;
           port.onMessage.addListener((msg) => {
-            if (snapshot.requestId !== _pendingActionRequestId) {
-              try { port.disconnect(); } catch { /* ignore */ }
-              return;
-            }
-            if (msg?.type === "start") {
-              frame.setStreaming("");
-            } else if (msg?.type === "chunk") {
-              frame.setStreaming(msg.full ?? "");
-            } else if (msg?.type === "done") {
+            try {
+              if (snapshot.requestId !== _pendingActionRequestId) {
+                safeDisconnectPort(port);
+                return;
+              }
+              if (msg?.type === "start") {
+                frame.setStreaming("");
+              } else if (msg?.type === "chunk") {
+                frame.setStreaming(msg.full ?? "");
+              } else if (msg?.type === "done") {
+                streamingSettled = true;
+                frame.setResult(msg.text ?? "");
+                safeDisconnectPort(port);
+              } else if (msg?.type === "error") {
+                streamingSettled = true;
+                const human = humanizeQuickActionError(msg.error ?? "unknown");
+                if (isExpectedQuickActionError(msg.error)) {
+                  console.info("[UCA] quick-action unavailable:", msg.error);
+                } else {
+                  console.warn("[UCA] quick-action stream error:", msg.error);
+                }
+                frame.setError(human);
+                safeDisconnectPort(port);
+              }
+            } catch (error) {
               streamingSettled = true;
-              frame.setResult(msg.text ?? "");
-              try { port.disconnect(); } catch { /* ignore */ }
-            } else if (msg?.type === "error") {
-              streamingSettled = true;
-              const human = humanizeQuickActionError(msg.error ?? "unknown");
-              console.warn("[UCA] quick-action stream error:", msg.error);
-              frame.setError(human);
-              try { port.disconnect(); } catch { /* ignore */ }
+              const message = error?.message ?? String(error);
+              console.info("[UCA] quick-action stream handler error:", message);
+              safeQuickActionFrameError(frame, humanizeQuickActionError(message));
+              safeDisconnectPort(port);
             }
           });
           port.onDisconnect.addListener(() => {
@@ -1500,29 +1531,42 @@ function handleShowActionFrame(message, sendResponse) {
     try {
       const port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
       port.onMessage.addListener((msg) => {
-        if (msg?.type === "start") {
-          frame.setStreaming("");
-        } else if (msg?.type === "chunk") {
-          frame.setStreaming(msg.full ?? "");
-        } else if (msg?.type === "done") {
+        try {
+          if (msg?.type === "start") {
+            frame.setStreaming("");
+          } else if (msg?.type === "chunk") {
+            frame.setStreaming(msg.full ?? "");
+          } else if (msg?.type === "done") {
+            streamingSettled = true;
+            frame.setResult(msg.text ?? "");
+            safeDisconnectPort(port);
+          } else if (msg?.type === "error") {
+            streamingSettled = true;
+            const human = humanizeQuickActionError(msg.error ?? "unknown");
+            if (isExpectedQuickActionError(msg.error)) {
+              console.info("[UCA] quick-action unavailable:", msg.error);
+            } else {
+              console.warn("[UCA] quick-action stream error:", msg.error);
+            }
+            frame.setError(human);
+            safeDisconnectPort(port);
+          }
+        } catch (error) {
           streamingSettled = true;
-          frame.setResult(msg.text ?? "");
-          try { port.disconnect(); } catch { /* ignore */ }
-        } else if (msg?.type === "error") {
-          streamingSettled = true;
-          const human = humanizeQuickActionError(msg.error ?? "unknown");
-          frame.setError(human);
-          try { port.disconnect(); } catch { /* ignore */ }
+          const message = error?.message ?? String(error);
+          console.info("[UCA] quick-action stream handler error:", message);
+          safeQuickActionFrameError(frame, humanizeQuickActionError(message));
+          safeDisconnectPort(port);
         }
       });
       port.onDisconnect.addListener(() => {
         if (!streamingSettled) {
-          frame.setError("连接意外断开，请重试");
+          safeQuickActionFrameError(frame, "连接意外断开，请重试");
         }
       });
       port.postMessage({ type: "quickaction", action, selectionState, routePlan });
     } catch (error) {
-      frame.setError(`连接失败：${error?.message ?? error}`);
+      safeQuickActionFrameError(frame, `连接失败：${error?.message ?? error}`);
     }
 
     sendResponse?.({ ok: true });

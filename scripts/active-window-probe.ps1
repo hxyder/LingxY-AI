@@ -115,14 +115,17 @@ function Test-Blocklisted {
 
 # ---- Browser URL probe (UI Automation) -------------------------------------
 
-function Get-BrowserUrl {
-  param([IntPtr]$WindowHandle, [string]$WindowTitle)
+function Test-LooksLikeBrowserUrl {
+  param([string]$Value)
+  if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+  return $Value -match "^(https?|file|chrome|edge|about):" `
+    -or $Value -match "^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}([/:?#]|$)"
+}
+
+function Get-BrowserUrlFromHandle {
+  param([IntPtr]$WindowHandle)
 
   try {
-    # Loading UIAutomationClient is expensive. Only attempt it for browsers.
-    Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
-    Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
-
     $root = [System.Windows.Automation.AutomationElement]::FromHandle($WindowHandle)
     if (-not $root) { return $null }
 
@@ -137,10 +140,8 @@ function Get-BrowserUrl {
 
     foreach ($edit in $edits) {
       $name = $edit.Current.Name
-      if ([string]::IsNullOrEmpty($name)) { continue }
       # Match the English + CJK names Edge / Chrome / Firefox actually use.
       $isAddressBar = $name -match "(?i)address|地址|搜索栏|URL|omnibox"
-      if (-not $isAddressBar) { continue }
 
       # Try ValuePattern first — most accurate way to read the address bar text.
       $valuePatternObj = $null
@@ -148,7 +149,8 @@ function Get-BrowserUrl {
             [System.Windows.Automation.ValuePattern]::Pattern,
             [ref]$valuePatternObj)) {
         $candidate = $valuePatternObj.Current.Value
-        if ($candidate) { return $candidate }
+        if ($isAddressBar -and $candidate) { return $candidate }
+        if (Test-LooksLikeBrowserUrl -Value $candidate) { return $candidate }
       }
 
       # Fallback to LegacyIAccessiblePattern.Value
@@ -157,9 +159,37 @@ function Get-BrowserUrl {
             [System.Windows.Automation.LegacyIAccessiblePattern]::Pattern,
             [ref]$legacyPatternObj)) {
         $candidate = $legacyPatternObj.Current.Value
-        if ($candidate) { return $candidate }
+        if ($isAddressBar -and $candidate) { return $candidate }
+        if (Test-LooksLikeBrowserUrl -Value $candidate) { return $candidate }
       }
     }
+  } catch {
+    return $null
+  }
+  return $null
+}
+
+function Get-BrowserUrl {
+  param([IntPtr]$WindowHandle, [string]$WindowTitle, [uint32]$ProcessId)
+
+  try {
+    # Loading UIAutomationClient is expensive. Only attempt it for browsers.
+    Add-Type -AssemblyName UIAutomationClient -ErrorAction Stop
+    Add-Type -AssemblyName UIAutomationTypes -ErrorAction Stop
+
+    $url = Get-BrowserUrlFromHandle -WindowHandle $WindowHandle
+    if ($url) { return $url }
+
+    # GetForegroundWindow can be a browser child surface. If that subtree does
+    # not expose the omnibox, retry the top-level browser window for the same
+    # process instead of falling back to title-only context.
+    try {
+      $proc = Get-Process -Id $ProcessId -ErrorAction Stop
+      if ($proc.MainWindowHandle -and $proc.MainWindowHandle -ne [IntPtr]::Zero -and $proc.MainWindowHandle -ne $WindowHandle) {
+        $url = Get-BrowserUrlFromHandle -WindowHandle $proc.MainWindowHandle
+        if ($url) { return $url }
+      }
+    } catch { }
   } catch {
     return $null
   }
@@ -169,7 +199,7 @@ function Get-BrowserUrl {
 function New-BrowserResult {
   param([string]$Process, [uint32]$ProcessId, [string]$Title, [IntPtr]$WindowHandle)
 
-  $url = Get-BrowserUrl -WindowHandle $WindowHandle -WindowTitle $Title
+  $url = Get-BrowserUrl -WindowHandle $WindowHandle -WindowTitle $Title -ProcessId $ProcessId
 
   if ($url) {
     # The address bar sometimes omits the scheme — normalize.

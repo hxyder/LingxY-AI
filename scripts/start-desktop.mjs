@@ -6,7 +6,7 @@ const serviceBaseUrl = process.env.UCA_SERVICE_BASE_URL ?? "http://127.0.0.1:431
 async function isRuntimeReady() {
   try {
     const response = await fetch(`${serviceBaseUrl}/health`, {
-      signal: AbortSignal.timeout(1000)
+      signal: AbortSignal.timeout(5000)
     });
     return response.ok;
   } catch {
@@ -14,7 +14,7 @@ async function isRuntimeReady() {
   }
 }
 
-async function waitForRuntime(timeoutMs = 15_000) {
+async function waitForRuntime(timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await isRuntimeReady()) {

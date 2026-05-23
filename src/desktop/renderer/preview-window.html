@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en-US">
   <head>
     <meta charset="utf-8">
     <title>LingxY Preview</title>
@@ -240,7 +240,7 @@
         </div>
       </header>
       <div id="pvBody">
-        <div class="pv-empty">拖拽文件或在聊天中生成 / 点击 artifact 时自动显示。</div>
+        <div class="pv-empty" data-i18n-en="Drop a file here, or open an artifact from chat." data-i18n-zh="拖拽文件或在聊天中生成 / 点击 artifact 时自动显示。">Drop a file here, or open an artifact from chat.</div>
       </div>
       <footer id="pvFoot"><span id="pvMeta"></span></footer>
     </div>
@@ -254,6 +254,7 @@
     <script src="./preview/handlers/image.js"></script>
     <script src="./preview/handlers/pdf.js"></script>
     <script src="./preview/streaming.js"></script>
+    <script type="module" src="./i18n-dom-bootstrap.mjs"></script>
     <script src="./preview-window.js"></script>
   </body>
 </html>

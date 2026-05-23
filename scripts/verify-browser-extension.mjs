@@ -507,6 +507,16 @@ assert.equal(selectionCacheJs.includes("showInlineResultFrame"), true);
 assert.equal(selectionCacheJs.includes("sendRuntimeMessageSafely"), true);
 assert.equal(selectionCacheJs.includes("uca.runtime.runQuickAction"), true);
 assert.equal(selectionCacheJs.includes("uca.browser.contextSnapshot"), true);
+assert.equal(selectionCacheJs.includes("function isExpectedQuickActionError"), true,
+  "inline quick actions must classify expected runtime/provider gaps");
+assert.equal(selectionCacheJs.includes('console.info("[UCA] quick-action unavailable:"'), true,
+  "inline quick actions must not report expected runtime/provider gaps as extension errors");
+assert.equal(selectionCacheJs.includes("function safeDisconnectPort"), true,
+  "inline quick actions must safely close streaming ports");
+assert.equal(selectionCacheJs.includes('console.info("[UCA] quick-action stream handler error:"'), true,
+  "inline quick action port listeners must catch handler exceptions without surfacing extension stack errors");
+assert.equal(selectionCacheJs.includes("no_runtime|runtime_unavailable|no_vision_runtime|no_provider_configured"), true,
+  "inline quick actions must show actionable messages for offline / unconfigured states");
 assert.equal(selectionCacheJs.includes("buildBrowserContextSnapshot"), true);
 assert.equal(selectionCacheJs.includes("selectedAnchorForRange"), true);
 assert.equal(selectionCacheJs.includes("selectedAnchorUrl"), true);
@@ -517,7 +527,7 @@ assert.equal(selectionCacheJs.includes("uca.result.openFollowup"), true);
 assert.equal(selectionCacheJs.includes("priorResult: resultText"), true);
 assert.equal(selectionCacheJs.includes("showInlineResultFrame({ action, rect, previewText = \"\", selectionState = {}, doc = document })"), true,
   "inline result frame must receive the original selection envelope");
-assert.equal(selectionCacheJs.includes("const handoffSelectionState = {\n      ...selectionState,"), true,
+assert.ok(/const handoffSelectionState = \{\s*\.\.\.selectionState,/.test(selectionCacheJs),
   "inline result frame open-in-dialog must preserve selectedAnchorUrl/imageUrl/sourceType context");
 assert.equal(selectionCacheJs.includes("selectionState: handoffSelectionState"), true,
   "inline result frame must send the preserved envelope into follow-up handoff");

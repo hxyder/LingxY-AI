@@ -119,6 +119,9 @@ import {
   resetVoiceTranscriptView,
   setVoiceCardMode as setVoiceCardModeView
 } from "./overlay-audio-view.mjs";
+import {
+  currentLingxyLocale
+} from "./i18n-dom.mjs";
 
 /* ── Theme sync (mirrors console theme via shared localStorage) ── */
 const THEME_KEY = "uca-console-theme";
@@ -343,15 +346,29 @@ function isEchoOriginEventFrame(frame = {}) {
   return data?.submission_origin === "echo" || Boolean(data?.voice_session_id);
 }
 
+function uiText(en, zh) {
+  return currentLingxyLocale() === "zh-CN" ? zh : en;
+}
+
+function currentOverlayLocaleMetadata() {
+  const locale = currentLingxyLocale();
+  return {
+    ui_locale: locale,
+    preferred_locale: locale,
+    response_locale: locale
+  };
+}
+
 function attachOverlaySubmissionMetadata(payload = {}) {
+  const localeMetadata = currentOverlayLocaleMetadata();
   const metadata = echoSessionActive
     ? {
+        ...localeMetadata,
         submission_origin: "echo",
         voice_session_id: echoSessionId || createEchoSessionId()
       }
-    : {};
+    : localeMetadata;
   if (metadata.voice_session_id && !echoSessionId) echoSessionId = metadata.voice_session_id;
-  if (Object.keys(metadata).length === 0) return payload;
   const next = {
     ...payload,
     selectionMetadata: {
@@ -581,30 +598,28 @@ let projectStoreSyncInFlight = null;
 let projectSyncIndicatorState = "unknown";
 
 function updateProjectSyncIndicator(success) {
-  const prev = projectSyncIndicatorState;
   const next = success ? "online" : "offline";
   projectSyncIndicatorState = next;
   const btn = document.querySelector("#projectSelectorBtn");
   if (btn) {
+    const zh = currentLingxyLocale() === "zh-CN";
     btn.classList.toggle("sync-offline", !success);
     btn.title = success
-      ? "切换对话 / 查看历史会话"
-      : "切换对话 / 查看历史会话（本地改动未同步到服务端，点击重试）";
+      ? (zh ? "切换对话 / 查看历史会话" : "Switch conversations / view history")
+      : (zh
+        ? "切换对话 / 查看历史会话（本地缓存待写入，点击重试）"
+        : "Switch conversations / view history (local cache pending, click to retry)");
   }
-  if (!success && prev !== "offline") {
-    // First transition into offline — let the user know their changes are
-    // local-only. Subsequent failures stay silent until we recover and fail
-    // again.
-    try {
-      addSystemBubble("对话/会话同步到服务端失败，本地仍会保留。恢复连接后点击「对话」按钮可重新同步。");
-    } catch { /* addSystemBubble not yet initialized on early calls */ }
-  }
+  // Local-first mode keeps the conversation in the renderer cache when the
+  // local runtime persistence path is unavailable. Do not show a scary
+  // "server sync failed" chat bubble; the retry affordance lives on the
+  // conversation button.
 }
 
 function generateConversationTitle(conv) {
-  if (!conv?.turns?.length) return "新会话";
+  if (!conv?.turns?.length) return uiText("New session", "新会话");
   const first = conv.turns.find((t) => t.role === "user");
-  return (first?.content ?? conv.seedCommand ?? "").slice(0, 30).trim() || "新会话";
+  return (first?.content ?? conv.seedCommand ?? "").slice(0, 30).trim() || uiText("New session", "新会话");
 }
 
 function ensureDefaultProject() {
@@ -1551,7 +1566,12 @@ function addBubble(role, content, options) {
   bubble.className = `bubble ${role}`;
   // Screen readers get a clear prefix per bubble role. The aria-live region
   // on the parent handles announcement; we just label the origin.
-  const roleLabels = { user: "你", assistant: "助手", system: "系统提示", step: "任务进展" };
+  const roleLabels = {
+    user: uiText("You", "你"),
+    assistant: uiText("Assistant", "助手"),
+    system: uiText("System notice", "系统提示"),
+    step: uiText("Task progress", "任务进展")
+  };
   if (roleLabels[role]) {
     bubble.setAttribute("aria-label", `${roleLabels[role]}：`);
   }
@@ -1597,8 +1617,8 @@ function addBubble(role, content, options) {
           const code = codeEl.textContent ?? "";
           try {
             await overlayShellClient?.writeClipboardText?.(code);
-            btn.textContent = "已复制";
-            setTimeout(() => { btn.textContent = "复制"; }, 1400);
+            btn.textContent = uiText("Copied", "已复制");
+            setTimeout(() => { btn.textContent = uiText("Copy", "复制"); }, 1400);
           } catch { /* ignore */ }
         });
       }
@@ -2728,7 +2748,7 @@ function appendBubbleTimestamp(bubble, value) {
   timeEl.className = "bubble-time";
   timeEl.dataset.ts = String(ts);
   timeEl.title = formatAbsoluteTimestamp(ts);
-  timeEl.textContent = formatRelativeTime(ts);
+  timeEl.textContent = formatRelativeTime(ts, { locale: currentLingxyLocale() });
   bubble.appendChild(timeEl);
 }
 
@@ -5239,7 +5259,7 @@ async function submitTask() {
       // File/image context: allow a meaningful default command (see below)
     } else {
       // No input, no file — do nothing; hint the user to type first.
-      commandInput.placeholder = "请先输入你的问题或指令…";
+      commandInput.placeholder = uiText("Type a question or instruction first...", "请先输入你的问题或指令…");
       commandInput.focus();
       // Flash placeholder to draw attention
       commandInput.classList.add("input-hint-flash");
@@ -5274,7 +5294,10 @@ async function submitTask() {
     if (explicitBrowserContextRequest && !activeBrowserCapture) {
       commandInput.value = rawCommand;
       autoSizeInput();
-      addSystemBubble("没有检测到可读取的当前浏览器页面。请先切到要分析的网页，或选中文字/链接后再提问。");
+      addSystemBubble(uiText(
+        "No readable current browser page was detected. Switch to the page you want to analyze, or select text/link content first.",
+        "没有检测到可读取的当前浏览器页面。请先切到要分析的网页，或选中文字/链接后再提问。"
+      ));
       commandInput.focus();
       return;
     }
@@ -5315,7 +5338,10 @@ async function submitTask() {
     } else if (contextDecision.kind === "missing_explicit_file_context") {
       commandInput.value = rawCommand;
       autoSizeInput();
-      addSystemBubble("没有检测到可读取的当前文件。请先选中文件、拖入文件，或把文件窗口切到前台后再提问。");
+      addSystemBubble(uiText(
+        "No readable current file was detected. Select a file, drop one in, or bring the file window to the foreground first.",
+        "没有检测到可读取的当前文件。请先选中文件、拖入文件，或把文件窗口切到前台后再提问。"
+      ));
       commandInput.focus();
       return;
     } else if (contextDecision.kind === "image_paths") {
@@ -5467,36 +5493,45 @@ function showActiveWindowPreviewCard(activeWindow) {
 
   if (kind === "web_url" && activeWindow.url) {
     icon = "🌐";
-    label = `当前浏览器：${title || process}`;
+    label = uiText(`Current browser: ${title || process}`, `当前浏览器：${title || process}`);
     subLabel = activeWindow.url;
     quickActions = [
-      { label: "分析此页面", command: "分析当前页面的完整内容并总结要点" },
-      { label: "翻译此页面", command: "把当前页面翻译成中文" },
-      { label: "提取关键信息", command: "从当前页面里抽取最重要的数据点" }
+      { label: uiText("Analyze page", "分析此页面"), command: uiText("Analyze the full current page and summarize the key points.", "分析当前页面的完整内容并总结要点") },
+      { label: uiText("Translate page", "翻译此页面"), command: uiText("Translate the current page to English.", "把当前页面翻译成中文") },
+      { label: uiText("Extract key info", "提取关键信息"), command: uiText("Extract the most important data points from the current page.", "从当前页面里抽取最重要的数据点") }
+    ];
+  } else if (kind === "window_title" && isBrowserProcessName(process) && title) {
+    icon = "🌐";
+    label = uiText(`Current browser: ${title}`, `当前浏览器：${title}`);
+    subLabel = uiText("Address bar was not readable; LingxY will try the browser extension's most recent page capture.", "未读取到地址栏，将尝试匹配浏览器扩展最近捕捉的页面内容。");
+    quickActions = [
+      { label: uiText("Analyze page", "分析此页面"), command: uiText("Analyze the full current page and summarize the key points.", "分析当前页面的完整内容并总结要点") },
+      { label: uiText("Translate page", "翻译此页面"), command: uiText("Translate the current page to English.", "把当前页面翻译成中文") },
+      { label: uiText("Extract key info", "提取关键信息"), command: uiText("Extract the most important data points from the current page.", "从当前页面里抽取最重要的数据点") }
     ];
   } else if (kind === "file_path" && (activeWindow.file_path || activeWindow.filePath)) {
     const filePath = activeWindow.file_path ?? activeWindow.filePath;
     const filename = filePath.split(/[\\/]/).pop() || filePath;
     icon = /\.(docx?|xlsx?|pptx?)$/i.test(filename) ? "📄" : "📝";
-    label = `当前文件：${filename}`;
+    label = uiText(`Current file: ${filename}`, `当前文件：${filename}`);
     subLabel = filePath;
     quickActions = [
-      { label: "总结", command: `总结这个文件的内容：${filePath}` },
-      { label: "审阅", command: `审阅这个文件并指出问题：${filePath}` }
+      { label: uiText("Summarize", "总结"), command: uiText(`Summarize this file: ${filePath}`, `总结这个文件的内容：${filePath}`) },
+      { label: uiText("Review", "审阅"), command: uiText(`Review this file and point out issues: ${filePath}`, `审阅这个文件并指出问题：${filePath}`) }
     ];
   } else if (kind === "window_title" && title) {
     icon = "🪟";
-    label = `当前窗口：${process}`;
+    label = uiText(`Current window: ${process}`, `当前窗口：${process}`);
     subLabel = title;
     quickActions = [
-      { label: "基于此上下文提问", command: `基于当前窗口"${title}"的上下文` }
+      { label: uiText("Ask about this context", "基于此上下文提问"), command: uiText(`Use the current window "${title}" as context.`, `基于当前窗口"${title}"的上下文`) }
     ];
   } else if (title || process) {
     icon = "🪟";
-    label = `当前窗口：${process || "app"}`;
+    label = uiText(`Current window: ${process || "app"}`, `当前窗口：${process || "app"}`);
     subLabel = title;
     quickActions = [
-      { label: "基于此窗口提问", command: title ? `基于当前窗口"${title}"的上下文` : "基于当前窗口上下文" }
+      { label: uiText("Ask about this window", "基于此窗口提问"), command: title ? uiText(`Use the current window "${title}" as context.`, `基于当前窗口"${title}"的上下文`) : uiText("Use the current window as context.", "基于当前窗口上下文") }
     ];
   } else {
     return;
@@ -5542,6 +5577,19 @@ function isActiveBrowserWindow(activeWindow = null) {
   return kind === "web_url" && Boolean(activeWindow?.url);
 }
 
+function isBrowserProcessName(processName = "") {
+  const process = `${processName ?? ""}`.trim().toLowerCase().replace(/\.exe$/u, "");
+  return ["chrome", "msedge", "edge", "brave", "firefox"].includes(process);
+}
+
+function isBrowserWindowCandidate(activeWindow = null) {
+  if (isActiveBrowserWindow(activeWindow)) return true;
+  const kind = activeWindow?.detected_kind ?? activeWindow?.detectedKind;
+  return kind === "window_title"
+    && isBrowserProcessName(activeWindow?.process)
+    && Boolean(`${activeWindow?.title ?? ""}`.trim());
+}
+
 function activeWindowFilePath(activeWindow = null) {
   const kind = activeWindow?.detected_kind ?? activeWindow?.detectedKind;
   if (kind !== "file_path") return "";
@@ -5560,11 +5608,13 @@ function compactBrowserContextText(value = "", maxLength = 4000) {
 }
 
 async function fetchRecentBrowserContextForActiveWindow(activeWindow = null) {
-  if (!isActiveBrowserWindow(activeWindow)) return null;
+  if (!isBrowserWindowCandidate(activeWindow)) return null;
   const params = new URLSearchParams();
-  params.set("url", activeWindow.url);
+  if (activeWindow.url) {
+    params.set("url", activeWindow.url);
+    params.set("require_url_match", "1");
+  }
   if (activeWindow.title) params.set("title", activeWindow.title);
-  params.set("require_url_match", "1");
   params.set("limit", "1");
 
   try {
@@ -5629,7 +5679,7 @@ async function resolveActiveWindowBrowserCapture() {
       overlayShellClient.getActiveWindowContext({
         includeSelection: false,
         excludeShellWindow: true,
-        preferLastExternal: true,
+        preferLastExternal: false,
         maxExternalAgeMs: 2 * 60 * 1000,
         captureMode: "current_page_submit",
         timeoutMs: 900
@@ -5643,11 +5693,12 @@ async function resolveActiveWindowBrowserCapture() {
     }
   }
 
-  const candidate = isActiveBrowserWindow(activeWindow)
+  const candidate = isBrowserWindowCandidate(activeWindow)
     ? activeWindow
     : freshPendingActiveWindowContext(EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS);
-  if (!isActiveBrowserWindow(candidate)) return null;
+  if (!isBrowserWindowCandidate(candidate)) return null;
   const browserContext = await fetchRecentBrowserContextForActiveWindow(candidate);
+  if (!browserContext && !isActiveBrowserWindow(candidate)) return null;
   return buildBrowserContextCapture(browserContext, candidate);
 }
 
@@ -6016,9 +6067,8 @@ for (const btn of projectPanel?.querySelectorAll?.("[data-overlay-project-panel-
 }
 
 projectSelectorBtn?.addEventListener("click", () => {
-  // If we're offline, clicking the projects button retries sync. The user can
-  // still open the panel (local store is always usable) but the retry fires
-  // alongside panel open so the red dot clears when service is reachable.
+  // If local runtime persistence was unavailable, clicking the conversations
+  // button retries it. The renderer cache remains usable either way.
   if (projectSyncIndicatorState === "offline") {
     void syncProjectStoreFromService({ render: true });
   }
@@ -6076,20 +6126,28 @@ const QUICK_ACTION_PRESETS = {
   translate: {
     needsContext: true,
     featureId: "translation",
-    contextless: { command: "请翻译我剪贴板里的内容", autoLoadClipboard: true },
-    command: "请翻译这段内容"
+    contextless: { commandEn: "Translate the content in my clipboard to English.", commandZh: "请翻译我剪贴板里的内容", autoLoadClipboard: true },
+    commandEn: "Translate this content to English.",
+    commandZh: "请翻译这段内容"
   },
   summarize: {
     needsContext: true,
-    contextless: { command: "请总结我剪贴板里的内容", autoLoadClipboard: true },
-    command: "请总结这段内容并列出关键点"
+    contextless: { commandEn: "Summarize the content in my clipboard.", commandZh: "请总结我剪贴板里的内容", autoLoadClipboard: true },
+    commandEn: "Summarize this content and list the key points.",
+    commandZh: "请总结这段内容并列出关键点"
   },
   explain: {
     needsContext: true,
-    contextless: { command: "请解释我剪贴板里的内容", autoLoadClipboard: true },
-    command: "请解释这段内容并说明它的重要性"
+    contextless: { commandEn: "Explain the content in my clipboard.", commandZh: "请解释我剪贴板里的内容", autoLoadClipboard: true },
+    commandEn: "Explain this content and why it matters.",
+    commandZh: "请解释这段内容并说明它的重要性"
   }
 };
+
+function presetCommand(preset = {}, contextless = false) {
+  const source = contextless ? preset.contextless ?? {} : preset;
+  return uiText(source.commandEn ?? source.command ?? "", source.commandZh ?? source.command ?? "");
+}
 
 // UCA-048: feature gate for overlay. When a feature is disabled, show a
 // pop bubble with a "打开设置" button that navigates to Console Settings.
@@ -6101,13 +6159,13 @@ async function checkFeatureGate(featureId) {
     const entry = features[featureId];
     if (entry && entry.enabled === false) {
       showPopBubble({
-        label: "功能已关闭",
-        body: `"${featureId}" 功能已在设置中关闭。`,
+        label: uiText("Feature disabled", "功能已关闭"),
+        body: uiText(`"${featureId}" is disabled in Settings.`, `"${featureId}" 功能已在设置中关闭。`),
         autoHideMs: 6000
       });
-      addBubble("assistant", `此功能已在设置中关闭。`, {
+      addBubble("assistant", uiText("This feature is disabled in Settings.", "此功能已在设置中关闭。"), {
         optionButtons: [{
-          label: "打开设置",
+          label: uiText("Open Settings", "打开设置"),
           onClick: () => {
             overlayShellClient?.navigateConsole?.({ tabId: "settings", anchor: `features.${featureId}` });
             overlayShellClient?.showWindow?.("console");
@@ -6139,11 +6197,11 @@ async function runQuickAction(action) {
           capture: { text: clipText, sourceType: "text" }
         };
       } else {
-        showPopBubble({ label: action, body: "剪贴板是空的。复制要处理的文本后再试。" });
+        showPopBubble({ label: action, body: uiText("The clipboard is empty. Copy the text you want to process and try again.", "剪贴板是空的。复制要处理的文本后再试。") });
         return;
       }
     } catch (error) {
-      showPopBubble({ label: action, body: `读取剪贴板失败：${error.message}` });
+      showPopBubble({ label: action, body: uiText(`Failed to read clipboard: ${error.message}`, `读取剪贴板失败：${error.message}`) });
       return;
     }
   }
@@ -6151,9 +6209,9 @@ async function runQuickAction(action) {
   // Mark this submission as ephemeral — the result should pop, not stay
   popKeptOpen = false;
   hidePopBubble();
-  showPopBubble({ label: action, body: "处理中...", autoHideMs: 30_000 });
+  showPopBubble({ label: action, body: uiText("Processing...", "处理中..."), autoHideMs: 30_000 });
 
-  commandInput.value = preset.command;
+  commandInput.value = presetCommand(preset, !hasContext);
   await submitTask();
 }
 
@@ -9246,7 +9304,7 @@ function refreshChatTimestamps() {
   for (const el of bubbleArea.querySelectorAll(".bubble-time[data-ts]")) {
     const ts = Number(el.dataset.ts);
     if (!Number.isFinite(ts)) continue;
-    const next = formatRelativeTime(ts);
+    const next = formatRelativeTime(ts, { locale: currentLingxyLocale() });
     if (el.textContent !== next) el.textContent = next;
   }
 }

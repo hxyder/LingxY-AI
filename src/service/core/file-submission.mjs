@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import { buildFileContextPacket } from "../extractors/file-ingest.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import {
@@ -47,6 +48,60 @@ const FILE_CONTENT_COUNT_PATTERNS = [
   /\b(words?|lines?|characters?|pages?|paragraphs?|tokens?)\b/i
 ];
 
+const INVENTORY_EXTENSION_TOKENS = new Set([
+  "txt", "md", "markdown", "log", "csv", "tsv", "json", "yaml", "yml", "xml", "html", "htm",
+  "js", "mjs", "cjs", "ts", "tsx", "jsx", "py", "java", "cs", "css", "sql", "ini", "toml",
+  "pdf", "doc", "docx", "xls", "xlsx", "xlsm", "ppt", "pptx",
+  "png", "jpg", "jpeg", "webp", "bmp", "gif", "zip", "rar", "7z"
+]);
+
+const INVENTORY_EXTENSION_ALIASES = new Map([
+  ["word", [".doc", ".docx"]],
+  ["document", [".doc", ".docx"]],
+  ["documents", [".doc", ".docx"]],
+  ["doc", [".doc"]],
+  ["docx", [".docx"]],
+  ["excel", [".xls", ".xlsx", ".xlsm"]],
+  ["spreadsheet", [".xls", ".xlsx", ".xlsm", ".csv"]],
+  ["spreadsheets", [".xls", ".xlsx", ".xlsm", ".csv"]],
+  ["powerpoint", [".ppt", ".pptx"]],
+  ["presentation", [".ppt", ".pptx"]],
+  ["presentations", [".ppt", ".pptx"]],
+  ["image", [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]],
+  ["images", [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]],
+  ["photo", [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]],
+  ["photos", [".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"]]
+]);
+
+function normalizeInventoryExtensionToken(token = "") {
+  const normalized = String(token ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^\./, "");
+  if (!normalized) return [];
+  if (INVENTORY_EXTENSION_ALIASES.has(normalized)) return INVENTORY_EXTENSION_ALIASES.get(normalized);
+  if (!INVENTORY_EXTENSION_TOKENS.has(normalized)) return [];
+  return [`.${normalized}`];
+}
+
+export function detectFileInventoryExtensionFilter(userCommand = "") {
+  const text = String(userCommand ?? "").toLowerCase();
+  const extensions = new Set();
+  const patterns = [
+    /(?:^|[^\w])\.([a-z0-9][a-z0-9_-]{0,15})(?=\s*(?:files?|documents?|docs?|spreadsheets?|presentations?|images?|photos?|文件|文档|表格|图片))/giu,
+    /\b([a-z0-9][a-z0-9_-]{0,15})\s+(?:files?|documents?|docs?|spreadsheets?|presentations?|images?|photos?)\b/giu,
+    /\b([a-z0-9][a-z0-9_-]{0,15})\s*(?:文件|文档|表格|图片)/giu
+  ];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      for (const extension of normalizeInventoryExtensionToken(match[1])) {
+        extensions.add(extension);
+      }
+    }
+  }
+  return [...extensions].sort();
+}
+
 export function shouldUseFileInventoryContext({
   userCommand = "",
   filePaths = [],
@@ -67,30 +122,67 @@ export function shouldUseFileInventoryContext({
   return true;
 }
 
+function isEnglishInventoryLocale(contextPacket = {}) {
+  const metadata = contextPacket?.selection_metadata ?? {};
+  const locale = String(metadata.response_locale ?? metadata.preferred_locale ?? metadata.ui_locale ?? "").toLowerCase();
+  return locale.startsWith("en");
+}
+
+function formatFileCountNoun(count, extensionLabel = "", english = false) {
+  if (english) {
+    const fileWord = count === 1 ? "file" : "files";
+    return extensionLabel ? `${extensionLabel} ${fileWord}` : fileWord;
+  }
+  return extensionLabel ? ` ${extensionLabel} 文件` : "文件";
+}
+
 function formatInventoryFastPathResult(contextPacket = {}) {
   const inventory = contextPacket?.selection_metadata?.file_inventory;
   if (!inventory || inventory.inventory_only !== true) return null;
+  const english = isEnglishInventoryLocale(contextPacket);
+  const extensionFilter = Array.isArray(inventory.file_extension_filter)
+    ? inventory.file_extension_filter.filter((extension) => typeof extension === "string" && extension.trim())
+    : [];
+  const extensionLabel = extensionFilter.join("/");
   const selectedCount = Number(inventory.selected_count ?? 0);
   const selectedFileCount = Number(inventory.selected_file_count ?? 0);
   const selectedDirectoryCount = Number(inventory.selected_directory_count ?? 0);
   const totalFileCount = Number(inventory.total_file_count ?? 0);
   const totalDirectoryCount = Number(inventory.total_directory_count ?? 0);
-  const lines = [
-    `已完成文件清点：共 ${totalFileCount} 个文件。`,
+  const countedFileNoun = formatFileCountNoun(totalFileCount, extensionLabel, english);
+  const lines = english ? [
+    `File count complete: ${totalFileCount} ${countedFileNoun}.`,
+    "",
+    `Selected items: ${selectedCount} (${selectedDirectoryCount} folders, ${selectedFileCount} files)`,
+    `Recursive count: ${totalFileCount} ${countedFileNoun}, ${totalDirectoryCount} subfolders`
+  ] : [
+    `已完成文件清点：共 ${totalFileCount} 个${formatFileCountNoun(totalFileCount, extensionLabel, false)}。`,
     "",
     `选中项目：${selectedCount} 个（${selectedDirectoryCount} 个文件夹，${selectedFileCount} 个文件）`,
-    `递归统计：${totalFileCount} 个文件，${totalDirectoryCount} 个子文件夹`
+    `递归统计：${totalFileCount} 个${formatFileCountNoun(totalFileCount, extensionLabel, false)}，${totalDirectoryCount} 个子文件夹`
   ];
   if (inventory.truncated) {
-    lines.push(`结果已截断：达到最多 ${inventory.max_entries ?? "若干"} 个条目的枚举上限。`);
+    lines.push(english
+      ? `Result truncated after reaching the ${inventory.max_entries ?? "configured"} entry enumeration limit.`
+      : `结果已截断：达到最多 ${inventory.max_entries ?? "若干"} 个条目的枚举上限。`);
   }
   if (Array.isArray(inventory.items) && inventory.items.length > 0) {
-    lines.push("", "明细：");
+    lines.push("", english ? "Details:" : "明细：");
     for (const item of inventory.items) {
       if (item.type === "directory") {
-        lines.push(`- ${item.path}：${item.file_count ?? 0} 个文件，${item.directory_count ?? 0} 个子文件夹${item.truncated ? "（已截断）" : ""}`);
+        const itemFileCount = Number(item.file_count ?? 0);
+        const itemFileNoun = formatFileCountNoun(itemFileCount, extensionLabel, english);
+        lines.push(english
+          ? `- ${item.path}: ${itemFileCount} ${itemFileNoun}, ${item.directory_count ?? 0} subfolders${item.truncated ? " (truncated)" : ""}`
+          : `- ${item.path}：${itemFileCount} 个${itemFileNoun}，${item.directory_count ?? 0} 个子文件夹${item.truncated ? "（已截断）" : ""}`);
       } else {
-        lines.push(`- ${item.path}：1 个文件`);
+        const itemFileCount = Number(item.file_count ?? (extensionFilter.length > 0
+          ? (extensionFilter.includes(path.extname(item.path).toLowerCase()) ? 1 : 0)
+          : 1));
+        const itemFileNoun = formatFileCountNoun(itemFileCount, extensionLabel, english);
+        lines.push(english
+          ? `- ${item.path}: ${itemFileCount} ${itemFileNoun}`
+          : `- ${item.path}：${itemFileCount} 个${itemFileNoun}`);
       }
     }
   }
@@ -196,6 +288,9 @@ export async function submitFileTask({
     route,
     taskSpec: preflightTaskSpec
   });
+  const inventoryFileExtensions = inventoryOnlyContext
+    ? detectFileInventoryExtensionFilter(userCommand)
+    : [];
   const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
   // file-submission specialises in file-backed analysis, which the code_cli
   // runtime handles natively via its task package. When the router upgrades the
@@ -216,6 +311,7 @@ export async function submitFileTask({
       traceId,
       contextId,
       inventoryOnly: inventoryOnlyContext,
+      inventoryFileExtensions,
       onProgress: options.onProgress
     }).then((packet) => attachFileContentEvidence(packet, selectionMetadata));
   };

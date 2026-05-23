@@ -15,6 +15,7 @@ import {
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
+import { extractArticleFromHtml } from "../extractors/page_source/article-reader.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
@@ -54,7 +55,7 @@ import {
 } from "./task-runtime.mjs";
 
 const MAX_BROWSER_FETCH_BYTES = 5 * 1024 * 1024;
-const MAX_BROWSER_CONTEXT_CHARS = 12000;
+const MAX_BROWSER_CONTEXT_CHARS = 22000;
 const DEFAULT_BROWSER_FETCH_TIMEOUT_MS = 8000;
 
 function runtimeWithTaskEmitter(runtime, taskId) {
@@ -218,6 +219,32 @@ function isTextLikeContent(contentType = "") {
 
 function textFromBuffer(buffer) {
   return buffer.toString("utf8").slice(0, MAX_BROWSER_CONTEXT_CHARS);
+}
+
+function browserPageTextFromFetchedResource({ fetched, url }) {
+  const rawText = textFromBuffer(fetched.buffer);
+  const isHtml = fetched.contentType.toLowerCase().includes("html");
+  if (!isHtml) return { text: rawText, kind: "plain", title: "", truncated: fetched.buffer.length > rawText.length };
+  try {
+    const article = extractArticleFromHtml({
+      html: fetched.buffer.toString("utf8"),
+      url,
+      maxChars: MAX_BROWSER_CONTEXT_CHARS
+    });
+    const articleText = `${article?.text ?? ""}`.trim();
+    if (article?.ok && articleText) {
+      return {
+        text: articleText,
+        kind: article.kind ?? "article",
+        title: article.title ?? "",
+        truncated: Number(article.lengthChars ?? articleText.length) > articleText.length
+      };
+    }
+  } catch {
+    // Fall back to the bounded raw text below; article extraction is a quality
+    // upgrade, not a hard dependency for browser capture.
+  }
+  return { text: rawText, kind: "raw_html", title: "", truncated: fetched.buffer.length > rawText.length };
 }
 
 function browserFetchTimeoutMs(runtime) {
@@ -409,15 +436,23 @@ async function fetchBrowserLinkContext({ capture, runtime, artifactStore, task }
   await writeFile(artifactPath, fetched.buffer);
 
   if (isText) {
-    const fetchedText = textFromBuffer(fetched.buffer);
+    const pageText = browserPageTextFromFetchedResource({ fetched, url: capture.url });
+    const fetchedText = pageText.text;
     task.context_packet = {
       ...task.context_packet,
-      html: isHtml ? fetchedText : task.context_packet.html,
+      html: isHtml ? fetched.buffer.toString("utf8").slice(0, MAX_BROWSER_CONTEXT_CHARS) : task.context_packet.html,
       text: [
         task.context_packet.text,
         `Fetched URL: ${capture.url}`,
+        pageText.title ? `Fetched title: ${pageText.title}` : "",
+        pageText.kind ? `Fetched content kind: ${pageText.kind}` : "",
         fetchedText
       ].filter(Boolean).join("\n\n")
+    };
+    task.context_packet.selection_metadata = {
+      ...(task.context_packet.selection_metadata ?? {}),
+      browser_page_fetch_kind: pageText.kind,
+      browser_page_fetch_truncated: pageText.truncated
     };
     updateTask(runtime, task, { context_packet: task.context_packet });
   }

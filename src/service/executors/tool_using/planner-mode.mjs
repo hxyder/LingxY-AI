@@ -125,6 +125,10 @@ export function renderRequiredContractForPlanner(task) {
 
 export function buildLeanChatSystemPrompt({ task, synthesisBlock }) {
   const expected = task?.task_spec?.synthesis?.expected_output ?? "direct_answer";
+  const responseLanguage = task?.task_spec?.constraints?.language;
+  const responseLanguageLine = responseLanguage && responseLanguage !== "auto"
+    ? `Reply in ${responseLanguage}.`
+    : "Reply in the user's language.";
   return `You are LingxY, a helpful conversational AI assistant.
 The current task contract says this turn should be answered directly without external tools.
 If the conversation history establishes a roleplay/persona (interviewer, coach, reviewer, or another requested role), keep that role active. When that role conflicts with the generic LingxY identity, follow the conversation role unless it asks for unsafe real-world action.
@@ -133,7 +137,7 @@ If fresh/current external data is actually required despite the contract, ask on
 Phantom-attachment rule: if the user refers to an attachment (image / file / screenshot / 图片 / 这张图 / 这张照片 / 这个文件 / 上传的) but no attachment is present in this turn, ASK which one — never describe, analyze, or guess at the contents of a fictional attachment.
 Expected output: ${expected}.
 ${formatLeanAmbientContext()}${synthesisBlock}
-Reply in the user's language.`;
+${responseLanguageLine}`;
 }
 
 export function shouldRetryProseTrap({ task, prose, transcript }) {

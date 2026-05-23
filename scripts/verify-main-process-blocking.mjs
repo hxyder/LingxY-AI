@@ -330,6 +330,10 @@ assert.match(desktopRemoteFeatures, /export async function isRemoteFeatureEnable
   "desktop-remote-features.mjs must own remote feature health fetch details");
 assert.match(desktopRemoteFeatures, /features\?\.\[featureId\]\?\.enabled !== false/,
   "desktop-remote-features.mjs must preserve remote feature default-enabled semantics");
+assert.match(desktopRemoteFeatures, /defaultEnabled\s*=\s*true/,
+  "desktop-remote-features.mjs must keep default-enabled local desktop features available when health is unavailable");
+assert.match(desktopRemoteFeatures, /return fallback;/,
+  "desktop-remote-features.mjs must use the configured fallback when health fetches fail");
 assert.match(desktopMorningDigest, /export async function requestMorningDigestCheck\(/,
   "desktop-morning-digest.mjs must own morning digest check request details");
 assert.match(desktopMorningDigest, /pathname:\s*"\/email\/digest\/check"/,

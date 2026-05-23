@@ -28,15 +28,15 @@ import {
 } from "../../src/desktop/renderer/evidence-sources-view.mjs";
 
 test("renderer tool display names hide implementation ids for local file tools", () => {
-  assert.equal(formatToolDisplayName("read_file_text"), "读取文件原文");
-  assert.equal(formatToolDisplayName("read_folder_text"), "读取文件夹原文");
-  assert.equal(formatToolDisplayName("search_file_content"), "检索文件索引");
+  assert.equal(formatToolDisplayName("read_file_text"), "Read file text");
+  assert.equal(formatToolDisplayName("read_folder_text"), "Read folder text");
+  assert.equal(formatToolDisplayName("search_file_content"), "Search file index");
   assert.equal(formatToolArgsPreview("read_file_text", { path: "E:/linxi/docs/resume.md" }), "E:/linxi/docs/resume.md");
 });
 
 test("renderer tool display names capability tools and keeps timeline args compact", () => {
-  assert.equal(formatToolDisplayName("draft_capability"), "起草能力");
-  assert.equal(formatToolDisplayName("save_capability_draft"), "保存能力草稿");
+  assert.equal(formatToolDisplayName("draft_capability"), "Draft capability");
+  assert.equal(formatToolDisplayName("save_capability_draft"), "Save capability draft");
   assert.equal(
     formatToolArgsPreview("draft_capability", { kind: "skill", name: "Inbox Helper" }),
     "skill · Inbox Helper"
@@ -61,8 +61,8 @@ test("renderer tool display names capability tools and keeps timeline args compa
 });
 
 test("renderer tool display summarizes schedule tools without leaking raw JSON", () => {
-  assert.equal(formatToolDisplayName("create_scheduled_task"), "创建定时任务");
-  assert.equal(formatToolDisplayName("Create Scheduled Task"), "创建定时任务");
+  assert.equal(formatToolDisplayName("create_scheduled_task"), "Create scheduled task");
+  assert.equal(formatToolDisplayName("Create Scheduled Task"), "Create scheduled task");
   const preview = formatToolArgsPreview("create_scheduled_task", {
     name: "提醒吃饭 - 明天下午三点",
     description: "明天下午提醒用户吃饭",
@@ -70,7 +70,7 @@ test("renderer tool display summarizes schedule tools without leaking raw JSON",
     action: { type: "task", target: "提醒吃饭", params: { userCommand: "提醒我吃饭" } }
   });
   assert.match(preview, /提醒吃饭/);
-  assert.match(preview, /一次/);
+  assert.match(preview, /Once/);
   assert.doesNotMatch(preview, /\{|"trigger"|"action"|"params"/);
 
   const stringArgsPreview = formatToolArgsPreview("create_scheduled_task", JSON.stringify({
@@ -126,7 +126,7 @@ test("renderer tool display fallback folds unknown structured args", () => {
     nested: { should: "not leak" },
     count: 3
   });
-  assert.equal(preview, "参数已折叠");
+  assert.equal(preview, "Args collapsed");
   assert.doesNotMatch(preview, /\{|"nested"/);
 });
 
@@ -135,16 +135,16 @@ test("task event summaries render user-facing tool labels and local-read guidanc
     event: "tool_call_completed",
     data: { tool_id: "search_file_content", success: true }
   });
-  assert.equal(toolSummary.title, "工具完成");
-  assert.equal(toolSummary.body, "检索文件索引 · 成功");
+  assert.equal(toolSummary.title, "Tool complete");
+  assert.equal(toolSummary.body, "Search file index · success");
 
   const guidanceSummary = formatTaskEventSummary({
     event: "local_file_read_guidance",
     data: { candidate_count: 2, guidance_count: 1, deep: true }
   });
-  assert.equal(guidanceSummary.title, "需要读取原文");
-  assert.match(guidanceSummary.body, /深度文件夹读取/);
-  assert.match(guidanceSummary.body, /候选 2 个/);
+  assert.equal(guidanceSummary.title, "Source text required");
+  assert.match(guidanceSummary.body, /Deep folder read/);
+  assert.match(guidanceSummary.body, /2 candidates/);
 
   const logSummary = formatTaskEventSummary({
     event: "log",

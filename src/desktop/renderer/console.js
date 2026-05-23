@@ -209,11 +209,29 @@ import {
   getScheduleOccurrencesForRange,
   localDateKey
 } from "../../shared/schedule-occurrences.mjs";
+import {
+  currentLingxyLocale,
+  installLingxyI18nControls
+} from "./i18n-dom.mjs";
 
 const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
 const workspaceRenderSignatures = new Map();
 const consoleShellClient = createRendererShellClient();
+installLingxyI18nControls({ select: document.querySelector("#appLanguageSelect") });
+
+function withConsoleLocaleMetadata(payload = {}) {
+  const locale = currentLingxyLocale();
+  return {
+    ...payload,
+    selectionMetadata: {
+      ...(payload.selectionMetadata ?? {}),
+      ui_locale: locale,
+      preferred_locale: locale,
+      response_locale: locale
+    }
+  };
+}
 
 async function writeConsoleClipboardText(text) {
   const value = String(text ?? "");
@@ -3630,7 +3648,7 @@ async function submitConsoleChat() {
     data: { stage: "client_submit" }
   }, "已收到请求，正在创建任务…");
   try {
-    const result = await consoleSubmissionClient.submitTask({
+    const result = await consoleSubmissionClient.submitTask(withConsoleLocaleMetadata({
       sourceApp: "uca.console.chat",
       captureMode: "desktop_console_chat",
       sourceType: "clipboard",
@@ -3642,7 +3660,7 @@ async function submitConsoleChat() {
       ...(conversationId ? { conversation_id: conversationId } : {}),
       ...(projectId ? { project_id: projectId, selectionMetadata: { project_id: projectId } } : {}),
       ...consoleChatAttachmentPayload(attachedFilePaths)
-    });
+    }));
     const taskId = result.task?.task_id;
     const replyConvId = result.task?.conversation_id;
     const taskConversationId = replyConvId || conversationId;
@@ -9364,14 +9382,14 @@ taskComposer.addEventListener("submit", async (event) => {
   event.preventDefault();
   submitState.textContent = "Submitting...";
   try {
-    const result = await consoleSubmissionClient.submitTask({
+    const result = await consoleSubmissionClient.submitTask(withConsoleLocaleMetadata({
       sourceApp: "uca.console.desktop",
       captureMode: "desktop_console",
       sourceType: "clipboard",
       text: "",
       userCommand: commandInput.value || "Process this text",
       executionMode: "interactive"
-    });
+    }));
     submitState.textContent = `Submitted ${result.task.task_id}`;
     commandInput.value = "";
     await refreshWorkspace();
@@ -9826,7 +9844,7 @@ document.addEventListener("keydown", (event) => {
       // failed the empty-command guard — server returned
       // { ok:false, error:"missing_user_command" } and nothing reached
       // the task store, so New task appeared to do nothing.
-      const result = await consoleSubmissionClient.submitTask({ userCommand: text, sourceApp: "console.palette" });
+      const result = await consoleSubmissionClient.submitTask(withConsoleLocaleMetadata({ userCommand: text, sourceApp: "console.palette" }));
       if (result && result.ok === false) {
         greeting.textContent = result.message || result.error || "Submission failed.";
         return;

@@ -118,6 +118,10 @@ function parseHttpUrl(value = "") {
   }
 }
 
+function isExplorerProcess(processName = "") {
+  return String(processName ?? "").trim().toLowerCase().replace(/\.exe$/u, "") === "explorer";
+}
+
 /**
  * Run both PowerShell probes in parallel and merge the results into a
  * single context object. See contract above for shape.
@@ -167,7 +171,7 @@ export async function captureActiveWindowContext({
     if (info) {
       result.processName = info.process ?? null;
       result.windowTitle = info.title ?? null;
-      if (Array.isArray(info.files)) {
+      if (isExplorerProcess(info.process) && Array.isArray(info.files)) {
         result.filePaths = info.files.filter((f) => typeof f === "string" && f.length > 0);
       }
       const clipText = info.text ?? "";

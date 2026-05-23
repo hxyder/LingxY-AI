@@ -168,6 +168,20 @@ function createInventoryState({ maxEntries = DEFAULT_INVENTORY_MAX_ENTRIES } = {
   };
 }
 
+function normalizeInventoryFileExtensions(fileExtensions = []) {
+  if (!Array.isArray(fileExtensions)) return [];
+  return [...new Set(fileExtensions
+    .map((extension) => String(extension ?? "").trim().toLowerCase())
+    .filter(Boolean)
+    .map((extension) => extension.startsWith(".") ? extension : `.${extension}`)
+    .filter((extension) => /^\.[a-z0-9][a-z0-9_-]{0,15}$/i.test(extension)))];
+}
+
+function inventoryFileMatchesExtension(filePath, fileExtensionSet = null) {
+  if (!fileExtensionSet || fileExtensionSet.size === 0) return true;
+  return fileExtensionSet.has(path.extname(filePath).toLowerCase());
+}
+
 function canVisitInventoryEntry(state) {
   if (state.visitedEntries >= state.maxEntries) {
     state.truncated = true;
@@ -188,20 +202,22 @@ function inventoryEntryLine(entry = {}) {
 async function collectPathInventory(filePath, {
   depth = 0,
   maxDepth = DEFAULT_INVENTORY_MAX_DEPTH,
-  state = createInventoryState()
+  state = createInventoryState(),
+  fileExtensionSet = null
 } = {}) {
   const info = await stat(filePath);
   const isDirectory = info.isDirectory();
   if (!isDirectory) {
+    const countedFile = info.isFile() && inventoryFileMatchesExtension(filePath, fileExtensionSet);
     return {
       path: filePath,
       name: path.basename(filePath),
       type: "file",
       size: info.size,
       mime: info.isFile() ? mimeTypeFromPath(filePath) : "application/octet-stream",
-      file_count: info.isFile() ? 1 : 0,
+      file_count: countedFile ? 1 : 0,
       directory_count: 0,
-      direct_file_count: info.isFile() ? 1 : 0,
+      direct_file_count: countedFile ? 1 : 0,
       direct_directory_count: 0,
       sample_entries: [],
       truncated: false
@@ -247,9 +263,12 @@ async function collectPathInventory(filePath, {
 
     const childPath = path.join(filePath, entry.name);
     if (entry.isFile()) {
-      inventory.file_count += 1;
-      inventory.direct_file_count += 1;
-      if (inventory.sample_entries.length < INVENTORY_SAMPLE_LIMIT) {
+      const countedFile = inventoryFileMatchesExtension(childPath, fileExtensionSet);
+      if (countedFile) {
+        inventory.file_count += 1;
+        inventory.direct_file_count += 1;
+      }
+      if (countedFile && inventory.sample_entries.length < INVENTORY_SAMPLE_LIMIT) {
         inventory.sample_entries.push({ type: "file", path: childPath });
       }
       continue;
@@ -260,7 +279,8 @@ async function collectPathInventory(filePath, {
     const childInventory = await collectPathInventory(childPath, {
       depth: depth + 1,
       maxDepth,
-      state
+      state,
+      fileExtensionSet
     });
     inventory.file_count += childInventory.file_count;
     inventory.directory_count += childInventory.directory_count;
@@ -285,15 +305,20 @@ function renderInventoryText({
   inventories = [],
   totalFileCount = 0,
   totalDirectoryCount = 0,
-  truncated = false
+  truncated = false,
+  fileExtensionFilter = []
 } = {}) {
   const selectedFileCount = inventories.filter((entry) => entry.type === "file").length;
   const selectedDirectoryCount = inventories.filter((entry) => entry.type === "directory").length;
+  const filterLabel = Array.isArray(fileExtensionFilter) && fileExtensionFilter.length > 0
+    ? fileExtensionFilter.join(", ")
+    : "";
   const lines = [
     "# File inventory",
     "Content extraction was skipped because this request only needs file/folder counts.",
+    ...(filterLabel ? [`File extension filter: ${filterLabel}`] : []),
     `Selected items: ${filePaths.length} (${selectedDirectoryCount} directories, ${selectedFileCount} files)`,
-    `Recursive file count: ${totalFileCount}`,
+    `Recursive ${filterLabel ? `${filterLabel} ` : ""}file count: ${totalFileCount}`,
     `Recursive directory count: ${totalDirectoryCount}`,
     `Truncated: ${truncated ? "yes" : "no"}`,
     "",
@@ -481,6 +506,7 @@ export async function buildFileContextPacket({
   inventoryOnly = false,
   inventoryMaxDepth = DEFAULT_INVENTORY_MAX_DEPTH,
   inventoryMaxEntries = DEFAULT_INVENTORY_MAX_ENTRIES,
+  inventoryFileExtensions = [],
   onProgress = null
 }) {
   onProgress?.({
@@ -489,11 +515,14 @@ export async function buildFileContextPacket({
   });
   if (inventoryOnly) {
     const inventoryState = createInventoryState({ maxEntries: inventoryMaxEntries });
+    const fileExtensionFilter = normalizeInventoryFileExtensions(inventoryFileExtensions);
+    const fileExtensionSet = new Set(fileExtensionFilter);
     const inventories = [];
     for (const filePath of filePaths) {
       inventories.push(await collectPathInventory(filePath, {
         maxDepth: inventoryMaxDepth,
-        state: inventoryState
+        state: inventoryState,
+        fileExtensionSet
       }));
     }
     const totalFileCount = inventories.reduce((sum, entry) => sum + (entry.file_count ?? 0), 0);
@@ -565,7 +594,8 @@ export async function buildFileContextPacket({
         inventories,
         totalFileCount,
         totalDirectoryCount,
-        truncated
+        truncated,
+        fileExtensionFilter
       }),
       captured_at: capturedAt,
       selection_metadata: {
@@ -577,6 +607,7 @@ export async function buildFileContextPacket({
           selected_directory_count: inventories.filter((entry) => entry.type === "directory").length,
           total_file_count: totalFileCount,
           total_directory_count: totalDirectoryCount,
+          file_extension_filter: fileExtensionFilter,
           truncated,
           max_depth: inventoryMaxDepth,
           max_entries: inventoryMaxEntries,

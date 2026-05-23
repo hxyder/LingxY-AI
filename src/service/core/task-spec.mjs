@@ -817,6 +817,28 @@ function buildResearchExecutionConstraints(researchQuality) {
   return undefined;
 }
 
+function preferredResponseLanguageFromContext(contextPacket = {}) {
+  const metadata = {
+    ...(contextPacket?.selection_metadata && typeof contextPacket.selection_metadata === "object"
+      ? contextPacket.selection_metadata
+      : {}),
+    ...(contextPacket?.selectionMetadata && typeof contextPacket.selectionMetadata === "object"
+      ? contextPacket.selectionMetadata
+      : {})
+  };
+  const raw = String(
+    metadata.response_locale
+    ?? metadata.preferred_locale
+    ?? metadata.ui_locale
+    ?? metadata.locale
+    ?? ""
+  ).trim();
+  const lower = raw.toLowerCase();
+  if (lower === "en" || lower.startsWith("en-")) return "en-US";
+  if (lower === "zh" || lower === "zh-cn" || lower.startsWith("zh-hans")) return "zh-CN";
+  return "zh-CN";
+}
+
 // ---------------------------------------------------------------------------
 // createTaskSpec — compile user text + context into a TaskSpec
 // ---------------------------------------------------------------------------
@@ -829,6 +851,7 @@ function buildResearchExecutionConstraints(researchQuality) {
  */
 export function createTaskSpec(userText, contextPacket = {}, intentRouterResult = {}) {
   const text = String(userText ?? "");
+  const responseLanguage = preferredResponseLanguageFromContext(contextPacket);
 
   // UCA-077 P1-05: pipeline order is signals → goal → policy → executor.
   // Each step is a pure function; only this orchestrator carries side intent.
@@ -1190,7 +1213,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     },
     source,
     constraints: {
-      language: "zh-CN",
+      language: responseLanguage,
       can_split: !artifactRequired && !["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal),
       must_use_tools: mustUseTools,
       must_verify_artifact: artifactRequired

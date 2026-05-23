@@ -123,6 +123,10 @@ assert.ok(/openMenu:\s*openCtxMenu/.test(consoleJs) && /installConsoleChatContex
 assert.ok(/function openOverlayCtxMenu\s*\(|openOverlayCtxMenu\s*=/.test(overlayJs), "ctx-menu: openOverlayCtxMenu() missing");
 assert.ok(/\.ctx-menu\b/.test(sharedCss) && /\.ctx-menu\b/.test(overlayHtml),
   "ctx-menu: .ctx-menu CSS missing in either console or overlay");
+assert.ok(/\.bubble\.user\s+\.context-chip\s*\{[\s\S]*?color:\s*#0d0d0d/i.test(overlayHtml),
+  "overlay context chips: user bubble chips must force readable dark text");
+assert.ok(/body\[data-theme="dark"\]\s+\.bubble\.user\s+\.context-chip\s*\{[\s\S]*?color:\s*#0d0d0d/i.test(overlayHtml),
+  "overlay context chips: dark-theme user bubble chips must not inherit white text");
 
 // ── Image attachment thumbnails ────────────────────────────────────────
 assert.ok(/from\s+["']\.\/console-chat-attachments\.mjs["']/.test(consoleJs),
@@ -343,19 +347,22 @@ assert.ok(/from\s+["']\.\.\/\.\.\/shared\/current-context-intent\.mjs["']/.test(
     && /commandTargetsCurrentBrowserContext/.test(currentContextIntent)
     && /commandTargetsCurrentFileContext/.test(currentContextIntent),
   "voice/current-page: overlay and service code must share structural current context signals");
-assert.ok(/command:\s*"分析当前页面的完整内容并总结要点"/.test(overlayJs)
-    && /command:\s*"把当前页面翻译成中文"/.test(overlayJs),
+assert.ok(/command:\s*uiText\("Analyze the full current page and summarize the key points\.",\s*"分析当前页面的完整内容并总结要点"\)/.test(overlayJs)
+    && /command:\s*uiText\("Translate the current page to English\.",\s*"把当前页面翻译成中文"\)/.test(overlayJs),
   "current-page quick actions: commands must preserve current-page intent instead of embedding URL text");
 assert.ok(/const explicitBrowserContextRequest = commandTargetsCurrentBrowserContext\(commandText\);/.test(overlayJs)
     && /const activeBrowserCapture = explicitBrowserContextRequest[\s\S]{0,120}\? await resolveActiveWindowBrowserCapture\(\)/.test(overlayJs)
     && /explicitBrowserContextRequest && !activeBrowserCapture/.test(overlayJs),
   "current-page routing: active browser capture must be gated by explicit current-page intent");
-assert.ok(/getActiveWindowContext\(\{[\s\S]{0,220}preferLastExternal:\s*true[\s\S]{0,220}current_page_submit/.test(overlayJs)
+assert.ok(/getActiveWindowContext\(\{[\s\S]{0,220}preferLastExternal:\s*false[\s\S]{0,220}current_page_submit/.test(overlayJs)
     && /EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS\s*=\s*30\s*\*\s*1000/.test(overlayJs)
     && /freshPendingActiveWindowContext\(EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS\)/.test(overlayJs)
     && /params\.set\("require_url_match", "1"\)/.test(overlayJs)
+    && /isBrowserWindowCandidate/.test(overlayJs)
+    && /isBrowserProcessName/.test(overlayJs)
+    && /未读取到地址栏，将尝试匹配浏览器扩展最近捕捉的页面内容/.test(overlayJs)
     && /pendingActiveWindowContextCapturedAt/.test(overlayJs),
-  "current-page routing: explicit current-page submits must refresh external browser context and only use a fresh pending external hint");
+  "current-page routing: explicit current-page submits must refresh without stale external fallback, recover title-only browser windows, and only use a fresh pending external hint");
 assert.ok(!/command:\s*`[^`]*页面[^`]*\$\{activeWindow\.url\}/.test(overlayJs),
   "current-page quick actions: URL must stay as structured context, not user command text");
 
@@ -720,7 +727,7 @@ assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,760}includeSelection:\s*true/
     && /captureActiveWindowHintForVoice[\s\S]{0,900}clipboardBaseline/.test(overlayJs)
     && /VOICE_CONTEXT_FALLBACK_MAX_AGE_MS\s*=\s*60\s*\*\s*1000/.test(overlayJs)
     && /maxExternalAgeMs:\s*VOICE_CONTEXT_FALLBACK_MAX_AGE_MS/.test(overlayJs)
-    && /captureActiveWindowHintForVoice[\s\S]{0,1100}applyShellHandoff\(payload\)/.test(overlayJs),
+    && /captureActiveWindowHintForVoice[\s\S]{0,1600}applyShellHandoff\(payload\)/.test(overlayJs),
   "voice mode: voice and Echo context capture must hand off selected text/files without promoting stale clipboard fallback");
 assert.ok(/NOTE_SOURCE_CONTEXT_MAX_AGE_MS\s*=\s*60\s*\*\s*1000/.test(overlayJs)
     && /function fetchRecentBrowserContextForNote[\s\S]{0,260}if \(!sourceUrl && !sourceTitle\) return null;/.test(overlayJs)

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN" data-accent="terra" data-density="regular">
+<html lang="en-US" data-accent="terra" data-density="regular">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -51,6 +51,9 @@
       }
 
       .window-drag-strip::before {
+        content: "Drag dialog";
+      }
+      html[data-locale="zh-CN"] .window-drag-strip::before {
         content: "拖动对话框";
       }
 
@@ -1072,6 +1075,24 @@
       button.context-chip:hover {
         border-color: rgba(16, 185, 129, 0.42);
         background: rgba(16, 185, 129, 0.1);
+      }
+
+      .bubble.user .context-chip {
+        background: rgba(255, 255, 255, 0.9);
+        border-color: rgba(13, 13, 13, 0.12);
+        color: #0d0d0d;
+      }
+
+      body[data-theme="dark"] .bubble.user .context-chip {
+        background: rgba(13, 13, 13, 0.08);
+        border-color: rgba(13, 13, 13, 0.16);
+        color: #0d0d0d;
+      }
+
+      .bubble.user button.context-chip:hover {
+        background: rgba(13, 13, 13, 0.12);
+        border-color: rgba(13, 13, 13, 0.24);
+        color: #0d0d0d;
       }
 
       .context-preview {
@@ -2132,9 +2153,12 @@
         margin-bottom: 4px;
       }
       .note-transcript-box:empty::before {
-        content: "等待录音...";
+        content: "Waiting for recording...";
         color: var(--muted);
         font-style: italic;
+      }
+      html[data-locale="zh-CN"] .note-transcript-box:empty::before {
+        content: "等待录音...";
       }
       .note-transcript-entry {
         margin-bottom: 6px;
@@ -2740,7 +2764,7 @@
       <div id="taskListBody" class="task-list-body" role="list"></div>
     </div>
 
-    <div id="overlayResizeGrip" class="window-resize-grip" title="调整对话框大小" aria-label="调整对话框大小"></div>
+    <div id="overlayResizeGrip" class="window-resize-grip" title="Resize dialog" aria-label="Resize dialog"></div>
 
     <script src="./drop-guard.js"></script>
     <script src="./preview/client-registry.js"></script>
@@ -2752,6 +2776,7 @@
     <script src="./preview/streaming.js"></script>
     <script src="./live-preview-shell-client.js"></script>
     <script src="./live-preview.js"></script>
+    <script type="module" src="./i18n-dom-bootstrap.mjs"></script>
     <script type="module" src="./overlay.js"></script>
   </body>
 </html>
