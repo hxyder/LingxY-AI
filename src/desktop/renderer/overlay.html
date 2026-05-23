@@ -1,0 +1,2764 @@
+<!doctype html>
+<html lang="en-US" data-accent="terra" data-density="regular">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LingxY Overlay</title>
+    <link rel="stylesheet" href="./shared.css">
+    <style>
+      html, body {
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+      }
+
+      body {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        align-items: center;
+        padding: 0 0 26px;
+        position: relative;
+        --overlay-width: min(calc(100vw - 32px), 900px);
+        font-family: -apple-system, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+        /* transparent window — no drag region needed */
+      }
+
+      .window-drag-strip {
+        width: min(var(--overlay-width), calc(100vw - 72px));
+        height: 34px;
+        margin: 0 0 10px;
+        border: 1px solid rgba(91, 107, 122, 0.24);
+        border-radius: 999px;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.55)),
+          radial-gradient(circle at 50% 50%, rgba(91, 107, 122, 0.16), transparent 62%);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+        cursor: grab;
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        -webkit-app-region: no-drag;
+        display: grid;
+        place-items: center;
+        color: rgba(15, 23, 42, 0.66);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .window-drag-strip:active {
+        cursor: grabbing;
+      }
+
+      .window-drag-strip::before {
+        content: "Drag dialog";
+      }
+      html[data-locale="zh-CN"] .window-drag-strip::before {
+        content: "拖动对话框";
+      }
+
+      .window-resize-grip {
+        position: fixed;
+        right: 12px;
+        bottom: 10px;
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(91, 107, 122, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.68);
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+        cursor: nwse-resize;
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        -webkit-app-region: no-drag;
+        z-index: 20;
+      }
+
+      .window-resize-grip::before {
+        content: "";
+        position: absolute;
+        right: 6px;
+        bottom: 6px;
+        width: 10px;
+        height: 10px;
+        border-right: 2px solid rgba(91, 107, 122, 0.82);
+        border-bottom: 2px solid rgba(91, 107, 122, 0.82);
+      }
+
+      /* Apple-style auto-hide: when overlay is "popping" (no user engagement)
+         the chrome subtly fades out, then JS hides the window. */
+      body.popping .quick-toolbar,
+      body.popping .input-bar {
+        opacity: 0;
+        transform: translateY(8px);
+        pointer-events: none;
+        transition: opacity 280ms ease, transform 280ms ease;
+      }
+
+      body.popping .bubble-area {
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 280ms ease, transform 280ms ease;
+      }
+
+      body.voice-mode .quick-toolbar,
+      body.voice-mode .input-bar,
+      body.voice-mode .bubble-area,
+      body.voice-mode #schedulePanel {
+        display: none !important;
+      }
+
+      /* ── bubble conversation area ── */
+      .bubble-area {
+        width: var(--overlay-width);
+        /* Scale the message column with the overlay window — was a
+           fixed 420px so resizing the window made the chrome grow but
+           the readable area stayed cramped. Cap at 70vh so it never
+           swallows the input bar; min-height keeps short replies from
+           collapsing the area. */
+        max-height: min(70vh, 720px);
+        min-height: 120px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 14px 18px;
+        margin-bottom: 10px;
+        border-radius: 22px 22px 8px 8px;
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow:
+          0 24px 60px rgba(0, 0, 0, 0.14),
+          0 4px 16px rgba(0, 0, 0, 0.05),
+          inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        -webkit-app-region: no-drag;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(0,0,0,0.12) transparent;
+        transition: opacity 240ms ease, transform 240ms ease;
+      }
+
+      .bubble-area:empty,
+      .bubble-area[hidden] {
+        display: none;
+      }
+
+      /* ── empty state (shown when no bubbles yet) ── */
+      .empty-state {
+        width: var(--overlay-width);
+        margin-bottom: 10px;
+        padding: 22px 22px 18px;
+        border-radius: 22px 22px 8px 8px;
+        background: rgba(255, 255, 255, 0.66);
+        backdrop-filter: blur(30px) saturate(160%);
+        -webkit-backdrop-filter: blur(30px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        text-align: center;
+        -webkit-app-region: no-drag;
+        transition: opacity 200ms ease;
+      }
+      .empty-state[aria-hidden="true"] {
+        display: none;
+      }
+      body.voice-mode .empty-state {
+        display: none !important;
+      }
+      .empty-state-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--ink);
+        margin-bottom: 4px;
+      }
+      .empty-state-hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 14px;
+      }
+      .empty-state-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        margin-bottom: 12px;
+      }
+      .empty-state .empty-chip {
+        font-size: 12px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--ink);
+        cursor: pointer;
+        transition: background 140ms ease, transform 80ms ease;
+      }
+      .empty-state .empty-chip:hover {
+        background: rgba(91, 107, 122, 0.1);
+        transform: translateY(-1px);
+      }
+      .empty-state-footnote {
+        font-size: 11px;
+        color: var(--muted);
+        opacity: 0.8;
+      }
+      body[data-theme="dark"] .empty-state {
+        background: rgba(30, 30, 36, 0.78);
+        border-color: rgba(255, 255, 255, 0.08);
+      }
+      body[data-theme="dark"] .empty-state .empty-chip {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.12);
+        color: #e8e8e8;
+      }
+
+      /* ── bubbles ── */
+      .bubble {
+        max-width: 85%;
+        padding: 10px 14px;
+        border-radius: 14px;
+        font-size: 13px;
+        line-height: 1.55;
+        /* keep-all: CJK characters don't break between each other (so "美元/桶"
+           never splits "美" from "元" like the old word-break:break-word did).
+           overflow-wrap: anywhere is the fallback — if a line genuinely can't
+           fit (long URL, very long Latin run), break anywhere as a last resort
+           rather than overflow the bubble. */
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+        animation: bubble-in 180ms ease;
+      }
+
+      .bubble.assistant {
+        align-self: flex-start;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid var(--line);
+        border-bottom-left-radius: 4px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      /* Streaming caret — appended at the tail while text_delta frames
+         are still arriving. The .streaming class is added when the
+         streaming bubble is created (overlay.js ~2159) and removed when
+         the inline_result event finalizes the answer. */
+      .bubble.assistant.streaming::after {
+        content: "▍";
+        display: inline-block;
+        margin-left: 2px;
+        color: var(--accent);
+        animation: lingxy-caret-blink 1s steps(2, jump-none) infinite;
+        vertical-align: baseline;
+      }
+      @keyframes lingxy-caret-blink {
+        50% { opacity: 0; }
+      }
+
+      /* Per-bubble timestamp footer rendered by addBubble /
+         appendBubbleTimestamp. Relative time is visible; absolute time
+         lives in the title attribute. */
+      .bubble-time {
+        display: block;
+        margin-top: 4px;
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+        user-select: none;
+      }
+      .bubble.user .bubble-time { text-align: right; }
+
+      /* Right-click context menu for chat bubbles. Same visual
+         language as console.html's menu — small panel + hover rows.
+         Hidden by default; positioned at click coordinates by
+         overlay.js. */
+      .ctx-menu {
+        position: fixed;
+        z-index: 200;
+        min-width: 150px;
+        padding: 4px;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid var(--line, rgba(91, 107, 122, 0.18));
+        border-radius: 8px;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        font-size: 12.5px;
+        user-select: none;
+        animation: ctx-menu-in-overlay 90ms ease;
+      }
+      .ctx-menu[hidden] { display: none; }
+      .ctx-menu .ctx-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 0;
+        background: transparent;
+        color: var(--ink, #1e293b);
+        text-align: left;
+        border-radius: 5px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12.5px;
+      }
+      .ctx-menu .ctx-item:hover,
+      .ctx-menu .ctx-item:focus-visible {
+        background: rgba(91, 107, 122, 0.10);
+        outline: none;
+      }
+      .ctx-menu .ctx-item .ctx-glyph {
+        width: 14px;
+        text-align: center;
+        color: var(--muted, #64748b);
+      }
+      .ctx-menu .ctx-sep {
+        height: 1px;
+        margin: 3px 4px;
+        background: rgba(91, 107, 122, 0.16);
+      }
+      @keyframes ctx-menu-in-overlay {
+        from { opacity: 0; transform: translateY(-2px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      /* Drop-zone shown while the user is dragging files toward the
+         overlay window. Sits above all chat content but below the
+         scroll-to-bottom button so it never traps a click meant for the
+         input bar. Pointer-events:none — the dragover/drop events keep
+         flowing through to the body listener that drives the counter. */
+      .overlay-drop-zone {
+        position: absolute;
+        inset: 8px;
+        z-index: 4;
+        display: grid;
+        place-items: center;
+        background: rgba(91, 107, 122, 0.10);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 2px dashed var(--accent, #2563eb);
+        border-radius: 14px;
+        pointer-events: none;
+        animation: overlay-drop-zone-in 140ms ease;
+      }
+      .overlay-drop-zone[hidden] { display: none; }
+      .overlay-drop-zone-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 16px 22px;
+        color: var(--accent-strong, #1d4ed8);
+        text-align: center;
+        background: rgba(255, 255, 255, 0.86);
+        border-radius: 12px;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+      }
+      .overlay-drop-zone-title {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .overlay-drop-zone-hint {
+        font-size: 10px;
+        color: var(--muted, #64748b);
+        letter-spacing: 0.02em;
+      }
+      @keyframes overlay-drop-zone-in {
+        from { opacity: 0; transform: scale(0.985); }
+        to { opacity: 1; transform: scale(1); }
+      }
+
+      /* Floating "↓ 回到最新" pill. Position fixed against the overlay
+         viewport so it sits above bubble-area and input-bar without
+         being swallowed by their stacking contexts. Dark inverted
+         background for unmistakable contrast against any desktop /
+         translucent overlay surface (the previous white pill blended
+         into the chrome). */
+      .scroll-to-bottom {
+        position: fixed;
+        left: 50%;
+        bottom: 110px;
+        transform: translateX(-50%);
+        height: 30px;
+        padding: 0 14px 0 12px;
+        border-radius: 999px;
+        border: 0;
+        background: rgba(15, 23, 42, 0.92);
+        color: #fff;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.32);
+        transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+        z-index: 50;
+      }
+      .scroll-to-bottom:hover {
+        transform: translateX(-50%) translateY(-1px);
+        background: rgba(15, 23, 42, 1);
+        box-shadow: 0 14px 32px rgba(15, 23, 42, 0.40);
+      }
+      .scroll-to-bottom[hidden] { display: none; }
+
+      /* Structured/long assistant answer: accent left bar, tighter type scale,
+         more space between list items and headings. Short chatty replies keep
+         the plain .bubble.assistant layout. */
+      .bubble.assistant.bubble--answer {
+        max-width: 92%;
+        padding: 12px 16px 12px 18px;
+        border-left: 2px solid rgba(91, 107, 122, 0.55);
+        border-bottom-left-radius: 10px;
+      }
+      .bubble.assistant.bubble--answer .md-h1,
+      .bubble.assistant .md-h1 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 6px 0 4px;
+      }
+      .bubble.assistant.bubble--answer .md-h2,
+      .bubble.assistant .md-h2 {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 6px 0 3px;
+      }
+      .bubble.assistant.bubble--answer .md-h3,
+      .bubble.assistant .md-h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 5px 0 2px;
+      }
+      /* Hanging-indent layout — was display:flex, but that produced
+         multiple anonymous flex items when a bullet line contained
+         several <strong> spans (common in research summaries with
+         CJK + bold), and the implicit items wrapped into pseudo-
+         columns that read as a broken layout. Position-based
+         indent keeps the text a normal block flow with proper line
+         wrapping while the bullet/number sits in a fixed gutter. */
+      .bubble.assistant .md-list-item {
+        position: relative;
+        padding: 2px 0 2px 1.4em;
+        line-height: 1.55;
+      }
+      .bubble.assistant .md-list-item .md-list-num,
+      .bubble.assistant .md-list-item .md-bullet {
+        position: absolute;
+        left: 0;
+        top: 2px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .bubble.assistant .md-gap {
+        height: 6px;
+      }
+      .bubble.assistant .md-inline-code {
+        background: rgba(91, 107, 122, 0.10);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        font-family: "SF Mono", "Consolas", monospace;
+      }
+      .bubble.assistant .md-link {
+        color: var(--accent, #5b6b7a);
+        text-decoration: underline;
+      }
+      .bubble.assistant .md-image-link {
+        display: block;
+        margin: 8px 0;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(91, 107, 122, 0.14);
+        background: rgba(255, 255, 255, 0.52);
+      }
+      .bubble.assistant .md-image {
+        display: block;
+        max-width: 100%;
+        max-height: 260px;
+        object-fit: contain;
+      }
+      .bubble.assistant .md-code {
+        position: relative;
+        margin: 8px 0;
+        border-radius: 8px;
+        background: rgba(17, 24, 39, 0.92);
+        color: #f1f5f9;
+        overflow: hidden;
+      }
+      .bubble.assistant .md-code pre {
+        margin: 0;
+        padding: 10px 12px;
+        font-family: "SF Mono", "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        overflow-x: auto;
+        max-height: 260px;
+      }
+      .bubble.assistant .md-code pre code {
+        background: transparent;
+        padding: 0;
+        color: inherit;
+        font: inherit;
+      }
+      .bubble.assistant .md-code-copy {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        padding: 3px 8px;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        font-size: 11px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 120ms ease, background-color 120ms ease;
+      }
+      .bubble.assistant .md-code:hover .md-code-copy {
+        opacity: 1;
+      }
+      .bubble.assistant .md-code-copy:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
+      /* UCA-182 Phase 17: streaming bubble polish.
+         - subtle left-edge "thinking" accent bar so the stream is
+           identifiable at a glance without a loud full-border glow
+         - blinking caret at the trailing edge while tokens arrive
+         - softened pulse so the UI doesn't throb */
+      .bubble.assistant.streaming {
+        position: relative;
+        border-color: rgba(91, 107, 122, 0.22);
+        background: linear-gradient(180deg, rgba(245, 246, 255, 0.98) 0%, rgba(237, 240, 250, 0.98) 100%);
+        box-shadow: inset 3px 0 0 0 rgba(91, 107, 122, 0.55);
+        padding-left: 14px;
+        animation: streamPulse 2.2s ease-in-out infinite;
+      }
+      .bubble.assistant.streaming::after {
+        content: "";
+        display: inline-block;
+        width: 7px;
+        height: 13px;
+        margin-left: 2px;
+        vertical-align: text-bottom;
+        background: rgba(91, 107, 122, 0.75);
+        border-radius: 1px;
+        animation: streamCaret 1s steps(2, end) infinite;
+      }
+      .bubble.assistant.answer-placeholder {
+        color: var(--muted, #64748b);
+      }
+      .bubble.assistant.answer-placeholder .answer-placeholder-text {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .bubble.assistant.answer-placeholder .answer-placeholder-text::before {
+        content: "";
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.55;
+        animation: answerPlaceholderPulse 1.1s ease-in-out infinite;
+      }
+      @keyframes answerPlaceholderPulse {
+        0%, 100% { transform: scale(0.8); opacity: 0.35; }
+        50% { transform: scale(1); opacity: 0.8; }
+      }
+      @keyframes streamPulse {
+        0%, 100% { box-shadow: inset 3px 0 0 0 rgba(91, 107, 122, 0.35); }
+        50% { box-shadow: inset 3px 0 0 0 rgba(91, 107, 122, 0.75); }
+      }
+      @keyframes streamCaret {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+      }
+      body[data-theme="dark"] .bubble.assistant.streaming {
+        background: linear-gradient(180deg, rgba(32, 32, 38, 0.92) 0%, rgba(28, 28, 34, 0.94) 100%);
+      }
+
+      .bubble.user {
+        align-self: flex-end;
+        background: var(--accent);
+        color: #fff;
+        border-bottom-right-radius: 4px;
+        box-shadow: 0 2px 8px rgba(91, 107, 122, 0.2);
+      }
+
+      .bubble.system {
+        align-self: center;
+        max-width: 100%;
+        font-size: 11px;
+        color: var(--muted);
+        background: rgba(107, 114, 128, 0.06);
+        border-radius: 8px;
+        padding: 6px 12px;
+      }
+
+      /* Tool-call card: a single visual unit with kind-coded left rail and
+         collapsible body via native <details>, shared across overlay-style
+         task surfaces. */
+      .bubble.step {
+        align-self: stretch;
+        max-width: 96%;
+        width: 100%;
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        position: relative;
+        z-index: 1;
+        font-size: 12px;
+        color: var(--ink-2, #475569);
+        background: color-mix(in srgb, var(--panel, #111827) 94%, transparent);
+        border: 1px solid color-mix(in srgb, var(--line, #e2e8f0) 65%, transparent);
+        border-left: 2px solid rgba(107, 114, 128, 0.45);
+        border-radius: 10px;
+        padding: 0;
+        margin: 4px 0;
+        overflow: hidden;
+        animation: none;
+        transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+      }
+      .bubble.step:hover { box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05); }
+      .bubble.step.pending { border-left-color: #6366f1; }
+      .bubble.step.done    { border-left-color: #10b981; }
+      .bubble.step.fail    { border-left-color: #dc2626; background: color-mix(in srgb, #dc2626 4%, var(--bg-2, #f8fafc)); }
+
+      .bubble.step > .step-row {
+        width: 100%;
+        box-sizing: border-box;
+        display: flex; align-items: flex-start; gap: 8px;
+        padding: 7px 10px;
+        min-height: 42px;
+        font-weight: 500;
+        cursor: pointer;
+        border: 0;
+        background: transparent;
+        text-align: left;
+      }
+      .bubble.step .step-icon {
+        width: 14px; height: 14px; flex-shrink: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+      }
+      .bubble.step.pending .step-icon { color: #6366f1; }
+      .bubble.step.done    .step-icon { color: #10b981; }
+      .bubble.step.fail    .step-icon { color: #dc2626; }
+      .bubble.step .step-name {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--ink, #1e293b);
+        letter-spacing: -0.01em;
+      }
+      .bubble.step .step-summary {
+        font-size: 11.5px;
+        color: var(--muted, #64748b);
+        margin-left: 4px;
+        flex: 1; min-width: 0;
+        overflow: hidden;
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-height: 1.35;
+      }
+      .bubble.step .step-chevron {
+        margin-left: auto;
+        width: 10px; height: 10px;
+        color: var(--muted-2, #94a3b8);
+        transition: transform 140ms ease;
+      }
+      .bubble.step.is-open > .step-row .step-chevron { transform: rotate(90deg); }
+      /* "…查看全部" hint shown only when the result was truncated. Keeps
+         the cue inline with the summary so it doesn't visually fight
+         with the chevron. Hidden once the row is expanded — at that
+         point the user is reading the full body. */
+      .bubble.step .step-more {
+        flex-shrink: 0;
+        margin-left: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--accent, #2563eb);
+        white-space: nowrap;
+      }
+      .bubble.step.is-open > .step-row .step-more { display: none; }
+
+      .bubble.step .step-body {
+        padding: 4px 12px 10px 28px;
+        font-size: 11.5px;
+        line-height: 1.5;
+        color: var(--ink-2, #475569);
+        border-top: 1px solid color-mix(in srgb, var(--line, #e2e8f0) 55%, transparent);
+      }
+      /* Copy button — top-right of the expanded step body. Uses position
+         absolute so it doesn't shove the args/outcome layout sideways.
+         Subtle until hover so it doesn't visually compete with the
+         result the user came here to read. */
+      /* Copy button — always-visible at the step row's top-right edge.
+         Was previously buried inside .step-body, which only appeared
+         after the user expanded the step (the user reported they
+         couldn't find it). Now sits on the row itself, accent-tinted
+         so it reads as an affordance even on the collapsed card. */
+      .bubble.step .step-copy {
+        position: absolute;
+        top: 5px;
+        right: 8px;
+        padding: 2px 9px;
+        font-size: 10.5px;
+        font-weight: 500;
+        color: var(--accent, #2563eb);
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 35%, var(--line, #e2e8f0) 65%);
+        border-radius: 999px;
+        cursor: pointer;
+        opacity: 0.95;
+        transition: opacity 120ms, background 120ms, color 120ms, transform 120ms;
+        z-index: 2;
+      }
+      .bubble.step .step-copy:hover {
+        opacity: 1;
+        background: var(--accent, #2563eb);
+        color: #fff;
+        transform: translateY(-1px);
+      }
+      /* Push the row content to leave room for the absolutely-placed
+         Copy button so it doesn't overlap step-summary text. */
+      .bubble.step:has(.step-copy) > .step-row {
+        padding-right: 56px;
+      }
+      .bubble.step .step-body .step-args {
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 11px;
+        color: var(--muted, #64748b);
+        background: color-mix(in srgb, currentColor 4%, transparent);
+        padding: 5px 7px;
+        border-radius: 5px;
+        margin-bottom: 6px;
+        white-space: pre-wrap;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+        max-height: 120px;
+        overflow: auto;
+      }
+      .bubble.step .step-body .step-outcome {
+        white-space: pre-wrap;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+      }
+
+      /* 83.4 — Thinking card. Streams reasoning_content (Qwen3 thinking,
+         DeepSeek reasoner) into a folded details element. Open while
+         streaming so the user sees progress; closeActiveThinkingCard()
+         flips it shut once content_delta arrives. Purple accent matches
+         the batched-notification kind for visual continuity. */
+      .bubble.thinking {
+        align-self: stretch;
+        max-width: 96%;
+        width: 100%;
+        box-sizing: border-box;
+        flex: 0 0 auto;
+        position: relative;
+        z-index: 1;
+        font-size: 11.5px;
+        color: var(--ink-2, #4b5563);
+        background: color-mix(in srgb, #7c3aed 7%, var(--panel, #111827));
+        border: 1px solid color-mix(in srgb, #7c3aed 24%, var(--line, #e2e8f0));
+        border-left: 2px solid #7c3aed;
+        border-radius: 10px;
+        padding: 0;
+        margin: 2px 0;
+        overflow: hidden;
+      }
+      .bubble.thinking > .thinking-summary {
+        width: 100%;
+        box-sizing: border-box;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        font-size: 12px;
+        user-select: none;
+        border: 0;
+        background: transparent;
+        text-align: left;
+      }
+      .bubble.thinking .thinking-icon { font-size: 13px; }
+      .bubble.thinking .thinking-label {
+        font-weight: 600;
+        color: color-mix(in srgb, #7c3aed 78%, var(--ink, #111827));
+        letter-spacing: -0.01em;
+      }
+      .bubble.thinking .thinking-status {
+        margin-left: auto;
+        font-size: 11px;
+        color: var(--muted, #6b7280);
+        font-variant-numeric: tabular-nums;
+      }
+      .bubble.thinking .thinking-body {
+        padding: 4px 12px 10px 12px;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 11px;
+        line-height: 1.55;
+        max-height: 220px;
+        overflow: auto;
+        white-space: pre-wrap;
+        color: var(--ink-2, #4b5563);
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+      }
+      .bubble.thinking:not(.is-open) .thinking-body { display: none; }
+
+      .child-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .child-badge-row button {
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        color: var(--ink);
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+
+      .child-badge-row button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      /* ── inline option buttons inside bubbles ── */
+      .bubble-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 8px;
+      }
+
+      .bubble-options button {
+        font-size: 12px;
+        padding: 5px 12px;
+        border-radius: var(--radius-pill);
+        background: var(--surface-strong);
+        border: 1px solid var(--line);
+        color: var(--ink);
+        font-weight: 500;
+      }
+
+      .bubble-options button:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent-strong);
+      }
+
+      .bubble-options button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      /* ── per-user-bubble ↑/↓ nav: jump to previous/next prompt ── */
+      .bubble-nav {
+        display: flex;
+        gap: 4px;
+        margin-top: 4px;
+        opacity: 0;
+        transition: opacity 0.15s;
+        justify-content: flex-end;
+      }
+      .bubble.user:hover .bubble-nav { opacity: 0.8; }
+      .bubble-nav-btn {
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 50%;
+        color: rgba(255, 255, 255, 0.78);
+        cursor: pointer;
+        font-size: 12px;
+        font-family: inherit;
+        line-height: 1;
+        display: grid;
+        place-items: center;
+      }
+      .bubble-nav-btn:hover {
+        background: rgba(255, 255, 255, 0.18);
+        color: #fff;
+      }
+      @keyframes bubble-flash {
+        0%   { box-shadow: 0 0 0 0 rgba(91, 107, 122, 0.4); }
+        50%  { box-shadow: 0 0 0 6px rgba(91, 107, 122, 0.4); }
+        100% { box-shadow: 0 0 0 0 rgba(91, 107, 122, 0.4); }
+      }
+      .bubble--flash {
+        animation: bubble-flash 1s ease;
+      }
+
+      /* ── per-assistant-bubble action row (Add-to-note, Regenerate) ── */
+      .bubble-note-actions {
+        margin-top: 6px;
+        display: flex;
+        gap: 6px;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .bubble:hover .bubble-note-actions { opacity: 1; }
+      .bubble-note-btn {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: var(--radius-pill);
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .bubble-note-btn:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent-strong);
+      }
+      .bubble-note-btn:disabled {
+        opacity: 0.5;
+        cursor: progress;
+      }
+
+      /* ── overlay note picker popover (UCA-181) ── */
+      .overlay-note-popover {
+        position: absolute;
+        z-index: 200;
+        width: 280px;
+        background: var(--surface-strong);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.2);
+        overflow: hidden;
+        font-family: inherit;
+      }
+      .overlay-note-popover .onp-head {
+        padding: 8px 12px;
+        font-size: 11.5px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .overlay-note-popover .onp-list {
+        max-height: 320px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .overlay-note-popover .onp-item {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 8px 12px;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        border-bottom: 1px solid var(--line);
+        font-family: inherit;
+        color: var(--ink);
+      }
+      .overlay-note-popover .onp-item:last-child { border-bottom: 0; }
+      .overlay-note-popover .onp-item:hover { background: var(--surface); }
+      .overlay-note-popover .onp-item-title {
+        font-size: 12.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .overlay-note-popover .onp-item-snippet {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .overlay-note-popover .onp-item-new {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-weight: 600;
+      }
+
+      /* New-note title prompt (overlay variant). Replaces the list
+         when the user chose "+ 新建笔记". */
+      .overlay-note-popover .onp-new-prompt {
+        display: flex;
+        gap: 6px;
+        padding: 10px;
+        align-items: center;
+      }
+      .overlay-note-popover .onp-title-input {
+        flex: 1;
+        min-width: 0;
+        padding: 6px 10px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.94);
+        color: var(--ink);
+        font-size: 12.5px;
+        font-family: inherit;
+        outline: none;
+      }
+      .overlay-note-popover .onp-title-input:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+      .overlay-note-popover .onp-title-confirm {
+        flex-shrink: 0;
+        padding: 6px 12px;
+        border: 0;
+        border-radius: 6px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 12.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .overlay-note-popover .onp-title-confirm:hover {
+        background: var(--accent-strong);
+      }
+
+      /* ── context chips (attached files / web context) ── */
+      .context-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: var(--radius-pill);
+        font-size: 12px;
+        background: rgba(91, 107, 122, 0.08);
+        border: 1px solid rgba(91, 107, 122, 0.15);
+        color: var(--accent-strong);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .context-chip .dismiss {
+        width: 14px;
+        height: 14px;
+        border: none;
+        background: none;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1;
+        padding: 0;
+        cursor: pointer;
+        flex-shrink: 0;
+      }
+
+      button.context-chip {
+        cursor: pointer;
+        font: inherit;
+      }
+
+      button.context-chip:hover {
+        border-color: rgba(16, 185, 129, 0.42);
+        background: rgba(16, 185, 129, 0.1);
+      }
+
+      .context-preview {
+        margin-top: 8px;
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid rgba(91, 107, 122, 0.16);
+        background: rgba(91, 107, 122, 0.06);
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      /* ── quick action toolbar (sits above the input bar) ──
+         UCA-123: flex-wrap so the 语音/定时 chips drop instead of
+         clipping past the right edge when content > 520 px. box-sizing
+         belt-and-suspenders in case some reset missed this. */
+      .quick-toolbar {
+        width: var(--overlay-width);
+        max-width: var(--overlay-width);
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        padding: 9px 14px;
+        margin-bottom: 10px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow:
+          0 12px 30px rgba(0, 0, 0, 0.08),
+          inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        -webkit-app-region: no-drag;
+        position: relative;
+        z-index: 12;
+        transition: opacity 240ms ease, transform 240ms ease;
+      }
+
+      .quick-toolbar .quick-btn {
+        flex: 0 0 auto;
+        height: 28px;
+        padding: 0 10px;
+        max-width: calc(var(--overlay-width) - 32px);
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--ink);
+        font-size: 12px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+      }
+
+      .quick-toolbar .quick-btn:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent-strong);
+      }
+
+      .quick-toolbar .quick-btn.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
+      .quick-toolbar .quick-btn .quick-glyph {
+        font-size: 13px;
+        line-height: 1;
+      }
+
+      .quick-toolbar .quick-spacer {
+        flex: 1 1 auto;
+      }
+
+      .quick-toolbar .quick-icon-btn {
+        width: 30px;
+        height: 30px;
+        padding: 0;
+        border-radius: 50%;
+        display: grid;
+        place-items: center;
+        gap: 0;
+      }
+
+      /* ── inline form panel (scheduled task, voice prompt, etc.) ── */
+      .inline-panel {
+        width: var(--overlay-width);
+        margin-bottom: 8px;
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(24px) saturate(1.2);
+        -webkit-backdrop-filter: blur(24px) saturate(1.2);
+        border: 1px solid rgba(255, 255, 255, 0.75);
+        box-shadow:
+          0 10px 28px rgba(0, 0, 0, 0.1),
+          inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        -webkit-app-region: no-drag;
+        display: none;
+      }
+
+      .inline-panel[data-open="true"] {
+        display: block;
+      }
+
+      .inline-panel .panel-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 10px;
+        color: var(--ink);
+      }
+
+      .overlay-project-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        padding: 3px;
+        margin-bottom: 8px;
+        border-radius: 10px;
+        background: rgba(91, 107, 122, 0.1);
+      }
+
+      .overlay-project-tabs button,
+      .overlay-history-action {
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .overlay-project-tabs button {
+        padding: 5px 8px;
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      .overlay-project-tabs button[aria-pressed="true"] {
+        background: rgba(255, 255, 255, 0.92);
+        border-color: rgba(91, 107, 122, 0.18);
+        color: var(--ink);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      }
+
+      .overlay-history-row {
+        display: grid;
+        grid-template-columns: 7px minmax(0, 1fr) auto;
+        gap: 7px;
+        align-items: center;
+        padding: 7px 8px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+
+      .overlay-history-row.is-active {
+        background: var(--glass-accent-soft);
+      }
+
+      .overlay-history-main {
+        min-width: 0;
+      }
+
+      .overlay-history-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .overlay-history-meta {
+        margin-top: 2px;
+        color: var(--muted);
+        font-size: 10px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .overlay-history-actions {
+        display: flex;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .overlay-history-action {
+        padding: 3px 7px;
+        font-size: 11px;
+        background: rgba(255, 255, 255, 0.6);
+        border-color: rgba(91, 107, 122, 0.18);
+        color: var(--ink);
+      }
+
+      .overlay-history-action:hover {
+        background: rgba(255, 255, 255, 0.9);
+      }
+
+      .overlay-history-action.danger {
+        width: 24px;
+        padding: 3px 0;
+        color: var(--muted);
+      }
+
+      .inline-panel .panel-grid {
+        display: grid;
+        grid-template-columns: 88px 1fr;
+        gap: 8px 10px;
+        align-items: center;
+        font-size: 12px;
+      }
+
+      .inline-panel label {
+        color: var(--muted);
+      }
+
+      .inline-panel input[type="datetime-local"],
+      .inline-panel input[type="text"],
+      .inline-panel textarea {
+        width: 100%;
+        padding: 6px 10px;
+        font-size: 12px;
+        line-height: 1.45;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--ink);
+        font-family: inherit;
+      }
+
+      .inline-panel textarea {
+        min-height: 48px;
+        resize: vertical;
+      }
+
+      .inline-panel .panel-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .inline-panel .panel-actions button {
+        font-size: 12px;
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      .inline-panel .panel-actions button.primary {
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .inline-panel .panel-actions button:hover {
+        filter: brightness(1.04);
+      }
+
+      .voice-status {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 8px;
+        min-height: 16px;
+      }
+
+      .voice-status.recording {
+        color: #dc2626;
+        font-weight: 500;
+      }
+
+      .voice-status.recording::before {
+        content: "● ";
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.35; }
+      }
+
+      .quick-btn.sync-offline {
+        position: relative;
+      }
+      .quick-btn.sync-offline::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ef4444;
+        box-shadow: 0 0 0 2px var(--surface, #fff);
+        pointer-events: none;
+      }
+
+      .quick-btn.recording {
+        background: #fee2e2;
+        border-color: #f87171;
+        color: #b91c1c;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+
+      /* ── input bar ── */
+      .input-bar {
+        width: var(--overlay-width);
+        max-width: var(--overlay-width);
+        box-sizing: border-box;
+        display: flex;
+        /* UCA-123: center-align so send / close / notification buttons
+           sit at the same baseline regardless of textarea height. */
+        align-items: center;
+        gap: 6px;
+        padding: 10px 14px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.82);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow:
+          0 18px 48px rgba(0, 0, 0, 0.14),
+          0 4px 16px rgba(0, 0, 0, 0.06),
+          inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        -webkit-app-region: no-drag;
+        transition: opacity 240ms ease, transform 240ms ease, box-shadow 240ms ease;
+      }
+
+      .input-bar textarea {
+        flex: 1;
+        border: none;
+        background: transparent;
+        padding: 4px 0;
+        /* User-resizable: drag the bottom-right corner to grow the
+           composer. autoSizeInput auto-grows from min-height up to
+           max-height while the user types; once the user manually
+           drags, autoSizeInput preserves their chosen height. */
+        resize: vertical;
+        font-size: 14px;
+        line-height: 1.5;
+        color: var(--ink);
+        min-height: 24px;
+        max-height: 240px;
+        box-shadow: none;
+      }
+
+      .input-bar textarea:focus {
+        outline: none;
+        box-shadow: none;
+        border: none;
+      }
+
+      .input-bar textarea::placeholder {
+        color: var(--muted);
+      }
+
+      /* UCA-123: unified 32×32 size for all circular action buttons so
+         Send / Close / Notification sit in a tidy row. Previously
+         send-btn was 36 and aux-btn was 30, breaking the visual rhythm. */
+      .input-bar .send-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: none;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        flex-shrink: 0;
+        box-shadow: 0 2px 8px rgba(91, 107, 122, 0.25);
+        cursor: pointer;
+        transition: transform 120ms ease, box-shadow 120ms ease;
+      }
+
+      .input-bar .send-btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(91, 107, 122, 0.35);
+      }
+
+      .input-bar .send-btn svg {
+        width: 16px;
+        height: 16px;
+        display: block;
+      }
+
+      .input-bar .send-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      body.send-busy .input-bar .send-btn {
+        opacity: 1;
+        position: relative;
+        animation: send-btn-pulse 1.2s ease-in-out infinite;
+      }
+
+      body.send-busy .input-bar .send-btn::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
+        border: 2px solid rgba(37, 99, 235, 0.24);
+        border-top-color: rgba(255, 255, 255, 0.9);
+        animation: send-btn-spin 0.75s linear infinite;
+      }
+
+      @keyframes send-btn-pulse {
+        0%, 100% { transform: translateY(0) scale(0.98); }
+        50%      { transform: translateY(-1px) scale(1.04); }
+      }
+
+      @keyframes send-btn-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      /* Stop affordance: while a task is running, sendBtn flips to a red
+         circle with a centred square glyph. The paper-plane svg is hidden
+         and a CSS-drawn square is overlaid so we don't have to toggle DOM
+         on every status update. The send-busy spinner is suppressed in
+         this mode — the Stop pill carries the "in progress" signal on its
+         own and stacking two animations reads as noise. */
+      .input-bar .send-btn.send-btn--stop {
+        position: relative;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+      }
+      /* Cancelling state — orange, slow pulse, hint that one more click
+         escalates to force cancel. Distinct from the solid-red stop
+         state so the user can tell their first click registered. */
+      .input-bar .send-btn.send-btn--cancelling {
+        position: relative;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        box-shadow: 0 2px 8px rgba(217, 119, 6, 0.32);
+        animation: send-btn-cancelling-pulse 1.4s ease-in-out infinite;
+      }
+      .input-bar .send-btn.send-btn--cancelling svg {
+        visibility: hidden;
+      }
+      .input-bar .send-btn.send-btn--cancelling::before {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        background: #fff;
+        opacity: 0.9;
+      }
+      @keyframes send-btn-cancelling-pulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.06); }
+      }
+      .input-bar .send-btn.send-btn--stop:hover {
+        box-shadow: 0 4px 14px rgba(220, 38, 38, 0.45);
+      }
+      .input-bar .send-btn.send-btn--stop svg {
+        visibility: hidden;
+      }
+      .input-bar .send-btn.send-btn--stop::before {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        background: #fff;
+      }
+      body.send-busy .input-bar .send-btn.send-btn--stop {
+        animation: none;
+      }
+      body.send-busy .input-bar .send-btn.send-btn--stop::after {
+        display: none;
+      }
+
+      .input-bar .aux-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--muted);
+        display: grid;
+        place-items: center;
+        padding: 0;
+        flex-shrink: 0;
+        font-size: 14px;
+      }
+      .input-bar .aux-btn svg { width: 14px; height: 14px; }
+
+      .input-bar .aux-btn:hover {
+        background: var(--surface-strong);
+        color: var(--ink);
+      }
+
+      /* Lightweight composer mic — owns voice-to-text directly into the
+         textarea so the user can dictate without entering full voice mode.
+         Recording state shows a red fill plus a pulsing ring so the active
+         recording is unmistakable next to the send button. */
+      .input-bar .composer-mic-btn {
+        position: relative;
+      }
+      .input-bar .composer-mic-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      .input-bar .composer-mic-btn.recording {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        border-color: transparent;
+        color: #fff;
+      }
+      .input-bar .composer-mic-btn.recording::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
+        border: 2px solid rgba(220, 38, 38, 0.32);
+        animation: composer-mic-pulse 1.2s ease-in-out infinite;
+        pointer-events: none;
+      }
+      .input-bar .composer-mic-btn.starting {
+        background: linear-gradient(135deg, #fcd34d, #f59e0b);
+        border-color: transparent;
+        color: #fff;
+      }
+      .input-bar .composer-mic-btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      @keyframes composer-mic-pulse {
+        0%, 100% { opacity: 0.35; transform: scale(0.94); }
+        50%      { opacity: 0.95; transform: scale(1.06); }
+      }
+
+      /* UCA-182 Phase 8: .result-toast styles retired.
+         Artifact notifications now render in the shared popup-card
+         window (top-right). See popup-card.css for card styling. */
+
+      /* ── task list dock ── */
+      .task-list-dock {
+        position: fixed;
+        left: max(16px, calc((100vw - var(--overlay-width)) / 2 + 12px));
+        bottom: 30px;
+        width: 34px;
+        height: 34px;
+        padding: 0;
+        border-radius: 12px;
+        display: grid;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
+        cursor: pointer;
+        font: inherit;
+        color: inherit;
+        z-index: 22;
+        transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+      }
+      .task-list-dock:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.2);
+      }
+      .task-list-dock.is-running {
+        background: linear-gradient(135deg, #111827, #2563eb);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.7);
+      }
+      .task-list-dock.is-running::before {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        border-radius: 16px;
+        border: 2px solid rgba(37, 99, 235, 0.26);
+        animation: task-dock-pulse 1.25s ease-in-out infinite;
+      }
+      .task-list-dock:focus-visible {
+        outline: 2px solid #6366f1;
+        outline-offset: 2px;
+      }
+
+      .task-list-dock .dock-badge {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 10px;
+        display: grid;
+        place-items: center;
+        padding: 0 4px;
+        border: 2px solid rgba(255, 255, 255, 0.9);
+      }
+
+      .task-list-panel {
+        position: fixed;
+        left: max(16px, calc((100vw - var(--overlay-width)) / 2 + 12px));
+        bottom: 70px;
+        width: min(360px, calc(100vw - 32px));
+        max-height: 360px;
+        background: rgba(255, 255, 255, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 16px;
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+        padding: 12px;
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 20;
+      }
+
+      .task-list-panel[data-open="true"] {
+        display: flex;
+      }
+
+      .task-list-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .task-list-filters {
+        display: flex;
+        gap: 6px;
+      }
+
+      .task-list-filters button {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        cursor: pointer;
+      }
+
+      .task-list-filters button.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .task-list-body {
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .task-list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+      }
+
+      .task-progress-ring {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid rgba(59, 130, 246, 0.2);
+        display: grid;
+        place-items: center;
+        font-size: 9px;
+        color: var(--muted);
+      }
+      .task-progress-ring.is-running {
+        border-color: rgba(59, 130, 246, 0.2);
+        border-top-color: #2563eb;
+        animation: task-ring-spin 0.9s linear infinite;
+        color: transparent;
+      }
+
+      @keyframes task-ring-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      @keyframes task-dock-pulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.94); }
+        50% { opacity: 1; transform: scale(1.05); }
+      }
+
+      @keyframes bubble-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes toast-in {
+        from { opacity: 0; transform: translateY(12px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      /* ─────────────────────────────────────────────────────────────
+         APPLE-STYLE VOICE CARD (Siri-like waveform)
+         ───────────────────────────────────────────────────────────── */
+      .voice-card {
+        display: none;
+        position: relative;
+        width: var(--overlay-width);
+        padding: 26px 28px 22px;
+        margin-bottom: 12px;
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(40px) saturate(180%);
+        -webkit-backdrop-filter: blur(40px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.55);
+        box-shadow:
+          0 30px 70px rgba(0, 0, 0, 0.18),
+          0 6px 20px rgba(0, 0, 0, 0.06),
+          inset 0 1px 0 rgba(255, 255, 255, 0.95);
+        -webkit-app-region: no-drag;
+        text-align: center;
+        animation: voice-in 320ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      body.voice-mode .voice-card {
+        display: block;
+      }
+
+      .voice-card .voice-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink);
+        letter-spacing: 0.01em;
+      }
+
+      .voice-card .voice-minimize {
+        position: absolute;
+        top: 14px;
+        right: 16px;
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 999px;
+        background: rgba(255,255,255,0.58);
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        display: grid;
+        place-items: center;
+        transition: transform 120ms ease, background 120ms ease, color 120ms ease;
+      }
+
+      .voice-card .voice-minimize:hover {
+        transform: translateY(-1px);
+        background: rgba(255,255,255,0.82);
+        color: var(--ink);
+      }
+
+      .voice-card .voice-subtitle {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      .wave-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 64px;
+        margin: 18px 0 8px;
+      }
+
+      .wave-bar {
+        width: 5px;
+        height: 14px;
+        border-radius: 999px;
+        background: #000000;
+        opacity: 0.85;
+        transform-origin: center;
+        animation: wave-pulse 1.1s ease-in-out infinite;
+      }
+
+      .wave-bar:nth-child(1) { animation-delay: 0ms;   }
+      .wave-bar:nth-child(2) { animation-delay: 90ms;  }
+      .wave-bar:nth-child(3) { animation-delay: 180ms; }
+      .wave-bar:nth-child(4) { animation-delay: 270ms; }
+      .wave-bar:nth-child(5) { animation-delay: 360ms; }
+      .wave-bar:nth-child(6) { animation-delay: 270ms; }
+      .wave-bar:nth-child(7) { animation-delay: 180ms; }
+      .wave-bar:nth-child(8) { animation-delay: 90ms;  }
+      .wave-bar:nth-child(9) { animation-delay: 0ms;   }
+
+      /* When JS audio meter is active, it writes transform: scaleY(...) on
+         each bar directly. Suspend the CSS keyframe animation so the bars
+         respond to actual mic input instead of fighting a fixed-period
+         pulse. */
+      .voice-card.audio-reactive .wave-bar {
+        animation: none;
+        transform-origin: center;
+        transition: transform 60ms ease-out, opacity 120ms ease-out;
+      }
+
+      .voice-card.idle .wave-bar {
+        animation-play-state: paused;
+        opacity: 0.35;
+        transform: scaleY(0.5);
+      }
+
+      .voice-card.error .wave-bar {
+        background: linear-gradient(180deg, #f87171, #dc2626);
+        animation-play-state: paused;
+        transform: scaleY(0.6);
+      }
+
+      @keyframes wave-pulse {
+        0%, 100% { transform: scaleY(0.4); opacity: 0.55; }
+        50%      { transform: scaleY(2.6); opacity: 1; }
+      }
+
+      .voice-card .voice-transcript {
+        min-height: 56px;
+        max-height: 180px;
+        overflow-y: auto;
+        padding: 12px 16px;
+        margin: 8px auto 0;
+        max-width: 420px;
+        font-size: 15px;
+        line-height: 1.55;
+        color: var(--ink);
+        background: rgba(91, 107, 122, 0.08);
+        border: 1px solid rgba(91, 107, 122, 0.18);
+        border-radius: 14px;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+        scroll-behavior: smooth;
+        text-align: left;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+      .voice-card:not(.idle) .voice-transcript {
+        border-color: rgba(91, 107, 122, 0.42);
+        background: rgba(91, 107, 122, 0.12);
+      }
+      .voice-card .voice-transcript.placeholder {
+        color: var(--muted);
+        font-style: italic;
+      }
+
+      .voice-card .voice-hint {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 12px;
+      }
+
+      /* Dropzone affordance — only visible while the user is mid-drag. */
+      .voice-card .voice-drop-hint {
+        position: absolute;
+        inset: 6px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 600;
+        color: #4f46e5;
+        background: rgba(91, 107, 122, 0.08);
+        border: 2px dashed rgba(91, 107, 122, 0.45);
+        border-radius: 24px;
+        pointer-events: none;
+        z-index: 5;
+      }
+      .voice-card.dragover .voice-drop-hint {
+        display: flex;
+      }
+
+      .voice-card .voice-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        max-width: 380px;
+        margin: 0 auto 6px;
+        justify-content: center;
+      }
+      .voice-card .voice-chips:empty {
+        margin: 0;
+      }
+      .voice-card .voice-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        max-width: 200px;
+        padding: 4px 8px 4px 10px;
+        font-size: 11px;
+        line-height: 1.3;
+        color: var(--ink);
+        background: rgba(91, 107, 122, 0.1);
+        border: 1px solid rgba(91, 107, 122, 0.22);
+        border-radius: 999px;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .voice-card .voice-chip .chip-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .voice-card .voice-chip .chip-dismiss {
+        all: unset;
+        cursor: pointer;
+        color: var(--muted);
+        padding: 0 2px;
+        border-radius: 6px;
+        font-size: 13px;
+        line-height: 1;
+      }
+      .voice-card .voice-chip .chip-dismiss:hover {
+        color: #ef4444;
+      }
+
+      .voice-card .voice-actions {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .voice-card .voice-actions button {
+        font-size: 12px;
+        padding: 7px 18px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface-soft);
+        color: var(--ink);
+        cursor: pointer;
+        transition: background 120ms ease, transform 120ms ease;
+      }
+
+      .voice-card .voice-actions button.primary {
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: #fff;
+        border-color: transparent;
+      }
+
+      .voice-card .voice-actions button:hover {
+        transform: translateY(-1px);
+      }
+
+      @keyframes voice-in {
+        from { opacity: 0; transform: translateY(20px) scale(0.96); }
+        to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      /* ─────────────────────────────────────────────────────────────
+         NOTE MODE — audio note recording
+         ───────────────────────────────────────────────────────────── */
+      .voice-card .note-mode-tabs {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+        margin-bottom: 4px;
+      }
+      .voice-card .note-tab-btn {
+        font-size: 11px;
+        padding: 4px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: background 120ms, color 120ms;
+      }
+      .voice-card .note-tab-btn.active {
+        background: var(--ink);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      /* Note-specific elements hide in voice mode, voice-specific elements
+         hide in note mode. Using :not([data-mode="note"]) (vs a plain
+         .note-only {display:none} rule) sidesteps a specificity war with the
+         individual .note-header / .note-channels / .note-transcript-box
+         display rules further down the stylesheet. */
+      .voice-card:not([data-mode="note"]) .note-only { display: none !important; }
+      .voice-card[data-mode="note"] .voice-only { display: none !important; }
+      .voice-card[data-mode="note"] .wave-container { display: none !important; }
+
+      .note-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 10px 0 8px;
+      }
+      .note-header .note-label {
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .note-timer {
+        font-size: 13px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        color: var(--ink);
+      }
+      .note-timer.recording {
+        color: #ef4444;
+      }
+
+      .note-channels {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 10px;
+      }
+      .note-channel-tag {
+        font-size: 10px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        background: var(--surface-soft);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .note-channel-tag .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        display: inline-block;
+        transition: background 300ms;
+      }
+      .note-channel-tag.active .dot { background: #10b981; }
+      .note-channel-tag.active { color: var(--ink); border-color: rgba(16,185,129,0.3); }
+      .note-channel-tag.unavailable { opacity: 0.4; }
+
+      .note-transcript-box {
+        max-height: 180px;
+        overflow-y: auto;
+        background: rgba(91, 107, 122, 0.06);
+        border-radius: 14px;
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--ink);
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+        scrollbar-width: thin;
+        margin-bottom: 4px;
+      }
+      .note-transcript-box:empty::before {
+        content: "Waiting for recording...";
+        color: var(--muted);
+        font-style: italic;
+      }
+      html[data-locale="zh-CN"] .note-transcript-box:empty::before {
+        content: "等待录音...";
+      }
+      .note-transcript-entry {
+        margin-bottom: 6px;
+      }
+      .note-transcript-entry .nt-time {
+        font-size: 10px;
+        color: var(--muted);
+        margin-right: 6px;
+        font-variant-numeric: tabular-nums;
+      }
+      .note-transcript-entry .nt-channel {
+        display: inline-block;
+        font-size: 10px;
+        color: #047857;
+        background: rgba(16,185,129,0.12);
+        border: 1px solid rgba(16,185,129,0.22);
+        border-radius: 999px;
+        padding: 0 6px;
+        margin-right: 6px;
+        line-height: 1.5;
+      }
+      .note-hint {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 6px;
+        text-align: center;
+      }
+
+      /* ─────────────────────────────────────────────────────────────
+         POP BUBBLE — minimal, ephemeral feedback
+         ───────────────────────────────────────────────────────────── */
+      .pop-bubble {
+        position: fixed;
+        bottom: 100px;
+        left: 50%;
+        transform: translateX(-50%) translateY(20px);
+        max-width: 480px;
+        padding: 14px 20px;
+        border-radius: 22px;
+        background: rgba(28, 28, 30, 0.92);
+        color: rgba(255, 255, 255, 0.96);
+        font-size: 14px;
+        line-height: 1.5;
+        box-shadow:
+          0 20px 50px rgba(0, 0, 0, 0.28),
+          0 4px 16px rgba(0, 0, 0, 0.12);
+        backdrop-filter: blur(32px) saturate(180%);
+        -webkit-backdrop-filter: blur(32px) saturate(180%);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 260ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+        word-break: keep-all;
+        overflow-wrap: anywhere;
+      }
+
+      .pop-bubble[data-open="true"] {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+        pointer-events: auto;
+      }
+
+      .pop-bubble .pop-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: rgba(255, 255, 255, 0.55);
+        margin-bottom: 4px;
+      }
+
+      .pop-bubble .pop-body {
+        font-size: 13px;
+        line-height: 1.6;
+        max-height: 220px;
+        overflow-y: auto;
+      }
+
+      .pop-bubble .pop-actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .pop-bubble .pop-actions button {
+        font-size: 11px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.08);
+        color: rgba(255, 255, 255, 0.92);
+        cursor: pointer;
+      }
+
+      .pop-bubble .pop-actions button:hover {
+        background: rgba(255, 255, 255, 0.16);
+      }
+
+      /* Editorial glass pass: align quick overlay with Console */
+      :root {
+        --bg-0: #f9f9f9;
+        --surface: rgba(249, 249, 249, 0.72);
+        --surface-strong: rgba(255, 255, 255, 0.78);
+        --surface-soft: rgba(243, 243, 243, 0.72);
+        --ink: #000000;
+        --ink-soft: #1f1f1f;
+        --muted: #474747;
+        --line: rgba(0, 0, 0, 0.12);
+        --accent: #000000;
+        --accent-strong: #000000;
+        --accent-soft: rgba(226, 226, 226, 0.74);
+        --shadow-sm: none;
+        --radius-lg: 8px;
+        --radius-md: 8px;
+        --radius-pill: 999px;
+      }
+
+      * {
+        letter-spacing: 0 !important;
+      }
+
+      .bubble-area,
+      .quick-toolbar,
+      .input-bar,
+      .inline-panel,
+      .voice-card,
+      .task-list-panel {
+        border: 0;
+        border-radius: 8px;
+        background: rgba(249, 249, 249, 0.72);
+        backdrop-filter: blur(28px);
+        -webkit-backdrop-filter: blur(28px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+      }
+
+      .bubble-area {
+        gap: 10px;
+        padding: 16px;
+      }
+
+      .bubble {
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.68);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 0;
+        box-shadow: none;
+      }
+
+      .bubble.assistant {
+        background: rgba(255, 255, 255, 0.76);
+        border: 0;
+        border-bottom-left-radius: 8px;
+      }
+
+      .bubble.user {
+        background: #000000;
+        color: #ffffff;
+        border-bottom-right-radius: 8px;
+        box-shadow: none;
+      }
+
+      .bubble.system {
+        background: rgba(226, 226, 226, 0.74);
+        color: #000000;
+      }
+
+      .quick-toolbar {
+        padding: 10px 12px;
+      }
+
+      .quick-toolbar .quick-btn,
+      .bubble-options button,
+      .inline-panel .panel-actions button,
+      .voice-card .voice-actions button,
+      .task-list-filters button {
+        border: 0;
+        border-radius: 8px;
+        background: rgba(226, 226, 226, 0.76);
+        color: #000000;
+        box-shadow: none;
+      }
+
+      .quick-toolbar .quick-btn:hover,
+      .bubble-options button:hover,
+      .inline-panel .panel-actions button:hover,
+      .voice-card .voice-actions button:hover {
+        background: rgba(255, 255, 255, 0.86);
+        color: #000000;
+      }
+
+      .quick-toolbar .quick-btn.active,
+      .bubble-options button.active,
+      .inline-panel .panel-actions button.primary,
+      .voice-card .voice-actions button.primary,
+      .task-list-filters button.active {
+        background: #000000;
+        color: #ffffff;
+      }
+
+      .input-bar {
+        padding: 13px 14px;
+      }
+
+      .input-bar .send-btn,
+      .input-bar .aux-btn {
+        border: 0;
+        box-shadow: none;
+      }
+
+      .input-bar .send-btn {
+        background: #000000;
+        color: #ffffff;
+      }
+
+      .input-bar .aux-btn {
+        background: rgba(226, 226, 226, 0.74);
+        color: #000000;
+      }
+
+      .inline-panel input[type="datetime-local"],
+      .inline-panel input[type="text"],
+      .inline-panel textarea,
+      .inline-panel select,
+      #voiceLang {
+        border: 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.22);
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .voice-card .voice-transcript {
+        background: rgba(255, 255, 255, 0.64);
+        border-radius: 8px;
+      }
+
+      .wave-bar {
+        background: #000000;
+      }
+
+      .pop-bubble {
+        border: 0;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.86);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16);
+      }
+
+      .pop-bubble .pop-label {
+        letter-spacing: 0 !important;
+      }
+
+      /* ── particle-collision spinner (replaces tlspin) ── */
+      .tl-particles {
+        display: inline-flex;align-items:center;justify-content:center;
+        width:14px;height:14px;flex-shrink:0;position:relative;
+      }
+      .tl-particles .p {
+        position:absolute;width:3px;height:3px;border-radius:50%;
+        background:rgba(60,120,255,0.85);
+        animation:pcollide 1.1s ease-in-out infinite;
+      }
+      .tl-particles .p:nth-child(1){animation-delay:0s;    --px:0px;  --py:-5px;}
+      .tl-particles .p:nth-child(2){animation-delay:.01s;  --px:4px;  --py:-3px;}
+      .tl-particles .p:nth-child(3){animation-delay:.02s;  --px:5px;  --py: 2px;}
+      .tl-particles .p:nth-child(4){animation-delay:.03s;  --px:1px;  --py: 5px;}
+      .tl-particles .p:nth-child(5){animation-delay:.04s;  --px:-4px; --py: 3px;}
+      .tl-particles .p:nth-child(6){animation-delay:.05s;  --px:-5px; --py:-2px;}
+      @keyframes pcollide {
+        0%  {transform:translate(var(--px),var(--py));opacity:.3;}
+        45% {transform:translate(0,0);opacity:1;}
+        55% {transform:translate(0,0);opacity:1;}
+        85% {transform:translate(var(--px),var(--py));opacity:.3;}
+        100%{transform:translate(var(--px),var(--py));opacity:.3;}
+      }
+
+      /* ══════════════════════════════════════════════════════════
+         OVERLAY THEMES — synced from console via localStorage
+         ══════════════════════════════════════════════════════════ */
+
+      /* ── dark ── */
+      body[data-theme="dark"] {
+        --ink: #e8e8e8;
+        --ink-soft: #c4c4c4;
+        --muted: #666666;
+        --accent: #e8e8e8;
+        --accent-strong: #e8e8e8;
+        --accent-soft: rgba(232,232,232,0.1);
+        --line: rgba(255,255,255,0.1);
+        --surface-strong: rgba(35,35,40,0.9);
+        --surface-soft: rgba(22,22,26,0.7);
+      }
+      body[data-theme="dark"] .bubble-area,
+      body[data-theme="dark"] .quick-toolbar,
+      body[data-theme="dark"] .input-bar,
+      body[data-theme="dark"] .inline-panel,
+      body[data-theme="dark"] .voice-card,
+      body[data-theme="dark"] .task-list-panel {
+        background: rgba(16, 16, 20, 0.92);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+      }
+      body[data-theme="dark"] .bubble {
+        background: rgba(32, 32, 38, 0.9);
+        color: #e8e8e8;
+      }
+      body[data-theme="dark"] .bubble.assistant { background: rgba(32,32,38,0.9); }
+      body[data-theme="dark"] .bubble.user { background: #e8e8e8; color: #0d0d0d; }
+      body[data-theme="dark"] .bubble.system { background: rgba(42,42,50,0.8); color: #888; }
+      body[data-theme="dark"] .input-bar textarea { color: #e8e8e8; }
+      body[data-theme="dark"] .input-bar textarea::placeholder { color: #555; }
+      body[data-theme="dark"] .input-bar .send-btn { background: #e8e8e8; color: #0d0d0d; }
+      body[data-theme="dark"] .input-bar .aux-btn { background: rgba(45,45,52,0.9); color: #888; }
+      body[data-theme="dark"] .quick-toolbar .quick-btn,
+      body[data-theme="dark"] .bubble-options button,
+      body[data-theme="dark"] .inline-panel .panel-actions button,
+      body[data-theme="dark"] .voice-card .voice-actions button,
+      body[data-theme="dark"] .task-list-filters button {
+        background: rgba(40,40,48,0.9);
+        color: #e8e8e8;
+      }
+      body[data-theme="dark"] .quick-toolbar .quick-btn:hover,
+      body[data-theme="dark"] .bubble-options button:hover { background: rgba(55,55,65,0.9); }
+      body[data-theme="dark"] .overlay-project-tabs {
+        background: rgba(255,255,255,0.08);
+      }
+      body[data-theme="dark"] .overlay-project-tabs button[aria-pressed="true"],
+      body[data-theme="dark"] .overlay-history-action {
+        background: rgba(255,255,255,0.1);
+        border-color: rgba(255,255,255,0.12);
+        color: #e8e8e8;
+      }
+      body[data-theme="dark"] .overlay-history-row.is-active {
+        background: rgba(255,255,255,0.08);
+      }
+      body[data-theme="dark"] .quick-toolbar .quick-btn.active,
+      body[data-theme="dark"] .bubble-options button.active,
+      body[data-theme="dark"] .inline-panel .panel-actions button.primary,
+      body[data-theme="dark"] .voice-card .voice-actions button.primary,
+      body[data-theme="dark"] .task-list-filters button.active {
+        background: #e8e8e8;
+        color: #0d0d0d;
+      }
+      body[data-theme="dark"] .wave-bar { background: #e8e8e8; }
+      body[data-theme="dark"] .voice-card .voice-transcript { background: rgba(40,40,48,0.8); color: #e8e8e8; }
+      body[data-theme="dark"] .window-drag-strip,
+      body[data-theme="dark"] .window-resize-grip {
+        background: rgba(20, 20, 24, 0.78);
+        border-color: rgba(255, 255, 255, 0.12);
+      }
+      body[data-theme="dark"] .window-resize-grip::before {
+        border-right-color: rgba(232, 232, 232, 0.86);
+        border-bottom-color: rgba(232, 232, 232, 0.86);
+      }
+
+    </style>
+  </head>
+  <body>
+    <div id="windowDragHandle" class="window-drag-strip" title="拖动对话框位置" aria-label="拖动对话框位置"></div>
+    <!-- Right-click context menu for chat bubbles. Singleton, populated
+         on contextmenu events. Reuses the .ctx-menu visual style
+         defined below. -->
+    <div id="overlayCtxMenu" class="ctx-menu" role="menu" hidden></div>
+    <!-- Drop-zone overlay shown while a file drag is in progress over
+         the overlay window. Toggled visible by the drag counter in
+         overlay.js. Pointer-events:none so the dragover/drop events
+         keep landing on the underlying body listener. -->
+    <div id="overlayDropZone" class="overlay-drop-zone" hidden>
+      <div class="overlay-drop-zone-card">
+        <svg viewBox="0 0 24 24" width="34" height="34" fill="none"
+             stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <div class="overlay-drop-zone-title">松开以添加为附件</div>
+        <div class="overlay-drop-zone-hint">支持图片、文档、代码等</div>
+      </div>
+    </div>
+    <!-- Bubble conversation area -->
+    <div id="bubbleArea" class="bubble-area" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话记录" hidden></div>
+    <!-- Floating "scroll to latest" affordance — visible when the user
+         has scrolled up off the bottom of the conversation. Hidden by
+         createBottomPinController until the pin state flips. -->
+    <button id="bubbleScrollDown" class="scroll-to-bottom" type="button"
+            aria-label="回到最新消息" title="回到最新消息" hidden>
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none"
+           stroke="currentColor" stroke-width="2.4" stroke-linecap="round"
+           stroke-linejoin="round" aria-hidden="true">
+        <polyline points="6 10 12 16 18 10"></polyline>
+      </svg>
+      <span>回到最新</span>
+    </button>
+
+    <!-- Empty state — shown when no bubbles exist yet, to orient new users -->
+    <div id="emptyState" class="empty-state" aria-hidden="false">
+      <div class="empty-state-title">你好，有什么可以帮你？</div>
+      <div class="empty-state-hint">直接输入问题，或从下面挑一个开始：</div>
+      <div class="empty-state-chips" role="list">
+        <button type="button" class="empty-chip" data-empty-prompt="帮我总结一下剪贴板里的内容">📋 总结剪贴板</button>
+        <button type="button" class="empty-chip" data-empty-prompt="把下面这段翻译成中文：">🌐 翻译</button>
+        <button type="button" class="empty-chip" data-empty-prompt="每天早上 9 点提醒我喝水">⏰ 设置提醒</button>
+        <button type="button" class="empty-chip" data-empty-prompt="解释下面这段代码的作用：">💡 解释内容</button>
+      </div>
+      <div class="empty-state-footnote">
+        Ctrl+Shift+U 随时召出 · Enter 发送 · Shift+Enter 换行
+      </div>
+    </div>
+
+    <!-- UCA-041: Project + history panel (hidden by default) -->
+    <div id="projectPanel" class="inline-panel" data-open="false" role="dialog" aria-label="对话与历史" aria-modal="false">
+      <div class="panel-title">对话与历史</div>
+      <div class="overlay-project-tabs" role="group" aria-label="选择会话或项目">
+        <button type="button" data-overlay-project-panel-tab="conversations" aria-pressed="true">会话</button>
+        <button type="button" data-overlay-project-panel-tab="projects" aria-pressed="false">项目</button>
+      </div>
+      <div id="projectTools" style="display:flex;gap:6px;margin-bottom:8px;">
+        <select id="projectDropdown" aria-label="选择项目或历史对话" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;background:var(--glass-accent-soft);color:var(--glass-ink);border:1px solid var(--glass-line);"></select>
+        <button id="newProjectBtn" type="button" aria-label="新建项目" style="font-size:11px;padding:4px 10px;">+ 新项目</button>
+      </div>
+      <div id="historyList" role="list" aria-label="历史对话列表" style="max-height:200px;overflow-y:auto;"></div>
+    </div>
+
+    <!-- Inline schedule form (hidden by default) -->
+    <div id="schedulePanel" class="inline-panel" data-open="false" role="dialog" aria-label="新建定时任务" aria-modal="false">
+      <div class="panel-title">新建定时任务</div>
+      <div class="panel-grid">
+        <label for="scheduleWhen">触发时间</label>
+        <input id="scheduleWhen" type="datetime-local" aria-label="触发时间">
+        <label for="scheduleName">任务名称</label>
+        <input id="scheduleName" type="text" placeholder="例如：每日翻译播报" aria-label="任务名称">
+        <label for="scheduleCommand">任务内容</label>
+        <textarea id="scheduleCommand" rows="2" placeholder="例如：翻译我剪贴板里的内容并通知我" aria-label="任务内容"></textarea>
+        <label for="scheduleCategory">类别</label>
+        <select id="scheduleCategory" aria-label="任务类别">
+          <option value="general">General</option>
+          <option value="work">Work</option>
+          <option value="email">Email</option>
+          <option value="reminder" selected>Reminder</option>
+          <option value="health">Health</option>
+          <option value="custom">Custom</option>
+        </select>
+        <label for="scheduleLeadTime">提前通知</label>
+        <select id="scheduleLeadTime" aria-label="提前通知">
+          <option value="default">默认（按时间尺度）</option>
+          <option value="0">不提前</option>
+          <option value="900000">15 分钟</option>
+          <option value="3600000">1 小时</option>
+          <option value="86400000">1 天</option>
+        </select>
+      </div>
+      <div class="panel-actions">
+        <button id="scheduleCancelBtn" type="button">取消</button>
+        <button id="scheduleSaveBtn" type="button" class="primary">创建</button>
+      </div>
+    </div>
+
+    <!-- Apple-style voice card. This surface focuses on recording notes; the
+         composer mic button owns lightweight voice-to-text. Legacy voice-input
+         controls remain in DOM as a hidden fallback for older state restore. -->
+    <div id="voiceCard" class="voice-card idle" data-mode="note" role="dialog" aria-label="录音笔记与语音输入" aria-modal="false">
+      <button id="voiceMinimizeBtn" class="voice-minimize" type="button" title="最小化" aria-label="最小化录音面板">−</button>
+      <!-- Tab switcher kept for verifier + legacy fallback; visually hidden
+           because the composer mic now owns voice-input. -->
+      <div class="note-mode-tabs" hidden>
+        <button class="note-tab-btn" id="tabVoiceBtn" type="button">语音输入</button>
+        <button class="note-tab-btn active" id="tabNoteBtn" type="button">录音笔记</button>
+      </div>
+
+      <div class="voice-title note-only">录音笔记 · 实时转录</div>
+
+      <!-- Voice-card dropzone: files/images dropped anywhere on the card are
+           attached as context; the user can then speak the instruction. -->
+      <div id="voiceDropHint" class="voice-drop-hint" aria-hidden="true">拖入文件 / 图片作为上下文</div>
+      <div id="voiceChips" class="voice-chips voice-only" role="list" aria-label="已附加的文件"></div>
+
+      <!-- ── VOICE mode elements (legacy fallback, hidden in note mode) ── -->
+      <div class="voice-subtitle voice-only" id="voiceStatus" role="status" aria-live="polite">点击发送旁的麦克风可直接语音输入；本面板用于录音笔记</div>
+      <div class="wave-container voice-only" aria-hidden="true">
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+        <span class="wave-bar"></span>
+      </div>
+      <div id="voiceTranscript" class="voice-transcript voice-only placeholder" role="status" aria-live="polite" aria-label="实时语音识别文本">实时识别的文字会显示在这里…</div>
+      <div class="voice-hint voice-only">回车发送 · Esc 取消 · 自动停止后等待新指令</div>
+      <select id="voiceLang" class="voice-only" aria-label="语音输入语言" style="margin-top:10px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--glass-line);background:var(--glass-surface);color:var(--glass-ink);">
+        <option value="zh-CN" selected>中文（普通话，保留英文词）</option>
+        <option value="auto">自动识别语言 / Mixed</option>
+        <option value="en-US">English (US)</option>
+        <option value="ja-JP">日本語</option>
+        <option value="ko-KR">한국어</option>
+      </select>
+      <div class="voice-actions voice-only">
+        <button id="voiceCancelBtn" type="button">取消</button>
+        <button id="voiceStopBtn" type="button">停止</button>
+        <button id="voiceStartBtn" type="button" class="primary">开始</button>
+      </div>
+
+      <!-- ── NOTE mode elements ── -->
+      <div class="note-header note-only">
+        <span class="note-label">记录会话中</span>
+        <span class="note-timer" id="noteTimer">00:00</span>
+      </div>
+      <div class="note-channels note-only">
+        <span class="note-channel-tag" id="noteMicTag"><span class="dot"></span>输入音频（麦克风）</span>
+        <span class="note-channel-tag" id="noteSysTag"><span class="dot"></span>输出音频（系统）</span>
+      </div>
+      <div class="note-transcript-box note-only" id="noteTranscriptBox" role="log" aria-live="polite" aria-label="录音笔记实时转录"></div>
+      <div class="note-hint note-only">输入音频实时转录 · 输出音频录制后统一处理</div>
+      <select id="noteLang" class="note-only" aria-label="录音笔记语言" style="margin-top:8px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--glass-line);background:var(--glass-surface);color:var(--glass-ink);">
+        <option value="auto" selected>自动识别语言</option>
+        <option value="zh-CN">中文（普通话）</option>
+        <option value="en-US">English (US)</option>
+        <option value="ja-JP">日本語</option>
+        <option value="ko-KR">한국어</option>
+      </select>
+      <div class="voice-actions note-only">
+        <button id="noteCancelBtn" type="button">取消</button>
+        <button id="noteFinishBtn" type="button" class="primary">完成笔记</button>
+      </div>
+    </div>
+
+    <!-- Quick action toolbar -->
+    <div class="quick-toolbar" role="toolbar" aria-label="快捷操作">
+      <button id="newSessionBtn" class="quick-btn" type="button" title="开始新会话（清空记忆）" aria-label="开始新会话">
+        <span class="quick-glyph">&#10133;</span>新会话
+      </button>
+      <button id="projectSelectorBtn" class="quick-btn" type="button" title="切换项目 / 查看历史会话" aria-label="切换项目或查看历史会话">
+        <span class="quick-glyph">&#128218;</span>对话
+      </button>
+      <button class="quick-btn" data-quick-action="translate" type="button" title="翻译当前上下文" aria-label="翻译当前上下文">
+        <span class="quick-glyph">&#127760;</span>翻译
+      </button>
+      <button class="quick-btn" data-quick-action="summarize" type="button" title="总结当前上下文" aria-label="总结当前上下文">
+        <span class="quick-glyph">&#128221;</span>总结
+      </button>
+      <button class="quick-btn" data-quick-action="explain" type="button" title="解释当前上下文" aria-label="解释当前上下文">
+        <span class="quick-glyph">&#128161;</span>解释
+      </button>
+      <button id="scheduleToggleBtn" class="quick-btn" type="button" title="新建定时任务" aria-label="新建定时任务">
+        <span class="quick-glyph">&#9200;</span>定时
+      </button>
+      <button id="voiceToggleBtn" class="quick-btn" type="button" title="录音笔记 (Ctrl+Shift+N) — 语音输入请用发送旁的麦克风按钮 (Ctrl+Shift+V)" aria-label="打开录音笔记">
+        <span class="quick-glyph">&#127908;</span>录音笔记
+      </button>
+      <span class="quick-spacer"></span>
+      <button id="settingsBtn" class="quick-btn quick-icon-btn" type="button" title="打开设置" aria-label="打开设置">
+        <span class="quick-glyph">&#9881;</span>
+      </button>
+    </div>
+
+    <!-- Bottom input bar -->
+    <div class="input-bar" role="group" aria-label="指令输入栏">
+      <button id="clipboardBtn" class="aux-btn" type="button" title="读取剪贴板" aria-label="读取剪贴板内容作为上下文">&#128203;</button>
+      <textarea id="commandInput" rows="1" placeholder="输入你的需求..." aria-label="输入指令（按 Enter 发送，Shift+Enter 换行）" autofocus></textarea>
+      <button id="composerMicBtn" class="aux-btn composer-mic-btn" type="button" title="语音输入 (Ctrl+Shift+V) — 再次点击停止" aria-label="语音输入" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" fill="currentColor"/>
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </button>
+      <button id="sendBtn" class="send-btn" type="button" title="发送 (Enter)" aria-label="发送指令">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M3.4 20.4l17.45-8.05a.5.5 0 0 0 0-.91L3.4 3.4a.5.5 0 0 0-.7.6l2.4 7.5a.5.5 0 0 0 .42.34l9.48.9a.1.1 0 0 1 0 .2l-9.48.9a.5.5 0 0 0-.42.34L2.7 19.8a.5.5 0 0 0 .7.6z" fill="currentColor"/>
+        </svg>
+      </button>
+      <button id="closeBtn" class="aux-btn" type="button" title="关闭" aria-label="关闭浮层">&#10005;</button>
+    </div>
+
+    <!-- Apple-style ephemeral pop bubble (centered) -->
+    <div id="popBubble" class="pop-bubble" data-open="false" role="status" aria-live="polite">
+      <div class="pop-label" id="popLabel">UCA</div>
+      <div class="pop-body" id="popBody"></div>
+      <div class="pop-actions">
+        <button id="popOpenBtn" type="button">展开对话</button>
+        <button id="popCopyBtn" type="button">复制</button>
+      </div>
+    </div>
+
+    <!-- UCA-182 Phase 8: result-toast retired. Artifact notifications
+         now go through the top-right popup-card stack (see
+         popup-card-manager.mjs / popup-card.js). -->
+
+    <!-- Task list dock (bottom-right) -->
+    <button id="taskListDock" class="task-list-dock" type="button" title="任务清单" aria-label="打开任务清单" aria-haspopup="true" aria-expanded="false">
+      <span aria-hidden="true">📋</span>
+      <span id="taskListDockBadge" class="dock-badge" hidden>0</span>
+    </button>
+    <div id="taskListPanel" class="task-list-panel" data-open="false" role="dialog" aria-label="任务清单" aria-modal="false">
+      <div class="task-list-header">
+        <strong style="font-size:12px;">任务清单</strong>
+        <button id="taskListCloseBtn" class="aux-btn" type="button" style="width:22px;height:22px;" aria-label="关闭任务清单">×</button>
+      </div>
+      <div class="task-list-filters" role="tablist" aria-label="任务过滤">
+        <button type="button" data-task-filter="all" class="active" role="tab" aria-selected="true">全部</button>
+        <button type="button" data-task-filter="active" role="tab" aria-selected="false">进行中</button>
+        <button type="button" data-task-filter="done" role="tab" aria-selected="false">已完成</button>
+      </div>
+      <div id="taskListBody" class="task-list-body" role="list"></div>
+    </div>
+
+    <div id="overlayResizeGrip" class="window-resize-grip" title="Resize dialog" aria-label="Resize dialog"></div>
+
+    <script src="./drop-guard.js"></script>
+    <script src="./preview/client-registry.js"></script>
+    <script src="./preview/handlers/iframe-remote.js"></script>
+    <script src="./preview/handlers/text.js"></script>
+    <script src="./preview/handlers/csv.js"></script>
+    <script src="./preview/handlers/image.js"></script>
+    <script src="./preview/handlers/pdf.js"></script>
+    <script src="./preview/streaming.js"></script>
+    <script src="./live-preview-shell-client.js"></script>
+    <script src="./live-preview.js"></script>
+    <script type="module" src="./i18n-dom-bootstrap.mjs"></script>
+    <script type="module" src="./overlay.js"></script>
+  </body>
+</html>

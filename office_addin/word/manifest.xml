@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
+           xsi:type="TaskPaneApp">
+  <Id>1d1dd5db-1b91-4e32-8fd5-0cb0f8d40001</Id>
+  <Version>0.1.2.0</Version>
+  <ProviderName>LingxY</ProviderName>
+  <DefaultLocale>en-US</DefaultLocale>
+  <DisplayName DefaultValue="LingxY for Word"/>
+  <Description DefaultValue="Capture Word selections and send them to LingxY for AI analysis."/>
+  <IconUrl DefaultValue="http://127.0.0.1:4310/office/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="http://127.0.0.1:4310/office/icon-80.png"/>
+  <SupportUrl DefaultValue="https://www.microsoft.com/"/>
+  <Hosts>
+    <Host Name="Document"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="http://127.0.0.1:4310/office/task_pane.html?host=word"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
+    <Requirements>
+      <bt:Sets DefaultMinVersion="1.1">
+        <bt:Set Name="AddinCommands" MinVersion="1.1"/>
+      </bt:Sets>
+    </Requirements>
+    <Hosts>
+      <Host xsi:type="Document">
+        <DesktopFormFactor>
+          <ExtensionPoint xsi:type="PrimaryCommandSurface">
+            <OfficeTab id="TabHome">
+              <Group id="UCA.Home.Group.Word">
+                <Label resid="UCA.Group.Label"/>
+                <Icon>
+                  <bt:Image size="16" resid="UCA.Icon.16"/>
+                  <bt:Image size="32" resid="UCA.Icon.32"/>
+                  <bt:Image size="80" resid="UCA.Icon.80"/>
+                </Icon>
+                <Control xsi:type="Button" id="UCA.Home.OpenPane.Word">
+                  <Label resid="UCA.Button.Label"/>
+                  <Supertip>
+                    <Title resid="UCA.Button.Label"/>
+                    <Description resid="UCA.Button.Tooltip"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="UCA.Icon.16"/>
+                    <bt:Image size="32" resid="UCA.Icon.32"/>
+                    <bt:Image size="80" resid="UCA.Icon.80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <TaskpaneId>UCA.TaskPane.Word</TaskpaneId>
+                    <SourceLocation resid="UCA.Taskpane.Url.Word"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
+        </DesktopFormFactor>
+      </Host>
+    </Hosts>
+    <Resources>
+      <bt:Images>
+        <bt:Image id="UCA.Icon.16" DefaultValue="http://127.0.0.1:4310/office/icon-16.png"/>
+        <bt:Image id="UCA.Icon.32" DefaultValue="http://127.0.0.1:4310/office/icon-32.png"/>
+        <bt:Image id="UCA.Icon.80" DefaultValue="http://127.0.0.1:4310/office/icon-80.png"/>
+      </bt:Images>
+      <bt:Urls>
+        <bt:Url id="UCA.Taskpane.Url.Word" DefaultValue="http://127.0.0.1:4310/office/task_pane.html?host=word"/>
+      </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="UCA.Group.Label" DefaultValue="LingxY"/>
+        <bt:String id="UCA.Button.Label" DefaultValue="Open LingxY"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="UCA.Button.Tooltip" DefaultValue="Open LingxY for this Word document."/>
+      </bt:LongStrings>
+    </Resources>
+  </VersionOverrides>
+</OfficeApp>

@@ -1,0 +1,44 @@
+{
+  "schema_version": "1.0",
+  "kind": "connector",
+  "provider": "google",
+  "displayName": "Google Workspace",
+  "description": "Google account connector contracts for Gmail, Calendar, and Drive.",
+  "services": [
+    "google.gmail",
+    "google.calendar",
+    "google.drive"
+  ],
+  "accounts": {
+    "provider": "google",
+    "identityScopes": [
+      "openid",
+      "email",
+      "profile"
+    ],
+    "capabilityScopes": {
+      "emailRead": [
+        "https://www.googleapis.com/auth/gmail.readonly"
+      ],
+      "emailWrite": [
+        "https://www.googleapis.com/auth/gmail.send"
+      ],
+      "calendarRead": [
+        "https://www.googleapis.com/auth/calendar.readonly"
+      ],
+      "calendarWrite": [
+        "https://www.googleapis.com/auth/calendar"
+      ],
+      "fileRead": [
+        "https://www.googleapis.com/auth/drive.readonly"
+      ],
+      "fileWrite": [
+        "https://www.googleapis.com/auth/drive.file"
+      ]
+    }
+  },
+  "mcp": {
+    "serverId": "google-workspace",
+    "instructions": "Use Google Workspace connector tools for Gmail, Calendar, and Drive tasks involving connected Google accounts. Prefer workflow templates for draft-confirm-send and create-confirm flows."
+  }
+}

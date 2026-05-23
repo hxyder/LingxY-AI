@@ -1,0 +1,92 @@
+{
+  "schema_version": "1.0",
+  "kind": "tools",
+  "provider": "google",
+  "service": "google.calendar",
+  "tools": [
+    {
+      "id": "google.calendar.list_events",
+      "mcpName": "google_calendar_list_events",
+      "name": "Google Calendar List Events",
+      "description": "List upcoming or matching events from a connected Google Calendar account.",
+      "capability": "calendarRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_list_events",
+        "provider": "google"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "accountId": { "type": "string" },
+          "startTime": { "type": "string" },
+          "endTime": { "type": "string" },
+          "query": { "type": "string" },
+          "limit": { "type": "number", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "timeline": {
+        "label": "Google Calendar event search",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "google.calendar.create_event",
+      "mcpName": "google_calendar_create_event",
+      "name": "Google Calendar Create Event",
+      "description": "Create a Google Calendar event using a connected account after workflow-level confirmation.",
+      "capability": "calendarWrite",
+      "risk": "medium",
+      "requiresConfirmation": true,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_create_event",
+        "provider": "google"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "title",
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "accountId": { "type": "string" },
+          "title": { "type": "string", "minLength": 1 },
+          "startTime": { "type": "string" },
+          "endTime": { "type": "string" },
+          "attendees": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" }
+          },
+          "description": { "type": "string" },
+          "location": { "type": "string" },
+          "timeZone": { "type": "string" },
+          "recurrence": {
+            "oneOf": [
+              { "type": "array", "items": { "type": "string" } },
+              { "type": "string" }
+            ],
+            "description": "Google Calendar recurrence rules such as RRULE:FREQ=WEEKLY;BYDAY=MO,WE,FR."
+          }
+        }
+      },
+      "outputValidators": [
+        { "path": "event.id", "kind": "nonempty_string" },
+        {
+          "path": "event.recurrence",
+          "kind": "present_when_input_present",
+          "inputPath": "recurrence",
+          "message": "recurrence must be preserved when requested"
+        }
+      ],
+      "timeline": {
+        "label": "Google Calendar create event",
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

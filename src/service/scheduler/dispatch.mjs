@@ -1,0 +1,281 @@
+import { appendAuditLog } from "../security/audit-log.mjs";
+import { evaluateToolRisk } from "../capabilities/registry/risk_matrix.mjs";
+import { executeProposedAction } from "./execute-action.mjs";
+import { applyScheduleRunOutcome } from "./failure_guard.mjs";
+import { advanceScheduleAfterRun, claimScheduleForRun } from "./lifecycle.mjs";
+import { getUserLocation, locationMatches } from "../utils/location.mjs";
+import {
+  buildScheduleActionPreview,
+  createScheduleRunRecord
+} from "./store.mjs";
+import { normalizeScheduleRecordTitle } from "../core/policy/scheduled-work-policy.mjs";
+
+// Returns true (and the resolved location) when the schedule's optional
+// location_filter passes against the user's real (browser-granted)
+// location. Returns false and a skip reason when the user is "out of
+// region" — the trigger fired on the clock, but the geo-precondition isn't
+// met. We mark the run as `skipped_location` and advance next_run_at; we
+// do not retry, because the user might be travelling and we don't want to
+// queue up a backlog of "you're not in Shanghai right now" runs.
+//
+// When no location_filter is set, the gate is a no-op. When a filter IS
+// set but the user hasn't granted location yet, locationMatches() returns
+// false — the schedule stays idle until the user enables the "📍 启用精
+// 确定位" chip. This is the correct behaviour: a location-gated schedule
+// without a known location can't safely fire.
+function evaluateLocationGate(schedule) {
+  const filter = schedule.trigger_config?.location_filter;
+  const currentLocation = getUserLocation();
+  if (!filter || typeof filter !== "object") {
+    return { allowed: true, currentLocation };
+  }
+  const allowed = locationMatches(currentLocation, filter);
+  return { allowed, currentLocation, filter };
+}
+
+function shouldCreatePendingApproval(schedule, runtime) {
+  if (schedule.execution_mode === "approval_required") {
+    return true;
+  }
+
+  if (schedule.execution_mode !== "unattended_safe" || schedule.action_type !== "action_tool") {
+    return false;
+  }
+
+  const tool = runtime.actionToolRegistry.get(schedule.action_target);
+  if (!tool) {
+    return false;
+  }
+
+  const risk = evaluateToolRisk(tool, schedule.action_params, runtime.toolContext ?? {});
+  return risk.requires_confirmation || risk.risk_level === "high";
+}
+
+function updateRun(store, runId, patch) {
+  return store.updateScheduleRun(runId, patch);
+}
+
+function updateScheduleAfterRun(runtime, schedule, runStatus, now, taskId = null) {
+  schedule.updated_at = now;
+  schedule.last_run_at = now;
+  schedule.last_run_status = runStatus;
+  // Carry the task id through so the UI can link "failed" schedule
+  // rows directly to the failing task detail. Null for runs that
+  // bypassed the task store (pending_approval, dispatcher-side errors).
+  schedule.last_run_task_id = taskId;
+  schedule.run_count += 1;
+  // UCA-046: reset reminder_sent_at so the next cycle's lead-time window
+  // produces a fresh reminder instead of being suppressed by a stale stamp.
+  schedule.reminder_sent_at = null;
+  advanceScheduleAfterRun(schedule, { now });
+
+  const outcome = applyScheduleRunOutcome(schedule, runStatus);
+  runtime.store.updateSchedule(schedule.schedule_id, schedule);
+
+  if (outcome.thresholdReached) {
+    appendAuditLog(runtime, "schedule.misfire_handled", {
+      schedule_id: schedule.schedule_id,
+      action: "auto_disabled_after_failures",
+      consecutive_failure_count: schedule.consecutive_failure_count
+    });
+  }
+}
+
+function classifyTaskRunStatus(task) {
+  const taskStatus = task?.status ?? "failed";
+  if (taskStatus === "success") return "success";
+  if (taskStatus === "partial_success") {
+    // Waiting for a human decision is an expected terminal scheduler state:
+    // the action was prepared and must not count as a broken recurring job.
+    if (task?.sub_status === "waiting_external_decision") {
+      return "partial_success";
+    }
+    // Other partial successes usually mean the executor stopped before the
+    // scheduled action was actually completed (unknown tool, blocked call,
+    // unmet obligation, etc.). Count those as failed so the failure guard can
+    // auto-disable a repeatedly broken schedule.
+    return "failed";
+  }
+  return "failed";
+}
+
+// UCA-098: Guard against double-dispatch when the scheduler tick fires
+// again while a previous dispatch is still awaiting executeProposedAction.
+// For a task that takes 30+ seconds to run, the 5-second scheduler tick
+// would find the schedule still claiming `next_run_at <= now` and dispatch
+// it a second time — the second run's task got deduped by the queue, but
+// the auto-notify still fired, producing a duplicate "completed"
+// notification. This in-memory set locks the schedule id until dispatch
+// finishes; the first thing dispatchSchedule does synchronously is also
+// advance `next_run_at` past `now` so a fresh process (or manual
+// runDueSchedules call) still won't re-pick it.
+const IN_FLIGHT_SCHEDULES = new Set();
+
+export function isScheduleInFlight(scheduleId) {
+  return IN_FLIGHT_SCHEDULES.has(scheduleId);
+}
+
+function claimInFlight(runtime, schedule, now) {
+  IN_FLIGHT_SCHEDULES.add(schedule.schedule_id);
+  // Advance next_run_at synchronously so a concurrent tick sees the
+  // schedule as "not due right now". One-shot lifecycle lives in
+  // lifecycle.mjs, so both metadata.one_shot interval reminders and native
+  // trigger_type=at tasks close consistently.
+  const claimed = claimScheduleForRun(schedule, { now });
+  runtime.store.updateSchedule(claimed.schedule_id, claimed);
+  return claimed;
+}
+
+function releaseInFlight(scheduleId) {
+  IN_FLIGHT_SCHEDULES.delete(scheduleId);
+}
+
+export async function dispatchSchedule({
+  runtime,
+  scheduleId,
+  reason = "manual",
+  triggerPayload = {}
+}) {
+  const schedule = runtime.store.getSchedule(scheduleId);
+  if (!schedule || (!schedule.enabled && reason !== "manual")) {
+    return null;
+  }
+  const titleNormalization = normalizeScheduleRecordTitle(schedule);
+  if (titleNormalization.changed) {
+    runtime.store.updateSchedule(schedule.schedule_id, titleNormalization.schedule);
+    Object.assign(schedule, titleNormalization.schedule);
+  }
+
+  // Reject a concurrent dispatch for the same schedule. See IN_FLIGHT_SCHEDULES.
+  if (IN_FLIGHT_SCHEDULES.has(schedule.schedule_id)) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const claimedSchedule = claimInFlight(runtime, schedule, now);
+  Object.assign(schedule, claimedSchedule);
+
+  // Resolve the host's current coarse location once and weave it into both
+  // the location gate and the run's trigger metadata. The agent will read
+  // the `current_location` field out of triggerPayload so a scheduled
+  // "morning digest" task knows whether the user is in Shanghai or Tokyo
+  // when the run fires.
+  const locationGate = evaluateLocationGate(schedule);
+  const enrichedTriggerPayload = {
+    ...triggerPayload,
+    current_location: locationGate.currentLocation
+  };
+
+  const run = createScheduleRunRecord({
+    scheduleId,
+    triggerReason: reason,
+    metadata: enrichedTriggerPayload
+  });
+  runtime.store.appendScheduleRun(run);
+
+  if (!locationGate.allowed) {
+    appendAuditLog(runtime, "schedule.trigger", {
+      schedule_id: schedule.schedule_id,
+      trigger_reason: reason,
+      execution_mode: schedule.execution_mode,
+      skipped: "location_filter",
+      current_location: locationGate.currentLocation,
+      filter: locationGate.filter
+    });
+    const whereLabel = locationGate.currentLocation
+      ? (locationGate.currentLocation.city ?? locationGate.currentLocation.timezone ?? "unknown")
+      : "unknown (location not granted)";
+    updateRun(runtime.store, run.run_id, {
+      status: "skipped_location",
+      error_message: `Skipped: user is in ${whereLabel}, schedule requires ${JSON.stringify(locationGate.filter)}.`
+    });
+    updateScheduleAfterRun(runtime, schedule, "skipped_location", now);
+    releaseInFlight(schedule.schedule_id);
+    return {
+      status: "skipped_location",
+      run: runtime.store.getScheduleRun(run.run_id),
+      reason: "location_filter"
+    };
+  }
+
+  appendAuditLog(runtime, "schedule.trigger", {
+    schedule_id: schedule.schedule_id,
+    trigger_reason: reason,
+    execution_mode: schedule.execution_mode
+  });
+
+  if (shouldCreatePendingApproval(schedule, runtime)) {
+    const approval = runtime.pendingApprovals.create({
+      sourceType: "schedule_trigger",
+      sourceId: schedule.schedule_id,
+      proposedAction: schedule.action_type,
+      proposedTarget: schedule.action_target,
+      proposedParams: {
+        ...schedule.action_params,
+        __schedule_id: schedule.schedule_id,
+        __schedule_name: schedule.name
+      },
+      previewText: buildScheduleActionPreview(schedule.action_type, schedule.action_target, schedule.action_params),
+      metadata: {
+        schedule_id: schedule.schedule_id,
+        run_id: run.run_id,
+        execution_mode: schedule.execution_mode
+      }
+    });
+
+    updateRun(runtime.store, run.run_id, {
+      status: "pending_approval",
+      approval_id: approval.approval_id
+    });
+    updateScheduleAfterRun(runtime, schedule, "pending_approval", now);
+    releaseInFlight(schedule.schedule_id);
+    return {
+      status: "pending_approval",
+      approval,
+      run: runtime.store.getScheduleRun(run.run_id)
+    };
+  }
+
+  try {
+    const isManualForeground = reason === "manual" && triggerPayload?.source === "desktop_console";
+    const result = await executeProposedAction({
+      runtime,
+      actionType: schedule.action_type,
+      actionTarget: schedule.action_target,
+      actionParams: schedule.action_params,
+      executionMode: isManualForeground ? "interactive" : schedule.execution_mode,
+      sourceLabel: `Scheduled run: ${schedule.name}`,
+      sourceId: schedule.schedule_id,
+      scheduleContext: schedule,
+      sourceApp: isManualForeground ? "uca.console.desktop" : "uca.scheduler",
+      captureMode: isManualForeground ? "desktop_console" : "event",
+      triggerReason: reason,
+      bypassDedupe: isManualForeground || triggerPayload?.bypassDedupe === true
+    });
+
+    const runStatus = classifyTaskRunStatus(result.task);
+    updateRun(runtime.store, run.run_id, {
+      status: runStatus,
+      task_id: result.task?.task_id ?? null,
+      error_message: runStatus === "failed" ? result.task?.failure_user_message ?? "Scheduled action failed." : null
+    });
+    updateScheduleAfterRun(runtime, schedule, runStatus, now, result.task?.task_id ?? null);
+    return {
+      status: runStatus,
+      task: result.task,
+      run: runtime.store.getScheduleRun(run.run_id)
+    };
+  } catch (error) {
+    updateRun(runtime.store, run.run_id, {
+      status: "failed",
+      error_message: error.message
+    });
+    updateScheduleAfterRun(runtime, schedule, "failed", now, null);
+    return {
+      status: "failed",
+      error
+    };
+  } finally {
+    releaseInFlight(schedule.schedule_id);
+  }
+}

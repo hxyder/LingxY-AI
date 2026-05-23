@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <title>LingxY Preview</title>
+    <link rel="stylesheet" href="./tokens.css">
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        overflow: hidden;
+        background: var(--panel);
+        color: var(--ink);
+        font-family: var(--font-sans);
+      }
+      #pvRoot {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      #pvHead {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--panel-2);
+        -webkit-app-region: drag;
+      }
+      #pvHead .pv-title {
+        flex: 1;
+        font-weight: 600;
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #pvHead .pv-sub {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      #pvHead .pv-actions {
+        display: flex;
+        gap: 4px;
+        -webkit-app-region: no-drag;
+      }
+      #pvHead .pv-btn {
+        width: 26px; height: 26px;
+        display: grid; place-items: center;
+        border: none; background: transparent; color: var(--muted);
+        border-radius: 6px; cursor: pointer;
+      }
+      #pvHead .pv-btn:hover { background: var(--panel); color: var(--ink); }
+      #pvStatus {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--muted);
+      }
+      #pvStatus[data-state="running"] { background: var(--accent); animation: pv-pulse 1.2s ease-in-out infinite; }
+      #pvStatus[data-state="ok"] { background: #10b981; }
+      #pvStatus[data-state="err"] { background: #ef4444; }
+      @keyframes pv-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+      #pvBody {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow: auto;
+        position: relative;
+      }
+      /* UCA-182 Phase 17: streaming progress bar + animated state.
+         Shown while the title status dot is `running`; hidden once
+         the status flips to `ok` or `err`. */
+      #pvRoot[data-streaming="1"] #pvBody::before {
+        content: "";
+        position: sticky;
+        top: 0; left: 0; right: 0;
+        height: 2px;
+        display: block;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(37, 99, 235, 0.4) 30%,
+          rgba(37, 99, 235, 0.9) 50%,
+          rgba(37, 99, 235, 0.4) 70%,
+          transparent 100%
+        );
+        background-size: 220% 100%;
+        animation: pvStreamBar 1.4s linear infinite;
+        z-index: 5;
+      }
+      @keyframes pvStreamBar {
+        0% { background-position: 200% 0; }
+        100% { background-position: -80% 0; }
+      }
+      #pvFoot {
+        flex: 0 0 auto;
+        padding: 6px 14px;
+        border-top: 1px solid var(--line);
+        background: var(--panel-2);
+        font-size: 11px;
+        color: var(--muted);
+      }
+      .pv-loading {
+        padding: 40px;
+        text-align: center;
+        color: var(--muted);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+      }
+      .pv-loading::before {
+        content: "";
+        width: 20px;
+        height: 20px;
+        border: 2px solid rgba(37, 99, 235, 0.25);
+        border-top-color: rgba(37, 99, 235, 0.85);
+        border-radius: 50%;
+        animation: pvSpin 0.9s linear infinite;
+      }
+      @keyframes pvSpin { to { transform: rotate(360deg); } }
+      .pv-empty {
+        display: grid; place-items: center; height: 100%;
+        color: var(--muted); font-size: 13px; padding: 24px;
+      }
+      .pv-placeholder {
+        padding: 40px 24px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .pv-placeholder-title {
+        font-weight: 600; color: var(--ink); margin-bottom: 6px;
+      }
+      .pv-placeholder-sub { font-size: 12px; line-height: 1.55; }
+      .lp-pre {
+        margin: 0; padding: 16px 20px;
+        background: #0f172a; color: #e2e8f0;
+        font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+        white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere;
+        min-height: 100%;
+      }
+      .lp-iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+      .lp-image { max-width: 100%; max-height: 100%; display: block; margin: 0 auto; }
+      .lp-table {
+        width: 100%; border-collapse: collapse; font-size: 12.5px;
+      }
+      .lp-table th, .lp-table td {
+        border: 1px solid var(--line); padding: 4px 8px; text-align: left;
+      }
+      .lp-table th { background: var(--panel-2); font-weight: 600; }
+      .lp-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .lp-banner {
+        margin: 0; padding: 8px 14px;
+        background: #fef3c7; border-bottom: 1px solid #fbbf24; color: #78350f;
+        font-size: 12px;
+      }
+      .lp-md { padding: 24px 32px; line-height: 1.6; }
+      .lp-md h1, .lp-md h2, .lp-md h3 { line-height: 1.25; }
+      .lp-outline { padding: 0 32px 20px; }
+      .lp-document-draft {
+        max-width: 760px;
+        min-height: calc(100% - 34px);
+        margin: 18px auto 40px;
+        padding: 44px 56px;
+        background: #fff;
+        color: #1f2937;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, .10);
+        font: 14px/1.65 "Calibri", "Microsoft YaHei", sans-serif;
+      }
+      .lp-document-draft h1 { margin: 0 0 18px; font-size: 28px; line-height: 1.18; color: #1f3864; }
+      .lp-document-draft h2 { margin: 24px 0 8px; font-size: 19px; color: #2e74b5; }
+      .lp-document-draft p { margin: 0 0 10px; }
+      .lp-doc-subtitle { color: #64748b; font-size: 15px; margin-top: -8px; }
+      .lp-muted { color: #64748b; }
+      .lp-table-draft {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      .lp-table-draft th, .lp-table-draft td {
+        border: 1px solid #cbd5e1;
+        padding: 6px 9px;
+        text-align: left;
+        vertical-align: top;
+      }
+      .lp-table-draft th { background: #e2e8f0; font-weight: 700; }
+      .lp-sheet-draft { padding: 22px 24px 40px; }
+      .lp-sheet-draft h1 { margin: 0 0 14px; font-size: 18px; }
+      .lp-slides-draft {
+        padding: 18px 22px 40px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+        align-items: center;
+      }
+      .lp-deck-title {
+        width: min(100%, 720px);
+        margin: 0;
+        color: #172554;
+        font-size: 18px;
+        line-height: 1.25;
+      }
+      .lp-slide-draft {
+        width: min(100%, 720px);
+        aspect-ratio: 16 / 9;
+        background: #fff;
+        color: #172554;
+        border: 1px solid #e2e8f0;
+        box-shadow: 0 12px 28px rgba(15, 23, 42, .10);
+        padding: 34px 44px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+      }
+      .lp-slide-index { font-size: 11px; color: #64748b; margin-bottom: 12px; text-transform: uppercase; letter-spacing: .04em; }
+      .lp-slide-draft h2 { margin: 0 0 14px; font-size: 26px; line-height: 1.15; }
+      .lp-slide-draft p, .lp-slide-draft li { font-size: 15px; line-height: 1.5; }
+      .lp-error {
+        padding: 24px; background: #fee2e2; color: #7f1d1d;
+        border-radius: 8px; margin: 24px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="pvRoot" data-streaming="0">
+      <header id="pvHead">
+        <span id="pvStatus" data-state="idle"></span>
+        <div class="pv-title" id="pvTitle">预览</div>
+        <div class="pv-sub" id="pvSub"></div>
+        <div class="pv-actions">
+          <button class="pv-btn" id="pvPinBtn" title="置顶">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1V4H8v2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+          </button>
+          <button class="pv-btn" id="pvCloseBtn" title="关闭">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </header>
+      <div id="pvBody">
+        <div class="pv-empty" data-i18n-en="Drop a file here, or open an artifact from chat." data-i18n-zh="拖拽文件或在聊天中生成 / 点击 artifact 时自动显示。">Drop a file here, or open an artifact from chat.</div>
+      </div>
+      <footer id="pvFoot"><span id="pvMeta"></span></footer>
+    </div>
+    <script src="./drop-guard.js"></script>
+    <script src="./preview/client-registry.js"></script>
+    <script src="./preview/shell-preview-client.js"></script>
+    <script src="./preview/runtime-preview-client.js"></script>
+    <script src="./preview/handlers/iframe-remote.js"></script>
+    <script src="./preview/handlers/text.js"></script>
+    <script src="./preview/handlers/csv.js"></script>
+    <script src="./preview/handlers/image.js"></script>
+    <script src="./preview/handlers/pdf.js"></script>
+    <script src="./preview/streaming.js"></script>
+    <script type="module" src="./i18n-dom-bootstrap.mjs"></script>
+    <script src="./preview-window.js"></script>
+  </body>
+</html>

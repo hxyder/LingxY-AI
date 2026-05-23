@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://uca.local/schemas/task_event.schema.json",
+  "title": "TaskEvent",
+  "type": "object",
+  "required": ["event_id", "task_id", "ts", "event_type", "payload"],
+  "properties": {
+    "event_id": { "type": ["integer", "string"] },
+    "task_id": { "type": "string", "minLength": 1 },
+    "ts": { "type": "string", "format": "date-time" },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "task_created",
+        "status_changed",
+        "step_started",
+        "step_finished",
+        "log",
+        "warning",
+        "artifact_created",
+        "needs_input",
+        "success",
+        "partial_success",
+        "failed",
+        "cancelled",
+        "approval_queued"
+      ]
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

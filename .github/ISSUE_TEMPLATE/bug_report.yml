@@ -1,0 +1,72 @@
+name: Bug report
+description: Report a reproducible LingxY problem.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do not include API keys, tokens, private file contents, or screenshots with sensitive data.
+        Security vulnerabilities should be reported privately using SECURITY.md instead of a public issue.
+  - type: input
+    id: version
+    attributes:
+      label: LingxY version or commit
+      description: Paste the app version or the commit hash you ran from source.
+      placeholder: "v0.1.0 / abc1234"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 23H2"
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Required when running from source.
+      placeholder: "node --version"
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Keep this minimal and concrete.
+      placeholder: |
+        1. Open ...
+        2. Ask ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Attach or paste relevant logs only after removing secrets, private file contents, and local-only sensitive data.
+      placeholder: "Console -> Settings -> Diagnostics JSON, redacted"
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include screenshots only when they do not expose private data.
+    validations:
+      required: false

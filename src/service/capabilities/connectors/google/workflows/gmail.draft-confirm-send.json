@@ -1,0 +1,55 @@
+{
+  "schema_version": "1.0",
+  "provider": "google",
+  "service": "google.gmail",
+  "workflows": [
+    {
+      "id": "google.gmail.draft_confirm_send",
+      "name": "Gmail Draft Confirm Send",
+      "description": "Prepare a visible non-empty Gmail draft preview, wait for user confirmation, then send through the connected account.",
+      "intent": "email.draft_confirm_send",
+      "risk": "high",
+      "triggerPatterns": [
+        "先给我草稿",
+        "确认再发",
+        "draft first",
+        "confirm before sending",
+        "Gmail draft"
+      ],
+      "steps": [
+        {
+          "id": "prepare_draft",
+          "tool": "google.gmail.create_draft_preview",
+          "output": "draft"
+        },
+        {
+          "id": "request_confirmation",
+          "type": "user.confirm",
+          "requires": [
+            "draft.subject",
+            "draft.body"
+          ]
+        },
+        {
+          "id": "send_email",
+          "tool": "google.gmail.send_email",
+          "condition": "confirmation.approved"
+        }
+      ],
+      "resultContract": {
+        "successRequires": [
+          "user_visible_output"
+        ],
+        "waitingRequires": [
+          "pending_confirmation",
+          "draft.subject",
+          "draft.body"
+        ]
+      },
+      "timeline": {
+        "showAllSteps": true,
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

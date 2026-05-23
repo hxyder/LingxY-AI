@@ -1,0 +1,164 @@
+{
+  "schema_version": "1.0",
+  "kind": "tools",
+  "provider": "microsoft",
+  "service": "microsoft.outlook",
+  "tools": [
+    {
+      "id": "microsoft.outlook.create_draft_preview",
+      "mcpName": "outlook_create_draft_preview",
+      "name": "Outlook Create Draft Preview",
+      "description": "Create a local non-sending Outlook draft preview for user review before any send action.",
+      "capability": "emailWrite",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "kind": "local_preview"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "properties": {
+          "accountId": { "type": "string" },
+          "to": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" },
+            "minItems": 1
+          },
+          "cc": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" }
+          },
+          "bcc": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" }
+          },
+          "subject": { "type": "string", "minLength": 1 },
+          "body": { "type": "string", "minLength": 1 }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "draft_preview",
+          "subject",
+          "body",
+          "pending_confirmation"
+        ],
+        "properties": {
+          "draft_preview": { "type": "string" },
+          "subject": { "type": "string" },
+          "body": { "type": "string" },
+          "pending_confirmation": { "type": "boolean" }
+        }
+      },
+      "outputValidators": [
+        { "path": "draft_preview", "kind": "nonempty_string" },
+        { "path": "subject", "kind": "nonempty_string" },
+        { "path": "body", "kind": "nonempty_string" },
+        { "path": "pending_confirmation", "kind": "pending_confirmation" }
+      ],
+      "timeline": {
+        "label": "Outlook draft preview",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "microsoft.outlook.list_emails",
+      "mcpName": "outlook_list_emails",
+      "name": "Outlook List Emails",
+      "description": "List recent or matching email metadata from a connected Outlook / Microsoft 365 account.",
+      "capability": "emailRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_list_emails",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "accountId": { "type": "string" },
+          "query": { "type": "string" },
+          "unreadOnly": { "type": "boolean" },
+          "limit": { "type": "number", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "outputValidators": [
+        { "path": "emails", "kind": "array_min_items", "min": 0 }
+      ],
+      "timeline": {
+        "label": "Outlook email search",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "microsoft.outlook.send_email",
+      "mcpName": "outlook_send_email",
+      "name": "Outlook Send Email",
+      "description": "Send an email through a connected Microsoft 365 account after explicit user confirmation. Supports file attachments via attachmentPaths.",
+      "capability": "emailWrite",
+      "risk": "high",
+      "requiresConfirmation": true,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_send_email",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ],
+        "properties": {
+          "accountId": { "type": "string" },
+          "to": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" },
+            "minItems": 1
+          },
+          "cc": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" }
+          },
+          "bcc": {
+            "type": "array",
+            "items": { "type": "string", "format": "email" }
+          },
+          "subject": { "type": "string", "minLength": 1 },
+          "body": { "type": "string", "minLength": 1 },
+          "attachmentPaths": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "sent"
+        ],
+        "properties": {
+          "sent": { "type": "boolean" },
+          "messageId": { "type": "string" }
+        }
+      },
+      "outputValidators": [
+        { "path": "sent", "kind": "boolean_true" }
+      ],
+      "timeline": {
+        "label": "Outlook send email",
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

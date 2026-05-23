@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "id": "market.competitor.scan",
+  "name": "竞品扫描",
+  "description": "抓取页面或文档内容并整理竞品摘要。",
+  "version": "1.0.0",
+  "input": {
+    "source_types": ["webpage", "link", "file", "file_group", "office_selection"]
+  },
+  "steps": [
+    {
+      "id": "collect",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "收集主要特性和定位。"
+      }
+    },
+    {
+      "id": "report",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "输出竞品对比结论。"
+      }
+    }
+  ],
+  "output": {
+    "primary": "${steps.report.result}"
+  },
+  "cost_estimate": {
+    "tokens_in": 8000,
+    "tokens_out": 1600
+  }
+}

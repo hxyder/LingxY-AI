@@ -1,0 +1,92 @@
+{
+  "manifest_version": 3,
+  "name": "LingxY",
+  "version": "0.1.0",
+  "description": "Capture webpage context and forward it to LingxY.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3VhGOsCwvKNHOkn36SDrNQOHntxaFakoNuYOB8Vofch18d9swYqtiqbFoRX1hHBD5N1S5dnrJ/vKD93egnCCG4Ycap8hVq0L4spa4SFkjODry1ckbfUmfgDfxAkBfd4HZ7jwM+pWBXqwJ3ymhAeJlRMIDwapNgBzScqp6kr35XzG8nZXbCSUGLrpOt3PoZt9N/3ZagujhgIhJsdO6YIp+UN6whhpOw2S1S9UQcA/AH5TRd7kI7X38QCFO0WZjyjHVrgao3jd0di9ty2A7ZsOu6Mq5ewpRzUfUQWvETVEw0WOKqujo6Pd+4aEaTkDQ1SdYnf/9wttGfMEFGiyFipuHwIDAQAB",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "nativeMessaging",
+    "notifications",
+    "geolocation",
+    "scripting",
+    "sidePanel",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>",
+    "https://api.anthropic.com/*",
+    "https://api.openai.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://api.deepseek.com/*",
+    "https://ark.cn-beijing.volces.com/*",
+    "https://api.moonshot.cn/*",
+    "https://dashscope.aliyuncs.com/*",
+    "https://dashscope-us.aliyuncs.com/*",
+    "https://open.bigmodel.cn/*",
+    "https://api.siliconflow.cn/*",
+    "https://api.lingyiwanwu.com/*",
+    "https://api.groq.com/*",
+    "https://api.mistral.ai/*",
+    "https://api.x.ai/*",
+    "https://api.perplexity.ai/*",
+    "https://openrouter.ai/*",
+    "http://127.0.0.1/*",
+    "http://localhost/*"
+  ],
+  "options_page": "options/index.html",
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_script/rules.js",
+        "content_script/placement.js",
+        "content_script/stability-watcher.js",
+        "content_script/selection-cache.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_script/page-source-capture.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
+    }
+  ],
+  "action": {
+    "default_title": "LingxY",
+    "default_popup": "popup/index.html"
+  },
+  "commands": {
+    "explain-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E"
+      },
+      "description": "用 LingxY 解释当前页面 / 视频"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "shadow_ui/floating-chip.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
