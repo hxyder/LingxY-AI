@@ -51,7 +51,7 @@ const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 assert.equal(pkg.private, false, "public package must not be marked private");
 assert.equal(typeof pkg.scripts?.["check:public"], "string", "check:public script missing");
 const gitignore = readFileSync(path.join(root, ".gitignore"), "utf8");
-assert.match(gitignore, /(^|\n)node_modules\/(\n|$)/, ".gitignore must exclude node_modules");
+assert.match(gitignore, /(^|\r?\n)node_modules\/(\r?\n|$)/, ".gitignore must exclude node_modules");
 for (const key of Object.keys(pkg.scripts ?? {})) {
   assert.equal(key.startsWith("verify:"), false, `internal verify script leaked into public package.json: ${key}`);
   assert.equal(key.startsWith("real-llm:"), false, `live LLM script leaked into public package.json: ${key}`);
