@@ -4,6 +4,8 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const port = Number(process.env.UCA_PUBLIC_SMOKE_PORT || 4390);
 const baseUrl = `http://127.0.0.1:${port}`;
+const pipeName = process.env.UCA_PUBLIC_SMOKE_PIPE_NAME
+  || `\\\\.\\pipe\\lingxy-public-smoke-${process.pid}-${Date.now()}`;
 const output = [];
 
 async function probe(timeoutMs = 1500) {
@@ -22,7 +24,7 @@ if (await probe(500)) {
 
 const child = spawn(process.execPath, ["scripts/start-runtime.mjs"], {
   cwd: process.cwd(),
-  env: { ...process.env, UCA_PORT: String(port) },
+  env: { ...process.env, UCA_PORT: String(port), UCA_EXPLORER_PIPE_NAME: pipeName },
   stdio: ["ignore", "pipe", "pipe"]
 });
 child.stdout.on("data", (chunk) => output.push(String(chunk)));
