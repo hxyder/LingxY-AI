@@ -21,6 +21,7 @@ import {
 } from "./run-mode-router.js";
 import { runTaskWithStream } from "./sse-client.js";
 import { getCachedLocation, getSystemTimezone, STORAGE_KEY as LOCATION_STORAGE_KEY } from "../shared/location.js";
+import { DEFAULT_RUNTIME_URL } from "../shared/provider-catalog.js";
 
 // In-memory mirror of the user's cached geolocation (populated by the
 // sidepanel after the user grants the Chrome prompt). We hydrate from
@@ -497,8 +498,7 @@ async function resolveQuickActionRouteContext({
   preferInline = true
 } = {}) {
   const standaloneConfig = await loadStandaloneConfig();
-  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-  const desktopUp = await isDesktopAvailable(runtimeBase);
+  const { runtimeBase, desktopUp } = await resolveDesktopRuntimeAvailability(standaloneConfig);
   const capabilities = createRunModeCapabilities({
     desktopAvailable: desktopUp,
     standaloneReady: hasStandaloneProviderConfig(standaloneConfig),
@@ -534,13 +534,26 @@ function createQuickActionTiming() {
   };
 }
 
+async function resolveDesktopRuntimeAvailability(standaloneConfig = null) {
+  let runtimeBase = (standaloneConfig?.runtimeUrl ?? DEFAULT_RUNTIME_URL).replace(/\/+$/, "");
+  let desktopUp = await isDesktopAvailable(runtimeBase);
+  const defaultRuntimeBase = DEFAULT_RUNTIME_URL.replace(/\/+$/, "");
+  if (!desktopUp && runtimeBase !== defaultRuntimeBase) {
+    const defaultDesktopUp = await isDesktopAvailable(defaultRuntimeBase);
+    if (defaultDesktopUp) {
+      runtimeBase = defaultRuntimeBase;
+      desktopUp = true;
+    }
+  }
+  return { runtimeBase, desktopUp };
+}
+
 async function resolvePageExplainRouteContext({
   origin = "page_action",
   preferSidePanel = true
 } = {}) {
   const standaloneConfig = await loadStandaloneConfig();
-  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-  const desktopUp = await isDesktopAvailable(runtimeBase);
+  const { runtimeBase, desktopUp } = await resolveDesktopRuntimeAvailability(standaloneConfig);
   const capabilities = createRunModeCapabilities({
     desktopAvailable: desktopUp,
     standaloneReady: hasStandaloneProviderConfig(standaloneConfig),
@@ -599,7 +612,12 @@ export async function executeQuickAction({
     timing.mark("route_plan_ready");
   } else {
     if (!effectiveStandaloneConfig) effectiveStandaloneConfig = await loadStandaloneConfig();
-    effectiveRuntimeBase = (effectiveRuntimeBase ?? effectiveStandaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+    if (!effectiveRuntimeBase) {
+      const availability = await resolveDesktopRuntimeAvailability(effectiveStandaloneConfig);
+      effectiveRuntimeBase = availability.runtimeBase;
+    } else {
+      effectiveRuntimeBase = effectiveRuntimeBase.replace(/\/+$/, "");
+    }
     timing.mark("route_plan_ready");
   }
 
@@ -831,8 +849,7 @@ async function openFollowupDialog({
   priorResult = ""
 } = {}, chromeApi = chrome, fetchImpl = fetch) {
   const standaloneConfig = await loadStandaloneConfig();
-  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-  const desktopUp = await isDesktopAvailable(runtimeBase);
+  const { desktopUp } = await resolveDesktopRuntimeAvailability(standaloneConfig);
 
   if (desktopUp) {
     const request = buildOverlayHandoffRequest({
@@ -865,8 +882,7 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
   // owns the UI, so we can't render an inline reply without the desktop —
   // standalone mode is "best effort" for context-menu actions.
   const standaloneConfig = await loadStandaloneConfig();
-  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-  const desktopUp = await isDesktopAvailable(runtimeBase);
+  const { runtimeBase, desktopUp } = await resolveDesktopRuntimeAvailability(standaloneConfig);
   if (!desktopUp && hasStandaloneProviderConfig(standaloneConfig)) {
     // UCA-164: use the action the user actually picked from the context menu,
     // not a hardcoded "summarize". Right-click translate used to fall into
@@ -1284,7 +1300,18 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         activeTab = first ?? null;
       }
       if (!activeTab) return;
-      await dispatchExplainPage({ tab: activeTab, chromeApi, fetchImpl: fetch });
+      const routeContext = await resolvePageExplainRouteContext({
+        origin: "keyboard_shortcut",
+        preferSidePanel: true
+      });
+      await queueSidePanelAnalysis({
+        kind: "page_explain",
+        routePlan: routeContext.routePlan
+      }, {
+        chromeApi,
+        windowId: activeTab.windowId ?? null,
+        routePlan: routeContext.routePlan
+      });
     });
   }
 
@@ -1441,8 +1468,8 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         const conversation = [...history, { role: "user", content: userText }];
         const config = await loadStandaloneConfig();
 
-        const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-        if (await isDesktopAvailable(runtimeBase)) {
+        const { runtimeBase, desktopUp } = await resolveDesktopRuntimeAvailability(config);
+        if (desktopUp) {
           const desktopResult = await runDesktopTask({
             runtimeBase,
             userCommand: userText,
@@ -1489,9 +1516,8 @@ export function registerExtensionRuntime(chromeApi = chrome) {
     if (message?.type === "uca.standalone.status") {
       (async () => {
         const config = await loadStandaloneConfig();
-        const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
         invalidateDesktopProbe();
-        const desktopUp = await isDesktopAvailable(runtimeBase);
+        const { runtimeBase, desktopUp } = await resolveDesktopRuntimeAvailability(config);
         const standaloneReady = hasStandaloneProviderConfig(config);
         const capabilities = createRunModeCapabilities({
           desktopAvailable: desktopUp,
@@ -1588,9 +1614,9 @@ function registerChatStreamPort(chromeApi = chrome) {
         ? Math.min(2048, Math.max(256, Math.round(message.maxTokens)))
         : 512;
       port.postMessage({ type: "start" });
-      const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+      const { runtimeBase, desktopUp } = await resolveDesktopRuntimeAvailability(config);
       let result;
-      if (await isDesktopAvailable(runtimeBase)) {
+      if (desktopUp) {
         result = await runDesktopTask({
           runtimeBase,
           userCommand: userText,
@@ -1659,7 +1685,7 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
       const { action, selectionState } = message;
       if (!aborted) port.postMessage({ type: "start" });
       const config = await loadStandaloneConfig();
-      const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+      const { runtimeBase } = await resolveDesktopRuntimeAvailability(config);
       const routePlan = isValidRoutePlan(message.routePlan)
         ? message.routePlan
         : (await resolveQuickActionRouteContext({

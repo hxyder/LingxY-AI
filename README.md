@@ -1,10 +1,43 @@
+<p align="center">
+  <img src="assets/icons/lingxy-128.png" alt="LingxY logo" width="96">
+</p>
+
 # LingxY AI Desktop
+
+<p align="center">
+  <strong>A local-first AI workspace for Windows desktop context, files, browser pages, Office documents, schedules, and tool-backed tasks.</strong>
+</p>
+
+<p align="center">
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2B-2563eb">
+  <img alt="Node" src="https://img.shields.io/badge/Node.js-22.12%2B-339933">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-111827">
+  <img alt="Local first" src="https://img.shields.io/badge/Runtime-local--first-0f766e">
+</p>
 
 [简体中文](README.zh-CN.md)
 
 LingxY AI Desktop is a local-first AI workspace for Windows. It gives you a desktop overlay, dock, console, browser extension, Office add-ins, file tools, schedules, and connector workflows around the model providers you configure.
 
 The goal is simple: keep the user in control while letting AI work with real desktop context. LingxY can read selected windows, files, screenshots, browser pages, Office documents, and conversation history, then run tool-backed tasks such as research, summarization, document drafting, file analysis, reminders, and connector actions.
+
+## Feature Highlights
+
+| Highlight | What It Does |
+| --- | --- |
+| Desktop overlay | Open a compact command window over any app and ask with current-window, selected-text, file, browser, or screenshot context. |
+| File and folder intelligence | Analyze documents, images, PDFs, Office files, folders, and filtered inventories such as "how many .docx files are in these folders". |
+| Browser and video context | Use the browser extension to explain webpages, selected text, links, images, and supported video pages from the current tab. |
+| Console workspace | Manage conversations, tasks, artifacts, previews, providers, schedules, connectors, notes, and approvals in one desktop console. |
+| Bring-your-own model | Route work to configured API providers, local endpoints, or CLI agents such as Claude Code, Codex, and Kimi CLI. |
+| Approval-first actions | Draft high-risk connector actions such as email, calendar, and file mutations for review before execution. |
+
+## Demos
+
+| Hotkey File Capture | Webpage And Selected Text | Drag-And-Drop File Analysis |
+| --- | --- | --- |
+| Use the global hotkey to capture a selected desktop file and ask LingxY to analyze it. | Explain the current webpage or selected text from the browser extension and continue in the side panel. | Drop a local file into LingxY and start a contextual analysis without switching workflows. |
+| ![Hotkey file capture and analysis](docs/assets/demo/hotkey-file-analysis.gif) | ![Quick webpage and selected text analysis](docs/assets/demo/web-selection-analysis.gif) | ![Drag-and-drop file analysis](docs/assets/demo/drag-drop-file-analysis.gif) |
 
 ## What You Can Do
 

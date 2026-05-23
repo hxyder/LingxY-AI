@@ -1,10 +1,43 @@
+<p align="center">
+  <img src="assets/icons/lingxy-128.png" alt="LingxY logo" width="96">
+</p>
+
 # LingxY AI Desktop
+
+<p align="center">
+  <strong>本地优先的 Windows 桌面 AI 工作区，面向桌面上下文、文件、网页、Office 文档、定时任务和工具型任务。</strong>
+</p>
+
+<p align="center">
+  <img alt="Windows" src="https://img.shields.io/badge/Windows-10%2B-2563eb">
+  <img alt="Node" src="https://img.shields.io/badge/Node.js-22.12%2B-339933">
+  <img alt="License" src="https://img.shields.io/badge/License-MIT-111827">
+  <img alt="Local first" src="https://img.shields.io/badge/Runtime-local--first-0f766e">
+</p>
 
 [English](README.md)
 
 LingxY AI Desktop 是一个本地优先的 Windows 桌面 AI 工作区。它围绕你配置的模型服务商，提供桌面 overlay、dock、console、浏览器扩展、Office 加载项、文件工具、定时任务和连接器工作流。
 
 它的目标很直接：让 AI 能真正理解桌面上下文，同时始终把控制权留给用户。LingxY 可以读取当前窗口、选中文本、浏览器页面、截图、文件、Office 文档和会话历史，然后执行调研、总结、文档生成、文件分析、提醒、连接器草稿等带工具调用的任务。
+
+## 功能亮点
+
+| 亮点 | 作用 |
+| --- | --- |
+| 桌面 Overlay | 在任意应用上方打开轻量命令窗口，结合当前窗口、选中文本、文件、网页或截图提问。 |
+| 文件和文件夹理解 | 分析文档、图片、PDF、Office 文件、文件夹，也支持类似“这两个文件夹里有多少 .docx 文件”的过滤清点。 |
+| 浏览器和视频上下文 | 通过浏览器扩展解释当前网页、选中文本、链接、图片和支持的视频页面。 |
+| Console 工作区 | 集中管理会话、任务、产物、预览、模型服务商、定时任务、连接器、笔记和审批。 |
+| 自带模型服务商 | 可路由到已配置的 API 服务商、本地端点，或 Claude Code、Codex、Kimi CLI 等 CLI agent。 |
+| 高风险动作先审批 | 邮件、日历、文件和连接账号写入类动作会先生成草稿或审批项，由用户确认后再执行。 |
+
+## 演示
+
+| 快捷键捕获文件 | 网页和选中文字分析 | 拖动文件分析 |
+| --- | --- | --- |
+| 使用全局快捷键捕获桌面选中的文件，并让 LingxY 分析。 | 从浏览器扩展解释当前网页或选中文字，并在侧边栏继续追问。 | 把本地文件拖入 LingxY，直接开始上下文分析。 |
+| ![快捷键捕获文件并分析](docs/assets/demo/hotkey-file-analysis.gif) | ![快速分析网页和选中文字](docs/assets/demo/web-selection-analysis.gif) | ![拖动文件进行分析](docs/assets/demo/drag-drop-file-analysis.gif) |
 
 ## 你可以用它做什么
 
