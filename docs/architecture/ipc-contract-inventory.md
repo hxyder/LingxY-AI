@@ -2,7 +2,7 @@
 
 Phase 2A boundary inventory for Electron IPC. This is a read-only snapshot of the current shell contract.
 
-Status: verified against the current repository on 2026-05-09.
+Status: verified against the current repository on 2026-05-24.
 
 ## Contract Source
 
@@ -15,8 +15,8 @@ Status: verified against the current repository on 2026-05-09.
 
 ## Snapshot
 
-- IPC channel count: 116
-- Main-process handler registration references across `electron-main.mjs` and IPC modules: 113
+- IPC channel count: 117
+- Main-process handler registration references across `electron-main.mjs` and IPC modules: 114
 - Main-process send references across `electron-main.mjs`, desktop main IPC helpers, and IPC modules: 26
 
 PMAT-014 note, 2026-05-20: `capture-and-ask` sends
@@ -32,7 +32,7 @@ the inactive reveal before the native copy probe completes. Delayed clipboard
 text is accepted only as a bounded post-copy compensation when no file selection
 was captured, and active-window payloads with only process/title still render as
 a generic current-window card on the existing context channel.
-- Renderer invoke references: 109
+- Renderer invoke references: 114
 - Renderer listener references: 22
 - Hard-coded main IPC handler channels outside `IPC_CHANNELS`: 13
 
@@ -44,7 +44,7 @@ a generic current-window card on the existing context channel.
 | Shell-local state/context | `uca:get-settings`, `uca:capture-active-window-context`, `uca:show-dock-menu`, `uca:register-ctrl-enter` | Desktop shell |
 | Popup/preview | `uca:popup-card-show`, `uca:preview-window-show`, `uca:preview-window-delta` | Desktop shell and renderer bridge |
 | Task/runtime | `uca:task-cancel`, `uca:task-retry`, `uca:task-delete`, `uca:task-file-recovery-restore`, `uca:context-preview-requested` | Service runtime via shell bridge |
-| Config/provider/MCP | `uca:provider-save`, `uca:mcp-server-save`, `uca:routing-config-update`, `uca:runtime-labs-config-update` | Service runtime configuration via desktop shell |
+| Config/provider/MCP | `uca:provider-list`, `uca:provider-save`, `uca:mcp-server-save`, `uca:routing-config-update`, `uca:runtime-labs-config-update` | Service runtime configuration via desktop shell |
 | Skills/capability | `uca:skill-create`, `uca:skill-markdown-read`, `uca:skill-registry-save` | Service runtime configuration via desktop shell |
 | Notes/projects/conversations | `uca:note-upsert`, `uca:project-files-attach`, `uca:notes-save` | Service runtime storage via desktop shell |
 | Scheduler/DAG/templates | `uca:schedule-create`, `uca:dag-resume`, `uca:template-save` | Service runtime scheduler via desktop shell |

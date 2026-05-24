@@ -95,6 +95,28 @@ html, body {
   border-bottom: 1px solid #ececec;
   flex-wrap: wrap;
 }
+.sp-action-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 31px;
+  padding: 0 8px 0 10px;
+  border: 1px solid #e2e2e2;
+  border-radius: 999px;
+  background: #fff;
+  color: #555;
+  font-size: 12px;
+  font-weight: 600;
+}
+.sp-action-mode select {
+  min-width: 84px;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: #0a0a0a;
+  font: inherit;
+  cursor: pointer;
+}
 .sp-chip {
   border: 1px solid #e2e2e2;
   border-radius: 999px;

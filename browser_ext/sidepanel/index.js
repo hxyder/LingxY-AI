@@ -39,6 +39,7 @@ const modePillEl = document.getElementById("sp-mode-pill");
 const modeDetailEl = document.getElementById("sp-mode-detail");
 const optionsBtn = document.getElementById("sp-options-btn");
 const actionClearBtn = document.getElementById("sp-action-clear");
+const actionModeEl = document.getElementById("sp-action-mode");
 const actionPageBtn = document.getElementById("sp-action-page");
 const actionVideoBtn = document.getElementById("sp-action-video");
 const actionSelectionBtn = document.getElementById("sp-action-selection");
@@ -533,7 +534,51 @@ async function extractPagePlainText(tabId) {
   }
 }
 
-async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, routePlan = null } = {}) {
+function selectedPageActionMode() {
+  const value = `${actionModeEl?.value ?? ""}`.trim();
+  return ["analyze", "explain", "summarize", "translate", "actions"].includes(value)
+    ? value
+    : "analyze";
+}
+
+function pageActionCopy({ mode = "analyze", kindLabel = "网页", bodyBlock = "" } = {}) {
+  const subject = `当前${kindLabel}`;
+  switch (mode) {
+    case "explain":
+      return {
+        displayVerb: "解释",
+        requestText: `请解释${subject}，基于随请求附带的页面内容给出总述、关键点、背景、结论和不确定性。我可能会继续追问。`,
+        userText: `请解释以下${kindLabel}：先给一段清楚的总述，再列出 5-8 个关键点，说明背景、核心结论和需要注意的不确定性。我可能会继续追问。\n\n---\n${bodyBlock}\n---`
+      };
+    case "summarize":
+      return {
+        displayVerb: "提炼",
+        requestText: `请总结${subject}，只基于随请求附带的页面内容提炼核心论点、证据和结论。`,
+        userText: `请总结以下${kindLabel}：先用 2 句话概括，再列出 5 条最重要要点和每条依据。\n\n---\n${bodyBlock}\n---`
+      };
+    case "translate":
+      return {
+        displayVerb: "翻译",
+        requestText: `请把${subject}翻译成中文，并保留专有名词、数字、链接和重要小标题。`,
+        userText: `请把以下${kindLabel}内容翻译成中文；保留专有名词、数字、链接和重要小标题。\n\n---\n${bodyBlock}\n---`
+      };
+    case "actions":
+      return {
+        displayVerb: "行动清单",
+        requestText: `请把${subject}转成可执行行动清单，区分事实、待验证信息、下一步和风险。`,
+        userText: `请基于以下${kindLabel}输出行动清单：区分事实、待验证信息、下一步、风险和可追问的问题。\n\n---\n${bodyBlock}\n---`
+      };
+    case "analyze":
+    default:
+      return {
+        displayVerb: "分析",
+        requestText: `请分析${subject}，基于随请求附带的页面内容给出总体概述、关键要点和 3 个值得延伸的问题。我可能会继续追问。`,
+        userText: `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`
+      };
+  }
+}
+
+async function onAnalyzePageV2({ mode = selectedPageActionMode(), resetConversation = true, routePlan = null } = {}) {
   if (isBusy) return;
   if (resetConversation) {
     await startFreshAnalysisThread();
@@ -565,14 +610,8 @@ async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, rou
     return;
   }
   statusEl.textContent = "";
-  const isExplain = mode === "explain";
-  const requestText = isExplain
-    ? `请解释当前${kindLabel}，基于随请求附带的页面内容给出总述、关键点、背景、结论和不确定性。我可能会继续追问。`
-    : `请分析当前${kindLabel}，基于随请求附带的页面内容给出总体概述、关键要点和 3 个值得延伸的问题。我可能会继续追问。`;
-  const userText = isExplain
-    ? `请解释以下${kindLabel}：先给一段清楚的总述，再列出 5-8 个关键点，说明背景、核心结论和需要注意的不确定性。我可能会继续追问。\n\n---\n${bodyBlock}\n---`
-    : `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`;
-  const displayLabel = `${isExplain ? "📖 解释" : "📄 分析"}${kindLabel === "YouTube 视频" ? "视频" : "此页"}：${chipTitle.slice(0, 80)}`;
+  const copy = pageActionCopy({ mode, kindLabel, bodyBlock });
+  const displayLabel = `${copy.displayVerb}${kindLabel === "YouTube 视频" ? "视频" : "此页"}：${chipTitle.slice(0, 80)}`;
   const browserCapture = {
     sourceType: "page_explanation",
     browser: "chrome.exe",
@@ -582,13 +621,13 @@ async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, rou
     metadata: {
       source: "browser_sidepanel",
       contentKind: kindLabel === "YouTube 视频" ? "video" : "article",
-      mode: isExplain ? "explain" : "analyze",
+      mode,
       platform: captured?.platform ?? captured?.youtube?.platform ?? "generic"
     }
   };
   await sendTurn({
-    userContent: userText,
-    requestText,
+    userContent: copy.userText,
+    requestText: copy.requestText,
     displayLabel,
     attached: bodyBlock,
     maxTokens: 1536,
@@ -679,7 +718,7 @@ async function onAnalyzeVideo({ resetConversation = true } = {}) {
   if (!/youtube\.com|youtu\.be/.test(tab?.url ?? "")) {
     appendTurnEl({ role: "system", content: "(提示：当前不是 YouTube 页面。点 [分析此页] 也一样能用；视频支持正在逐步扩展到其他平台。)" });
   }
-  await onAnalyzePageV2({ resetConversation: false });
+  await onAnalyzePageV2({ mode: selectedPageActionMode(), resetConversation: false });
 }
 
 function buildQuickActionDisplayLabel(action, selectionState = {}) {
@@ -790,7 +829,7 @@ inputEl.addEventListener("keydown", (event) => {
 });
 
 actionClearBtn.addEventListener("click", () => { void onClear(); });
-actionPageBtn.addEventListener("click", () => { void onAnalyzePageV2({ resetConversation: true }); });
+actionPageBtn.addEventListener("click", () => { void onAnalyzePageV2({ mode: selectedPageActionMode(), resetConversation: true }); });
 actionVideoBtn.addEventListener("click", () => { void onAnalyzeVideo({ resetConversation: true }); });
 actionSelectionBtn.addEventListener("click", () => { void onAnalyzeSelection({ resetConversation: true }); });
 actionLocationBtn.addEventListener("click", () => { void onLocationChipClick(); });

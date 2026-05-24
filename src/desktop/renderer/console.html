@@ -1910,6 +1910,22 @@
             </div>
           </header>
           <div class="panel-section-body">
+            <div class="mcp-discovery" aria-label="MCP discovery search">
+              <div class="mcp-discovery-toolbar">
+                <input id="mcpRegistrySearchInput" type="search" placeholder="Search MCP servers, tools, providers">
+                <button id="mcpRegistrySearchBtn" class="btn btn-sm btn-primary" type="button">Search</button>
+              </div>
+              <div class="mcp-discovery-chips">
+                <button class="btn btn-sm btn-ghost" type="button" data-mcp-search-chip="search">Search</button>
+                <button class="btn btn-sm btn-ghost" type="button" data-mcp-search-chip="github">GitHub</button>
+                <button class="btn btn-sm btn-ghost" type="button" data-mcp-search-chip="browser">Browser</button>
+                <button class="btn btn-sm btn-ghost" type="button" data-mcp-search-chip="database">Database</button>
+                <button class="btn btn-sm btn-ghost" type="button" data-mcp-search-chip="docs">Docs</button>
+              </div>
+              <div id="mcpRegistrySearchState" class="mcp-discovery-state muted"></div>
+              <div id="mcpRegistrySearchResults" class="mcp-discovery-results"></div>
+            </div>
+
             <!-- UCA-125 Phase 3-2: MCP servers arranged as .conn-grid so
                  cards wrap as a responsive auto-fill grid per v3. -->
             <div id="connectorsMcpList" class="conn-grid"></div>
@@ -1919,8 +1935,8 @@
                  catalog stays clean for casual users. -->
             <div class="mcp-custom-wrap" style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px;">
               <div class="row" style="gap:8px;margin-bottom:8px;">
-                <strong style="font-size:13px;">Custom MCP servers<span class="zh" style="font-weight:400;margin-left:4px;">自定义服务器</span></strong>
-                <span id="mcpServerCount" class="tag">0</span>
+                <strong style="font-size:13px;">MCP setup<span class="zh" style="font-weight:400;margin-left:4px;">工具服务器设置</span></strong>
+                <span id="mcpServerCount" class="tag" hidden>0</span>
                 <div style="flex:1;"></div>
                 <button id="mcpServerAddToggle" class="btn btn-sm" type="button" aria-expanded="false" aria-controls="mcpServerFormWrap">
                   <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1986,7 +2002,7 @@
                   </div>
                 </form>
               </div>
-              <div id="mcpServerList" class="stack" style="gap:8px;"></div>
+              <div id="mcpServerList" class="stack" style="gap:8px;" hidden></div>
               <div id="mcpDraftList" class="stack" style="gap:8px;margin-top:12px;"></div>
             </div>
           </div>
@@ -2139,10 +2155,10 @@
           <div id="echoDiagnosticsPanel" class="voice-status-grid" style="margin-top:12px;"></div>
         </div>
 
-        <!-- ── Skills Registries ── -->
+        <!-- ── Skills ── -->
         <div id="skillsSettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">
           <div class="settings-group-head">
-            <h3 class="settings-group-title" style="margin:0;">Skills Registries</h3>
+            <h3 class="settings-group-title" style="margin:0;">Skills</h3>
             <div class="row" style="gap:8px;" data-no-fold>
               <span id="skillRegistryCount" class="muted" style="font-size:12px;">0</span>
               <button id="skillCreateBtn" class="btn" type="button" style="font-size:11px;padding:4px 10px;">New Skill</button>
@@ -2183,7 +2199,7 @@
               <span id="skillRegistryState" class="muted" style="font-size:12px;"></span>
             </div>
           </form>
-          <div id="skillRegistryList" class="stack" style="gap:8px;"></div>
+          <div id="skillRegistryList" class="capability-card-grid"></div>
         </div>
 
         <!-- ── Marketplace Governance ── -->

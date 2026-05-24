@@ -153,6 +153,10 @@ assert.deepEqual(getMcpStatusView({ available: true, enabled: true }), {
   label: "运行中",
   className: "ready"
 });
+assert.deepEqual(getMcpStatusView({ configured: true, enabled: false, detail: "disabled" }), {
+  label: "已保存",
+  className: "muted"
+});
 
 const html = renderConnectorsMcpServersHtml([
   {
@@ -170,6 +174,16 @@ const html = renderConnectorsMcpServersHtml([
     enabled: false,
     installRequired: true,
     installSource: "figma-mcp"
+  },
+  {
+    id: "com-mcparmory-github",
+    displayName: "GitHub",
+    source: "runtime_config",
+    available: false,
+    enabled: false,
+    configured: true,
+    transport: "http",
+    url: "https://mcp.mcparmory.com/github"
   }
 ], {
   escapeHtml(value) {
@@ -184,6 +198,12 @@ assert.ok(html.includes("mcp-card--v3"), "MCP view must render v3 cards");
 assert.ok(html.includes('data-mcp-cfg-save="mcp-brave-search"'), "MCP view must render dynamic config save");
 assert.ok(html.includes("mcp-needs-config"), "MCP view must surface missing config");
 assert.ok(html.includes('data-mcp-install-source-click="figma-mcp"'), "MCP view must render isolated package install handoff");
+assert.ok(html.includes('data-mcp-install-click="com-mcparmory-github"'), "saved runtime-config MCP cards must expose enable action");
+assert.ok(html.includes('data-mcp-delete-card="com-mcparmory-github"'), "saved runtime-config MCP cards must expose delete action");
+assert.ok(html.includes('data-mcp-source-badge="com-mcparmory-github"') && html.includes("Custom"),
+  "runtime-config MCP cards must be normal cards with a Custom badge");
+assert.ok(!html.includes("Repository issues, pull requests, and code search."),
+  "extra GitHub placeholder must not duplicate a configured custom GitHub MCP card");
 
 // ── Account connector card view is pure HTML/meta, with behavior in console.js ─
 assert.ok(consoleJs.includes('from "./console-account-connectors-view.mjs"'),

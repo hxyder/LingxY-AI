@@ -19,6 +19,7 @@ Files:
 | `src/service/capabilities/mcp/builtin.mjs` | Built-in MCP server descriptors | service/capabilities/mcp |
 | `src/service/capabilities/mcp/configured.mjs` | Runtime-configured MCP server adapter and command availability | service/capabilities/mcp |
 | `src/service/capabilities/mcp/descriptor-validation.mjs` | MCP server descriptor validation | service/capabilities/mcp |
+| `src/service/capabilities/mcp/discovery-catalog.mjs` | MCP registry search normalization and curated fallback discovery | service/capabilities/mcp |
 | `src/service/capabilities/mcp/drafts.mjs` | Runtime-local MCP draft listing and import source reading | service/capabilities/mcp |
 | `src/service/capabilities/mcp/env-resolver.mjs` | MCP env/secret reference resolution | service/capabilities/mcp |
 | `src/service/capabilities/mcp/install-detection.mjs` | Installed package descriptor detection | service/capabilities/mcp/install |
@@ -37,7 +38,7 @@ Product callers that currently depend on this surface:
 |---|---|
 | `src/service/ai/integrations/runtime.mjs` | registry, builtins, configured servers, env status |
 | `src/service/core/http-routes/config-provider-routes.mjs` | MCP server CRUD, test, drafts |
-| `src/service/core/http-routes/mcp-install-routes.mjs` | install plan, preview, run |
+| `src/service/core/http-routes/mcp-install-routes.mjs` | discovery search plus install plan, preview, run |
 | `src/service/core/http-routes/ai-status-routes.mjs` | `/ai/mcp`, runtime toggle/config, client disconnect |
 | `src/service/core/capability-creator/index.mjs` | descriptor validation for MCP drafts |
 | `src/service/action_tools/tools/index.mjs` | MCP draft directory resolution for capability drafts |
@@ -68,8 +69,9 @@ The verifier locks these contracts:
 - `/ai/mcp`, `/ai/mcp/:id/toggle`, `/ai/mcp/:id/config`,
   `/config/mcp/servers`, `/config/mcp/servers/:id`,
   `/config/mcp/servers/:id/test`, `/config/mcp/drafts/import`,
-  `/config/mcp/install/plan`, `/config/mcp/install/preview`, and
-  `/config/mcp/install/run` remain stable service HTTP contracts.
+  `/config/mcp/registry/search`, `/config/mcp/install/plan`,
+  `/config/mcp/install/preview`, and `/config/mcp/install/run` remain stable
+  service HTTP contracts.
 
 ## Current Shape
 
@@ -82,6 +84,7 @@ src/service/capabilities/mcp/
   client-bridge.mjs
   configured.mjs
   descriptor-validation.mjs
+  discovery-catalog.mjs
   drafts.mjs
   env-resolver.mjs
   install-detection.mjs

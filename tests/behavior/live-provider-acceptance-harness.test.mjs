@@ -56,6 +56,7 @@ test("validator requires live mode provider setup, model roles, and opt-in", () 
 });
 
 test("redaction removes API-key-like values from evidence", () => {
+  const fixtureSecret = ["sk", "test-secret-value-1234567890"].join("-");
   const raw = buildLiveProviderAcceptanceReport({
     commit: "abc123",
     branch: "task/live-provider",
@@ -64,7 +65,7 @@ test("redaction removes API-key-like values from evidence", () => {
         id: "short_text_task",
         status: "pass",
         command: "POST /task",
-        evidence: "Authorization: Bearer sk-test-secret-value-1234567890"
+        evidence: `Authorization: Bearer ${fixtureSecret}`
       }
     ]
   });

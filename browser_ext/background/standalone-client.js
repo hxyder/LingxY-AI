@@ -28,13 +28,20 @@ export function hasStandaloneProviderConfig(config = {}) {
 }
 
 // Probe the desktop runtime with a short timeout; cache the result for a few
-// seconds so rapid context-menu clicks don't each re-ping.
-const probeCache = { ok: null, expiresAt: 0 };
+// seconds so rapid context-menu clicks don't each re-ping. The cache is keyed
+// by URL because resolveDesktopRuntimeAvailability() may try a user-configured
+// runtime URL and then fall back to the built-in default in the same call.
+const probeCache = new Map();
+
+function normalizeProbeUrl(runtimeUrl) {
+  return (runtimeUrl || DEFAULT_RUNTIME_URL).replace(/\/+$/, "");
+}
 
 export async function isDesktopAvailable(runtimeUrl) {
   const now = Date.now();
-  if (probeCache.expiresAt > now) return probeCache.ok;
-  const url = (runtimeUrl || DEFAULT_RUNTIME_URL).replace(/\/+$/, "");
+  const url = normalizeProbeUrl(runtimeUrl);
+  const cached = probeCache.get(url);
+  if (cached?.expiresAt > now) return cached.ok;
   let ok = false;
   try {
     const controller = new AbortController();
@@ -43,13 +50,16 @@ export async function isDesktopAvailable(runtimeUrl) {
     clearTimeout(t);
     ok = response.ok;
   } catch { ok = false; }
-  probeCache.ok = ok;
-  probeCache.expiresAt = now + 5000; // 5s cache
+  probeCache.set(url, { ok, expiresAt: now + 5000 }); // 5s cache
   return ok;
 }
 
-export function invalidateDesktopProbe() {
-  probeCache.expiresAt = 0;
+export function invalidateDesktopProbe(runtimeUrl = null) {
+  if (runtimeUrl) {
+    probeCache.delete(normalizeProbeUrl(runtimeUrl));
+    return;
+  }
+  probeCache.clear();
 }
 
 // ── Provider-specific call wrappers. Each returns { ok, text, error }. ─────

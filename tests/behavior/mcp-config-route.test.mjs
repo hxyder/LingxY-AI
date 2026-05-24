@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { DESKTOP_ACTOR_HEADER } from "../../src/service/core/http-route-guards.mjs";
 import { tryHandleAiStatusRoute } from "../../src/service/core/http-routes/ai-status-routes.mjs";
+import { buildAIIntegrationRegistries } from "../../src/service/ai/integrations/runtime.mjs";
 import { createMcpEnvSecretRef } from "../../src/service/security/secret-store.mjs";
 
 function requestWithJson(body, headers = {}) {
@@ -150,4 +151,37 @@ test("PATCH /ai/mcp/:id/config requires desktop actor", async () => {
   assert.equal(response.statusCode, 403);
   assert.equal(response.json().error, "desktop_actor_required");
   assert.equal(runtime.savedConfig, null);
+});
+
+test("custom MCP env overrides are applied before configured server status checks", async () => {
+  const registries = buildAIIntegrationRegistries({
+    config: {
+      ai: {
+        mcp: {
+          servers: [{
+            id: "custom-search-mcp",
+            displayName: "Custom Search MCP",
+            transport: "http",
+            url: "https://example.invalid/mcp",
+            enabled: true,
+            env: {
+              TOKEN: "${env:CUSTOM_SEARCH_TOKEN}"
+            }
+          }],
+          envOverrides: {
+            "custom-search-mcp": {
+              TOKEN: "stored-token"
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const statuses = await registries.mcpServers.listStatus({ processEnv: {} });
+  const customStatus = statuses.find((entry) => entry.id === "custom-search-mcp");
+
+  assert.equal(customStatus.available, true);
+  assert.equal(customStatus.detail, "ready");
+  assert.equal(customStatus.missingEnv, undefined);
 });

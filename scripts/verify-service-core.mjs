@@ -118,12 +118,14 @@ if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/pr
 if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/preview"')
     || !mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/plan"')
     || !mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/run"')
+    || !mcpInstallRouteSource.includes('url.pathname === "/config/mcp/registry/search"')
     || !mcpInstallRouteSource.includes("detectMcpInstallCandidate")
+    || !mcpInstallRouteSource.includes("searchMcpDiscovery")
     || !mcpInstallRouteSource.includes("createMcpInstallSandboxPlan")
     || !mcpInstallRouteSource.includes("executeMcpInstall")
     || !mcpInstallRouteSource.includes("requireDesktopActor")
     || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
-  throw new Error("mcp-install-routes.mjs must own MCP install plan/preview/run without writing config.");
+  throw new Error("mcp-install-routes.mjs must own MCP discovery search and install plan/preview/run without writing config.");
 }
 if ((mcpInstallRouteSource.match(/requireDesktopActor/g) ?? []).length < 2) {
   throw new Error("MCP install preview and run routes must both require the shared desktop actor guard.");

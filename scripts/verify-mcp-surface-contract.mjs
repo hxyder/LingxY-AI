@@ -41,6 +41,7 @@ const expectedFiles = [
   "client-bridge.mjs",
   "configured.mjs",
   "descriptor-validation.mjs",
+  "discovery-catalog.mjs",
   "drafts.mjs",
   "env-resolver.mjs",
   "install-detection.mjs",
@@ -72,6 +73,11 @@ assertFunction(envResolver, `${ownerDir}/env-resolver.mjs`, "describeMcpEnvRequi
 
 const descriptorValidation = await importModule(`${ownerDir}/descriptor-validation.mjs`);
 assertFunction(descriptorValidation, `${ownerDir}/descriptor-validation.mjs`, "validateMcpServerDescriptor");
+
+const discoveryCatalog = await importModule(`${ownerDir}/discovery-catalog.mjs`);
+for (const name of ["normalizeMcpRegistrySearchPayload", "searchLocalMcpDiscovery", "searchMcpDiscovery"]) {
+  assertFunction(discoveryCatalog, `${ownerDir}/discovery-catalog.mjs`, name);
+}
 
 const drafts = await importModule(`${ownerDir}/drafts.mjs`);
 for (const name of ["resolveMcpDraftsDir", "listMcpDrafts", "readMcpDraft"]) {
@@ -195,9 +201,11 @@ for (const needle of [
 const installRoutes = read("src/service/core/http-routes/mcp-install-routes.mjs");
 for (const needle of [
   "../../capabilities/mcp/install-detection.mjs",
+  "../../capabilities/mcp/discovery-catalog.mjs",
   "../../capabilities/mcp/install-execution.mjs",
   "../../capabilities/mcp/install-sandbox.mjs",
   "../../capabilities/mcp/descriptor-validation.mjs",
+  'url.pathname === "/config/mcp/registry/search"',
   'url.pathname === "/config/mcp/install/plan"',
   'url.pathname === "/config/mcp/install/preview"',
   'url.pathname === "/config/mcp/install/run"'

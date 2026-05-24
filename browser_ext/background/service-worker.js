@@ -1126,6 +1126,56 @@ export async function dispatchExplainPage({
   }
 }
 
+async function routePageExplainAction({
+  tab = null,
+  chromeApi = chrome,
+  fetchImpl = fetch,
+  origin = "page_action",
+  windowId = null,
+  openPanel = true
+} = {}) {
+  let activeTab = tab;
+  if (!activeTab && chromeApi.tabs?.query) {
+    try {
+      const [first] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+      activeTab = first ?? null;
+    } catch { /* keep null */ }
+  }
+
+  const desktopContext = await resolvePageExplainRouteContext({
+    origin,
+    preferSidePanel: false
+  });
+  if (desktopContext.routePlan.transport === "desktop_page_explain" && activeTab?.id) {
+    const desktopResult = await dispatchExplainPage({
+      tab: activeTab,
+      chromeApi,
+      fetchImpl
+    });
+    if (desktopResult?.ok || desktopResult?.accepted) {
+      return {
+        ok: true,
+        ...desktopResult,
+        routePlan: desktopContext.routePlan
+      };
+    }
+  }
+
+  const sidepanelContext = await resolvePageExplainRouteContext({
+    origin,
+    preferSidePanel: true
+  });
+  return queueSidePanelAnalysis({
+    kind: "page_explain",
+    routePlan: sidepanelContext.routePlan
+  }, {
+    chromeApi,
+    windowId: windowId ?? activeTab?.windowId ?? null,
+    openPanel,
+    routePlan: sidepanelContext.routePlan
+  });
+}
+
 export async function dispatchBrowserContextSnapshot(context, fetchImpl = fetch) {
   const url = `${context?.url ?? ""}`.trim();
   const pageTitle = `${context?.pageTitle ?? context?.title ?? ""}`.trim();
@@ -1164,17 +1214,13 @@ export function registerExtensionRuntime(chromeApi = chrome) {
 
   chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === "uca.explain-page") {
-      const routeContext = await resolvePageExplainRouteContext({
-        origin: "context_menu",
-        preferSidePanel: true
-      });
-      await queueSidePanelAnalysis({
-        kind: "page_explain",
-        routePlan: routeContext.routePlan
-      }, {
+      await routePageExplainAction({
+        tab,
         chromeApi,
+        fetchImpl: fetch,
+        origin: "context_menu",
         windowId: tab?.windowId ?? null,
-        routePlan: routeContext.routePlan
+        openPanel: true
       });
       return;
     }
@@ -1283,17 +1329,13 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         activeTab = first ?? null;
       }
       if (!activeTab) return;
-      const routeContext = await resolvePageExplainRouteContext({
-        origin: "keyboard_shortcut",
-        preferSidePanel: true
-      });
-      await queueSidePanelAnalysis({
-        kind: "page_explain",
-        routePlan: routeContext.routePlan
-      }, {
+      await routePageExplainAction({
+        tab: activeTab,
         chromeApi,
+        fetchImpl: fetch,
+        origin: "keyboard_shortcut",
         windowId: activeTab.windowId ?? null,
-        routePlan: routeContext.routePlan
+        openPanel: true
       });
     });
   }
@@ -1329,18 +1371,13 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       (async () => {
         const explicitWindowId = message.windowId ?? null;
         const senderWindowId = _sender?.tab?.windowId ?? null;
-        const routeContext = await resolvePageExplainRouteContext({
-          origin: "popup_or_message",
-          preferSidePanel: true
-        });
-        const result = await queueSidePanelAnalysis({
-          kind: "page_explain",
-          routePlan: routeContext.routePlan
-        }, {
+        const result = await routePageExplainAction({
+          tab: message.tab ?? _sender?.tab ?? null,
           chromeApi,
+          fetchImpl: fetch,
+          origin: "popup_or_message",
           windowId: explicitWindowId ?? senderWindowId,
-          openPanel: message.openPanel !== false,
-          routePlan: routeContext.routePlan
+          openPanel: message.openPanel !== false
         });
         sendResponse(result);
       })();

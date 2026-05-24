@@ -157,7 +157,7 @@ for (const filePath of ipcFiles) {
   registrations.push(...fileRegistrations);
 }
 
-assert.equal(registrations.length, 113, "desktop IPC registration count changed; update IPC inventory intentionally");
+assert.equal(registrations.length, 114, "desktop IPC registration count changed; update IPC inventory intentionally");
 
 const byChannel = new Map();
 for (const registration of registrations) {

@@ -19,6 +19,7 @@ Included documents:
 - `desktop_product_evidence_pack.md`
 - `release_evidence_bundle.md`
 - `root_markdown_public_review.md`
+- `security_defense_plan.md`
 - `known_issues.md`
 - `rollback_plan.md`
 - `external_trial_checklist.md`

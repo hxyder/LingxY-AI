@@ -668,6 +668,106 @@
 }
 .acc-actions { display: flex; gap: 6px; align-items: center; }
 
+/* MCP discovery search */
+.mcp-discovery {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.mcp-discovery-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.mcp-discovery-toolbar input {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+}
+.mcp-discovery-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.mcp-discovery-state {
+  min-height: 16px;
+  font-size: 12px;
+}
+.mcp-discovery-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.mcp-discovery-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.mcp-discovery-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mcp-discovery-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.mcp-discovery-title strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--fs-md);
+}
+.mcp-discovery-desc {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mcp-discovery-meta {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.mcp-discovery-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@media (max-width: 720px) {
+  .mcp-discovery-toolbar,
+  .mcp-discovery-card {
+    grid-template-columns: 1fr;
+  }
+  .mcp-discovery-card {
+    display: flex;
+    flex-direction: column;
+  }
+  .mcp-discovery-actions {
+    justify-content: flex-start;
+  }
+}
+
 /* MCP card */
 .mcp-card, .mcp-server-card {
   padding: 14px;
@@ -787,12 +887,26 @@
   flex-direction: column;
   gap: 2px;
 }
+.mcp-card--v3 .mcp-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .mcp-card--v3 .mcp-name {
   font-size: var(--fs-md);
   font-weight: 600;
   color: var(--ink);
   line-height: 1.2;
-  flex: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mcp-card--v3 .mcp-source-badge {
+  flex-shrink: 0;
+  font-size: 10px;
 }
 .mcp-card--v3 .mcp-card-desc {
   font-size: 11px;
@@ -840,6 +954,143 @@
 .mcp-card--v3 .mcp-cfg-state { font-size: 11px; color: var(--muted); min-height: 14px; }
 .mcp-card--v3.unavailable { opacity: .65; }
 .mcp-card--v3.unavailable .mcp-card-desc { white-space: normal; }
+
+/* Skills management cards */
+.capability-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  align-items: start;
+}
+.skill-card {
+  position: relative;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink);
+}
+.skill-card:hover { border-color: var(--line-2); }
+.skill-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.skill-card-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-weight: 700;
+  font-size: 13px;
+}
+.skill-card-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.skill-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.skill-card-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.skill-source-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.skill-card-meta {
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skill-card-desc,
+.skill-card-note {
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.skill-card-note { color: var(--muted); }
+.skill-card-issues {
+  margin-top: 8px;
+  color: var(--warn);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.skill-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  margin-top: 10px;
+  flex-wrap: nowrap;
+}
+.skill-card-actions > .btn,
+.skill-more-actions > summary {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.skill-card-action-spacer {
+  flex: 1;
+  min-width: 6px;
+}
+.skill-more-actions {
+  position: relative;
+  flex-shrink: 0;
+}
+.skill-more-actions > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.skill-more-actions > summary::-webkit-details-marker { display: none; }
+.skill-more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 40;
+  min-width: 142px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.skill-more-menu .btn {
+  width: 100%;
+  justify-content: flex-start;
+}
+@media (max-width: 720px) {
+  .capability-card-grid { grid-template-columns: 1fr; }
+  .skill-more-menu {
+    left: auto;
+    right: 0;
+  }
+}
 
 /* =========================================================================
    UCA-126: INBOX — files/mail/calendar preview across connected accounts

@@ -169,6 +169,7 @@ for (const channel of [
   "uca:template-import",
   "uca:template-delete",
   "uca:dag-resume",
+  "uca:provider-list",
   "uca:provider-save",
   "uca:provider-delete",
   "uca:code-cli-adapter-save",

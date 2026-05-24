@@ -432,6 +432,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   resumeDagExecution(id) {
     return ipcRenderer.invoke("uca:dag-resume", id ?? "");
   },
+  listProviders() {
+    return ipcRenderer.invoke("uca:provider-list");
+  },
   saveProvider(payload) {
     return ipcRenderer.invoke("uca:provider-save", payload ?? {});
   },

@@ -404,6 +404,11 @@ async function bootPopup(doc = document, chromeApi = chrome) {
         if (!response?.ok && !response?.queued) {
           throw new Error(response?.error ?? response?.reason ?? "unknown");
         }
+        if (response?.delivery === "overlay" || response?.mode === "desktop") {
+          if (explainStatus) explainStatus.textContent = "已发送到桌面 Overlay。";
+          setTimeout(() => window.close(), 400);
+          return;
+        }
         if (explainStatus) explainStatus.textContent = "正在打开侧边栏…";
         await openSidePanelWithGesture(chromeApi);
         if (explainStatus) explainStatus.textContent = "已在侧边栏开始加载。";

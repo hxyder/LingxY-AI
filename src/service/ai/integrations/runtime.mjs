@@ -101,6 +101,20 @@ function mcpEntries(config, paths) {
   ]);
 }
 
+function applyMcpEnvOverrides(server, envOverrides) {
+  const envPatch = envOverrides?.[server.id];
+  if (!envPatch || typeof envPatch !== "object" || Array.isArray(envPatch)) {
+    return server;
+  }
+  return {
+    ...server,
+    env: {
+      ...(server.env ?? {}),
+      ...envPatch
+    }
+  };
+}
+
 function skillRegistryEntries(config, paths) {
   const runtimeSkillRegistry = paths?.skillsDir
     ? [{
@@ -190,7 +204,7 @@ export function buildAIIntegrationRegistries({ config = {}, paths = null, manual
 
   const mcpServers = createMCPRegistry(patchedBuiltins);
   for (const server of mcpEntries(config, paths)) {
-    mcpServers.register(createConfiguredMCPServer(server));
+    mcpServers.register(createConfiguredMCPServer(applyMcpEnvOverrides(server, envOverrides)));
   }
   for (const server of manual.mcpServers ?? []) {
     mcpServers.register(server);

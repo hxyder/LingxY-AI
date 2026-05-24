@@ -31,6 +31,25 @@ export function registerProviderConfigIpc({
   if (typeof postDesktopServiceJson !== "function") throw new TypeError("registerProviderConfigIpc requires postDesktopServiceJson.");
   if (typeof requestDesktopServiceJson !== "function") throw new TypeError("registerProviderConfigIpc requires requestDesktopServiceJson.");
 
+  ipcMain.handle(IPC_CHANNELS.providerList, async (event) => {
+    const base = getServiceBaseUrl();
+    const actor = desktopActorForSender(event.sender);
+    try {
+      return await requestDesktopServiceJson({
+        base,
+        method: "GET",
+        actor,
+        pathname: "/config/providers"
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        error: "provider_list_failed",
+        message: error?.message ?? String(error)
+      };
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.providerSave, async (event, payload = {}) => {
     const base = getServiceBaseUrl();
     const actor = desktopActorForSender(event.sender);

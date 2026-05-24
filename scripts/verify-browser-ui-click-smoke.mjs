@@ -141,6 +141,12 @@ function installBrowserGlobals(html, chromeStub) {
   globalThis.window = window;
   globalThis.Event = Event;
   globalThis.chrome = chromeStub;
+  const originalSetInterval = globalThis.setInterval;
+  globalThis.setInterval = (fn, ms, ...args) => {
+    const handle = originalSetInterval(fn, ms, ...args);
+    handle?.unref?.();
+    return handle;
+  };
   Object.defineProperty(globalThis, "navigator", {
     configurable: true,
     value: {
@@ -157,7 +163,7 @@ function installBrowserGlobals(html, chromeStub) {
         return { city: "Raleigh", principalSubdivision: "NC", countryName: "United States", countryCode: "US" };
       }
     });
-  for (const id of ["display-mode", "overlay-enabled", "chat-input", "sp-input"]) {
+  for (const id of ["display-mode", "overlay-enabled", "chat-input", "sp-input", "sp-action-mode"]) {
     const el = document.getElementById(id);
     if (!el) continue;
     let value = el.getAttribute("value") ?? "";
@@ -280,6 +286,7 @@ async function verifySidePanelClicks() {
     && !port.payload?.text?.includes("selected text")),
   "sidepanel selection action should pass selected text as structured capture, not plain chat");
 
+  document.getElementById("sp-action-mode").value = "translate";
   document.getElementById("sp-action-page").dispatchEvent(new Event("click"));
   await tick();
   await tick();
@@ -290,6 +297,11 @@ async function verifySidePanelClicks() {
     && port.payload?.browserCapture?.sourceType === "page_explanation"
     && port.payload?.browserCapture?.metadata?.source === "browser_sidepanel"),
   "sidepanel page action should attach structured browser capture metadata to the stream");
+  assert.ok(transcript.ports.some((port) =>
+    port.name === "uca.chat.stream"
+    && port.payload?.browserCapture?.metadata?.mode === "translate"
+    && /翻译/.test(port.payload?.text ?? "")),
+  "sidepanel page action selector should choose the requested page/video function");
   assert.ok(transcript.ports.some((port) =>
     port.name === "uca.chat.stream"
     && port.payload?.browserCapture?.sourceType === "page_explanation"

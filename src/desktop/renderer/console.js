@@ -71,14 +71,13 @@ import {
   renderChatMessageBlocks
 } from "./chat-blocks.mjs";
 import {
-  describeMcpMissingConfig
-} from "./mcp-missing-config.mjs";
-import {
-  getMcpStatusView,
   MCP_LOGO_SVG,
   MCP_SERVER_META,
   renderConnectorsMcpServersHtml
 } from "./console-mcp-view.mjs";
+import {
+  renderSkillManagementHtml
+} from "./console-skills-view.mjs";
 import {
   ACCOUNT_CONNECTOR_META,
   countAvailableAccountConnectors,
@@ -406,6 +405,10 @@ const mcpInstallPackageDir = document.querySelector("#mcpInstallPackageDir");
 const mcpInstallPreviewBtn = document.querySelector("#mcpInstallPreviewBtn");
 const mcpInstallPreviewSummary = document.querySelector("#mcpInstallPreviewSummary");
 const mcpInstallPreviewState = document.querySelector("#mcpInstallPreviewState");
+const mcpRegistrySearchInput = document.querySelector("#mcpRegistrySearchInput");
+const mcpRegistrySearchBtn = document.querySelector("#mcpRegistrySearchBtn");
+const mcpRegistrySearchState = document.querySelector("#mcpRegistrySearchState");
+const mcpRegistrySearchResults = document.querySelector("#mcpRegistrySearchResults");
 const skillRegistryCount = document.querySelector("#skillRegistryCount");
 const skillRegistryForm = document.querySelector("#skillRegistryForm");
 const skillRegistryId = document.querySelector("#skillRegistryId");
@@ -5040,45 +5043,11 @@ function renderEmailDigestSettings() {
 
 function renderMcpServers() {
   const servers = state.workspace.mcpServers ?? [];
-  mcpServerCount.textContent = `${servers.length}`;
-  if (servers.length === 0) {
-    renderEmpty(mcpServerList, "No MCP servers configured.");
-    return;
-  }
-  mcpServerList.innerHTML = servers.map((server) => {
-    const statusView = getMcpStatusView(server);
-    const missingConfig = describeMcpMissingConfig(server);
-    const missingHint = missingConfig.missing && missingConfig.summary
-      ? `<p class="muted" style="margin-top:4px;font-size:12px;color:#b45309;">需配置: ${escapeHtml(missingConfig.summary)}</p>`
-      : "";
-    return `
-    <div class="surface" style="padding:10px 12px;">
-      <div class="row">
-        <strong style="font-size:13px;">${escapeHtml(server.displayName ?? server.id)}</strong>
-        <span class="chip ${statusView.className}">${escapeHtml(statusView.label)}</span>
-      </div>
-      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(server.transport ?? "stdio")} · ${escapeHtml(server.command ?? server.url ?? "n/a")}</p>
-      ${missingHint}
-      <div class="toolbar" style="margin-top:6px;">
-        <button class="btn btn-sm btn-danger" data-mcp-delete="${escapeHtml(server.id)}">Delete</button>
-      </div>
-    </div>
-  `;
-  }).join("");
-
-  for (const btn of mcpServerList.querySelectorAll("[data-mcp-delete]")) {
-    btn.addEventListener("click", async () => {
-      const id = btn.dataset.mcpDelete;
-      if (!id) return;
-      mcpServerState.textContent = "Deleting...";
-      try {
-        await deleteMcpServer(id);
-        mcpServerState.textContent = "Deleted.";
-        await refreshWorkspace();
-      } catch (error) {
-        mcpServerState.textContent = `Failed: ${error.message}`;
-      }
-    });
+  const customCount = servers.filter((server) => server.source === "runtime_config").length;
+  mcpServerCount.textContent = `${customCount}`;
+  if (mcpServerList) {
+    mcpServerList.innerHTML = "";
+    mcpServerList.hidden = true;
   }
 }
 
@@ -5094,74 +5063,7 @@ function renderSkillRegistries() {
     renderEmpty(skillRegistryList, "No skill registries or skills discovered.");
     return;
   }
-  const registryCards = registries.map((registry) => `
-    <div class="surface" style="padding:10px 12px;">
-      <div class="row">
-        <strong style="font-size:13px;">${escapeHtml(registry.displayName ?? registry.id)}</strong>
-        <span class="chip ${registry.available ? "ready" : "warning"}">${escapeHtml(registry.available ? "ready" : "unavailable")}</span>
-      </div>
-      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(registry.rootPath ?? "n/a")} · ${escapeHtml(registry.skillCount ?? 0)} skills</p>
-      <div class="toolbar" style="margin-top:6px;">
-        <button class="btn btn-sm btn-danger" data-skill-registry-delete="${escapeHtml(registry.id)}">Delete</button>
-      </div>
-    </div>
-  `).join("");
-  const skillCards = skills.map((skill) => {
-    const entryPath = skill.entryPath ?? skill.filePath ?? skill.path ?? "";
-    const errors = Array.isArray(skill.errors) ? skill.errors : [];
-    const active = skill.active !== false;
-    const inactiveLabel = skill.inactiveReason === "duplicate_skill_id"
-      ? "duplicate stopped"
-      : skill.inactiveReason === "disabled_by_user"
-        ? "stopped"
-        : "inactive";
-    const validity = skill.valid === false || errors.length > 0
-      ? { chip: "danger", label: `${errors.length || 1} issue${errors.length === 1 ? "" : "s"}` }
-      : !active
-        ? { chip: "muted", label: inactiveLabel }
-      : skill.valid === true
-        ? { chip: "ready", label: "valid" }
-        : { chip: "muted", label: "skill" };
-    const toggleEnabled = !active;
-    const skillRegistry = skill.registry ?? skill.registryId ?? skill.tags?.[0] ?? "";
-    const skillId = skill.id ?? "";
-    return `
-    <div class="surface" style="padding:10px 12px;">
-      <div class="row">
-        <strong style="font-size:13px;">${escapeHtml(skill.displayName ?? skill.name ?? skill.id ?? "Unnamed skill")}</strong>
-        <span class="chip ${validity.chip}">${escapeHtml(validity.label)}</span>
-      </div>
-      <p class="muted" style="margin-top:4px;font-size:12px;">
-        ${escapeHtml(skill.tags?.[0] ?? skill.registryId ?? "local")} · ${escapeHtml(entryPath || "n/a")}
-      </p>
-      ${!active && skill.duplicateOf ? `
-        <p class="muted" style="margin-top:4px;font-size:11.5px;">Stopped because ${escapeHtml(skill.duplicateOf.displayName ?? skill.duplicateOf.id ?? "another skill")} is active for the same id.</p>
-      ` : ""}
-      ${skill.description ? `<p style="margin-top:6px;font-size:12px;">${escapeHtml(skill.description)}</p>` : ""}
-      ${errors.length ? `
-        <div class="muted" style="font-size:11.5px;margin-top:6px;color:#b45309;">
-          ${errors.slice(0, 3).map((error) => `<div>${escapeHtml(error.field ?? "skill")}: ${escapeHtml(error.message ?? error)}</div>`).join("")}
-          ${errors.length > 3 ? `<div>+${errors.length - 3} more issue${errors.length - 3 === 1 ? "" : "s"}</div>` : ""}
-        </div>` : ""}
-      ${entryPath ? `
-        <div class="toolbar" style="margin-top:8px;">
-          <button class="btn" data-skill-edit="${escapeHtml(entryPath)}" type="button">Edit</button>
-          <button class="btn btn-ghost" data-skill-duplicate="${escapeHtml(entryPath)}" type="button">Duplicate</button>
-          <button class="btn btn-ghost" data-skill-open="${escapeHtml(entryPath)}" type="button">Open</button>
-          <button class="btn btn-ghost" data-skill-reveal="${escapeHtml(entryPath)}" type="button">Reveal</button>
-          ${skillRegistry && skillId ? `<button class="btn btn-ghost" data-skill-state-registry="${escapeHtml(skillRegistry)}" data-skill-state-id="${escapeHtml(skillId)}" data-skill-state-enabled="${toggleEnabled ? "true" : "false"}" type="button">${toggleEnabled ? "Use this" : "Stop"}</button>` : ""}
-          <button class="btn btn-danger" data-skill-delete="${escapeHtml(entryPath)}" type="button">Delete</button>
-        </div>` : ""}
-    </div>
-  `;
-  }).join("");
-  skillRegistryList.innerHTML = `
-    ${registryCards}
-    ${skills.length ? `
-      <div class="section-label" style="margin-top:8px;">Discovered skills · ${escapeHtml(skills.length)}</div>
-      ${skillCards}
-    ` : ""}
-  `;
+  skillRegistryList.innerHTML = renderSkillManagementHtml(registries, skills, { escapeHtml });
 
   for (const btn of skillRegistryList.querySelectorAll("[data-skill-registry-delete]")) {
     btn.addEventListener("click", async () => {
@@ -5517,6 +5419,7 @@ function renderCodeCliAdapters() {
 // ── Provider + routing state ──
 let customProviders = [];
 let taskRouting = {};
+let providerListState = { status: "idle", error: "" };
 const providerModelOptionsCache = new Map();
 const providerModelOptionsLoading = new Set();
 
@@ -5765,18 +5668,23 @@ function modelForMode(provider, currentModel, mode) {
 }
 
 async function loadProvidersAndRouting() {
+  providerListState = { status: "loading", error: "" };
+  renderProvidersList();
   try {
-    const data = await fetchJson("/config/providers");
+    const data = await listProvidersForConsole();
     customProviders = data.providers ?? [];
     taskRouting = data.taskRouting ?? {};
     providerModelOptionsCache.clear();
     providerModelOptionsLoading.clear();
+    providerListState = { status: "ready", error: "" };
     renderProvidersList();
     renderModelRoleManagementSurface();
     renderTaskRouting();
     void prefetchProviderModelOptions();
   } catch (error) {
     console.error("Failed to load providers", error);
+    providerListState = { status: "error", error: error?.message ?? String(error) };
+    renderProvidersList();
   }
 }
 
@@ -6000,6 +5908,24 @@ function renderMcpDrafts(drafts = []) {
 function renderProvidersList() {
   const el = document.getElementById("providersList");
   if (!el) return;
+
+  if (providerListState.status === "loading" && customProviders.length === 0) {
+    el.innerHTML = `<div style="padding:14px;border-radius:10px;background:var(--surface-strong);border:1px solid var(--line);text-align:center;">
+      <p class="muted" style="font-size:12px;margin:0;">Loading configured providers...</p>
+    </div>`;
+    return;
+  }
+
+  if (providerListState.status === "error" && customProviders.length === 0) {
+    el.innerHTML = `<div style="padding:14px;border-radius:10px;background:var(--surface-strong);border:1px solid var(--line);">
+      <p class="muted" style="font-size:12px;margin:0 0 8px;">Could not load providers: ${escapeHtml(providerListState.error || "unknown error")}</p>
+      <button id="providersRetryBtn" class="btn btn-sm btn-ghost" type="button">Retry</button>
+    </div>`;
+    document.getElementById("providersRetryBtn")?.addEventListener("click", () => {
+      void loadProvidersAndRouting();
+    });
+    return;
+  }
 
   if (customProviders.length === 0) {
     el.innerHTML = `<div style="padding:14px;border-radius:10px;background:var(--surface-strong);border:1px dashed var(--line);text-align:center;">
@@ -10877,6 +10803,23 @@ async function resumeDagExecutionViaShell(executionId) {
   );
 }
 
+async function listProvidersViaShell() {
+  if (typeof consoleShellClient?.listProviders !== "function") {
+    throw new Error("Desktop provider config bridge unavailable.");
+  }
+  return assertShellResult(
+    await consoleShellClient.listProviders(),
+    "Could not load providers."
+  );
+}
+
+async function listProvidersForConsole() {
+  if (typeof consoleShellClient?.listProviders === "function") {
+    return listProvidersViaShell();
+  }
+  return fetchJson("/config/providers");
+}
+
 async function saveProviderViaShell(provider) {
   if (typeof consoleShellClient?.saveProvider !== "function") {
     throw new Error("Desktop provider config bridge unavailable.");
@@ -12324,6 +12267,192 @@ function renderConnEmailAccounts(accounts) {
   });
 }
 
+const mcpDiscoveryState = {
+  loaded: false,
+  loading: false,
+  query: "",
+  results: [],
+  error: ""
+};
+
+function mcpDiscoveryEntryById(id) {
+  return mcpDiscoveryState.results.find((entry) => entry.id === id) ?? null;
+}
+
+function formatMcpDiscoveryConfigLine(entry = {}) {
+  const required = Array.isArray(entry.requiredEnv) ? entry.requiredEnv.length : 0;
+  const total = Array.isArray(entry.envRequirements) ? entry.envRequirements.length : required;
+  if (required > 0) return `${required} required config`;
+  if (total > 0) return `${total} optional config`;
+  return "No required config";
+}
+
+function mergeMcpDiscoveryDraftWithDetected(entry = {}, detected = {}) {
+  const draft = entry.serverDraft ?? {};
+  const mergedEnv = {
+    ...(draft.env ?? {}),
+    ...(detected.env ?? {})
+  };
+  return {
+    ...draft,
+    ...detected,
+    id: detected.id || draft.id || entry.id,
+    displayName: entry.title || detected.displayName || draft.displayName || detected.id || draft.id || entry.id,
+    transport: detected.transport || draft.transport || "stdio",
+    command: detected.transport === "stdio" || (!detected.transport && draft.transport === "stdio")
+      ? (detected.command ?? draft.command ?? null)
+      : null,
+    args: Array.isArray(detected.args) && detected.args.length
+      ? detected.args
+      : (Array.isArray(draft.args) ? draft.args : []),
+    url: detected.transport && detected.transport !== "stdio"
+      ? (detected.url ?? draft.url ?? null)
+      : (!detected.transport && draft.transport !== "stdio" ? draft.url ?? null : null),
+    env: Object.keys(mergedEnv).length ? mergedEnv : null,
+    enabled: false
+  };
+}
+
+function renderMcpDiscoveryResults() {
+  if (!mcpRegistrySearchResults) return;
+  if (mcpRegistrySearchState) {
+    if (mcpDiscoveryState.loading) {
+      mcpRegistrySearchState.textContent = "Searching...";
+    } else if (mcpDiscoveryState.error) {
+      mcpRegistrySearchState.textContent = `Search failed: ${mcpDiscoveryState.error}`;
+    } else if (mcpDiscoveryState.loaded) {
+      const count = mcpDiscoveryState.results.length;
+      mcpRegistrySearchState.textContent = count ? `${count} MCP result${count === 1 ? "" : "s"}` : "No MCP results";
+    } else {
+      mcpRegistrySearchState.textContent = "";
+    }
+  }
+  if (mcpDiscoveryState.loading && mcpDiscoveryState.results.length === 0) {
+    mcpRegistrySearchResults.innerHTML = "";
+    return;
+  }
+  if (!mcpDiscoveryState.results.length) {
+    mcpRegistrySearchResults.innerHTML = "";
+    return;
+  }
+  mcpRegistrySearchResults.innerHTML = mcpDiscoveryState.results.map((entry) => {
+    const title = escapeHtml(entry.title ?? entry.id);
+    const source = escapeHtml(entry.sourceLabel ?? entry.source ?? "MCP");
+    const description = escapeHtml(entry.description ?? "");
+    const packageLine = entry.packageSource
+      ? `npm · ${entry.packageSource}`
+      : entry.remoteUrl
+        ? `remote · ${entry.remoteUrl}`
+        : (entry.registryName ?? "registry entry");
+    const installable = Boolean(entry.installable && (entry.packageSource || entry.serverDraft));
+    const addLabel = entry.packageSource ? "Add" : entry.remoteUrl ? "Add remote" : "Unavailable";
+    const openUrl = entry.repositoryUrl || entry.remoteUrl || "";
+    return `
+      <div class="mcp-discovery-card" data-mcp-discovery-card="${escapeHtml(entry.id)}">
+        <div class="mcp-discovery-main">
+          <div class="mcp-discovery-title">
+            <strong>${title}</strong>
+            <span class="pill pill-neutral">${source}</span>
+          </div>
+          ${description ? `<div class="mcp-discovery-desc">${description}</div>` : ""}
+          <div class="mcp-discovery-meta">
+            <span>${escapeHtml(packageLine)}</span>
+            <span>${escapeHtml(formatMcpDiscoveryConfigLine(entry))}</span>
+          </div>
+        </div>
+        <div class="mcp-discovery-actions">
+          ${openUrl ? `<button class="btn btn-sm btn-ghost" type="button" data-mcp-discovery-open="${escapeHtml(openUrl)}">Open</button>` : ""}
+          <button class="btn btn-sm btn-primary" type="button" data-mcp-discovery-add="${escapeHtml(entry.id)}" ${installable ? "" : "disabled"}>${escapeHtml(addLabel)}</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  mcpRegistrySearchResults.querySelectorAll("[data-mcp-discovery-open]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const url = button.dataset.mcpDiscoveryOpen;
+      if (url) void consoleShellClient?.openExternal?.(url);
+    });
+  });
+
+  mcpRegistrySearchResults.querySelectorAll("[data-mcp-discovery-add]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const entry = mcpDiscoveryEntryById(button.dataset.mcpDiscoveryAdd);
+      if (entry) void installMcpDiscoveryEntry(entry, button);
+    });
+  });
+}
+
+async function searchMcpRegistryForConsole(query = "", { quiet = false } = {}) {
+  if (!mcpRegistrySearchResults) return;
+  const q = `${query ?? ""}`.trim();
+  mcpDiscoveryState.loading = true;
+  mcpDiscoveryState.error = "";
+  mcpDiscoveryState.query = q;
+  renderMcpDiscoveryResults();
+  try {
+    const response = await consoleConnectorsClient.searchMcpRegistry(q, 24);
+    if (!response.ok) {
+      throw new Error(response.payload?.message ?? response.payload?.error ?? "Registry search failed.");
+    }
+    const payload = response.payload ?? {};
+    mcpDiscoveryState.results = Array.isArray(payload.results) ? payload.results : [];
+    mcpDiscoveryState.loaded = true;
+    if (payload.warning && !quiet) {
+      showConsoleToast("MCP registry unavailable; showing curated results.", { kind: "warn" });
+    }
+  } catch (error) {
+    mcpDiscoveryState.error = error?.message ?? String(error);
+    if (!quiet) showConsoleToast(`MCP 搜索失败：${mcpDiscoveryState.error}`, { kind: "err" });
+  } finally {
+    mcpDiscoveryState.loading = false;
+    renderMcpDiscoveryResults();
+  }
+}
+
+function loadMcpDiscoveryFeatured() {
+  if (mcpDiscoveryState.loaded || mcpDiscoveryState.loading) return;
+  void searchMcpRegistryForConsole("", { quiet: true });
+}
+
+async function installMcpDiscoveryEntry(entry, button) {
+  const original = button?.textContent ?? "";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Adding...";
+  }
+  try {
+    let server = null;
+    if (entry.packageSource) {
+      if (typeof consoleShellClient?.runMcpInstall !== "function") {
+        throw new Error("Desktop install bridge unavailable.");
+      }
+      const result = assertShellResult(
+        await consoleShellClient.runMcpInstall({
+          source: entry.packageSource,
+          id: entry.serverDraft?.id || entry.id
+        }),
+        "Could not install this MCP package."
+      );
+      server = mergeMcpDiscoveryDraftWithDetected(entry, result.server ?? {});
+    } else if (entry.serverDraft) {
+      server = mergeMcpDiscoveryDraftWithDetected(entry, entry.serverDraft);
+    }
+    if (!server?.id) {
+      throw new Error("This MCP entry does not include an installable package or remote endpoint.");
+    }
+    await saveMcpServer(server);
+    await loadConnectorsTab();
+    showConsoleToast(`已添加：${entry.title ?? server.id}。请先配置/测试，再启用。`, { kind: "ok" });
+  } catch (error) {
+    showConsoleToast(`添加失败：${error?.message ?? error}`, { kind: "err" });
+    if (button) {
+      button.disabled = false;
+      button.textContent = original;
+    }
+  }
+}
+
 function renderConnectorsMcpServers(servers) {
   if (!connectorsMcpList) return;
   connectorsMcpList.innerHTML = renderConnectorsMcpServersHtml(servers ?? [], { escapeHtml });
@@ -12407,6 +12536,48 @@ function renderConnectorsMcpServers(servers) {
       } finally {
         btn.disabled = false;
         btn.textContent = original;
+      }
+    });
+  });
+
+  connectorsMcpList.querySelectorAll("[data-mcp-disable]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.mcpDisable;
+      if (!id) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Disconnecting...";
+      try {
+        await toggleMcpServer(id, false);
+        await loadConnectorsTab();
+        showConsoleToast("MCP 已断开连接。", { kind: "ok" });
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = original;
+        showConsoleToast(`断开失败：${error?.message ?? error}`, { kind: "err" });
+      }
+    });
+  });
+
+  connectorsMcpList.querySelectorAll("[data-mcp-delete-card]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.mcpDeleteCard;
+      if (!id) return;
+      const confirmed = typeof window !== "undefined" && typeof window.confirm === "function"
+        ? window.confirm(`Delete MCP server "${id}"?`)
+        : true;
+      if (!confirmed) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Deleting...";
+      try {
+        await deleteMcpServer(id);
+        await refreshWorkspace();
+        showConsoleToast("MCP 已删除。", { kind: "ok" });
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = original;
+        showConsoleToast(`删除失败：${error?.message ?? error}`, { kind: "err" });
       }
     });
   });
@@ -12746,6 +12917,7 @@ async function loadConnectorsTab() {
     if (mcpResp.ok) {
       const data = mcpResp.payload;
       renderConnectorsMcpServers(data.servers ?? []);
+      loadMcpDiscoveryFeatured();
     }
     if (mcpDraftsResp.ok) {
       const data = mcpDraftsResp.payload;
@@ -13539,6 +13711,21 @@ connDigestEnabled?.addEventListener("change", async () => {
 });
 
 connectorsMcpRefreshBtn?.addEventListener("click", () => { void loadConnectorsTab(); });
+mcpRegistrySearchBtn?.addEventListener("click", () => {
+  void searchMcpRegistryForConsole(mcpRegistrySearchInput?.value ?? "");
+});
+mcpRegistrySearchInput?.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  void searchMcpRegistryForConsole(mcpRegistrySearchInput.value ?? "");
+});
+document.querySelectorAll("[data-mcp-search-chip]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const query = button.dataset.mcpSearchChip ?? "";
+    if (mcpRegistrySearchInput) mcpRegistrySearchInput.value = query;
+    void searchMcpRegistryForConsole(query);
+  });
+});
 
 // UCA-126 Phase 7d: chat composer richness — attachments, voice trigger,
 // model chip label. Attach is local-file-picker + chips (passed into task

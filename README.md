@@ -1,10 +1,95 @@
 # LingxY AI Desktop
 
-> A local-first AI workspace for Windows. Reads what's on your screen, calls tools, generates documents, runs schedules, drafts side effects you can approve. Powered by your own model providers and credentials — nothing routes through a LingxY-hosted server.
+> Local-first AI for the Windows desktop and browser. Capture the thing in front of you, choose an action, let LingxY use tools, files, schedules, connectors, and generated artifacts while your providers and credentials stay on your machine.
 
-LingxY AI is a Windows desktop AI workspace that understands the window you are working in, picks tools, and completes tasks through model providers you bring yourself. The packaged app is named **LingxY**.
+LingxY AI is a desktop agent workbench for everyday knowledge work. It combines a Windows overlay, a full console, a browser side panel, page/video capture, local files, document generation, schedules, connectors, plugins, and bring-your-own model providers.
 
-It is not just another chat box. The goal is an everyday-knowledge-work assistant: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable local task history.
+The packaged app is named **LingxY**. It is not meant to be another isolated chat box; it is meant to turn visible context into action.
+
+## What You Can Do
+
+| Start from | Ask LingxY to | Result |
+| --- | --- | --- |
+| A webpage or video | Analyze, explain, summarize, translate, extract action items, or continue with follow-up questions | Browser side panel or desktop Overlay receives structured page/video context |
+| A selected file, folder, screenshot, or app window | Read, compare, rewrite, convert, launch, or explain it | Desktop runtime uses local tools and stores task evidence |
+| A work request | Generate DOCX, XLSX, PPTX, HTML/PDF reports, Mermaid diagrams, or screenshots | Artifacts are saved locally and shown in Console/Preview |
+| A risky side effect | Draft email/calendar/drive actions or local script runs | Approval cards keep the user in control |
+| A recurring need | Create scheduled reminders, file/clipboard watches, or recurring agent jobs | Scheduler records runs and preserves approval rules |
+| A voice note or wake phrase | Dictate a request, transcribe a note, or wake the overlay hands-free | Voice paths stay optional and local-first where configured |
+| A completed task | Inspect timeline, tool calls, files, approvals, provider usage, memory, and routing | Console gives you the audit trail instead of a mystery answer |
+
+## Browser Page And Video Analysis
+
+The browser extension now treats "current page / video" as one capture surface with multiple actions:
+
+- **Analyze**: broad overview, key points, and follow-up questions.
+- **Explain**: background, reasoning, conclusion, and uncertainty.
+- **Summarize**: concise claims, evidence, and takeaways.
+- **Translate**: Chinese translation while preserving names, numbers, links, and headings.
+- **Action list**: facts, unknowns, next steps, risks, and follow-up questions.
+
+When the desktop app is running, page/video analysis routes through the desktop runtime so it can use local tools, task history, approvals, artifacts, and the Overlay. When desktop is unavailable, standalone browser mode can still answer from page context if the extension has its own provider configured.
+
+Shortcut: `Ctrl+Shift+E` starts page/video explanation from the browser extension. If Chrome reports a shortcut conflict, rebind it at `chrome://extensions/shortcuts`.
+
+## Console Workbench
+
+Console is the full LingxY control room. Use it when you need more than the lightweight Overlay:
+
+- **Chat and projects**: continue conversations, scope work to a project, attach files/folders, and reopen generated artifacts.
+- **Tasks and traces**: inspect task status, timeline events, tool calls, model usage, failures, retries, and context-debug evidence.
+- **Artifacts and preview**: open generated DOCX/XLSX/PPTX/HTML/PDF outputs, preview folders, and reveal files locally.
+- **Schedules and connectors**: manage recurring jobs, email/calendar/drive workflows, approvals, connected accounts, and run history.
+- **Settings and runtime**: configure providers, routing, CLI agents, skills, plugins, MCP servers, privacy controls, memory, voice, and diagnostics.
+
+## Voice And Notes
+
+Voice is optional, but it is part of the product surface:
+
+- `Ctrl+Shift+V` opens the voice path from the desktop shell.
+- `Ctrl+Shift+N` starts note capture / transcription flows.
+- Echo mode can use a wake profile and locally recorded wake samples.
+- Audio notes can become tasks, summaries, or reusable conversation context.
+- Cloud speech or local sidecar paths are used only when configured; core chat/file/page workflows do not depend on voice.
+
+## Demo GIF
+
+Add a short recording under `assets/demo/`, then convert it with:
+
+```powershell
+npm run media:video-to-gif -- assets/demo/lingxy-page-video-analysis.mp4 assets/demo/lingxy-page-video-analysis.gif --fps=12 --width=960 --duration=14
+```
+
+Use the generated GIF near the top of this README once the recording is available:
+
+```md
+![LingxY page and video analysis demo](assets/demo/lingxy-page-video-analysis.gif)
+```
+
+## Screenshots
+
+Recommended screenshot set for the public README:
+
+- `assets/screenshots/console-workbench.png`: Console with Chat, task timeline, files/context rail, and provider status visible.
+- `assets/screenshots/browser-sidepanel-actions.png`: Browser side panel showing the page/video action selector.
+- `assets/screenshots/overlay-capture.png`: Overlay opened above another app with captured context.
+- `assets/screenshots/approval-card.png`: A side-effect approval card for email or connector actions.
+- `assets/screenshots/voice-note.png`: Voice/note capture or transcription status.
+
+Never publish raw screenshots. Mask or replace:
+
+- API keys, provider secret status, auth tokens, OAuth account names, email addresses, phone numbers, and calendar titles.
+- Absolute local paths such as `C:\Users\...`, task IDs, conversation IDs, account IDs, and database paths.
+- Real prompts, private documents, browser tabs, filenames, generated artifact contents, and notification text.
+- Any provider command path that includes a username or private install location.
+
+Use the local redaction helper before placing screenshots in `assets/screenshots/`:
+
+```powershell
+npm run media:redact-screenshot -- raw-console.png assets/screenshots/console-workbench.png --box=32,80,420,44 --box=900,20,260,60
+```
+
+Prefer demo fixtures and fake accounts over real work data. If a screenshot is not obviously safe, do not commit it.
 
 ## Why LingxY
 

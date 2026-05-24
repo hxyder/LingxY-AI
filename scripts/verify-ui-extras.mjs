@@ -32,6 +32,7 @@ const conversationCache = read("src/desktop/renderer/conversation-cache.mjs");
 const consoleFloatingUi = read("src/desktop/renderer/console-floating-ui.mjs");
 const consoleChatAttachments = read("src/desktop/renderer/console-chat-attachments.mjs");
 const consoleMcpView = read("src/desktop/renderer/console-mcp-view.mjs");
+const consoleSkillsView = read("src/desktop/renderer/console-skills-view.mjs");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const runtimeTaskClient = read("src/desktop/renderer/shared/runtime-task-client.mjs");
 const consoleConnectorsClient = read("src/desktop/renderer/console/console-connectors-client.mjs");
@@ -370,11 +371,19 @@ assert.ok(!/command:\s*`[^`]*页面[^`]*\$\{activeWindow\.url\}/.test(overlayJs)
 assert.ok(/data-mcp-install-click/.test(consoleMcpView), "mcp install: missing data-mcp-install-click button");
 assert.ok(/data-mcp-install-source-click/.test(consoleMcpView),
   "mcp install: missing package-source install handoff for unavailable builtin MCP packages");
+assert.ok(/data-mcp-delete-card/.test(consoleMcpView) && /data-mcp-disable/.test(consoleMcpView),
+  "mcp runtime card actions: saved MCP cards must expose delete and disconnect actions");
+assert.ok(/data-mcp-source-badge/.test(consoleMcpView) && /Custom MCP server/.test(consoleMcpView),
+  "mcp cards: custom runtime-config MCP servers must render as normal cards with a Custom badge");
 assert.ok(/installRequired/.test(consoleMcpView) && /installSource/.test(consoleMcpView),
   "mcp install: console must route package-missing MCP servers into the sandbox install flow");
 assert.ok(/mcp-install-btn/.test(consoleMcpView) && /mcp-install-btn/.test(sharedCss),
   "mcp install: .mcp-install-btn class or CSS missing");
 assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button missing");
+assert.ok(/id="mcpServerList"[^>]*hidden/.test(consoleHtml)
+    && /mcpServerList\.hidden\s*=\s*true/.test(consoleJs)
+    && !/data-mcp-delete=/.test(consoleJs),
+  "mcp cards: custom MCP servers must not be duplicated in a separate delete-only list");
 assert.ok(/consolePreflightClient\.testMcpServerConfig/.test(consoleJs)
     && /\/config\/mcp\/test/.test(runtimePreflightClient),
   "mcp preflight: console must use runtime preflight client for /config/mcp/test");
@@ -384,6 +393,19 @@ assert.ok(/id="mcpInstallSource"/.test(consoleHtml) && /id="mcpInstallPlanBtn"/.
   "mcp install plan: source input and plan button missing");
 assert.ok(/id="mcpInstallRunBtn"/.test(consoleHtml) && /id="mcpInstallRunState"/.test(consoleHtml),
   "mcp install run: install button and state missing");
+assert.ok(/id="mcpRegistrySearchInput"/.test(consoleHtml)
+    && /id="mcpRegistrySearchBtn"/.test(consoleHtml)
+    && /id="mcpRegistrySearchResults"/.test(consoleHtml),
+  "mcp discovery: search input/button/results missing");
+assert.ok(/searchMcpRegistry/.test(consoleConnectorsClient)
+    && /\/config\/mcp\/registry\/search/.test(consoleConnectorsClient),
+  "mcp discovery: registry search request construction must stay in the connectors runtime client");
+assert.ok(/installMcpDiscoveryEntry/.test(consoleJs)
+    && /data-mcp-discovery-add/.test(consoleJs)
+    && /consoleShellClient\.runMcpInstall/.test(consoleJs)
+    && /saveMcpServer\(server\)/.test(consoleJs)
+    && /enabled:\s*false/.test(consoleJs),
+  "mcp discovery: searched MCP entries must install through the desktop bridge and save disabled for review");
 assert.ok(/consolePreflightClient\.planMcpInstall/.test(consoleJs)
     && /\/config\/mcp\/install\/plan/.test(runtimePreflightClient),
   "mcp install plan: console must use runtime preflight client for dry-run plan endpoint");
@@ -405,6 +427,14 @@ assert.ok(/saveMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShell
   "mcp config save: console must use desktop shell bridge");
 assert.ok(/deleteMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteMcpServer/.test(consoleJs),
   "mcp config delete: console must use desktop shell bridge");
+assert.ok(/data-mcp-delete-card/.test(consoleJs)
+    && /await deleteMcpServer\(id\)/.test(consoleJs)
+    && /MCP 已删除/.test(consoleJs),
+  "mcp runtime delete: top MCP cards must delete runtime-config servers through the desktop bridge");
+assert.ok(/data-mcp-disable/.test(consoleJs)
+    && /await toggleMcpServer\(id,\s*false\)/.test(consoleJs)
+    && /MCP 已断开连接/.test(consoleJs),
+  "mcp runtime disconnect: top MCP cards must disable active servers through the desktop bridge");
 assert.ok(/testMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.testMcpServer/.test(consoleJs),
   "mcp runtime test: console must use desktop shell bridge");
 assert.ok(/toggleMcpServer/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.toggleMcpServer/.test(consoleJs),
@@ -436,11 +466,16 @@ assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:appr
 }
 assert.ok(/id="skillEditValidation"/.test(consoleHtml),
   "skills: edit modal must expose validation feedback");
+assert.ok(/from "\.\/console-skills-view\.mjs"/.test(consoleJs)
+    && /renderSkillManagementHtml/.test(consoleSkillsView)
+    && /\.skill-card\b/.test(sharedCss)
+    && /data-skill-actions-more/.test(consoleSkillsView),
+  "skills: management cards must render through the shared skill card view with collapsed extra actions");
 assert.ok(/data-skill-reveal/.test(consoleJs) && /data-skill-open/.test(consoleJs),
   "skills: discovered skill cards must expose open and reveal actions");
 assert.ok(/data-skill-delete/.test(consoleJs),
   "skills: discovered editable skill cards must expose a delete action");
-assert.ok(/renderSkillValidation/.test(consoleJs) && /skill\.errors/.test(consoleJs),
+assert.ok(/renderSkillValidation/.test(consoleJs) && /skill\.errors/.test(consoleSkillsView),
   "skills: console must render descriptor validation errors");
 assert.ok(/(?:consoleShellClient|overlayShellClient)\.openPath/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\?\.showItemInFolder/.test(consoleJs),
   "skills: console skill file actions must use the desktop shell bridge");
@@ -890,6 +925,16 @@ assert.ok(/saveProviderViaShell/.test(consoleJs) && /(?:consoleShellClient|overl
   "provider save: console must use desktop shell bridge");
 assert.ok(/deleteProviderViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.deleteProvider/.test(consoleJs),
   "provider delete: console must use desktop shell bridge");
+assert.ok(/providerListState/.test(consoleJs)
+    && /listProvidersViaShell/.test(consoleJs)
+    && /consoleShellClient\.listProviders/.test(consoleJs)
+    && /listProvidersForConsole/.test(consoleJs)
+    && /Loading configured providers/.test(consoleJs)
+    && /Could not load providers/.test(consoleJs)
+    && /providersRetryBtn/.test(consoleJs),
+  "provider list: console must show loading/failure states and prefer the desktop shell bridge");
+assert.ok(!/fetchJson\("\/config\/providers",\s*\{\s*cache:\s*"no-store"\s*\}\)/.test(consoleJs),
+  "provider list: console must not trigger CORS preflight-only cache headers from file://");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/providers["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "provider save: console must not POST /config/providers directly");
 assert.ok(!/fetchJson\(\s*`\/config\/providers\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
@@ -912,7 +957,7 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/skills\/registries["'`]\s*,\s*\{\s*meth
   "skill registry save: console must not POST /config/skills/registries directly");
 assert.ok(!/fetchJson\(\s*`\/config\/skills\/registries\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "skill registry delete: console must not DELETE /config/skills/registries/:id directly");
-assert.ok(/data-skill-state-registry/.test(consoleJs) && /Use this/.test(consoleJs) && /Stop/.test(consoleJs),
+assert.ok(/data-skill-state-registry/.test(consoleJs) && /Use this/.test(consoleSkillsView) && /Stop/.test(consoleSkillsView),
   "skill state toggle: discovered skill cards must expose Use this/Stop controls");
 assert.ok(/updateRoutingConfigViaShell/.test(consoleJs) && /(?:consoleShellClient|overlayShellClient)\.updateRoutingConfig/.test(consoleJs),
   "routing config: console must use desktop shell bridge");
@@ -948,6 +993,8 @@ assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/email\/digest\/check`\s*,\s*
   "email digest check: console must not POST /email/digest/check directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
+assert.ok(/\.mcp-discovery-card\b/.test(sharedCss),
+  "mcp discovery: CSS card wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");
 assert.ok(/consolePreflightClient\.testSkillRegistryConfig/.test(consoleJs)
     && /\/config\/skills\/test/.test(runtimePreflightClient),

@@ -32,12 +32,66 @@ export const EXTRA_PLUGIN_OPTIONS = Object.freeze([
   { id: "gdrive", title: "Google Drive", desc: "Docs and Drive file context.", status: "Coming soon", logoClass: "fs" }
 ]);
 
+function inferCustomMcpLogo(server = {}) {
+  const text = `${server.id ?? ""} ${server.displayName ?? ""} ${server.command ?? ""} ${server.url ?? ""}`.toLowerCase();
+  if (text.includes("github")) return "github";
+  if (text.includes("slack")) return "slack";
+  if (text.includes("figma")) return "figma";
+  if (text.includes("browser") || text.includes("puppeteer") || text.includes("playwright")) return "browser";
+  if (text.includes("file") || text.includes("filesystem") || text.includes("drive")) return "fs";
+  if (text.includes("memory") || text.includes("notion")) return "mem";
+  return "imap";
+}
+
+function getMcpCardMeta(server = {}) {
+  const builtIn = MCP_SERVER_META[server.id];
+  if (builtIn) return builtIn;
+  const title = server.displayName ?? server.name ?? server.id;
+  return {
+    title,
+    desc: server.description ?? (server.source === "runtime_config" ? "Custom MCP server" : server.id),
+    logoClass: inferCustomMcpLogo(server)
+  };
+}
+
+function getMcpSourceBadge(server = {}) {
+  if (server.source === "runtime_config") {
+    return {
+      label: "Custom",
+      tooltip: "User-added MCP server"
+    };
+  }
+  return null;
+}
+
+function normalizeMcpKey(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function hasMatchingServerForExtraOption(option, servers = []) {
+  const optionId = normalizeMcpKey(option.id);
+  const optionTitle = normalizeMcpKey(option.title);
+  return servers.some((server) => {
+    const meta = getMcpCardMeta(server);
+    const values = [
+      server.id,
+      server.displayName,
+      server.name,
+      meta.title
+    ].map(normalizeMcpKey).filter(Boolean);
+    return values.includes(optionId)
+      || values.includes(optionTitle)
+      || (optionId.length >= 5 && values.some((value) => value.includes(optionId)));
+  });
+}
+
 export function getMcpStatusView(server) {
   if (server.detail === "legacy_stub_use_mcp_filesystem") return { label: "已弃用", className: "muted" };
   if (server.detail === "external_plugin_required") return { label: "需插件", className: "muted" };
   if (server.available && server.enabled) return { label: "运行中", className: "ready" };
   if (isMcpMissingConfig(server)) return { label: "需配置", className: "warning" };
-  if (server.detail === "disabled" || (server.configured && !server.enabled)) return { label: "可安装", className: "muted" };
+  if (server.configured && !server.enabled) return { label: "已保存", className: "muted" };
+  if (server.detail === "disabled") return { label: "已关闭", className: "muted" };
   if (!server.available) return { label: "未安装", className: "error" };
   return { label: "已关闭", className: "" };
 }
@@ -78,14 +132,16 @@ export function renderConnectorsMcpServersHtml(servers = [], { escapeHtml }) {
     cards.push(renderConnectorsMcpServerCard(server, { escapeHtml }));
   }
   for (const option of EXTRA_PLUGIN_OPTIONS) {
+    if (hasMatchingServerForExtraOption(option, servers)) continue;
     cards.push(renderExtraPluginCard(option, { escapeHtml }));
   }
   return cards.join("");
 }
 
 function renderConnectorsMcpServerCard(server, { escapeHtml }) {
-  const meta = MCP_SERVER_META[server.id] ?? { title: server.displayName ?? server.id, desc: server.id, logoClass: "imap" };
+  const meta = getMcpCardMeta(server);
   const sourceView = getMcpSourceView(server);
+  const sourceBadge = getMcpSourceBadge(server);
   const status = getMcpStatusView(server);
   const statusLabel = sourceView.readOnly ? sourceView.label : status.label;
   const statusClass = sourceView.readOnly ? sourceView.className : status.className;
@@ -97,6 +153,7 @@ function renderConnectorsMcpServerCard(server, { escapeHtml }) {
   const packageMissing = Boolean(server.installRequired && server.installSource);
   const canInstall = Boolean(server.configured || server.available || (hasConfigFields && needsConfig) || packageMissing);
   const installed = server.available && server.enabled;
+  const canDelete = !sourceView.readOnly && server.source === "runtime_config";
   const logoClass = meta.logoClass ?? "imap";
   const logoGlyph = MCP_LOGO_SVG[logoClass] ?? "?";
   const transportLine = server.transport
@@ -105,6 +162,12 @@ function renderConnectorsMcpServerCard(server, { escapeHtml }) {
   const configBtn = hasConfigFields ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(server.id)}">Configure</button>` : "";
   const testBtn = sourceView.readOnly ? "" : `<button class="btn btn-sm btn-ghost" data-mcp-test="${escapeHtml(server.id)}">Test</button>`;
   const guideBtn = meta.guideUrl ? `<button class="btn btn-sm btn-ghost" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : "";
+  const disableBtn = !sourceView.readOnly && server.enabled
+    ? `<button class="btn btn-sm btn-ghost" data-mcp-disable="${escapeHtml(server.id)}">Disconnect</button>`
+    : "";
+  const deleteBtn = canDelete
+    ? `<button class="btn btn-sm btn-danger" data-mcp-delete-card="${escapeHtml(server.id)}">Delete</button>`
+    : "";
   const needsConfigLabel = missingConfig.summary ? `需配置 · ${missingConfig.summary}` : "需配置";
   const needsConfigBadge = needsConfig
     ? `<span class="pill pill-warn mcp-needs-config" title="${escapeHtml(needsConfigLabel)}">${escapeHtml(needsConfigLabel)}</span>`
@@ -112,7 +175,7 @@ function renderConnectorsMcpServerCard(server, { escapeHtml }) {
   const headlineAction = sourceView.readOnly
     ? `<span class="pill pill-neutral" title="${escapeHtml(sourceView.tooltip)}">${escapeHtml(statusLabel)}</span>`
     : installed
-      ? `<label class="toggle" title="禁用">
+      ? `<label class="toggle" title="断开连接">
            <input type="checkbox" checked data-mcp-install="${escapeHtml(server.id)}" data-mcp-enabled="false">
            <span class="toggle-track"></span>
          </label>`
@@ -127,8 +190,8 @@ function renderConnectorsMcpServerCard(server, { escapeHtml }) {
       : canInstall
         ? `<button class="btn btn-sm btn-primary mcp-install-btn"
                    data-mcp-install-click="${escapeHtml(server.id)}"
-                   title="${needsConfig ? "需要先配置凭据" : "安装并启用此 MCP 服务"}">
-             ${needsConfig ? "配置并安装" : "安装"}
+                   title="${needsConfig ? "需要先配置凭据" : "启用此 MCP 服务"}">
+             ${needsConfig ? "配置后启用" : "启用"}
            </button>`
       : `<span class="pill pill-neutral" title="${escapeHtml(statusLabel)}">${escapeHtml(statusLabel)}</span>`;
   return `
@@ -136,18 +199,21 @@ function renderConnectorsMcpServerCard(server, { escapeHtml }) {
       <div class="mcp-card-head">
         <div class="conn-logo ${escapeHtml(logoClass)} mcp-card-logo">${logoGlyph}</div>
         <div class="mcp-card-info">
-          <div class="mcp-name">${escapeHtml(meta.title ?? server.displayName ?? server.id)}</div>
+          <div class="mcp-title-row">
+            <div class="mcp-name">${escapeHtml(meta.title ?? server.displayName ?? server.id)}</div>
+            ${sourceBadge ? `<span class="pill pill-neutral mcp-source-badge" data-mcp-source-badge="${escapeHtml(server.id)}" title="${escapeHtml(sourceBadge.tooltip)}">${escapeHtml(sourceBadge.label)}</span>` : ""}
+          </div>
           <div class="mcp-card-desc">${escapeHtml(meta.desc ?? "")}</div>
         </div>
         <span class="mcp-status-dot ${escapeHtml(statusClass)}" title="${escapeHtml(statusLabel)}"></span>
         ${headlineAction}
       </div>
       ${transportLine ? `<div class="mcp-transport">${escapeHtml(transportLine)}</div>` : ""}
-      ${(hasConfigFields || meta.guideUrl || needsConfigBadge || testBtn) ? `
+      ${(hasConfigFields || meta.guideUrl || needsConfigBadge || testBtn || disableBtn || deleteBtn) ? `
       <div class="mcp-card-actions">
         ${needsConfigBadge}
         <div style="flex:1;"></div>
-        ${testBtn}${guideBtn}${configBtn}
+        ${testBtn}${disableBtn}${guideBtn}${configBtn}${deleteBtn}
       </div>` : ""}
       ${renderMcpConfigPanel(server, configFields, { escapeHtml })}
     </div>

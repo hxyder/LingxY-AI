@@ -449,6 +449,12 @@ const expectedSurfaces = [
     migration: "done"
   }),
 
+  surface("mcp-install-routes.mjs", "GET", "/config/mcp/registry/search", {
+    domain: "mcp_install",
+    effect: "external_catalog_search",
+    boundary: "read_probe_no_guard",
+    migration: "mcp_discovery_search"
+  }),
   surface("mcp-install-routes.mjs", "POST", "/config/mcp/install/plan", {
     domain: "mcp_install",
     effect: "sandbox_plan",

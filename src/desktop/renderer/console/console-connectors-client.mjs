@@ -42,6 +42,14 @@ export function createConsoleConnectorsClient({ httpClient } = {}) {
     return getJson("/connectors/accounts");
   }
 
+  async function searchMcpRegistry(query = "", limit = 24) {
+    const params = new URLSearchParams();
+    const q = `${query ?? ""}`.trim();
+    if (q) params.set("q", q);
+    params.set("limit", String(limit));
+    return getJson(`/config/mcp/registry/search?${params.toString()}`);
+  }
+
   async function loadInboxAccounts() {
     const accounts = [];
     const [oauthResult, imapResult] = await Promise.allSettled([
@@ -106,6 +114,7 @@ export function createConsoleConnectorsClient({ httpClient } = {}) {
     listAccountConnectors,
     loadConnectorsTabData,
     loadInboxAccounts,
+    searchMcpRegistry,
     startAccountAuth,
     startConnectedAccountReauth
   };

@@ -593,13 +593,19 @@ assert.equal(
   "context-menu link/image actions must not bypass the shared quick-action route plan"
 );
 assert.equal(manifest.commands["explain-page"].suggested_key.default, "Ctrl+Shift+E");
-assert.ok(/command !== "explain-page"[\s\S]{0,520}origin:\s*"keyboard_shortcut"[\s\S]{0,520}queueSidePanelAnalysis/.test(serviceWorkerJs),
-  "Ctrl+Shift+E page/video explain must use the sidepanel queue instead of silent desktop-only handoff");
+assert.ok(/async function routePageExplainAction/.test(serviceWorkerJs)
+    && /desktop_page_explain/.test(serviceWorkerJs)
+    && /dispatchExplainPage\(\{/.test(serviceWorkerJs),
+  "page/video explain must prefer the desktop /page/explain handoff when desktop is available");
+assert.ok(/command !== "explain-page"[\s\S]{0,900}routePageExplainAction\(\{[\s\S]{0,260}origin:\s*"keyboard_shortcut"/.test(serviceWorkerJs),
+  "Ctrl+Shift+E page/video explain must use the shared desktop-first page route");
 const popupHtml = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.html"), "utf8");
 assert.equal(popupHtml.includes("快捷键 Ctrl+Shift+E"), true);
 const popupJs = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.js"), "utf8");
 const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared", "run-mode-view.js"), "utf8");
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
+assert.equal(popupJs.includes("response?.delivery === \"overlay\""), true,
+  "popup page-explain must not open the side panel after a successful desktop Overlay handoff");
 assert.equal(popupJs.includes("!response?.ok && !response?.queued"), true,
   "popup page-explain button must open the sidepanel when the request was queued with a recoverable runtime warning");
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
@@ -610,6 +616,8 @@ assert.equal(sidepanelJs.includes("formatRouteFailureMessage"), true);
 assert.equal(sidepanelJs.includes("request.kind === \"runtime_unavailable\""), true);
 assert.equal(sidepanelJs.includes("routePlan: request.routePlan ?? null"), true);
 assert.equal(sidepanelJs.includes("routePlan = null"), true);
+assert.equal(sidepanelJs.includes("selectedPageActionMode"), true);
+assert.equal(sidepanelJs.includes("pageActionCopy"), true);
 assert.equal(sidepanelJs.includes("browserCapture"), true);
 assert.equal(sidepanelJs.includes("sourceType: \"page_explanation\""), true);
 assert.equal(selectionCacheJs.includes("routePlan"), true);

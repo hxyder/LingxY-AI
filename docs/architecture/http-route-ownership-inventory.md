@@ -40,7 +40,7 @@ The current dispatcher checks route groups in this order:
 | `browser-context-routes.mjs` | DELETE, GET, POST | 6 | 0 | browser context and overlay handoff |
 | `config-provider-routes.mjs` | DELETE, GET, PATCH, POST | 40 | 5 | config, provider, skills, MCP drafts, memory, email, Runtime Labs, memory review undo |
 | `connector-routes.mjs` | DELETE, GET, PATCH, POST | 8 | 15 | connector catalog, plugins, connected accounts |
-| `mcp-install-routes.mjs` | POST | 3 | 0 | MCP install planning and execution |
+| `mcp-install-routes.mjs` | GET, POST | 4 | 0 | MCP discovery search, install planning, and execution |
 | `note-project-conversation-routes.mjs` | DELETE, GET, PATCH, POST | 8 | 12 | notes, projects, conversations, project workspace summaries and project metadata |
 | `office-routes.mjs` | GET, POST | 3 | 0 | Office add-in setup and static assets |
 | `preview-file-routes.mjs` | GET, POST | 5 | 0 | file preview, PDF, extract text, preview cache |

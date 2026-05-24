@@ -78,6 +78,7 @@ export const IPC_CHANNELS = Object.freeze({
   templateImport: "uca:template-import",
   templateDelete: "uca:template-delete",
   dagResume: "uca:dag-resume",
+  providerList: "uca:provider-list",
   providerSave: "uca:provider-save",
   providerDelete: "uca:provider-delete",
   onboardingSuggestionUpdate: "uca:onboarding-suggestion-update",
