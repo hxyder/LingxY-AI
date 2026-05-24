@@ -28,6 +28,13 @@ function normalizeRepository(repository) {
   return "";
 }
 
+function escapeMarkdownTableCell(value = "") {
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ");
+}
+
 async function readPackageJson(packageName) {
   try {
     const packageJsonPath = path.join(repoRoot, "node_modules", ...packageName.split("/"), "package.json");
@@ -97,7 +104,7 @@ const lines = [
   "|---|---:|",
   ...[...licenseCounts.entries()]
     .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
-    .map(([license, count]) => `| ${license.replace(/\|/g, "\\|")} | ${count} |`),
+    .map(([license, count]) => `| ${escapeMarkdownTableCell(license)} | ${count} |`),
   "",
   "## Package Inventory",
   "",
@@ -108,7 +115,7 @@ const lines = [
 for (const row of rows) {
   const source = row.homepage || row.repository || row.resolved || "";
   const scope = row.dev ? "dev" : "prod";
-  lines.push(`| ${row.name.replace(/\|/g, "\\|")} | ${row.version} | ${row.license.replace(/\|/g, "\\|")} | ${scope}${row.optional ? ", optional" : ""} | ${source.replace(/\|/g, "\\|")} |`);
+  lines.push(`| ${escapeMarkdownTableCell(row.name)} | ${escapeMarkdownTableCell(row.version)} | ${escapeMarkdownTableCell(row.license)} | ${scope}${row.optional ? ", optional" : ""} | ${escapeMarkdownTableCell(source)} |`);
 }
 
 lines.push(

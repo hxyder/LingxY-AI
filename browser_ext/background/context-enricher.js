@@ -28,6 +28,27 @@ const LINK_MAX_CHARS = 1500;
 const PAGE_OUTLINE_MAX_CHARS = 800;
 const TOTAL_ENRICH_BUDGET_MS = 3_000;
 
+function decodeBasicHtmlEntities(text = "") {
+  return String(text ?? "").replace(/&(#x[0-9a-f]+|#\d+|nbsp|quot|#39|apos|lt|gt|amp);/gi, (_match, entity) => {
+    const normalized = entity.toLowerCase();
+    if (normalized.startsWith("#x")) return safeCodePoint(Number.parseInt(normalized.slice(2), 16));
+    if (normalized.startsWith("#")) return safeCodePoint(Number.parseInt(normalized.slice(1), 10));
+    return {
+      amp: "&",
+      apos: "'",
+      gt: ">",
+      lt: "<",
+      nbsp: " ",
+      quot: '"'
+    }[normalized] ?? "";
+  });
+}
+
+function safeCodePoint(value) {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) return "";
+  try { return String.fromCodePoint(value); } catch { return ""; }
+}
+
 const ENRICH_ACTIONS = new Set([
   "summarize",
   "explain",
@@ -110,18 +131,13 @@ async function fetchLinkText(url) {
     // cheap strip: remove <script>/<style>/<head> then tags. Good enough for
     // LLM grounding — we're not rendering, just handing it a text corpus.
     const noScripts = raw
-      .replace(/<script[\s\S]*?<\/script>/gi, " ")
-      .replace(/<style[\s\S]*?<\/style>/gi, " ")
-      .replace(/<head[\s\S]*?<\/head>/gi, " ")
+      .replace(/<\s*script\b[\s\S]*?<\s*\/\s*script\b[^>]*>/gi, " ")
+      .replace(/<\s*style\b[\s\S]*?<\s*\/\s*style\b[^>]*>/gi, " ")
+      .replace(/<\s*head\b[\s\S]*?<\s*\/\s*head\b[^>]*>/gi, " ")
       .replace(/<!--[\s\S]*?-->/g, " ");
     const text = noScripts
       .replace(/<[^>]+>/g, " ")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
+      .replace(/&(#x[0-9a-f]+|#\d+|nbsp|quot|#39|apos|lt|gt|amp);/gi, (_match, entity) => decodeBasicHtmlEntities(`&${entity};`))
       .replace(/\s+/g, " ")
       .trim();
     const titleMatch = raw.match(/<title[^>]*>([\s\S]*?)<\/title>/i);

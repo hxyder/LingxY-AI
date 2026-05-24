@@ -43,6 +43,7 @@ import {
 } from "./shared/echo-runtime-client.mjs";
 import {
   hasStructuredChatBlocks,
+  renderChatMessageBlocks,
   renderChatMessageBlocksHtml
 } from "./chat-blocks.mjs";
 import {
@@ -340,9 +341,14 @@ function isEchoTask(taskId) {
   return Boolean(taskId && echoTaskIds.has(taskId));
 }
 
+function secureRandomHex(bytes = 8) {
+  const buffer = new Uint8Array(bytes);
+  globalThis.crypto.getRandomValues(buffer);
+  return Array.from(buffer, (value) => value.toString(16).padStart(2, "0")).join("");
+}
+
 function createEchoSessionId() {
-  const random = Math.random().toString(36).slice(2, 10);
-  return `echo_${Date.now().toString(36)}_${random}`;
+  return `echo_${Date.now().toString(36)}_${secureRandomHex(4)}`;
 }
 
 function isEchoOriginTask(task = null) {
@@ -1344,6 +1350,10 @@ function renderMarkdown(text) {
   return renderChatMessageBlocksHtml(text);
 }
 
+function renderMarkdownInto(target, text) {
+  return renderChatMessageBlocks(target, text);
+}
+
 function imageMimeForPath(filePath = "") {
   const lower = String(filePath).toLowerCase();
   if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
@@ -1594,7 +1604,7 @@ function addBubble(role, content, options) {
   if (typeof content === "string") {
     bubble.dataset.rawText = content;
     if (role === "assistant") {
-      bubble.innerHTML = renderMarkdown(content);
+      renderMarkdownInto(bubble, content);
       // Apply the "answer" layout (accent bar + richer typography) whenever
       // the reply is either structured (has headings / code / lists) or just
       // long enough to benefit from the extra spacing. Empirically the old
@@ -3408,7 +3418,7 @@ function applyOverlayTextDelta(frameTaskId, delta) {
   }
   streamingBubbleRawText = nextRawText;
   streamingBubble.classList.remove("answer-placeholder");
-  streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
+  renderMarkdownInto(streamingBubble, streamingBubbleRawText);
   bubbleAreaPin.maybeScrollToBottom();
 }
 
@@ -3931,7 +3941,7 @@ async function handleTaskEventFrame(rawEvent) {
           streamingBubble.classList.remove("answer-placeholder");
           streamingBubbleRawText = visibleText;
           streamingBubble.dataset.rawText = visibleText;
-          streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
+          renderMarkdownInto(streamingBubble, streamingBubbleRawText);
           // Now that streaming has settled, attach the action row (+
           // Note, ↻ 重新生成) and timestamp. Done after the last
           // innerHTML write so the next render can't wipe them. Without
@@ -4282,7 +4292,7 @@ function appendAutomaticTurnToConversation({ task, detail, text }) {
   );
   if (!conv) {
     conv = {
-      id: `conv_auto_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      id: `conv_auto_${Date.now().toString(36)}_${secureRandomHex(3)}`,
       projectId: projectInfo.projectId,
       title: titleForAutomaticConversation(task, detail),
       seedCapture: null,
@@ -5114,7 +5124,7 @@ async function refreshActiveTask() {
         // finalise it with the full text instead of adding a duplicate bubble.
         if (streamingBubble) {
           streamingBubble.classList.remove("streaming");
-          streamingBubble.innerHTML = renderMarkdown(finalText);
+          renderMarkdownInto(streamingBubble, finalText);
           streamingBubble = null;
           streamingBubbleRawText = "";
         } else {
@@ -5212,7 +5222,7 @@ async function refreshActiveTask() {
       const hadStreamingBubble = Boolean(streamingBubble);
       if (streamingBubble) {
         streamingBubble.classList.remove("streaming");
-        streamingBubble.innerHTML = renderMarkdown(partialText);
+        renderMarkdownInto(streamingBubble, partialText);
         streamingBubble = null;
         streamingBubbleRawText = "";
       } else if (shouldRenderPartialOutcome) {

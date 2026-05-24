@@ -1,4 +1,5 @@
 import { getValidAccessToken } from "../core/token-manager.mjs";
+import { htmlToPlainText } from "../../../security/html-utils.mjs";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -90,19 +91,7 @@ export async function getMicrosoftMessage(runtime, account, messageId, { fetchIm
   // bodyHtml — raw HTML when available, else empty (frontend offers
   // rich rendering when this is non-empty).
   const bodyText = isHtml
-    ? raw
-        .replace(/<style[\s\S]*?<\/style>/gi, "")
-        .replace(/<script[\s\S]*?<\/script>/gi, "")
-        .replace(/<[^>]+>/g, "")
-        .replace(/&nbsp;/g, " ")
-        .replace(/&amp;/g, "&")
-        .replace(/&lt;/g, "<")
-        .replace(/&gt;/g, ">")
-        .replace(/&quot;/g, "\"")
-        .replace(/&#39;/g, "'")
-        .replace(/\s+\n/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim()
+    ? htmlToPlainText(raw)
     : raw;
   const bodyHtml = isHtml ? raw : "";
   return {

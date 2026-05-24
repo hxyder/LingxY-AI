@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 const CAPTURE_AND_ASK_SELECTION_TIMEOUT_MS = 2400;
 const CAPTURE_AND_ASK_WINDOW_TIMEOUT_MS = 1600;
 const CAPTURE_AND_ASK_CLIPBOARD_POLL_MS = 1400;
@@ -42,6 +44,10 @@ function buildCaptureStatusPayload(status, message, detail = {}) {
     error: message,
     ...detail
   };
+}
+
+function secureRandomHex(bytes = 6) {
+  return randomBytes(bytes).toString("hex");
 }
 
 function wait(ms) {
@@ -208,7 +214,7 @@ export function createShortcutRouter({
         setCaptureInFlight(true);
         const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
         const startedAt = Date.now();
-        const captureSessionId = `capture_${startedAt.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        const captureSessionId = `capture_${startedAt.toString(36)}_${secureRandomHex(3)}`;
         const captureShortcutPayload = {
           ...payload,
           captureSessionId,

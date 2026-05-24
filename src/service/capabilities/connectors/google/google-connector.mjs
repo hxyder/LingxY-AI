@@ -1,6 +1,7 @@
 import { getValidAccessToken } from "../core/token-manager.mjs";
 import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
+import { htmlToPlainText } from "../../../security/html-utils.mjs";
 
 function headers(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
@@ -29,19 +30,13 @@ function decodeGmailBase64(urlSafe = "") {
 }
 
 function stripHtmlToText(html = "") {
-  return String(html)
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/\s+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return htmlToPlainText(html);
+}
+
+function escapeDriveQueryLiteral(value = "") {
+  return String(value ?? "")
+    .replace(/\\/g, "\\\\")
+    .replace(/'/g, "\\'");
 }
 
 function extractGmailBody(payload) {
@@ -145,7 +140,7 @@ export async function listGoogleFiles(runtime, account, input = {}, { fetchImpl 
     orderBy: "modifiedTime desc",
     fields: "files(id,name,webViewLink,modifiedTime,size,mimeType)"
   });
-  if (input.query) params.set("q", `fullText contains '${String(input.query).replace(/'/g, "\\'")}'`);
+  if (input.query) params.set("q", `fullText contains '${escapeDriveQueryLiteral(input.query)}'`);
   const response = await fetchImpl(`https://www.googleapis.com/drive/v3/files?${params}`, {
     headers: headers(accessToken)
   });

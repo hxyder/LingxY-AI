@@ -10,7 +10,7 @@ export function renderChatMessageBlocks(target, source = "") {
   const text = String(source ?? "");
   const html = renderChatMessageBlocksHtml(text);
   target.dataset.rawText = text;
-  target.innerHTML = html;
+  target.replaceChildren(renderSafeHtmlFragment(html));
   return html;
 }
 
@@ -80,15 +80,20 @@ function renderSvgBlock(svg = "") {
 }
 
 export function sanitizeSvgMarkup(svg = "") {
-  let safe = String(svg ?? "").trim();
-  if (!/^<svg\b[\s\S]*<\/svg\s*>$/i.test(safe)) return "";
-  safe = safe
-    .replace(/<\s*(script|foreignObject|iframe|object|embed|style)\b[\s\S]*?<\s*\/\s*\1\s*>/gi, "")
-    .replace(/<\s*(script|foreignObject|iframe|object|embed|style)\b[^>]*\/?>/gi, "")
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    .replace(/\s(?:href|src|xlink:href)\s*=\s*(["'])\s*(?:javascript|data):[^"']*\1/gi, " href=\"#blocked\"");
-  if (!/^<svg\b/i.test(safe) || !/<\/svg\s*>$/i.test(safe)) return "";
-  return safe;
+  return "";
+}
+
+function renderSafeHtmlFragment(html = "") {
+  const fragment = document.createDocumentFragment();
+  if (typeof DOMParser !== "function") {
+    fragment.appendChild(document.createTextNode(String(html ?? "")));
+    return fragment;
+  }
+  const parsed = new DOMParser().parseFromString(String(html ?? ""), "text/html");
+  for (const node of Array.from(parsed.body.childNodes)) {
+    fragment.appendChild(document.importNode(node, true));
+  }
+  return fragment;
 }
 
 function renderTextBlocks(source = "") {

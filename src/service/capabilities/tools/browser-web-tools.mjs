@@ -3,6 +3,7 @@ import { createActionResult } from "../registry/types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import { openWithDefaultHandler } from "./open-with-default-handler.mjs";
+import { htmlToPlainText } from "../../security/html-utils.mjs";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import path from "node:path";
@@ -544,26 +545,7 @@ export const FETCH_URL_CONTENT_TOOL = {
  * Removes scripts, styles, and all tags; decodes common entities.
  */
 function extractTextFromHtml(html = "") {
-  return html
-    // Remove <script> blocks (including content)
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
-    // Remove <style> blocks
-    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
-    // Remove <noscript> blocks
-    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, " ")
-    // Replace block-level tags with newlines to preserve structure
-    .replace(/<\/?(p|div|h[1-6]|li|tr|br|article|section|header|footer|nav|main|aside)[^>]*>/gi, "\n")
-    // Strip all remaining HTML tags
-    .replace(/<[^>]+>/g, "")
-    // Decode common HTML entities
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#([0-9]+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+  return htmlToPlainText(html)
     // Collapse excessive whitespace while preserving paragraph breaks
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")

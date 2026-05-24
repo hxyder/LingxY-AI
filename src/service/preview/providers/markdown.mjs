@@ -1,11 +1,9 @@
 // Markdown preview provider (UCA-182 Phase 2).
 //
 // Renders .md / .markdown with `marked` for the structural pass,
-// then scrubs the output through a small regex-based sanitizer
-// (see sanitizeHtml below). We intentionally avoid a heavy DOM
-// (jsdom / DOMPurify) server-side — the iframe that ultimately
-// shows this HTML already runs sandboxed in the renderer, and the
-// sanitizer here is strictly defence-in-depth against script
+// then scrubs the output through a DOM-based sanitizer. The iframe
+// that ultimately shows this HTML already runs sandboxed in the
+// renderer, and the sanitizer here is defence-in-depth against script
 // injection inside user-owned files.
 //
 // KaTeX / Mermaid support is opt-in and lazy: we only pull those
@@ -16,6 +14,7 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { buildHtmlShell, escapeHtml } from "../preview-shell.mjs";
+import { sanitizeHtmlFragment } from "../../security/html-utils.mjs";
 
 const MARKDOWN_EXTENSIONS = [".md", ".markdown", ".mdown", ".mkd"];
 
@@ -57,15 +56,7 @@ export const MARKDOWN_PROVIDER = {
  *   - output renders inside a sandboxed iframe in the renderer
  */
 export function sanitizeHtml(html) {
-  return String(html ?? "")
-    // strip <script>...</script>
-    .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
-    // strip <style>...</style> (inline CSS can still leak; we keep the shell's CSS)
-    .replace(/<style\b[\s\S]*?<\/style\s*>/gi, "")
-    // strip on* event handlers
-    .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "")
-    // neutralize javascript: and data: URLs in href / src
-    .replace(/\s(href|src)\s*=\s*(["'])\s*(javascript|data):[^"']*\2/gi, " $1=\"#blocked\"");
+  return sanitizeHtmlFragment(html);
 }
 
 function buildKatexMermaidHead(source) {

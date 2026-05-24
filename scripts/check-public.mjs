@@ -28,6 +28,7 @@ const requiredPaths = [
   "scripts/start-desktop.mjs",
   "scripts/smoke-ui-i18n.mjs",
   "tests/behavior/success-contract-validation-spec.test.mjs",
+  "tests/behavior/security-sanitizers.test.mjs",
   "tests/behavior/tool-call-validator-side-effect.test.mjs"
 ];
 const ignoredDirs = new Set([".git", "node_modules", "dist", ".tmp", ".cache", "coverage"]);
@@ -85,7 +86,12 @@ function run(command, args) {
   assert.equal(result.status, 0, `${command} ${args.join(" ")} failed`);
 }
 
-run(process.execPath, ["--test", "tests/behavior/success-contract-validation-spec.test.mjs", "tests/behavior/tool-call-validator-side-effect.test.mjs"]);
+run(process.execPath, [
+  "--test",
+  "tests/behavior/success-contract-validation-spec.test.mjs",
+  "tests/behavior/security-sanitizers.test.mjs",
+  "tests/behavior/tool-call-validator-side-effect.test.mjs"
+]);
 run(process.execPath, ["scripts/smoke-ui-i18n.mjs"]);
 run(process.execPath, ["scripts/smoke-desktop-entrypoints.mjs"]);
 run(process.execPath, ["scripts/smoke-runtime-health.mjs"]);
