@@ -1337,6 +1337,15 @@ function installHoverObserver(doc) {
     clearTimeout(chipAutoHideTimer);
   }
 
+  function isInspectableUrl(value) {
+    try {
+      const parsed = new URL(String(value ?? ""), doc.baseURI);
+      return parsed.protocol === "http:" || parsed.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }
+
   function showHoverChip(el) {
     removeActiveChip();
 
@@ -1348,7 +1357,7 @@ function installHoverObserver(doc) {
     const isImage = tagName === "IMG" || hasBgUrl;
     const isLink = tagName === "A" && !isImage;
     const href = el.href ?? el.src ?? el.srcset?.split(/\s/)?.[0] ?? el.dataset?.src ?? el.dataset?.lazySrc ?? el.__ucaBgUrl ?? "";
-    if (!href || href.startsWith("javascript:") || href === "#") return;
+    if (!href || href === "#" || !isInspectableUrl(href)) return;
 
     const label = isImage ? "\u{1F50D} Analyze image" : "\u{1F517} Analyze link";
     const action = isImage ? "uca.inspect-image" : "uca.fetch-link";

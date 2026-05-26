@@ -142,11 +142,19 @@ function tableToMd(table) {
   const rows = Array.from(table.querySelectorAll("tr"));
   if (rows.length === 0) return "";
   const render = (tr) => Array.from(tr.children)
-    .map((cell) => (cell.textContent || "").trim().replace(/\|/g, "\\|"))
+    .map((cell) => escapeMarkdownTableCell(cell.textContent || ""))
     .join(" | ");
   const head = render(rows[0]);
   const cols = rows[0].children.length;
   const sep = Array.from({ length: cols }, () => "---").join(" | ");
   const body = rows.slice(1).map(render).join("\n");
   return `| ${head} |\n| ${sep} |${body ? `\n| ${body.split("\n").map((row) => row + " |").join("\n| ")}` : ""}`;
+}
+
+function escapeMarkdownTableCell(value = "") {
+  return String(value ?? "")
+    .trim()
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/\r?\n/g, " ");
 }

@@ -32,21 +32,30 @@ let discoveredModels = [];
 let modelRefreshToken = 0;
 let refreshModelsTimer = null;
 
+function createOption(value, label) {
+  const option = document.createElement("option");
+  option.value = String(value ?? "");
+  option.textContent = String(label ?? "");
+  return option;
+}
+
 function renderProviderOptions() {
-  providerSelect.innerHTML = PROVIDER_GROUPS.map((group) => `
-    <optgroup label="${group.label}">
-      ${group.providers.map((provider) => `<option value="${provider.id}">${provider.label}</option>`).join("")}
-    </optgroup>
-  `).join("");
+  const groups = PROVIDER_GROUPS.map((group) => {
+    const optgroup = document.createElement("optgroup");
+    optgroup.label = group.label;
+    optgroup.replaceChildren(...group.providers.map((provider) => createOption(provider.id, provider.label)));
+    return optgroup;
+  });
+  providerSelect.replaceChildren(...groups);
 }
 
 function renderModelOptions(provider, currentModel = "") {
   const options = modelOptionsForProvider(provider, discoveredModels);
   const selectedModel = currentModel && !options.includes(currentModel) ? "__custom__" : (currentModel || options[0] || "");
-  modelSelect.innerHTML = [
-    ...options.map((model) => `<option value="${model}">${model}</option>`),
-    `<option value="__custom__">自定义…</option>`
-  ].join("");
+  modelSelect.replaceChildren(
+    ...options.map((model) => createOption(model, model)),
+    createOption("__custom__", "自定义…")
+  );
   modelSelect.value = selectedModel;
   customModelField.hidden = selectedModel !== "__custom__";
   customModelInput.value = selectedModel === "__custom__" ? currentModel : "";
@@ -55,7 +64,7 @@ function renderModelOptions(provider, currentModel = "") {
 function renderReasoningOptions(provider, model, currentReasoning = "") {
   const options = reasoningOptionsForProvider(provider, model);
   reasoningField.hidden = options.length === 0;
-  reasoningSelect.innerHTML = options.map((option) => `<option value="${option.id}">${option.label}</option>`).join("");
+  reasoningSelect.replaceChildren(...options.map((option) => createOption(option.id, option.label)));
   reasoningSelect.value = options.some((option) => option.id === currentReasoning) ? currentReasoning : (options[0]?.id ?? "");
 }
 
@@ -73,7 +82,7 @@ async function refreshModelOptions({ force = false, preserveCurrent = true } = {
   const apiKey = apiKeyInput.value.trim();
 
   modelSelect.disabled = true;
-  modelSelect.innerHTML = `<option value="${currentModel || ""}">加载模型列表中…</option>`;
+  modelSelect.replaceChildren(createOption(currentModel || "", "加载模型列表中…"));
   if (currentModel) modelSelect.value = currentModel;
 
   const result = await discoverProviderModels(provider, { apiKey, forceRefresh: force });

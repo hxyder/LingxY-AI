@@ -994,8 +994,8 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
 
 function stripHtmlForPrompt(html = "", maxLength = 18_000) {
   const text = String(html ?? "")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\s*script\b[\s\S]*?<\s*\/\s*script\b[^>]*>/gi, " ")
+    .replace(/<\s*style\b[\s\S]*?<\s*\/\s*style\b[^>]*>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/\s+/g, " ")
     .trim();

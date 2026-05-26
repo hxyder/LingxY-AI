@@ -15,15 +15,24 @@
 
 function decodeHtmlEntities(text) {
   if (typeof text !== "string") return "";
-  return text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
-    .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
+  return text.replace(/&(#x[0-9a-f]+|#\d+|nbsp|quot|#39|apos|lt|gt|amp);/gi, (_match, entity) => {
+    const normalized = entity.toLowerCase();
+    if (normalized.startsWith("#x")) return safeCodePoint(Number.parseInt(normalized.slice(2), 16));
+    if (normalized.startsWith("#")) return safeCodePoint(Number.parseInt(normalized.slice(1), 10));
+    return {
+      amp: "&",
+      apos: "'",
+      gt: ">",
+      lt: "<",
+      nbsp: " ",
+      quot: '"'
+    }[normalized] ?? "";
+  });
+}
+
+function safeCodePoint(value) {
+  if (!Number.isInteger(value) || value < 0 || value > 0x10ffff) return "";
+  try { return String.fromCodePoint(value); } catch { return ""; }
 }
 
 function parseXmlTranscript(xml) {

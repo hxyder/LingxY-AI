@@ -15,7 +15,7 @@
     "start:desktop": "node scripts/start-desktop.mjs",
     "mcp:server": "node scripts/start-lingxy-mcp-server.mjs",
     "inspect:routing": "node scripts/inspect-routing.mjs",
-    "test": "node --test tests/behavior/success-contract-validation-spec.test.mjs tests/behavior/tool-call-validator-side-effect.test.mjs",
+    "test": "node --test tests/behavior/success-contract-validation-spec.test.mjs tests/behavior/security-sanitizers.test.mjs tests/behavior/tool-call-validator-side-effect.test.mjs",
     "smoke:runtime": "node scripts/smoke-runtime-health.mjs",
     "smoke:desktop": "node scripts/smoke-desktop-entrypoints.mjs",
     "smoke:ui-i18n": "node scripts/smoke-ui-i18n.mjs",

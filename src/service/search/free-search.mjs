@@ -8,6 +8,13 @@
  * browser-realistic headers. The parsers are tolerant of markup changes.
  */
 
+import {
+  decodeHtmlEntities,
+  htmlMentionsHost,
+  htmlToPlainText,
+  urlHostnameMatches
+} from "../security/html-utils.mjs";
+
 const DEFAULT_FETCH = (typeof fetch === "function") ? fetch : null;
 const DDG_HTML_URL = "https://html.duckduckgo.com/html/";
 const DDG_LITE_URL = "https://lite.duckduckgo.com/lite/";
@@ -125,22 +132,8 @@ export function normalizeSearchRecency(recency, query = "") {
   return explicit ?? inferSearchRecency(query);
 }
 
-function decodeHtmlEntities(text = "") {
-  return String(text)
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_match, dec) => String.fromCodePoint(Number.parseInt(dec, 10)));
-}
-
 function stripTags(html = "") {
-  return decodeHtmlEntities(String(html)
-    .replace(/<[^>]+>/g, "")
-  )
+  return htmlToPlainText(html)
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -228,7 +221,7 @@ export function parseDuckDuckGoHtml(html = "", limit = 5) {
     }
     const snippet = snippetMatch ? stripTags(snippetMatch[1]) : "";
 
-    if (title && url && !url.includes("duckduckgo.com")) {
+    if (title && url && !urlHostnameMatches(url, "duckduckgo.com")) {
       results.push({ title, url, snippet });
     }
   }
@@ -241,7 +234,7 @@ export function parseDuckDuckGoHtml(html = "", limit = 5) {
     while ((m = linkRe.exec(html)) && results.length < limit) {
       const url = decodeUddg(m[1]);
       const title = stripTags(m[2]);
-      if (title && url && !url.includes("duckduckgo.com")) {
+      if (title && url && !urlHostnameMatches(url, "duckduckgo.com")) {
         results.push({ title, url, snippet: "" });
       }
     }
@@ -405,7 +398,7 @@ export function parseDuckDuckGoLite(html = "", limit = 5) {
 
   for (let i = 0; i < Math.min(links.length, limit); i++) {
     const { url, title } = links[i];
-    if (!title || url.includes("duckduckgo.com")) continue;
+    if (!title || urlHostnameMatches(url, "duckduckgo.com")) continue;
     results.push({ title, url, snippet: snippets[i] ?? "" });
   }
 
@@ -472,7 +465,7 @@ function isBotDetectionPage(html = "") {
     lower.includes("trouble accessing google search") ||
     lower.includes("/httpservice/retry/enablejs") ||
     lower.includes("百度安全验证") ||
-    lower.includes("wappass.baidu.com") ||
+    htmlMentionsHost(html, "wappass.baidu.com") ||
     lower.includes("please verify") ||
     lower.includes("unusual traffic") ||
     lower.includes("blocked") && lower.includes("duckduckgo")

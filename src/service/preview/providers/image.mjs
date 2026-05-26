@@ -12,6 +12,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { buildHtmlShell, escapeHtml } from "../preview-shell.mjs";
+import { sanitizeSvgMarkup } from "../../capabilities/tools/svg-sanitize.mjs";
 
 const MAX_INLINE_BYTES = 8 * 1024 * 1024;
 const MIME_BY_EXT = {
@@ -48,10 +49,11 @@ export const IMAGE_PROVIDER = {
 
     let body;
     if (ctx.ext === ".svg") {
-      // SVG: keep markup, sanitize scripts defensively.
-      const svgText = bytes.toString("utf8")
-        .replace(/<script\b[\s\S]*?<\/script\s*>/gi, "")
-        .replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+      // SVG: keep safe markup only; the sanitizer removes active content.
+      const svgText = sanitizeSvgMarkup(bytes.toString("utf8"));
+      if (!svgText) {
+        return { kind: "native-open", cacheable: false, meta: { reason: "unsafe_svg", size: info.size } };
+      }
       body = `<div class="preview-surface preview-content" style="text-align:center;">${svgText}</div>`;
     } else {
       const dataUrl = `data:${mime};base64,${bytes.toString("base64")}`;
