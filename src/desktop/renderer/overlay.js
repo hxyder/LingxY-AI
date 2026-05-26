@@ -1515,45 +1515,45 @@ function appendOverlayErrorBlock(taskId, payload = {}, { cancelled = false } = {
   icon.textContent = "!";
   const title = document.createElement("span");
   title.className = "cie-title";
-  title.textContent = cancelled ? "任务已取消" : "任务失败";
   head.append(icon, title);
+  let categoryEl = null;
   if (category) {
-    const categoryEl = document.createElement("span");
+    categoryEl = document.createElement("span");
     categoryEl.className = "cie-category";
-    categoryEl.textContent = category;
     head.appendChild(categoryEl);
   }
   card.appendChild(head);
 
   const body = document.createElement("div");
   body.className = "cie-body";
-  body.textContent = message;
   card.appendChild(body);
 
+  let hint = null;
   if (recoveryHint) {
-    const hint = document.createElement("div");
+    hint = document.createElement("div");
     hint.className = "cie-recovery";
-    hint.textContent = recoveryHint;
     card.appendChild(hint);
   }
 
+  const policyChips = [];
   if (policyBits.length > 0) {
     const policy = document.createElement("div");
     policy.className = "cie-policy";
     for (const item of policyBits) {
       const chip = document.createElement("span");
-      chip.textContent = item;
+      policyChips.push([chip, item]);
       policy.appendChild(chip);
     }
     card.appendChild(policy);
   }
 
+  const actionItems = [];
   if (actions.length > 0) {
     const list = document.createElement("ul");
     list.className = "cie-actions";
     for (const item of actions) {
       const li = document.createElement("li");
-      li.textContent = item;
+      actionItems.push([li, item]);
       list.appendChild(li);
     }
     card.appendChild(list);
@@ -1585,6 +1585,12 @@ function appendOverlayErrorBlock(taskId, payload = {}, { cancelled = false } = {
   }
 
   addBubble("system", card, { taskId: key || null });
+  title.textContent = cancelled ? "任务已取消" : "任务失败";
+  if (categoryEl) categoryEl.textContent = category;
+  body.textContent = message;
+  if (hint) hint.textContent = recoveryHint;
+  for (const [chip, item] of policyChips) chip.textContent = item;
+  for (const [li, item] of actionItems) li.textContent = item;
   bubbleAreaPin.maybeScrollToBottom();
   return card;
 }
