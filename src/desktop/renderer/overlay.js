@@ -1584,7 +1584,13 @@ function appendOverlayErrorBlock(taskId, payload = {}, { cancelled = false } = {
     card.appendChild(footer);
   }
 
-  addBubble("system", card, { taskId: key || null });
+  bubbleArea.hidden = false;
+  hideEmptyState();
+  const bubble = document.createElement("div");
+  bubble.className = "bubble system";
+  bubble.setAttribute("aria-label", "系统提示：");
+  bubble.replaceChildren(card);
+  bubbleArea.appendChild(bubble);
   title.textContent = cancelled ? "任务已取消" : "任务失败";
   if (categoryEl) categoryEl.textContent = category;
   body.textContent = message;
