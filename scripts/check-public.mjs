@@ -40,6 +40,34 @@ const secretPatterns = [
   [/-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----/, "private key"],
   [/xox[baprs]-[A-Za-z0-9-]{20,}/, "Slack token"]
 ];
+const ipv4LiteralPattern = /(?<![0-9.])(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}(?![0-9.])/g;
+
+function isAllowedNonPublicOrReservedIpv4(address) {
+  const [a, b, c] = address.split(".").map(Number);
+  return (
+    a === 0
+    || a === 10
+    || a === 127
+    || (a === 100 && b >= 64 && b <= 127)
+    || (a === 169 && b === 254)
+    || (a === 172 && b >= 16 && b <= 31)
+    || (a === 192 && b === 0 && c === 0)
+    || (a === 192 && b === 0 && c === 2)
+    || (a === 192 && b === 168)
+    || (a === 198 && (b === 18 || b === 19))
+    || (a === 198 && b === 51 && c === 100)
+    || (a === 203 && b === 0 && c === 113)
+    || a >= 224
+  );
+}
+
+function isLikelyVersionOrSchemaLiteral(line) {
+  if (/\b(?:https?:\/\/|wss?:\/\/|host|hostname|base-?url|url|uri|endpoint|listen|address|connect-src|service-url|runtime-?url)\b/i.test(line)) {
+    return false;
+  }
+  if (/<(?:path|svg)\b/i.test(line)) return true;
+  return /\b(?:version|visualstudioversion|chrome\/|chromium\/|firefox\/|mozilla\/|safari\/|applewebkit\/|schema|xmlns|viewbox)\b/i.test(line);
+}
 
 for (const rel of requiredPaths) {
   assert.equal(existsSync(path.join(root, rel)), true, `missing required public path: ${rel}`);
@@ -59,6 +87,23 @@ for (const key of Object.keys(pkg.scripts ?? {})) {
 }
 
 const leaks = [];
+function collectPublicIpv4Leaks(rel, text) {
+  const issues = [];
+  const lines = text.split(/\r?\n/);
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    ipv4LiteralPattern.lastIndex = 0;
+    let match;
+    while ((match = ipv4LiteralPattern.exec(line)) !== null) {
+      const address = match[0];
+      if (isAllowedNonPublicOrReservedIpv4(address)) continue;
+      if (isLikelyVersionOrSchemaLiteral(line)) continue;
+      issues.push(`${rel}:${index + 1}: public IPv4 literal ${address}`);
+    }
+  }
+  return issues;
+}
+
 function walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (ignoredDirs.has(entry.name)) continue;
@@ -76,10 +121,11 @@ function walk(dir) {
     for (const [regex, label] of secretPatterns) {
       if (regex.test(text)) leaks.push(`${rel}: ${label}`);
     }
+    leaks.push(...collectPublicIpv4Leaks(rel, text));
   }
 }
 walk(root);
-assert.deepEqual(leaks, [], `potential secrets found:\n${leaks.join("\n")}`);
+assert.deepEqual(leaks, [], `potential public release leaks found:\n${leaks.join("\n")}`);
 
 function run(command, args) {
   const result = spawnSync(command, args, { cwd: root, stdio: "inherit", shell: false });
