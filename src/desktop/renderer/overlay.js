@@ -1665,7 +1665,7 @@ function addBubble(role, content, options) {
       bubble.textContent = content;
     }
   } else {
-    bubble.appendChild(content);
+    bubble.replaceChildren(content);
   }
 
   // Per-user-message ↑/↓ jump nav. Hover-only. Lets the user step
